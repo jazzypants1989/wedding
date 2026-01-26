@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard - Wedding RSVP</title>
+  <link rel="stylesheet" href="/pages/admin/admin.css">
+</head>
+
+<body>
+  <div id="login-section" class="login-container">
+    <div class="login-card">
+      <h1>Admin Login</h1>
+      <div id="login-error" class="alert alert-error" role="alert" hidden></div>
+      <form id="login-form">
+        <input type="text" id="username" name="username" value="admin" autocomplete="username" hidden
+          aria-hidden="true">
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" required autocomplete="current-password">
+        </div>
+        <button type="submit" id="login-form-submit" class="btn btn-primary w-full">Login</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="dashboard-section" class="dashboard">
+    <header class="header">
+      <h1>Wedding RSVP Admin</h1>
+      <div class="header-actions">
+        <a href="/" class="btn btn-secondary btn-sm">View Site</a>
+        <button id="logout-btn" class="btn btn-secondary btn-sm">Logout</button>
+      </div>
+    </header>
+
+    <main class="main-content">
+      <div class="stats-grid" id="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Total Guests</div>
+          <div class="stat-value" id="stat-total">-</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Responded</div>
+          <div class="stat-value" id="stat-responded">-</div>
+          <div class="stat-detail" id="stat-responded-detail"></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Pending</div>
+          <div class="stat-value" id="stat-pending">-</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Expected Headcount</div>
+          <div class="stat-value" id="stat-headcount">-</div>
+        </div>
+      </div>
+
+      <div class="tabs" role="tablist" aria-label="Admin dashboard sections">
+        <button class="tab-btn active" data-tab="guests" role="tab" id="tab-btn-guests" aria-selected="true"
+          aria-controls="tab-guests">Guests</button>
+        <button class="tab-btn" data-tab="rsvps" role="tab" id="tab-btn-rsvps" aria-selected="false"
+          aria-controls="tab-rsvps">RSVPs</button>
+        <button class="tab-btn" data-tab="petitions" role="tab" id="tab-btn-petitions" aria-selected="false"
+          aria-controls="tab-petitions">
+          Petitions
+          <span id="petitions-badge" class="tab-badge" hidden aria-label="pending petitions">0</span>
+        </button>
+        <button class="tab-btn" data-tab="blocklist" role="tab" id="tab-btn-blocklist" aria-selected="false"
+          aria-controls="tab-blocklist">Blocklist</button>
+      </div>
+
+      <div id="tab-guests" class="tab-content active" role="tabpanel" aria-labelledby="tab-btn-guests">
+        <div class="card">
+          <div class="card-header">
+            <h2>Guest List</h2>
+            <div class="header-buttons">
+              <button id="import-csv-btn" class="btn btn-secondary btn-sm">Import CSV</button>
+              <a href="/api/admin/guests/export" id="export-guests-btn" class="btn btn-secondary btn-sm">Export CSV</a>
+              <button id="send-invites-btn" class="btn btn-secondary btn-sm">Send Invites</button>
+              <button id="add-guest-btn" class="btn btn-primary btn-sm">Add Guest</button>
+            </div>
+          </div>
+
+          <div class="filters">
+            <input type="text" id="guest-search" class="search-input" placeholder="Search by name, email, or phone...">
+            <select id="guest-status-filter" class="filter-select">
+              <option value="">All Statuses</option>
+              <option value="pending">Pending</option>
+              <option value="invited">Invited</option>
+              <option value="responded">Responded</option>
+              <option value="archived">Archived</option>
+            </select>
+          </div>
+
+          <div class="table-container">
+            <table id="guests-table">
+              <thead>
+                <tr>
+                  <th scope="col">Name</th>
+                  <th scope="col">Contact</th>
+                  <th scope="col">Status</th>
+                  <th scope="col" class="hide-mobile">Party Size</th>
+                  <th scope="col" class="hide-mobile">Last Invited</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="guests-tbody">
+                <!-- Populated by JS -->
+              </tbody>
+            </table>
+          </div>
+
+          <div id="guests-pagination" class="pagination">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-rsvps" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-rsvps" hidden>
+        <div class="card">
+          <div class="card-header">
+            <h2>RSVP Responses</h2>
+            <a href="/api/admin/rsvps/export" id="export-rsvps-btn" class="btn btn-secondary btn-sm">Export CSV</a>
+          </div>
+
+          <div class="table-container">
+            <table id="rsvps-table">
+              <thead>
+                <tr>
+                  <th scope="col">Guest</th>
+                  <th scope="col">Attending</th>
+                  <th scope="col">Party Size</th>
+                  <th scope="col" class="hide-mobile">Dietary</th>
+                  <th scope="col" class="hide-mobile">Song Request</th>
+                  <th scope="col" class="hide-mobile">Submitted</th>
+                </tr>
+              </thead>
+              <tbody id="rsvps-tbody">
+                <!-- Populated by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Petitions Tab -->
+      <div id="tab-petitions" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-petitions" hidden>
+        <div class="card">
+          <div class="card-header">
+            <h2>Invitation Requests</h2>
+            <div class="header-buttons">
+              <select id="petition-status-filter" class="filter-select">
+                <option value="">All</option>
+                <option value="pending" selected>Pending</option>
+                <option value="approved">Approved</option>
+                <option value="denied">Denied</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table id="petitions-table">
+              <thead>
+                <tr>
+                  <th scope="col">Name</th>
+                  <th scope="col">Contact</th>
+                  <th scope="col" class="hide-mobile">Relationship</th>
+                  <th scope="col">Status</th>
+                  <th scope="col" class="hide-mobile">Submitted</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="petitions-tbody">
+                <!-- Populated by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-blocklist" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-blocklist" hidden>
+        <div class="card">
+          <div class="card-header">
+            <h2>Blocklist</h2>
+            <button id="add-blocklist-btn" class="btn btn-primary btn-sm">Add Entry</button>
+          </div>
+
+          <p class="text-muted card-text">
+            People on this list will not see the petition form when they try to look up their invitation.
+          </p>
+
+          <div class="table-container">
+            <table id="blocklist-table">
+              <thead>
+                <tr>
+                  <th scope="col">Name</th>
+                  <th scope="col">Email</th>
+                  <th scope="col">Phone</th>
+                  <th scope="col" class="hide-mobile">Reason</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="blocklist-tbody">
+                <!-- Populated by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <dialog id="guest-modal" aria-labelledby="guest-modal-title">
+    <div class="modal-header">
+      <h2 id="guest-modal-title">Add Guest</h2>
+      <button type="button" class="modal-close" data-close-modal aria-label="Close">&times;</button>
+    </div>
+    <form id="guest-form">
+      <input type="hidden" id="guest-id" name="id">
+      <div class="form-group">
+        <label for="guest-name">Name *</label>
+        <input type="text" id="guest-name" name="name" required maxlength="200">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="guest-email">Email</label>
+          <input type="email" id="guest-email" name="email" maxlength="254">
+        </div>
+        <div class="form-group">
+          <label for="guest-phone">Phone</label>
+          <input type="tel" id="guest-phone" name="phone" placeholder="(555) 123-4567">
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="guest-party-size">Party Size</label>
+        <select id="guest-party-size" name="party_size">
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="5">5</option>
+          <option value="6">6</option>
+          <option value="7">7</option>
+          <option value="8">8</option>
+          <option value="9">9</option>
+          <option value="10">10</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="guest-notes">Notes</label>
+        <textarea id="guest-notes" name="notes" rows="3" maxlength="1000"></textarea>
+      </div>
+      <div id="guest-form-error" class="alert alert-error" role="alert" hidden></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
+        <button type="submit" class="btn btn-primary" id="guest-form-submit">Save Guest</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="delete-modal" aria-labelledby="delete-modal-title">
+    <div class="modal-header">
+      <h2 id="delete-modal-title">Archive Guest</h2>
+      <button type="button" class="modal-close" data-close-modal aria-label="Close">&times;</button>
+    </div>
+    <p id="delete-message">Are you sure you want to archive this guest?</p>
+    <div id="delete-rsvp-warning" class="alert alert-warning" hidden>
+      This guest has submitted an RSVP. Their response will be preserved but hidden from stats.
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
+      <button type="button" class="btn btn-danger" id="confirm-delete-btn">Archive</button>
+    </div>
+  </dialog>
+
+  <dialog id="rsvp-modal" aria-labelledby="rsvp-modal-title">
+    <div class="modal-header">
+      <h2 id="rsvp-modal-title">RSVP Details</h2>
+      <button type="button" class="modal-close" data-close-modal aria-label="Close">&times;</button>
+    </div>
+    <div id="rsvp-details">
+      <!-- Populated by JS -->
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" data-close-modal>Close</button>
+    </div>
+  </dialog>
+
+  <dialog id="invite-modal" class="modal-lg" aria-labelledby="invite-modal-title">
+    <div class="modal-header">
+      <h2 id="invite-modal-title">Send Invites</h2>
+      <button type="button" class="modal-close" data-close-modal aria-label="Close">&times;</button>
+    </div>
+
+    <div id="invite-step-config" class="invite-step">
+      <div class="form-group">
+        <label>Send via</label>
+        <div class="radio-group">
+          <label class="radio-label">
+            <input type="radio" name="invite-type" value="email" checked>
+            <span>Email</span>
+            <small id="email-status"></small>
+          </label>
+          <label class="radio-label">
+            <input type="radio" name="invite-type" value="sms">
+            <span>SMS</span>
+            <small id="sms-status"></small>
+          </label>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="invite-message">Message (use {name} and {url} as placeholders)</label>
+        <textarea id="invite-message" rows="4" placeholder="Leave blank for default message"></textarea>
+        <small class="text-muted">Default message will be used if left blank</small>
+      </div>
+
+      <div id="invite-recipients-summary" class="recipients-summary">
+        <!-- Populated by JS -->
+      </div>
+
+      <div id="invite-config-error" class="alert alert-error" role="alert" hidden></div>
+    </div>
+
+    <div id="invite-step-preview" class="invite-step" hidden>
+      <div id="invite-preview-content">
+        <!-- Populated by JS -->
+      </div>
+    </div>
+
+    <div id="invite-step-results" class="invite-step" hidden>
+      <div id="invite-results-content">
+        <!-- Populated by JS -->
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
+      <button type="button" class="btn btn-secondary" id="invite-back-btn" hidden>Back</button>
+      <button type="button" class="btn btn-primary" id="invite-next-btn">Preview</button>
+    </div>
+  </dialog>
+
+  <dialog id="import-modal" class="modal-lg" aria-labelledby="import-modal-title">
+    <div class="modal-header">
+      <h2 id="import-modal-title">Import Guests from CSV</h2>
+      <button type="button" class="modal-close" data-close-modal aria-label="Close">&times;</button>
+    </div>
+    <div id="import-instructions" class="import-section">
+      <p>Upload a CSV file with guest information. Required column: <strong>name</strong></p>
+      <p>Optional columns: <code>email</code>, <code>phone</code>, <code>party_size</code>, <code>notes</code></p>
+      <p class="text-muted">Guests with duplicate email or phone numbers will be skipped.</p>
+      <div class="form-group">
+        <label for="csv-file" class="file-input-label">
+          <span id="file-name">Choose CSV file...</span>
+          <input type="file" id="csv-file" accept=".csv" class="file-input">
+        </label>
+      </div>
+      <div id="csv-preview" class="csv-preview" hidden>
+        <h4>Preview (first 5 rows):</h4>
+        <div id="csv-preview-table"></div>
+      </div>
+      <div id="import-form-error" class="alert alert-error" role="alert" hidden></div>
+    </div>
+    <div id="import-results" class="import-section" hidden>
+      <div id="import-results-content"></div>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
+      <button type="button" class="btn btn-primary" id="import-submit-btn" disabled>Import Guests</button>
+    </div>
+  </dialog>
+
+  <dialog id="petition-modal" aria-labelledby="petition-modal-title">
+    <div class="modal-header">
+      <h2 id="petition-modal-title">Petition Details</h2>
+      <button type="button" class="modal-close" data-close-modal aria-label="Close">&times;</button>
+    </div>
+    <div id="petition-details">
+      <!-- Populated by JS -->
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" data-close-modal>Close</button>
+      <button type="button" class="btn btn-danger" id="petition-deny-btn">Deny</button>
+      <button type="button" class="btn btn-primary" id="petition-approve-btn">Approve</button>
+    </div>
+  </dialog>
+
+  <dialog id="petition-approve-modal" aria-labelledby="petition-approve-modal-title">
+    <div class="modal-header">
+      <h2 id="petition-approve-modal-title">Approve Petition</h2>
+      <button type="button" class="modal-close" data-close-modal aria-label="Close">&times;</button>
+    </div>
+    <p>Approving this petition will create a guest and send them an invite.</p>
+    <input type="hidden" id="approve-petition-id">
+    <div class="form-group">
+      <label for="approve-party-size">Party Size</label>
+      <select id="approve-party-size">
+        <option value="1">1</option>
+        <option value="2" selected>2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="checkbox-label">
+        <input type="checkbox" id="approve-send-invite" checked>
+        <span>Send invite immediately</span>
+      </label>
+    </div>
+    <div class="form-group">
+      <label for="approve-notes">Admin Notes (optional)</label>
+      <textarea id="approve-notes" rows="2"></textarea>
+    </div>
+    <div id="approve-error" class="alert alert-error" role="alert" hidden></div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
+      <button type="button" class="btn btn-primary" id="confirm-approve-btn">Approve & Create Guest</button>
+    </div>
+  </dialog>
+
+  <dialog id="petition-deny-modal" aria-labelledby="petition-deny-modal-title">
+    <div class="modal-header">
+      <h2 id="petition-deny-modal-title">Deny Petition</h2>
+      <button type="button" class="modal-close" data-close-modal aria-label="Close">&times;</button>
+    </div>
+    <p>This will deny the petition request.</p>
+    <input type="hidden" id="deny-petition-id">
+    <div class="form-group">
+      <label class="checkbox-label">
+        <input type="checkbox" id="deny-add-blocklist">
+        <span>Add to blocklist (prevent future petitions)</span>
+      </label>
+    </div>
+    <div class="form-group">
+      <label for="deny-notes">Admin Notes (optional)</label>
+      <textarea id="deny-notes" rows="2" placeholder="Reason for denial..."></textarea>
+    </div>
+    <div id="deny-error" class="alert alert-error" role="alert" hidden></div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
+      <button type="button" class="btn btn-danger" id="confirm-deny-btn">Deny Petition</button>
+    </div>
+  </dialog>
+
+  <dialog id="blocklist-modal" aria-labelledby="blocklist-modal-title">
+    <div class="modal-header">
+      <h2 id="blocklist-modal-title">Add to Blocklist</h2>
+      <button type="button" class="modal-close" data-close-modal aria-label="Close">&times;</button>
+    </div>
+    <p class="text-muted">At least one of name, email, or phone is required.</p>
+    <form id="blocklist-form">
+      <div class="form-group">
+        <label for="blocklist-name">Name (fuzzy match)</label>
+        <input type="text" id="blocklist-name" name="name" maxlength="200">
+      </div>
+      <div class="form-group">
+        <label for="blocklist-email">Email (exact match)</label>
+        <input type="email" id="blocklist-email" name="email" maxlength="254">
+      </div>
+      <div class="form-group">
+        <label for="blocklist-phone">Phone (exact match)</label>
+        <input type="tel" id="blocklist-phone" name="phone" placeholder="(555) 123-4567">
+      </div>
+      <div class="form-group">
+        <label for="blocklist-reason">Reason (optional)</label>
+        <textarea id="blocklist-reason" name="reason" rows="2" maxlength="500"></textarea>
+      </div>
+      <div id="blocklist-form-error" class="alert alert-error" role="alert" hidden></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
+        <button type="submit" class="btn btn-primary">Add to Blocklist</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="blocklist-delete-modal" aria-labelledby="blocklist-delete-modal-title">
+    <div class="modal-header">
+      <h2 id="blocklist-delete-modal-title">Remove from Blocklist</h2>
+      <button type="button" class="modal-close" data-close-modal aria-label="Close">&times;</button>
+    </div>
+    <p id="blocklist-delete-message">Are you sure you want to remove this entry from the blocklist?</p>
+    <input type="hidden" id="blocklist-delete-id">
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
+      <button type="button" class="btn btn-danger" id="confirm-blocklist-delete-btn">Remove</button>
+    </div>
+  </dialog>
+
+  <script type="module" src="/pages/admin/dashboard.js"></script>
+</body>
+
+</html>

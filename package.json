@@ -1,0 +1,29 @@
+{
+  "name": "jesse-and-jordanas-wedding",
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Wedding RSVP system with zero npm dependencies",
+  "main": "server.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "node --test tests/integration/*.test.js",
+    "test:unit": "node --test tests/unit/core/*.test.js tests/unit/services/*.test.js",
+    "test:all": "node --test tests/unit/core/*.test.js tests/unit/services/*.test.js tests/integration/*.test.js",
+    "setup": "node scripts/setup-admin.js"
+  },
+  "keywords": [
+    "wedding",
+    "rsvp"
+  ],
+  "author": "Jesse Pence",
+  "license": "ISC",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.9",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RSVP - Jordana & Jesse</title>
+  <meta name="description" content="RSVP for Jordana and Jesse's wedding - April 26, 2026 in Portland, OR">
+  <meta name="theme-color" content="#eee6dc">
+  <link rel="stylesheet" href="/styles/global.css">
+</head>
+
+<body>
+  <a href="#main-content" class="skip-link">Skip to content</a>
+
+  <div class="hero hero--small">
+    <picture>
+      <source media="(min-width: 768px)" srcset="/images/top-desktop.png">
+      <img src="/images/top-mobile.png" alt="" class="hero-image" loading="eager">
+    </picture>
+  </div>
+
+  <header class="site-header">
+    <h1 class="couple-names"><a href="/" class="home-link">Jordana & Jesse</a></h1>
+    <p class="wedding-info">April 26, 2026 &bull; Portland, OR</p>
+  </header>
+
+  <nav class="desktop-nav" aria-label="Main navigation">
+    <ul class="nav-list">
+      <li><a href="/" class="nav-link">Home</a></li>
+      <li><a href="/#schedule" class="nav-link">Schedule</a></li>
+      <li><a href="/#dress-code" class="nav-link">Dress Code</a></li>
+      <li><a href="/rsvp" class="nav-link nav-link--active">RSVP</a></li>
+    </ul>
+  </nav>
+
+  <main id="main-content">
+    <section class="content-section rsvp-section">
+      <h2>RSVP</h2>
+
+      <!-- Loading state -->
+      <div id="rsvp-loading" class="rsvp-loading">
+        <p>Loading your invitation...</p>
+      </div>
+
+      <!-- Error state (no code or invalid code) -->
+      <div id="rsvp-error" class="rsvp-error" hidden>
+        <p id="rsvp-error-message">Unable to load your invitation.</p>
+
+        <!-- Lookup Form -->
+        <div id="rsvp-lookup" class="rsvp-lookup">
+          <p>Lost your invite link? Enter your name and contact info, and we'll send it to you.</p>
+          <form id="lookup-form" class="lookup-form">
+            <div class="form-group">
+              <label for="lookup-name">Your Name (as on your invitation)</label>
+              <input type="text" id="lookup-name" name="name" required placeholder="John Smith">
+            </div>
+            <div class="form-group">
+              <label for="lookup-contact">Phone or Email</label>
+              <input type="text" id="lookup-contact" name="contact" required
+                placeholder="(555) 123-4567 or you@email.com">
+            </div>
+            <button type="submit" class="btn btn--primary" id="lookup-submit">Find My Invitation</button>
+          </form>
+          <div id="lookup-result" class="lookup-result" hidden></div>
+        </div>
+
+        <!-- Petition Form (shown when guest not found) -->
+        <div id="rsvp-petition" class="rsvp-petition" hidden>
+          <h3>Request an Invitation</h3>
+          <p>We couldn't find you on our guest list. If you believe this is a mistake, please fill out this form and
+            we'll review your request.</p>
+          <form id="petition-form" class="petition-form">
+            <div class="form-group">
+              <label for="petition-name">Your Name *</label>
+              <input type="text" id="petition-name" name="name" required placeholder="John Smith">
+            </div>
+            <div class="form-group">
+              <label for="petition-email">Email Address *</label>
+              <input type="email" id="petition-email" name="email" required placeholder="you@email.com">
+            </div>
+            <div class="form-group">
+              <label for="petition-phone">Phone Number (optional)</label>
+              <input type="tel" id="petition-phone" name="phone" placeholder="(555) 123-4567">
+            </div>
+            <div class="form-group">
+              <label for="petition-relationship">How do you know the couple?</label>
+              <input type="text" id="petition-relationship" name="relationship"
+                placeholder="College friend, coworker, etc.">
+            </div>
+            <div class="form-group">
+              <label for="petition-message">Any message for the couple? (optional)</label>
+              <textarea id="petition-message" name="message" rows="3"
+                placeholder="We'd love to hear from you!"></textarea>
+            </div>
+            <button type="submit" class="btn btn--primary" id="petition-submit">Submit Request</button>
+          </form>
+          <div id="petition-result" class="petition-result" hidden></div>
+        </div>
+      </div>
+
+      <!-- RSVP Form -->
+      <form id="rsvp-form" class="rsvp-form" hidden>
+        <p class="rsvp-greeting">Hi <span id="guest-name"></span>!</p>
+        <p class="rsvp-intro">Please let us know if you'll be joining us for our wedding celebration.</p>
+
+        <fieldset class="form-fieldset">
+          <legend class="sr-only">Will you be attending?</legend>
+
+          <div class="form-group">
+            <label class="radio-label">
+              <input type="radio" name="attending" value="yes" required>
+              <span class="radio-text">Yes, I'll be there!</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="attending" value="no" required>
+              <span class="radio-text">Sorry, I can't make it</span>
+            </label>
+          </div>
+        </fieldset>
+
+        <div id="attending-details" class="attending-details" hidden>
+          <div class="form-group">
+            <label for="party-size">How many guests (including yourself)?</label>
+            <select id="party-size" name="actual_party_size" required>
+              <!-- Options populated dynamically based on guest's allowed party size -->
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="dietary">Any dietary restrictions?</label>
+            <textarea id="dietary" name="dietary_restrictions" rows="2"
+              placeholder="Vegan, gluten-free, allergies, etc."></textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="song">Song request for karaoke?</label>
+            <input type="text" id="song" name="song_request" placeholder="What's your jam?">
+          </div>
+        </div>
+
+        <div>
+          <label for="anything-else">Anything else we need to know about you? (accommodation needs, etc.)</label>
+          <input type="text" id="anything-else" name="additional_info" placeholder="Let us know here">
+        </div>
+
+        </div>
+        <div class="form-group">
+          <label for="message">Message for Jordana & Jesse (optional)</label>
+          <textarea id="message" name="message" rows="3" placeholder="We're so excited for you!"></textarea>
+        </div>
+
+        <button type="submit" class="btn btn--primary btn--large">Submit RSVP</button>
+
+        <p id="form-error" class="form-error" hidden></p>
+      </form>
+
+      <!-- Success state -->
+      <div id="rsvp-success" class="rsvp-success" hidden>
+        <h3>Thank You!</h3>
+        <p id="success-message"></p>
+        <p class="rsvp-update-note">Changed your mind? You can update your RSVP anytime by visiting this page again.</p>
+        <a href="/" class="btn btn--secondary">Back to Home</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <picture>
+      <source media="(min-width: 768px)" srcset="/images/bottom-desktop.png">
+      <img src="/images/bottom-mobile.png" alt="" loading="lazy">
+    </picture>
+  </footer>
+
+  <script type="module" src="/pages/rsvp/form.js"></script>
+</body>
+
+</html>
