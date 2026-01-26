@@ -14,13 +14,19 @@ services:
       - traefik-public
     labels:
       - "traefik.enable=true"
-      # Main router
+      # HTTPS router
       - "traefik.http.routers.wedding.rule=Host(`jordanaandjesse.com`) || Host(`www.jordanaandjesse.com`)"
-      - "traefik.http.routers.wedding.entrypoints=websecure"
+      - "traefik.http.routers.wedding.entrypoints=https"
       - "traefik.http.routers.wedding.tls.certresolver=letsencrypt"
+      # HTTP -> HTTPS redirect
+      - "traefik.http.routers.wedding-http.rule=Host(`jordanaandjesse.com`) || Host(`www.jordanaandjesse.com`)"
+      - "traefik.http.routers.wedding-http.entrypoints=http"
+      - "traefik.http.routers.wedding-http.middlewares=wedding-https-redirect"
+      - "traefik.http.middlewares.wedding-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.wedding-https-redirect.redirectscheme.permanent=true"
       # www -> apex redirect
       - "traefik.http.routers.wedding-www.rule=Host(`www.jordanaandjesse.com`)"
-      - "traefik.http.routers.wedding-www.entrypoints=websecure"
+      - "traefik.http.routers.wedding-www.entrypoints=https"
       - "traefik.http.routers.wedding-www.tls.certresolver=letsencrypt"
       - "traefik.http.routers.wedding-www.middlewares=wedding-www-redirect"
       - "traefik.http.middlewares.wedding-www-redirect.redirectregex.regex=^https://www\\.jordanaandjesse\\.com/(.*)"
