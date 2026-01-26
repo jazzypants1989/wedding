@@ -20,6 +20,7 @@ import * as rsvps from "../api/admin/rsvps.js"
 import * as invites from "../api/admin/invites.js"
 import * as petitions from "../api/admin/petitions.js"
 import * as blocklist from "../api/admin/blocklist.js"
+import * as manualSms from "../api/admin/manual-sms.js"
 
 /** @type {Types.Route[]} */
 const routes = []
@@ -154,3 +155,8 @@ route("POST", "/api/admin/petitions/:id/deny", petitions.deny)
 route("GET", "/api/admin/blocklist", blocklist.list)
 route("POST", "/api/admin/blocklist", blocklist.create)
 route("DELETE", "/api/admin/blocklist/:id", blocklist.remove)
+
+// Admin manual SMS routes
+route("GET", "/api/admin/manual-sms/guests", manualSms.getEligibleGuests)
+route("POST", "/api/admin/manual-sms/mark-sent", manualSms.markSent)
+route("POST", "/api/admin/manual-sms/mark-sent-batch", manualSms.markSentBatch)

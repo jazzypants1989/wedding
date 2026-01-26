@@ -3,7 +3,7 @@
 /**
  * @file Admin password setup script
  */
-/** @import * as Types from './types.js' */
+/** @import * as Types from '../types.js' */
 
 import crypto from "node:crypto"
 import readline from "node:readline"

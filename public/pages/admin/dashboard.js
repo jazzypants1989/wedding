@@ -9,6 +9,7 @@ import { initInvites } from "./invites.js"
 import { initCSVImport } from "./csv-import.js"
 import { initPetitions, loadPetitions, loadPetitionCount } from "./petitions.js"
 import { initBlocklist, loadBlocklist } from "./blocklist.js"
+import { initManualSms } from "./manual-sms.js"
 
 /** @type {Types.onLoginSuccess} */
 function onLoginSuccess() {
@@ -63,6 +64,7 @@ function init() {
   initCSVImport()
   initPetitions()
   initBlocklist()
+  initManualSms()
 
   checkSession()
 }

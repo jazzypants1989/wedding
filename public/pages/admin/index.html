@@ -76,6 +76,7 @@
             <div class="header-buttons">
               <button id="import-csv-btn" class="btn btn-secondary btn-sm">Import CSV</button>
               <a href="/api/admin/guests/export" id="export-guests-btn" class="btn btn-secondary btn-sm">Export CSV</a>
+              <button id="manual-sms-btn" class="btn btn-secondary btn-sm">Manual SMS</button>
               <button id="send-invites-btn" class="btn btn-secondary btn-sm">Send Invites</button>
               <button id="add-guest-btn" class="btn btn-primary btn-sm">Add Guest</button>
             </div>
@@ -485,6 +486,73 @@
     <div class="modal-actions">
       <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
       <button type="button" class="btn btn-danger" id="confirm-blocklist-delete-btn">Remove</button>
+    </div>
+  </dialog>
+
+  <dialog id="manual-sms-modal" class="modal-lg" aria-labelledby="manual-sms-modal-title">
+    <div class="modal-header">
+      <h2 id="manual-sms-modal-title">Manual SMS</h2>
+      <button type="button" class="modal-close" data-close-modal aria-label="Close">&times;</button>
+    </div>
+
+    <details id="msms-template-section" class="msms-template-section">
+      <summary>Edit message template</summary>
+      <div class="msms-template-body">
+        <div class="form-group">
+          <textarea id="msms-template" rows="3"></textarea>
+          <div class="msms-placeholders">
+            <small class="text-muted">Placeholders:</small>
+            <button type="button" class="msms-placeholder-tag" data-placeholder="{name}">{name}</button>
+            <button type="button" class="msms-placeholder-tag" data-placeholder="{url}">{url}</button>
+            <button type="button" class="msms-placeholder-tag" data-placeholder="{date}">{date}</button>
+            <button type="button" class="msms-placeholder-tag" data-placeholder="{location}">{location}</button>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <div class="msms-mode-toggle">
+      <button type="button" id="msms-mode-focus" class="btn btn-sm active">Focus</button>
+      <button type="button" id="msms-mode-list" class="btn btn-sm">List</button>
+      <span id="msms-progress-counter" class="msms-progress"></span>
+    </div>
+
+    <div id="msms-focus-view">
+      <div class="msms-guest-card">
+        <div class="msms-guest-header">
+          <strong id="msms-guest-name"></strong>
+          <span id="msms-guest-phone" class="msms-phone"></span>
+        </div>
+        <div id="msms-guest-message" class="msms-message-box"></div>
+        <div class="msms-card-actions">
+          <button type="button" id="msms-copy-btn" class="btn btn-secondary btn-sm">Copy Message</button>
+          <button type="button" id="msms-mark-sent-btn" class="btn btn-primary btn-sm">Mark as Sent</button>
+        </div>
+      </div>
+      <div class="msms-nav">
+        <button type="button" id="msms-prev-btn" class="btn btn-secondary btn-sm">&larr; Prev</button>
+        <button type="button" id="msms-next-btn" class="btn btn-secondary btn-sm">Next &rarr;</button>
+      </div>
+    </div>
+
+    <div id="msms-list-view" hidden>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Name</th>
+              <th scope="col">Phone</th>
+              <th scope="col" class="hide-mobile">Message</th>
+              <th scope="col">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="msms-list-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" id="msms-done-btn">Done</button>
     </div>
   </dialog>
 

@@ -55,8 +55,8 @@ export interface BlocklistResponse {
 // Public API responses
 export interface LookupResponse {
   found: boolean
-  sent?: boolean
-  message: string
+  redirectCode?: string
+  message?: string
   canPetition?: boolean
 }
 

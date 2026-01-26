@@ -30,6 +30,14 @@ function showLookupResult(message, isError = false) {
   state.elements.result.hidden = false
   state.elements.result.classList.toggle("lookup-result--error", isError)
   state.elements.result.classList.toggle("lookup-result--success", !isError)
+  if (isError) {
+    state.elements.result.classList.add("lookup-result--shake")
+    state.elements.result.addEventListener(
+      "animationend",
+      () => state?.elements.result.classList.remove("lookup-result--shake"),
+      { once: true },
+    )
+  }
 }
 
 /** @type {Types.handleLookupSubmit} */
@@ -45,7 +53,7 @@ async function handleLookupSubmit(e) {
   if (!name || !contact) return
 
   elements.submit.disabled = true
-  elements.submit.textContent = "Searching..."
+  elements.submit.classList.add("btn--loading")
   elements.result.hidden = true
 
   try {
@@ -64,19 +72,14 @@ async function handleLookupSubmit(e) {
       return
     }
 
-    if (data.found && data.sent) {
-      showLookupResult(data.message, false)
-      return
-    }
-
-    if (data.found && !data.sent) {
-      showLookupResult(data.message, true)
+    if (data.found && data.redirectCode) {
+      window.location.href = "/rsvp?code=" + data.redirectCode
       return
     }
 
     showLookupResult(
-      data.message || "Please check your email or phone for your invite link.",
-      false,
+      data.message || "Something went wrong. Please try again.",
+      true,
     )
   } catch (err) {
     console.error("Lookup error:", err)
@@ -84,7 +87,7 @@ async function handleLookupSubmit(e) {
   } finally {
     if (state) {
       state.elements.submit.disabled = false
-      state.elements.submit.textContent = "Find My Invitation"
+      state.elements.submit.classList.remove("btn--loading")
     }
   }
 }

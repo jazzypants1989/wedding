@@ -1,0 +1,37 @@
+services:
+  wedding:
+    build: .
+    container_name: wedding
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - BASE_URL=https://jordanaandjesse.com
+    volumes:
+      - wedding-data:/app/data
+    networks:
+      - traefik-public
+    labels:
+      - "traefik.enable=true"
+      # Main router
+      - "traefik.http.routers.wedding.rule=Host(`jordanaandjesse.com`) || Host(`www.jordanaandjesse.com`)"
+      - "traefik.http.routers.wedding.entrypoints=websecure"
+      - "traefik.http.routers.wedding.tls.certresolver=letsencrypt"
+      # www -> apex redirect
+      - "traefik.http.routers.wedding-www.rule=Host(`www.jordanaandjesse.com`)"
+      - "traefik.http.routers.wedding-www.entrypoints=websecure"
+      - "traefik.http.routers.wedding-www.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.wedding-www.middlewares=wedding-www-redirect"
+      - "traefik.http.middlewares.wedding-www-redirect.redirectregex.regex=^https://www\\.jordanaandjesse\\.com/(.*)"
+      - "traefik.http.middlewares.wedding-www-redirect.redirectregex.replacement=https://jordanaandjesse.com/$${1}"
+      - "traefik.http.middlewares.wedding-www-redirect.redirectregex.permanent=true"
+      # Service
+      - "traefik.http.services.wedding.loadbalancer.server.port=3000"
+
+volumes:
+  wedding-data:
+
+networks:
+  traefik-public:
+    external: true

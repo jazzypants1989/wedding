@@ -11,6 +11,13 @@ import crypto from "node:crypto"
 import { createTables, runMigrations } from "../db/schema.js"
 
 const PROJECT_ROOT = path.resolve(import.meta.dirname, "..")
+
+// Load .env so TEST_ADMIN_PASSWORD is available to test runner
+try {
+  process.loadEnvFile(path.join(PROJECT_ROOT, ".env"))
+} catch {
+  // .env file is optional
+}
 const TEST_DB_PATH = path.join(PROJECT_ROOT, "data", "wedding.db")
 
 // Test configuration

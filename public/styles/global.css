@@ -230,11 +230,32 @@ button {
 .hero-image {
   width: 100%;
   height: auto;
+  margin-bottom: -15%;
+}
+
+.couple-photo {
+  display: block;
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: center 65%;
+  margin: var(--spacing-lg) auto 0;
+  border: 5px solid var(--color-background);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+@media (min-width: 768px) {
+  .couple-photo {
+    width: 240px;
+    height: 240px;
+    border-width: 6px;
+  }
 }
 
 .site-header {
   text-align: center;
-  padding: var(--spacing-xl) var(--spacing-lg);
+  padding: var(--spacing-md) var(--spacing-lg) var(--spacing-xl);
 }
 
 .couple-names {
@@ -364,6 +385,32 @@ main {
 .content-section p {
   color: var(--color-text-muted);
   font-style: italic;
+}
+
+.registry-frame-wrapper {
+  margin-top: var(--spacing-lg);
+}
+
+.registry-frame {
+  width: 100%;
+  max-width: 600px;
+  height: 450px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+}
+
+.registry-link {
+  margin-top: var(--spacing-sm);
+}
+
+.registry-link a {
+  font-size: 0.9rem;
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+.registry-link a:hover {
+  color: var(--color-text);
 }
 
 /* Schedule Section */
@@ -700,7 +747,7 @@ main {
   background-color: var(--color-white);
   border: 1px solid rgba(193, 51, 13, 0.3);
   border-radius: 4px;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition: border-color 0.2s, box-shadow 0.3s ease, transform 0.2s ease;
 }
 
 .form-group input:focus,
@@ -708,7 +755,13 @@ main {
 .form-group select:focus {
   outline: none;
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(193, 51, 13, 0.1);
+  box-shadow: 0 0 0 3px rgba(221, 115, 100, 0.15), 0 2px 8px rgba(221, 115, 100, 0.1);
+  transform: translateY(-1px);
+}
+
+.form-group:focus-within > label {
+  color: #a02a0b;
+  transition: color 0.2s ease;
 }
 
 .form-group textarea {
@@ -731,7 +784,11 @@ main {
   border: 2px solid rgba(193, 51, 13, 0.2);
   border-radius: 8px;
   cursor: pointer;
-  transition: border-color 0.2s, background-color 0.2s;
+  transition: border-color 0.2s, background-color 0.2s, transform 0.15s ease;
+}
+
+.radio-label:active {
+  transform: scale(0.98);
 }
 
 .radio-label:hover {
@@ -763,9 +820,20 @@ main {
 }
 
 .attending-details {
-  padding: var(--spacing-lg);
   background-color: rgba(193, 51, 13, 0.03);
   border-radius: 8px;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  padding: 0 var(--spacing-lg);
+  margin-bottom: 0;
+  transition: max-height 0.5s ease, opacity 0.4s ease, padding 0.5s ease, margin-bottom 0.5s ease;
+}
+
+.attending-details--open {
+  max-height: 500px;
+  opacity: 1;
+  padding: var(--spacing-lg);
   margin-bottom: var(--spacing-lg);
 }
 
@@ -779,7 +847,7 @@ main {
   text-align: center;
   border-radius: 4px;
   cursor: pointer;
-  transition: background-color 0.2s, opacity 0.2s;
+  transition: background-color 0.2s, opacity 0.2s, transform 0.15s ease, box-shadow 0.2s ease;
   text-decoration: none;
 }
 
@@ -791,11 +859,20 @@ main {
 
 .btn--primary:hover {
   background-color: #a02a0b;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(193, 51, 13, 0.25);
+}
+
+.btn--primary:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 4px rgba(193, 51, 13, 0.2);
 }
 
 .btn--primary:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .btn--secondary {
@@ -842,6 +919,228 @@ main {
   color: var(--color-text-muted);
   font-style: italic;
   margin-bottom: var(--spacing-lg);
+}
+
+/* ============ RSVP Form Animations ============ */
+
+/* Form state transitions (fade-in-up) */
+.form-state {
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+.form-state--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Staggered field entrance */
+@keyframes field-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.form-state--visible .form-fieldset {
+  animation: field-enter 0.4s ease 0.1s backwards;
+}
+
+.form-state--visible .form-group:nth-child(1) {
+  animation: field-enter 0.4s ease 0.15s backwards;
+}
+
+.form-state--visible .form-group:nth-child(2) {
+  animation: field-enter 0.4s ease 0.2s backwards;
+}
+
+.form-state--visible .form-group:nth-child(3) {
+  animation: field-enter 0.4s ease 0.25s backwards;
+}
+
+.form-state--visible .form-group:nth-child(4) {
+  animation: field-enter 0.4s ease 0.3s backwards;
+}
+
+.form-state--visible .form-group:nth-child(5) {
+  animation: field-enter 0.4s ease 0.35s backwards;
+}
+
+.form-state--visible .form-group:nth-child(6) {
+  animation: field-enter 0.4s ease 0.4s backwards;
+}
+
+.form-state--visible > .btn--large {
+  animation: field-enter 0.4s ease 0.45s backwards;
+}
+
+/* Radio selection pop */
+@keyframes radio-pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.02); }
+  100% { transform: scale(1); }
+}
+
+.radio-label:has(input:checked) {
+  animation: radio-pop 0.3s ease;
+}
+
+/* Greeting entrance */
+.rsvp-greeting {
+  animation: greeting-entrance 0.6s ease backwards;
+}
+
+@keyframes greeting-entrance {
+  0% {
+    opacity: 0;
+    transform: scale(0.9) translateY(8px);
+  }
+  60% {
+    transform: scale(1.02) translateY(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.rsvp-intro {
+  animation: field-enter 0.4s ease 0.1s backwards;
+}
+
+/* Submit button loading spinner */
+.btn--loading {
+  color: transparent;
+  pointer-events: none;
+  position: relative;
+}
+
+.btn--loading::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: btn-spin 0.6s linear infinite;
+}
+
+@keyframes btn-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Error shake */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+.form-error--shake,
+.lookup-result--shake,
+.petition-result--shake {
+  animation: shake 0.4s ease;
+}
+
+/* Result reveal */
+@keyframes result-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.lookup-result:not([hidden]),
+.petition-result:not([hidden]) {
+  animation: result-reveal 0.3s ease;
+}
+
+/* Success state celebration */
+@keyframes success-title {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  60% {
+    transform: scale(1.05);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.rsvp-success.form-state--visible h3 {
+  animation: success-title 0.6s ease 0.2s backwards;
+}
+
+.rsvp-success.form-state--visible p {
+  animation: field-enter 0.4s ease 0.4s backwards;
+}
+
+.rsvp-success.form-state--visible .btn--secondary {
+  animation: field-enter 0.4s ease 0.6s backwards;
+}
+
+/* Confetti burst */
+.confetti-piece {
+  position: absolute;
+  border-radius: 2px;
+  animation: confetti-fall ease-out forwards;
+  will-change: transform, opacity;
+}
+
+@keyframes confetti-fall {
+  0% {
+    transform: translate(0, 0) rotate(0deg) scale(0);
+    opacity: 0;
+  }
+  10% {
+    transform: translate(0, 0) rotate(0deg) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--confetti-tx), var(--confetti-ty)) rotate(var(--confetti-rot)) scale(0.5);
+    opacity: 0;
+  }
+}
+
+/* Mini sparkle (Yes selection) */
+.mini-sparkle {
+  position: fixed;
+  width: 5px;
+  height: 5px;
+  background: var(--color-primary);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 100;
+  animation: mini-sparkle-pop 0.5s ease forwards;
+}
+
+@keyframes mini-sparkle-pop {
+  0% {
+    transform: translate(0, 0) scale(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--sparkle-tx), var(--sparkle-ty)) scale(0);
+    opacity: 0;
+  }
 }
 
 /* ==================== Print Styles ==================== */

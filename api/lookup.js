@@ -7,12 +7,10 @@ import {
   getGuestByPhone,
   updateGuestInvitedAt,
 } from "./guests/data.js"
-import { searchGuestsByName, maskEmail, maskPhone } from "../db/utils.js"
-import { logCommunication } from "../db/utils.js"
+import { searchGuestsByName } from "../db/utils.js"
 import { getPetitionByEmail, createPetition } from "./admin/petitions.js"
 import { sendJson, parseBody, checkRateLimit } from "../core/http.js"
 import { limiters, getClientIp } from "../core/rate-limit.js"
-import { BASE_URL, CONTACT_EMAIL } from "../types.js"
 import {
   validateRequiredString,
   validateEmail,
@@ -20,8 +18,6 @@ import {
   validateOptionalString,
 } from "../core/validation.js"
 import { LIMITS } from "../types.js"
-import * as twilio from "../services/twilio.js"
-import * as email from "../services/email.js"
 
 /** @type {Types.notFoundResponse} */
 function notFoundResponse(res) {
@@ -111,68 +107,11 @@ export async function lookup(req, res) {
     return notFoundResponse(res)
   }
 
-  const inviteUrl = `${BASE_URL}/rsvp.html?code=${guest.invite_code}`
-
-  let sendResult
-  let maskedContact = null
-
-  if (matchMethod === "email" && guest.email) {
-    maskedContact = maskEmail(guest.email)
-
-    const emailData = email.getDefaultInviteEmail(guest.name, inviteUrl)
-    sendResult = await email.sendEmail({
-      to: guest.email,
-      subject: emailData.subject,
-      text: emailData.text,
-      html: emailData.html,
-    })
-
-    if (sendResult.success) {
-      logCommunication(guest.id, "email", "sent", emailData.text.slice(0, 100))
-      updateGuestInvitedAt(guest.id)
-    } else {
-      logCommunication(guest.id, "email", "failed", null, sendResult.error)
-    }
-  } else if (guest.phone) {
-    maskedContact = maskPhone(guest.phone)
-
-    const message = twilio.getDefaultInviteMessage(guest.name, inviteUrl)
-    sendResult = await twilio.sendSMS(guest.phone, message)
-
-    if (sendResult.success) {
-      logCommunication(guest.id, "sms", "sent", message.slice(0, 100))
-      updateGuestInvitedAt(guest.id)
-    } else {
-      logCommunication(guest.id, "sms", "failed", null, sendResult.error)
-    }
-  } else {
-    return sendJson(res, 500, { error: "Unable to send invitation" })
-  }
-
-  if (!sendResult.success) {
-    return sendJson(res, 200, {
-      found: true,
-      sent: false,
-      method: matchMethod,
-      message: `We found you, but there was a problem sending your invite. Please contact us at ${CONTACT_EMAIL} for assistance.`,
-    })
-  }
-
-  let successMessage
-  if (maskedContact) {
-    successMessage = `Found you! We've sent your invite link to ${maskedContact}. Didn't receive it? Contact us at ${CONTACT_EMAIL}.`
-  } else {
-    successMessage = `Found you! Check your ${
-      matchMethod === "email" ? "email" : "phone"
-    } for your invite link. Didn't receive it? Contact us at ${CONTACT_EMAIL}.`
-  }
+  updateGuestInvitedAt(guest.id)
 
   return sendJson(res, 200, {
     found: true,
-    sent: true,
-    method: matchMethod,
-    masked: maskedContact,
-    message: successMessage,
+    redirectCode: guest.invite_code,
   })
 }
 

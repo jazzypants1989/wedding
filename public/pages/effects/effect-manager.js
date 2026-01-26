@@ -1,28 +1,14 @@
 /** @file Effect manager — registry, localStorage persistence, start/stop, config */
 
-import { createFloatingHearts } from "./floating-hearts.js"
 import { createSparkleStars } from "./sparkle-stars.js"
-import { createConfettiBurst } from "./confetti-burst.js"
 import { createDiscoBall } from "./disco-ball.js"
 import { createCursorTrail } from "./cursor-trail.js"
-import { createSparkleRain } from "./sparkle-rain.js"
 import { createMermaidShimmer } from "./mermaid-shimmer.js"
-import { createBubbleFloat } from "./bubble-float.js"
-import { createStarfield } from "./starfield.js"
-import { createRosePetals } from "./rose-petals.js"
-import { createShootingStars } from "./shooting-stars.js"
-import { createFireflyLights } from "./firefly-lights.js"
-import { createAuroraBorealis } from "./aurora-borealis.js"
-import { createConstellation } from "./constellation.js"
 import { createSparkleBurst } from "./sparkle-burst.js"
 import { createSparkleDividers } from "./sparkle-dividers.js"
 import { createNameShimmer } from "./name-shimmer.js"
 import { createCaustics } from "./caustics.js"
-import { createLoveLetter } from "./love-letter.js"
-import { createGoldenHour } from "./golden-hour.js"
 import { createTextSparkle } from "./text-sparkle.js"
-import { createClickRipple } from "./click-ripple.js"
-import { createDiscoFloor } from "./disco-floor.js"
 import { createScrollConfetti } from "./scroll-confetti.js"
 import { createParallaxSparkles } from "./parallax-sparkles.js"
 import { createGrandEntrance } from "./grand-entrance.js"
@@ -34,29 +20,15 @@ const STORAGE_KEY = "wedding-effects"
 const CONFIG_STORAGE_KEY = "wedding-effects-config"
 
 const EFFECT_DEFINITIONS = [
-  { id: "hearts", label: "Floating Hearts", create: createFloatingHearts },
   { id: "sparkles", label: "Sparkle Stars", create: createSparkleStars },
-  { id: "confetti", label: "Confetti Burst", create: createConfettiBurst },
   { id: "disco", label: "Disco Ball", create: createDiscoBall },
   { id: "cursor", label: "Cursor Trail", create: createCursorTrail },
-  { id: "rain", label: "Sparkle Rain", create: createSparkleRain },
   { id: "shimmer", label: "Mermaid Shimmer", create: createMermaidShimmer },
-  { id: "bubbles", label: "Bubble Float", create: createBubbleFloat },
-  { id: "starfield", label: "Twinkling Starfield", create: createStarfield },
-  { id: "petals", label: "Rose Petal Fall", create: createRosePetals },
-  { id: "shooting", label: "Shooting Stars", create: createShootingStars },
-  { id: "fireflies", label: "Firefly Lights", create: createFireflyLights },
-  { id: "aurora", label: "Aurora Borealis", create: createAuroraBorealis },
-  { id: "constellation", label: "Constellation", create: createConstellation },
   { id: "burst", label: "Welcome Burst", create: createSparkleBurst },
   { id: "dividers", label: "Sparkle Dividers", create: createSparkleDividers },
   { id: "namespark", label: "Name Shimmer", create: createNameShimmer },
   { id: "caustics", label: "Underwater Caustics", create: createCaustics },
-  { id: "envelope", label: "Love Letter", create: createLoveLetter },
-  { id: "golden", label: "Golden Hour", create: createGoldenHour },
   { id: "textglow", label: "Text Sparkle", create: createTextSparkle },
-  { id: "ripple", label: "Click Ripple", create: createClickRipple },
-  { id: "discofloor", label: "Disco Floor", create: createDiscoFloor },
   { id: "scrollconfetti", label: "Scroll Confetti", create: createScrollConfetti },
   { id: "parallaxsparkles", label: "Parallax Sparkles", create: createParallaxSparkles },
   { id: "entrance", label: "Grand Entrance", create: createGrandEntrance },

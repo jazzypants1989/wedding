@@ -52,6 +52,7 @@ const CSP_HEADER = [
   "img-src 'self' data:",
   "font-src 'self' https://fonts.gstatic.com",
   "connect-src 'self'",
+  "frame-src https://www.honeyfund.com",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",

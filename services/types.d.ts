@@ -159,6 +159,8 @@ export function withRetry(
 export interface Placeholders {
   readonly NAME: "{name}"
   readonly URL: "{url}"
+  readonly DATE: "{date}"
+  readonly LOCATION: "{location}"
 }
 
 /**
@@ -169,6 +171,8 @@ export interface Placeholders {
 export interface TemplateValues {
   name: string
   url: string
+  date?: string
+  location?: string
 }
 
 export const PLACEHOLDERS: Placeholders

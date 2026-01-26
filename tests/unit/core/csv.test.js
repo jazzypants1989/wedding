@@ -77,11 +77,11 @@ describe("parseCSV", () => {
   })
 
   it("throws error for empty input", () => {
-    assert.throws(() => parseCSV(""), /CSV must have a header row/)
+    assert.throws(() => parseCSV(""), { message: "CSV must have a header row and at least one data row" })
   })
 
   it("throws error for header-only CSV", () => {
-    assert.throws(() => parseCSV("name,email"), /CSV must have a header row/)
+    assert.throws(() => parseCSV("name,email"), { message: "CSV must have a header row and at least one data row" })
   })
 
   it("includes line numbers in result", () => {

@@ -9,6 +9,7 @@ import {
   getTextAreaElement,
 } from "../utils.js"
 import { apiRequest, getErrorMessage } from "./fetch-helper.js"
+import { fireConfetti } from "./confetti.js"
 
 /** @type {Types.RsvpFormState} */
 const state = { inviteCode: null, guestData: null }
@@ -31,8 +32,12 @@ function showError(message) {
   getElement("rsvp-loading").hidden = true
   getFormElement("rsvp-form").hidden = true
   getElement("rsvp-success").hidden = true
-  getElement("rsvp-error").hidden = false
+  const errorEl = getElement("rsvp-error")
+  errorEl.hidden = false
   getElement("rsvp-error-message").textContent = message
+  requestAnimationFrame(() => {
+    errorEl.classList.add("form-state--visible")
+  })
 }
 
 /** @type {Types.showSuccess} */
@@ -40,8 +45,13 @@ function showSuccess(message) {
   getElement("rsvp-loading").hidden = true
   getElement("rsvp-error").hidden = true
   getFormElement("rsvp-form").hidden = true
-  getElement("rsvp-success").hidden = false
+  const successEl = getElement("rsvp-success")
+  successEl.hidden = false
   getElement("success-message").textContent = message
+  requestAnimationFrame(() => {
+    successEl.classList.add("form-state--visible")
+  })
+  fireConfetti()
 }
 
 /** @type {Types.prefillForm} */
@@ -56,7 +66,7 @@ function prefillForm(rsvp) {
   }
 
   if (rsvp.attending) {
-    getElement("attending-details").hidden = false
+    getElement("attending-details").classList.add("attending-details--open")
     getSelectElement("party-size").value = String(rsvp.actual_party_size || 1)
     getTextAreaElement("dietary").value = rsvp.dietary_restrictions || ""
     getInputElement("song").value = rsvp.song_request || ""
@@ -86,9 +96,12 @@ function setupFormListeners() {
     radio.addEventListener("change", (e) => {
       if (e.target instanceof HTMLInputElement) {
         const isAttending = e.target.value === "yes"
-        attendingDetails.hidden = !isAttending
+        attendingDetails.classList.toggle("attending-details--open", isAttending)
         partySize.required = isAttending
         updateRadioStyles()
+        if (isAttending) {
+          miniSparkle(e.target)
+        }
       }
     })
   })
@@ -108,8 +121,7 @@ async function handleSubmit(e) {
   if (submitBtn.disabled) return
 
   submitBtn.disabled = true
-  const originalText = submitBtn.textContent
-  submitBtn.textContent = "Submitting..."
+  submitBtn.classList.add("btn--loading")
   const formError = getElement("form-error")
   formError.hidden = true
 
@@ -144,8 +156,14 @@ async function handleSubmit(e) {
   } catch (err) {
     formError.textContent = getErrorMessage(err)
     formError.hidden = false
+    formError.classList.add("form-error--shake")
+    formError.addEventListener(
+      "animationend",
+      () => formError.classList.remove("form-error--shake"),
+      { once: true },
+    )
     submitBtn.disabled = false
-    submitBtn.textContent = originalText
+    submitBtn.classList.remove("btn--loading")
   }
 }
 
@@ -156,6 +174,9 @@ function showForm(data) {
   getElement("rsvp-success").hidden = true
   const form = getFormElement("rsvp-form")
   form.hidden = false
+  requestAnimationFrame(() => {
+    form.classList.add("form-state--visible")
+  })
 
   getElement("guest-name").textContent = data.guest.name
 
@@ -201,5 +222,32 @@ export async function initRsvpForm() {
     showForm(data)
   } catch (err) {
     showError(getErrorMessage(err))
+  }
+}
+
+/** Burst small sparkle dots around a radio button on "Yes" selection */
+function miniSparkle(element) {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return
+
+  const label = element.closest(".radio-label")
+  if (!label) return
+  const rect = label.getBoundingClientRect()
+  const count = 6
+
+  for (let i = 0; i < count; i++) {
+    const dot = document.createElement("div")
+    dot.className = "mini-sparkle"
+
+    const angle = (i / count) * 360
+    const rad = (angle * Math.PI) / 180
+    const dist = 20 + Math.random() * 30
+
+    dot.style.left = rect.left + rect.width / 2 + "px"
+    dot.style.top = rect.top + rect.height / 2 + "px"
+    dot.style.setProperty("--sparkle-tx", Math.cos(rad) * dist + "px")
+    dot.style.setProperty("--sparkle-ty", Math.sin(rad) * dist + "px")
+
+    dot.addEventListener("animationend", () => dot.remove())
+    document.body.appendChild(dot)
   }
 }

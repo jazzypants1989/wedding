@@ -27,6 +27,14 @@ function showPetitionResult(message, isError = false) {
   resultEl.hidden = false
   resultEl.classList.toggle("petition-result--error", isError)
   resultEl.classList.toggle("petition-result--success", !isError)
+  if (isError) {
+    resultEl.classList.add("petition-result--shake")
+    resultEl.addEventListener(
+      "animationend",
+      () => resultEl.classList.remove("petition-result--shake"),
+      { once: true },
+    )
+  }
 }
 
 /** @type {Types.showPetitionForm} */
@@ -36,6 +44,9 @@ export function showPetitionForm(prefillName, prefillContact) {
 
   hideLookupSection()
   sectionEl.hidden = false
+  requestAnimationFrame(() => {
+    sectionEl.classList.add("form-state--visible")
+  })
 
   if (prefillName) {
     getInputElement("petition-name").value = prefillName
@@ -69,7 +80,7 @@ async function handlePetitionSubmit(e) {
   }
 
   submitEl.disabled = true
-  submitEl.textContent = "Submitting..."
+  submitEl.classList.add("btn--loading")
   getElement("petition-result").hidden = true
 
   /** @type {Types.PetitionPayload} */
@@ -84,7 +95,7 @@ async function handlePetitionSubmit(e) {
     if (!ok) {
       showPetitionResult(getErrorMessage(data), true)
       submitEl.disabled = false
-      submitEl.textContent = "Submit Request"
+      submitEl.classList.remove("btn--loading")
       return
     }
 
@@ -94,7 +105,7 @@ async function handlePetitionSubmit(e) {
     console.error("Petition error:", err)
     showPetitionResult(getErrorMessage(err), true)
     submitEl.disabled = false
-    submitEl.textContent = "Submit Request"
+    submitEl.classList.remove("btn--loading")
   }
 }
 

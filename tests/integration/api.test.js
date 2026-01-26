@@ -408,20 +408,21 @@ describe("API Integration Tests", async () => {
       assert.strictEqual(res.status, 401)
     })
 
-    it("GET /api/admin/stats returns statistics", async () => {
-      if (!auth) return
+    it("GET /api/admin/stats returns statistics", async (t) => {
+      if (!auth) return t.skip("TEST_ADMIN_PASSWORD not set")
 
       const res = await adminFetch("/api/admin/stats", {}, auth)
       assert.strictEqual(res.status, 200)
 
       const data = /** @type {ApiData} */ (await res.json())
-      assert.ok(typeof data.total === "number")
-      assert.ok(typeof data.responded === "number")
-      assert.ok(typeof data.attending === "number")
+      assert.ok(data.stats, "Response should have stats object")
+      assert.ok(typeof data.stats.total_guests === "number")
+      assert.ok(typeof data.stats.responded === "number")
+      assert.ok(typeof data.stats.attending_yes === "number")
     })
 
-    it("GET /api/admin/guests returns guest list with pagination", async () => {
-      if (!auth) return
+    it("GET /api/admin/guests returns guest list with pagination", async (t) => {
+      if (!auth) return t.skip("TEST_ADMIN_PASSWORD not set")
 
       const res = await adminFetch(
         "/api/admin/guests?page=1&limit=10",
@@ -432,12 +433,12 @@ describe("API Integration Tests", async () => {
 
       const data = /** @type {ApiData} */ (await res.json())
       assert.ok(Array.isArray(data.guests))
-      assert.ok(typeof data.total === "number")
+      assert.ok(typeof data.pagination.total === "number")
       assert.ok(data.guests.length <= 10)
     })
 
-    it("POST /api/admin/guests creates a guest", async () => {
-      if (!auth) return
+    it("POST /api/admin/guests creates a guest", async (t) => {
+      if (!auth) return t.skip("TEST_ADMIN_PASSWORD not set")
 
       const newGuest = {
         name: "API Created Guest",
@@ -466,8 +467,8 @@ describe("API Integration Tests", async () => {
       deleteTestGuest(db, data.guest.invite_code)
     })
 
-    it("PUT /api/admin/guests/:id updates a guest", async () => {
-      if (!auth) return
+    it("PUT /api/admin/guests/:id updates a guest", async (t) => {
+      if (!auth) return t.skip("TEST_ADMIN_PASSWORD not set")
 
       const res = await adminFetch(
         `/api/admin/guests/${testGuest.id}`,
@@ -486,8 +487,8 @@ describe("API Integration Tests", async () => {
       assert.strictEqual(data.guest.party_size, 5)
     })
 
-    it("DELETE /api/admin/guests/:id soft-deletes a guest", async () => {
-      if (!auth) return
+    it("DELETE /api/admin/guests/:id soft-deletes a guest", async (t) => {
+      if (!auth) return t.skip("TEST_ADMIN_PASSWORD not set")
 
       const res = await adminFetch(
         `/api/admin/guests/${testGuest.id}`,
@@ -507,8 +508,8 @@ describe("API Integration Tests", async () => {
       assert.ok(guest.deleted_at)
     })
 
-    it("POST /api/admin/guests/:id/restore restores a deleted guest", async () => {
-      if (!auth) return
+    it("POST /api/admin/guests/:id/restore restores a deleted guest", async (t) => {
+      if (!auth) return t.skip("TEST_ADMIN_PASSWORD not set")
 
       // Soft delete first
       db.prepare("UPDATE guests SET deleted_at = datetime() WHERE id = ?").run(
@@ -533,8 +534,8 @@ describe("API Integration Tests", async () => {
       assert.strictEqual(restoredGuest.deleted_at, null)
     })
 
-    it("GET /api/admin/rsvps returns RSVP list", async () => {
-      if (!auth) return
+    it("GET /api/admin/rsvps returns RSVP list", async (t) => {
+      if (!auth) return t.skip("TEST_ADMIN_PASSWORD not set")
 
       const res = await adminFetch("/api/admin/rsvps", {}, auth)
       assert.strictEqual(res.status, 200)
@@ -543,8 +544,8 @@ describe("API Integration Tests", async () => {
       assert.ok(Array.isArray(data.rsvps))
     })
 
-    it("GET /api/admin/guests/export returns CSV", async () => {
-      if (!auth) return
+    it("GET /api/admin/guests/export returns CSV", async (t) => {
+      if (!auth) return t.skip("TEST_ADMIN_PASSWORD not set")
 
       const res = await adminFetch("/api/admin/guests/export", {}, auth)
       assert.strictEqual(res.status, 200)
@@ -552,8 +553,8 @@ describe("API Integration Tests", async () => {
       assert.ok(contentType && contentType.includes("text/csv"))
     })
 
-    it("GET /api/admin/rsvps/export returns CSV", async () => {
-      if (!auth) return
+    it("GET /api/admin/rsvps/export returns CSV", async (t) => {
+      if (!auth) return t.skip("TEST_ADMIN_PASSWORD not set")
 
       const res = await adminFetch("/api/admin/rsvps/export", {}, auth)
       assert.strictEqual(res.status, 200)
@@ -561,8 +562,8 @@ describe("API Integration Tests", async () => {
       assert.ok(rsvpContentType && rsvpContentType.includes("text/csv"))
     })
 
-    it("GET /api/admin/invite/config returns service configuration", async () => {
-      if (!auth) return
+    it("GET /api/admin/invite/config returns service configuration", async (t) => {
+      if (!auth) return t.skip("TEST_ADMIN_PASSWORD not set")
 
       const res = await adminFetch("/api/admin/invite/config", {}, auth)
       assert.strictEqual(res.status, 200)
@@ -572,8 +573,8 @@ describe("API Integration Tests", async () => {
       assert.ok(typeof data.email === "object")
     })
 
-    it("GET /api/admin/petitions returns petition list", async () => {
-      if (!auth) return
+    it("GET /api/admin/petitions returns petition list", async (t) => {
+      if (!auth) return t.skip("TEST_ADMIN_PASSWORD not set")
 
       const res = await adminFetch("/api/admin/petitions", {}, auth)
       assert.strictEqual(res.status, 200)
@@ -582,8 +583,8 @@ describe("API Integration Tests", async () => {
       assert.ok(Array.isArray(data.petitions))
     })
 
-    it("GET /api/admin/blocklist returns blocklist", async () => {
-      if (!auth) return
+    it("GET /api/admin/blocklist returns blocklist", async (t) => {
+      if (!auth) return t.skip("TEST_ADMIN_PASSWORD not set")
 
       const res = await adminFetch("/api/admin/blocklist", {}, auth)
       assert.strictEqual(res.status, 200)
@@ -592,8 +593,8 @@ describe("API Integration Tests", async () => {
       assert.ok(Array.isArray(data.blocklist))
     })
 
-    it("POST /api/admin/blocklist adds entry", async () => {
-      if (!auth) return
+    it("POST /api/admin/blocklist adds entry", async (t) => {
+      if (!auth) return t.skip("TEST_ADMIN_PASSWORD not set")
 
       const res = await adminFetch(
         "/api/admin/blocklist",
@@ -611,14 +612,14 @@ describe("API Integration Tests", async () => {
       assert.strictEqual(res.status, 201)
 
       const data = /** @type {ApiData} */ (await res.json())
-      assert.ok(data.entry.id)
+      assert.ok(data.id)
 
       // Cleanup
-      removeFromBlocklist(db, data.entry.id)
+      removeFromBlocklist(db, data.id)
     })
 
-    it("DELETE /api/admin/blocklist/:id removes entry", async () => {
-      if (!auth) return
+    it("DELETE /api/admin/blocklist/:id removes entry", async (t) => {
+      if (!auth) return t.skip("TEST_ADMIN_PASSWORD not set")
 
       // Add entry directly
       const entry = addToBlocklist(db, {
@@ -671,8 +672,8 @@ describe("API Integration Tests", async () => {
       db.prepare(`DELETE FROM guests WHERE email LIKE 'petition-%'`).run()
     })
 
-    it("POST /api/admin/petitions/:id/deny denies a petition", async () => {
-      if (!auth) return
+    it("POST /api/admin/petitions/:id/deny denies a petition", async (t) => {
+      if (!auth) return t.skip("TEST_ADMIN_PASSWORD not set")
 
       const res = await adminFetch(
         `/api/admin/petitions/${testPetition.id}/deny`,
@@ -694,8 +695,8 @@ describe("API Integration Tests", async () => {
       assert.strictEqual(row.status, "denied")
     })
 
-    it("POST /api/admin/petitions/:id/approve creates guest and updates petition", async () => {
-      if (!auth) return
+    it("POST /api/admin/petitions/:id/approve creates guest and updates petition", async (t) => {
+      if (!auth) return t.skip("TEST_ADMIN_PASSWORD not set")
 
       const res = await adminFetch(
         `/api/admin/petitions/${testPetition.id}/approve`,
@@ -726,8 +727,8 @@ describe("API Integration Tests", async () => {
       assert.strictEqual(approvedRow.status, "approved")
     })
 
-    it("POST /api/admin/petitions/:id/approve rejects already approved petition", async () => {
-      if (!auth) return
+    it("POST /api/admin/petitions/:id/approve rejects already approved petition", async (t) => {
+      if (!auth) return t.skip("TEST_ADMIN_PASSWORD not set")
 
       // Approve once
       await adminFetch(
@@ -753,11 +754,11 @@ describe("API Integration Tests", async () => {
 
       assert.strictEqual(res.status, 400)
       const data = /** @type {ApiData} */ (await res.json())
-      assert.ok(data.error.indexOf("already") !== -1)
+      assert.ok(data.error.includes("already"))
     })
 
-    it("POST /api/admin/petitions/:id/deny with add_to_blocklist creates blocklist entry", async () => {
-      if (!auth) return
+    it("POST /api/admin/petitions/:id/deny with add_to_blocklist creates blocklist entry", async (t) => {
+      if (!auth) return t.skip("TEST_ADMIN_PASSWORD not set")
 
       const res = await adminFetch(
         `/api/admin/petitions/${testPetition.id}/deny`,
@@ -845,7 +846,7 @@ describe("API Integration Tests", async () => {
 
       assert.strictEqual(res.status, 429)
       const data = /** @type {ApiData} */ (await res.json())
-      assert.ok(data.error.indexOf("Too many requests") !== -1)
+      assert.ok(data.error.includes("Too many requests"))
     })
 
     it("should include Retry-After header on 429", async () => {
@@ -907,8 +908,8 @@ describe("API Integration Tests", async () => {
       db.prepare("DELETE FROM guests WHERE email LIKE 'csvtest-%'").run()
     })
 
-    it("POST /api/admin/guests/import parses valid CSV", async () => {
-      if (!auth) return
+    it("POST /api/admin/guests/import parses valid CSV", async (t) => {
+      if (!auth) return t.skip("TEST_ADMIN_PASSWORD not set")
 
       const csv = `name,email,phone,party_size
 John Doe,csvtest-john@example.com,5551234567,2
@@ -931,8 +932,8 @@ Jane Smith,csvtest-jane@example.com,,1`
       assert.strictEqual(data.errors.length, 0)
     })
 
-    it("POST /api/admin/guests/import handles duplicate emails", async () => {
-      if (!auth) return
+    it("POST /api/admin/guests/import handles duplicate emails", async (t) => {
+      if (!auth) return t.skip("TEST_ADMIN_PASSWORD not set")
 
       // Create first guest
       const csv1 = `name,email,party_size
@@ -964,11 +965,11 @@ Duplicate Guest,csvtest-dup@example.com,2`
       const data = /** @type {ApiData} */ (await res.json())
       assert.strictEqual(data.added, 0)
       assert.strictEqual(data.skipped.length, 1)
-      assert.ok(data.skipped[0].reason.indexOf("exists") !== -1)
+      assert.ok(data.skipped[0].reason.includes("exists"))
     })
 
-    it("POST /api/admin/guests/import validates party_size", async () => {
-      if (!auth) return
+    it("POST /api/admin/guests/import validates party_size", async (t) => {
+      if (!auth) return t.skip("TEST_ADMIN_PASSWORD not set")
 
       const csv = `name,email,party_size
 Invalid Party,csvtest-invalid@example.com,999`
@@ -988,13 +989,13 @@ Invalid Party,csvtest-invalid@example.com,999`
       assert.strictEqual(data.added, 0)
       assert.strictEqual(data.errors.length, 1)
       assert.ok(
-        data.errors[0].error.indexOf("party") !== -1 ||
-          data.errors[0].error.indexOf("Party") !== -1
+        data.errors[0].error.includes("party") ||
+          data.errors[0].error.includes("Party")
       )
     })
 
-    it("POST /api/admin/guests/import handles quoted fields with commas", async () => {
-      if (!auth) return
+    it("POST /api/admin/guests/import handles quoted fields with commas", async (t) => {
+      if (!auth) return t.skip("TEST_ADMIN_PASSWORD not set")
 
       const csv = `name,email,notes,party_size
 "Smith, John",csvtest-quoted@example.com,"Notes with, comma",1`
@@ -1024,8 +1025,8 @@ Invalid Party,csvtest-invalid@example.com,999`
       assert.strictEqual(guest.notes, "Notes with, comma")
     })
 
-    it("POST /api/admin/guests/import requires name column", async () => {
-      if (!auth) return
+    it("POST /api/admin/guests/import requires name column", async (t) => {
+      if (!auth) return t.skip("TEST_ADMIN_PASSWORD not set")
 
       const csv = `email,party_size
 csvtest-noname@example.com,1`
@@ -1042,7 +1043,7 @@ csvtest-noname@example.com,1`
 
       assert.strictEqual(res.status, 400)
       const data = /** @type {ApiData} */ (await res.json())
-      assert.ok(data.error.indexOf("name") !== -1)
+      assert.ok(data.error.includes("name"))
     })
   })
 
@@ -1056,8 +1057,8 @@ csvtest-noname@example.com,1`
       assert.ok(htmlType && htmlType.includes("text/html"))
     })
 
-    it("GET /rsvp.html returns RSVP page", async () => {
-      const res = await fetch(`${BASE_URL}/rsvp.html`)
+    it("GET /rsvp returns RSVP page", async () => {
+      const res = await fetch(`${BASE_URL}/rsvp`)
       assert.strictEqual(res.status, 200)
       const rsvpType = res.headers.get("content-type")
       assert.ok(rsvpType && rsvpType.includes("text/html"))
@@ -1069,14 +1070,14 @@ csvtest-noname@example.com,1`
     })
 
     it("Serves CSS files with correct content-type", async () => {
-      const res = await fetch(`${BASE_URL}/styles/main.css`)
+      const res = await fetch(`${BASE_URL}/styles/global.css`)
       assert.strictEqual(res.status, 200)
       const cssType = res.headers.get("content-type")
       assert.ok(cssType && cssType.includes("text/css"))
     })
 
     it("Serves JS files with correct content-type", async () => {
-      const res = await fetch(`${BASE_URL}/js/home/main.js`)
+      const res = await fetch(`${BASE_URL}/pages/main.js`)
       assert.strictEqual(res.status, 200)
       const jsType = res.headers.get("content-type")
       assert.ok(jsType && jsType.includes("javascript"))

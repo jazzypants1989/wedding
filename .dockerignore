@@ -1,0 +1,12 @@
+.git
+.gitignore
+.env
+.env.example
+.DS_Store
+.claude
+node_modules
+data
+tests
+README.md
+CLAUDE.md
+tsconfig.json

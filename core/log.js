@@ -4,7 +4,7 @@
 import fs from "node:fs"
 import path from "node:path"
 
-const LOG_DIR = path.resolve(import.meta.dirname, "../../data/audit")
+const LOG_DIR = path.resolve(import.meta.dirname, "../data/audit")
 const RETENTION_DAYS = 30
 
 function ensureLogDir() {
@@ -89,4 +89,5 @@ export const AUDIT_ACTIONS = Object.freeze({
   BLOCKLIST_ADD: "BLOCKLIST_ADD",
   BLOCKLIST_REMOVE: "BLOCKLIST_REMOVE",
   INVITE_SEND: "INVITE_SEND",
+  MANUAL_SMS_MARK: "MANUAL_SMS_MARK",
 })

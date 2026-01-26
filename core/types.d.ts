@@ -201,6 +201,7 @@ interface AuditActions {
   readonly BLOCKLIST_ADD: "BLOCKLIST_ADD"
   readonly BLOCKLIST_REMOVE: "BLOCKLIST_REMOVE"
   readonly INVITE_SEND: "INVITE_SEND"
+  readonly MANUAL_SMS_MARK: "MANUAL_SMS_MARK"
 }
 
 export function log(event: AuditEvent): void
