@@ -35,9 +35,7 @@ const moduleState = {
 function renderMessage(template, guest) {
   if (!moduleState.weddingInfo) return template
   const url =
-    moduleState.weddingInfo.baseUrl +
-    "/rsvp.html?code=" +
-    guest.invite_code
+    moduleState.weddingInfo.baseUrl + "/rsvp?code=" + guest.invite_code
   return template
     .replaceAll("{name}", guest.name)
     .replaceAll("{url}", url)
@@ -81,7 +79,9 @@ async function copyToClipboard(text, button) {
 }
 
 function getTemplate() {
-  return getTextAreaElement("msms-template").value.trim() || moduleState.template
+  return (
+    getTextAreaElement("msms-template").value.trim() || moduleState.template
+  )
 }
 
 function updateProgressCounter() {
@@ -90,7 +90,7 @@ function updateProgressCounter() {
   const total = moduleState.guests.length
   if (moduleState.viewMode === "focus") {
     counter.textContent =
-      (moduleState.currentIndex + 1) + " of " + total + " (sent: " + sent + ")"
+      moduleState.currentIndex + 1 + " of " + total + " (sent: " + sent + ")"
   } else {
     counter.textContent = "Sent: " + sent + " of " + total
   }
@@ -146,9 +146,7 @@ function renderListView() {
     html += "<tr>"
     html += "<td>" + escapeHtml(guest.name) + "</td>"
     html +=
-      '<td><span class="msms-phone">' +
-      escapeHtml(guest.phone) +
-      "</span></td>"
+      '<td><span class="msms-phone">' + escapeHtml(guest.phone) + "</span></td>"
     html +=
       '<td class="hide-mobile"><span class="text-muted" style="font-size:0.8rem">' +
       escapeHtml(previewText) +
