@@ -1,4 +1,5 @@
 /** @file Disco ball effect — spinning disco ball with light rays */
+/** @import * as Types from './types.js' */
 
 import { isMobile, randomFrom, mapSlider } from "./effect-helpers.js"
 
@@ -16,9 +17,12 @@ const DEFAULT_RAY_COLORS = [
   "rgba(255, 200, 255, 0.3)",
 ]
 
+/** @type {Types.createDiscoBall} */
 export function createDiscoBall(config) {
   const cfg = config || {}
+  /** @type {HTMLDivElement | null} */
   let wrapper = null
+  /** @type {ReturnType<typeof setInterval> | null} */
   let tileIntervalId = null
 
   const spinSpeed = cfg.spinSpeed !== undefined ? cfg.spinSpeed : 50
@@ -93,8 +97,9 @@ export function createDiscoBall(config) {
     return container
   }
 
+  /** @param {HTMLDivElement} ball */
   function startTileCycling(ball) {
-    const tiles = ball.querySelectorAll(".disco-tile")
+    const tiles = /** @type {NodeListOf<HTMLElement>} */ (ball.querySelectorAll(".disco-tile"))
     const flashColors = ["#ffc0cb", "#ffd700", "#87ceeb", "#e8e8e8", "#d4d4d4"]
     const specularColors = ["#fff", "#fffde8", "#fff5f5"]
 

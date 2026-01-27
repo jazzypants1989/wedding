@@ -12,7 +12,7 @@ function renderRsvps(rsvps) {
   if (rsvps.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="6" class="empty-state">No RSVPs yet</td>
+        <td colspan="5" class="empty-state">No RSVPs yet</td>
       </tr>
     `
     return
@@ -29,9 +29,6 @@ function renderRsvps(rsvps) {
       <td>${rsvp.attending ? rsvp.actual_party_size : "-"}</td>
       <td class="hide-mobile">${
         rsvp.dietary_restrictions ? escapeHtml(rsvp.dietary_restrictions) : "-"
-      }</td>
-      <td class="hide-mobile">${
-        rsvp.song_request ? escapeHtml(rsvp.song_request) : "-"
       }</td>
       <td class="hide-mobile">${formatDate(rsvp.submitted_at)}</td>
     </tr>

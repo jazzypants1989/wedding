@@ -1,11 +1,16 @@
 /** @file Disco spotlight — sweeping colored spotlight beams */
+/** @import * as Types from './types.js' */
 
 import { isMobile, randomFrom, randomBetween, mapSlider } from "./effect-helpers.js"
 
+/** @type {Types.createDiscoSpotlight} */
 export function createDiscoSpotlight(config) {
   const cfg = config || {}
+  /** @type {HTMLDivElement | null} */
   let container = null
+  /** @type {ReturnType<typeof setTimeout> | null} */
   let animationId = null
+  /** @type {Types.SpotlightBeam[]} */
   let spotlights = []
   let active = false
 
@@ -55,7 +60,7 @@ export function createDiscoSpotlight(config) {
         spot.style.animationDirection = "reverse"
       }
 
-      container.appendChild(spot)
+      container?.appendChild(spot)
       built.push({
         element: spot,
         colorIdx: i,

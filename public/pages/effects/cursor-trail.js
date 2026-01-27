@@ -1,4 +1,5 @@
 /** @file Cursor trail effect — hearts and sparkles follow the mouse */
+/** @import * as Types from './types.js' */
 
 import { randomFrom, mapSlider } from "./effect-helpers.js"
 
@@ -10,16 +11,20 @@ const DEFAULT_COLORS = [
   "#fff",
 ]
 
+/** @type {Types.createCursorTrail} */
 export function createCursorTrail(config) {
   const cfg = config || {}
   let active = false
+  /** @type {HTMLDivElement | null} */
   let container = null
   let count = 0
   let spawnCount = 0
   let lastSpawn = 0
   let lastX = -1
   let lastY = -1
+  /** @type {((e: MouseEvent) => void) | null} */
   let mouseMoveHandler = null
+  /** @type {((e: TouchEvent) => void) | null} */
   let touchMoveHandler = null
 
   const trailDensity = cfg.trailDensity !== undefined ? cfg.trailDensity : 50
@@ -41,6 +46,7 @@ export function createCursorTrail(config) {
     return spawnCount % 3 === 0 ? "trail-heart" : "trail-sparkle"
   }
 
+  /** @param {number} x @param {number} y */
   function spawnParticle(x, y) {
     if (!container) return
     if (count >= maxTrail) return
@@ -76,6 +82,7 @@ export function createCursorTrail(config) {
     container.appendChild(el)
   }
 
+  /** @param {MouseEvent} e */
   function onMouseMove(e) {
     const now = Date.now()
     if (now - lastSpawn < throttleMs) return
@@ -83,6 +90,7 @@ export function createCursorTrail(config) {
     spawnParticle(e.clientX, e.clientY)
   }
 
+  /** @param {TouchEvent} e */
   function onTouchMove(e) {
     if (!e.touches || e.touches.length === 0) return
     const now = Date.now()

@@ -41,7 +41,6 @@ export async function get(req, res, { params }) {
           attending: rsvp.attending === 1,
           actual_party_size: rsvp.actual_party_size,
           dietary_restrictions: rsvp.dietary_restrictions,
-          song_request: rsvp.song_request,
           message: rsvp.message,
           submitted_at: rsvp.submitted_at,
           updated_at: rsvp.updated_at,
@@ -94,7 +93,6 @@ export async function post(req, res, { params }) {
   }
 
   const dietaryResult = validateOptionalString(body.dietary_restrictions, 500)
-  const songResult = validateOptionalString(body.song_request, 200)
   const messageResult = validateOptionalString(
     body.message,
     LIMITS.MESSAGE_MAX_LENGTH,
@@ -104,7 +102,6 @@ export async function post(req, res, { params }) {
     attending: body.attending,
     actual_party_size: actualPartySize,
     dietary_restrictions: dietaryResult.value,
-    song_request: songResult.value,
     message: messageResult.value,
   })
 
@@ -129,19 +126,18 @@ export function getRsvpByGuestId(guestId) {
 /** @type {Types.upsertRsvp} */
 export function upsertRsvp(
   guestId,
-  { attending, actual_party_size, dietary_restrictions, song_request, message },
+  { attending, actual_party_size, dietary_restrictions, message },
 ) {
   const timestamp = now()
 
   return withTransaction((db) => {
     const stmt = db.prepare(`
-      INSERT INTO rsvps (guest_id, attending, actual_party_size, dietary_restrictions, song_request, message, submitted_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO rsvps (guest_id, attending, actual_party_size, dietary_restrictions, message, submitted_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(guest_id) DO UPDATE SET
         attending = excluded.attending,
         actual_party_size = excluded.actual_party_size,
         dietary_restrictions = excluded.dietary_restrictions,
-        song_request = excluded.song_request,
         message = excluded.message,
         updated_at = excluded.updated_at
     `)
@@ -151,7 +147,6 @@ export function upsertRsvp(
       attending ? 1 : 0,
       actual_party_size || null,
       dietary_restrictions || null,
-      song_request || null,
       message || null,
       timestamp,
       timestamp,

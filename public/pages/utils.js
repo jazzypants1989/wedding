@@ -86,6 +86,18 @@ export function getTableElement(id) {
   return el
 }
 
+/** @type {Types.getIFrameElement} */
+export function getIFrameElement(id) {
+  const el = document.getElementById(id)
+  if (!el) {
+    throw new Error(`Required element not found: #${id}`)
+  }
+  if (!(el instanceof HTMLIFrameElement)) {
+    throw new Error(`Element #${id} is not an iframe element`)
+  }
+  return el
+}
+
 /** @type {Types.getDialogElement} */
 export function getDialogElement(id) {
   const el = document.getElementById(id)

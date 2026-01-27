@@ -1,12 +1,16 @@
 /** @file Sparkle stars effect — twinkling stars appear at random positions */
+/** @import * as Types from './types.js' */
 
 import { isMobile, randomFrom, randomBetween, mapSlider } from "./effect-helpers.js"
 
 const DEFAULT_COLORS = ["#fff", "#ffd700", "#ffe4e1", "rgb(221, 115, 100)"]
 
+/** @type {Types.createSparkleStars} */
 export function createSparkleStars(config) {
   const cfg = config || {}
+  /** @type {HTMLDivElement | null} */
   let container = null
+  /** @type {ReturnType<typeof setInterval> | null} */
   let intervalId = null
   let count = 0
 

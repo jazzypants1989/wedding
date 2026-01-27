@@ -132,7 +132,6 @@ export interface RSVP {
   attending: 0 | 1
   actual_party_size: number | null
   dietary_restrictions: string | null
-  song_request: string | null
   message: string | null
   submitted_at: string
   updated_at: string
@@ -292,7 +291,6 @@ export interface RSVP {
   attending: 0 | 1
   actual_party_size: number | null
   dietary_restrictions: string | null
-  song_request: string | null
   message: string | null
   submitted_at: string
   updated_at: string

@@ -40,7 +40,6 @@ export function createTables(db) {
       attending INTEGER NOT NULL CHECK(attending IN (0, 1)),
       actual_party_size INTEGER,
       dietary_restrictions TEXT,
-      song_request TEXT,
       message TEXT,
       submitted_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,

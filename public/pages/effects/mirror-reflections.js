@@ -1,11 +1,16 @@
 /** @file Mirror reflections — small light squares bouncing around the viewport */
+/** @import * as Types from './types.js' */
 
 import { isMobile, randomFrom, randomBetween, mapSlider, prefersReducedMotion } from "./effect-helpers.js"
 
+/** @type {Types.createMirrorReflections} */
 export function createMirrorReflections(config) {
   const cfg = config || {}
+  /** @type {HTMLDivElement | null} */
   let container = null
+  /** @type {number | null} */
   let animationId = null
+  /** @type {Types.Reflection[]} */
   let reflections = []
   let active = false
 
@@ -50,7 +55,7 @@ export function createMirrorReflections(config) {
       el.style.opacity = String(bright * randomBetween(0.5, 1))
       el.style.backgroundColor = randomFrom(colors)
 
-      container.appendChild(el)
+      container?.appendChild(el)
 
       refs.push({
         el: el,

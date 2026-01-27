@@ -5,7 +5,6 @@ import {
   getElement,
   getFormElement,
   getSelectElement,
-  getInputElement,
   getTextAreaElement,
 } from "../utils.js"
 import { apiRequest, getErrorMessage } from "./fetch-helper.js"
@@ -69,7 +68,6 @@ function prefillForm(rsvp) {
     getElement("attending-details").classList.add("attending-details--open")
     getSelectElement("party-size").value = String(rsvp.actual_party_size || 1)
     getTextAreaElement("dietary").value = rsvp.dietary_restrictions || ""
-    getInputElement("song").value = rsvp.song_request || ""
   }
 
   getTextAreaElement("message").value = rsvp.message || ""
@@ -138,9 +136,6 @@ async function handleSubmit(e) {
       : null,
     dietary_restrictions: formData.get("dietary_restrictions")
       ? String(formData.get("dietary_restrictions"))
-      : null,
-    song_request: formData.get("song_request")
-      ? String(formData.get("song_request"))
       : null,
     message: formData.get("message") ? String(formData.get("message")) : null,
   }
@@ -225,7 +220,7 @@ export async function initRsvpForm() {
   }
 }
 
-/** Burst small sparkle dots around a radio button on "Yes" selection */
+/** @type {Types.miniSparkle} */
 function miniSparkle(element) {
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return
 

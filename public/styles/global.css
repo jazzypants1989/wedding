@@ -40,6 +40,7 @@
 html {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  scroll-behavior: smooth;
 }
 
 body {
@@ -747,7 +748,10 @@ main {
   background-color: var(--color-white);
   border: 1px solid rgba(193, 51, 13, 0.3);
   border-radius: 4px;
-  transition: border-color 0.2s, box-shadow 0.3s ease, transform 0.2s ease;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.3s ease,
+    transform 0.2s ease;
 }
 
 .form-group input:focus,
@@ -755,7 +759,9 @@ main {
 .form-group select:focus {
   outline: none;
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(221, 115, 100, 0.15), 0 2px 8px rgba(221, 115, 100, 0.1);
+  box-shadow:
+    0 0 0 3px rgba(221, 115, 100, 0.15),
+    0 2px 8px rgba(221, 115, 100, 0.1);
   transform: translateY(-1px);
 }
 
@@ -784,7 +790,10 @@ main {
   border: 2px solid rgba(193, 51, 13, 0.2);
   border-radius: 8px;
   cursor: pointer;
-  transition: border-color 0.2s, background-color 0.2s, transform 0.15s ease;
+  transition:
+    border-color 0.2s,
+    background-color 0.2s,
+    transform 0.15s ease;
 }
 
 .radio-label:active {
@@ -827,7 +836,11 @@ main {
   overflow: hidden;
   padding: 0 var(--spacing-lg);
   margin-bottom: 0;
-  transition: max-height 0.5s ease, opacity 0.4s ease, padding 0.5s ease, margin-bottom 0.5s ease;
+  transition:
+    max-height 0.5s ease,
+    opacity 0.4s ease,
+    padding 0.5s ease,
+    margin-bottom 0.5s ease;
 }
 
 .attending-details--open {
@@ -847,7 +860,11 @@ main {
   text-align: center;
   border-radius: 4px;
   cursor: pointer;
-  transition: background-color 0.2s, opacity 0.2s, transform 0.15s ease, box-shadow 0.2s ease;
+  transition:
+    background-color 0.2s,
+    opacity 0.2s,
+    transform 0.15s ease,
+    box-shadow 0.2s ease;
   text-decoration: none;
 }
 
@@ -927,7 +944,9 @@ main {
 .form-state {
   opacity: 0;
   transform: translateY(12px);
-  transition: opacity 0.4s ease, transform 0.4s ease;
+  transition:
+    opacity 0.4s ease,
+    transform 0.4s ease;
 }
 
 .form-state--visible {
@@ -981,9 +1000,15 @@ main {
 
 /* Radio selection pop */
 @keyframes radio-pop {
-  0% { transform: scale(1); }
-  40% { transform: scale(1.02); }
-  100% { transform: scale(1); }
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.02);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 .radio-label:has(input:checked) {
@@ -1035,16 +1060,29 @@ main {
 }
 
 @keyframes btn-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Error shake */
 @keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  20% { transform: translateX(-6px); }
-  40% { transform: translateX(6px); }
-  60% { transform: translateX(-4px); }
-  80% { transform: translateX(4px); }
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-6px);
+  }
+  40% {
+    transform: translateX(6px);
+  }
+  60% {
+    transform: translateX(-4px);
+  }
+  80% {
+    transform: translateX(4px);
+  }
 }
 
 .form-error--shake,
@@ -1115,7 +1153,8 @@ main {
     opacity: 1;
   }
   100% {
-    transform: translate(var(--confetti-tx), var(--confetti-ty)) rotate(var(--confetti-rot)) scale(0.5);
+    transform: translate(var(--confetti-tx), var(--confetti-ty))
+      rotate(var(--confetti-rot)) scale(0.5);
     opacity: 0;
   }
 }

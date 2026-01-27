@@ -63,7 +63,7 @@ TRUSTED_PROXIES=127.0.0.1
 
 1. Guest receives an invite link via email or SMS (e.g., `https://site.com/rsvp?code=AbCd1234`)
 2. The link opens a personalized RSVP form with their name and party size
-3. Guest submits their response (attending/declining, party size, dietary needs, song request)
+3. Guest submits their response (attending/declining, party size, dietary needs)
 4. Guest can revisit the same link to update their RSVP at any time
 
 **For guests without a link:**

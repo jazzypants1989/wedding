@@ -2,24 +2,21 @@
 import { initMobileNav } from "./mobile-nav.js"
 import { initCountdown } from "./countdown.js"
 import { initEffectManager } from "./effects/effect-manager.js"
-import { initControlPanel } from "./effects/control-panel.js"
+import { getElement, getIFrameElement } from "./utils.js"
 
 initMobileNav()
 initCountdown()
 initEffectManager()
-initControlPanel()
 
-const registrySection = document.getElementById("registry")
-const frame = document.getElementById("registry-frame")
-const registryLink = document.getElementById("registry-link")
-if (registrySection && frame) {
-  const observer = new IntersectionObserver((entries, obs) => {
-    if (entries[0].isIntersecting) {
-      frame.src = frame.dataset.src
-      frame.hidden = false
-      if (registryLink) registryLink.hidden = false
-      obs.disconnect()
-    }
-  }, { rootMargin: "200px" })
-  observer.observe(registrySection)
-}
+const registrySection = getElement("registry")
+const frame = getIFrameElement("registry-frame")
+const registryLink = getElement("registry-link")
+const observer = new IntersectionObserver((entries, obs) => {
+  if (entries[0].isIntersecting) {
+    frame.src = frame.dataset.src || ""
+    frame.hidden = false
+    registryLink.hidden = false
+    obs.disconnect()
+  }
+}, { rootMargin: "200px" })
+observer.observe(registrySection)

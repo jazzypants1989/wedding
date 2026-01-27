@@ -87,6 +87,139 @@ tests/
 - Admin endpoints wrapped with `withAdmin()` middleware for auth + CSRF.
 - Validation functions return `{ valid: boolean, value?, error? }` objects.
 
+## Type System
+
+This project achieves full type safety without TypeScript compilation. All source is plain JavaScript, type-checked by TypeScript in `checkJs` mode via `tsconfig.json` (`strict: true`, `noEmit: true`, `noImplicitAny: true`, `strictNullChecks: true`). Dev dependencies `@types/node` and `typescript` are never imported at runtime.
+
+### Type Definition File Layout
+
+Every major directory has its own `types.d.ts` scoped to that layer:
+
+```
+types.d.ts              Shared entity interfaces (Guest, RSVP, Petition, Session, etc.),
+                        status enums, config types, validation result types
+types.js                Runtime constants (GUEST_STATUS, LIMITS, SESSION, etc.) and
+                        type guard functions — implements what types.d.ts declares
+core/types.d.ts         Auth (SessionCookieData, CsrfRequest), routing (Route, RouteHandler),
+                        errors (AppError hierarchy), validation (ValidationResult<T>),
+                        rate limiting, CSV, response helpers, audit logging
+db/types.d.ts           Database functions (queryOne<T>, queryAll<T>), schema,
+                        session management, utility functions (generateInviteCode, etc.)
+services/types.d.ts     Email (EmailOptions, SendResult), SMS (SendSMSResult),
+                        retry (RetryResult<T>), templates, HTTP client
+api/types.d.ts          API-specific types (UpsertRsvpInput, GetAllRsvpsOptions)
+public/pages/types.d.ts Frontend API responses (StatsResponse, GuestsResponse, etc.),
+                        DOM utilities (assertElement, getElement, escapeHtml), state types
+public/pages/rsvp/types.d.ts    RSVP form state, fetch helpers, lookup/petition/RSVP form types
+public/pages/admin/types.d.ts   Admin dashboard module types (guests, invites, petitions,
+                                 blocklist, CSV import, modals, auth)
+public/pages/effects/types.d.ts Effect system (EffectInstance, EffectDefinition),
+                                 per-effect config types, style enums
+```
+
+Entity types in root `types.d.ts` are the single source of truth — both backend and frontend import from there, preventing type divergence.
+
+### JSDoc Annotation Patterns
+
+Every `.js` file follows the same conventions:
+
+**1. Module-level type import (always first)**
+
+```js
+/** @import * as Types from './types.js' */
+```
+
+This makes the `.d.ts` types available without a runtime import. Use `'./types.js'` (with `.js` extension) matching the ESM import convention.
+
+**2. Function typing with `@type`**
+
+Declare the function signature in `types.d.ts`, then reference it:
+
+```js
+/** @type {Types.validatePartySize} */
+export function validatePartySize(value) {
+  // parameters and return type inferred from the declaration
+}
+```
+
+This is the primary pattern — almost every exported function uses it. Do not repeat `@param`/`@returns` when `@type` already provides the full signature.
+
+**3. Inline variable typing**
+
+```js
+/** @type {Record<string, string>} */
+const cookies = {}
+
+/** @type {Types.RsvpFormState} */
+const state = { inviteCode: null, guestData: null }
+```
+
+**4. Generic type casts**
+
+When TypeScript can't infer through a boundary (e.g., database queries):
+
+```js
+return /** @type {T | undefined} */ (
+  getDb().prepare(sql).get(...params)
+)
+```
+
+**5. `@param`/`@returns` for standalone functions**
+
+Only used when the function isn't declared in a `.d.ts` file (rare — mainly type guards and small internal helpers):
+
+```js
+/**
+ * @param {unknown} value
+ * @returns {value is Types.GuestStatus}
+ */
+export function isGuestStatus(value) {
+  return typeof value === "string" && value in GUEST_STATUS
+}
+```
+
+### Key Type Patterns
+
+**Discriminated union for validation results:**
+
+```ts
+// In types.d.ts
+type ValidationResult<T> =
+  | { valid: true; value: T }
+  | { valid: false; error: string }
+```
+
+All validators in `core/validation.js` return this shape. Callers check `result.valid` to narrow the type and access either `value` or `error`.
+
+**Type guards for runtime narrowing:**
+
+`types.js` exports `isGuestStatus()`, `isPetitionStatus()`, and `isCommunicationType()` — each uses the `value is Type` return annotation so TypeScript narrows after the check.
+
+**Generic database helpers:**
+
+`queryOne<T>()` and `queryAll<T>()` in `db/connection.js` accept a type parameter so callers get typed results:
+
+```js
+const guest = queryOne("SELECT * FROM guests WHERE id = ?", id)
+// guest is Guest | undefined
+```
+
+**Error class hierarchy:**
+
+`core/types.d.ts` declares `AppError` with subclasses (`ValidationError`, `NotFoundError`, `ConflictError`, etc.), each with a discriminated `code` field.
+
+### Adding New Types
+
+When adding a new module or feature:
+
+1. Add entity/shared types to `types.d.ts` (root) if they cross layer boundaries.
+2. Add function signatures to the appropriate layer's `types.d.ts` (`core/`, `db/`, `api/`, etc.).
+3. In the `.js` implementation, add `/** @import * as Types from './types.js' */` at the top.
+4. Annotate each exported function with `/** @type {Types.functionName} */`.
+5. For frontend modules, add response/state types to the relevant `public/pages/**/types.d.ts`.
+
+Do not use `@param`/`@returns` on functions that already have a `@type` annotation — it's redundant and can cause conflicts.
+
 ## Database
 
 SQLite in WAL mode at `data/wedding.db`. Auto-created on first server start.

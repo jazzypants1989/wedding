@@ -1,0 +1,22 @@
+{"timestamp":"2026-01-26T23:23:56.533Z","action":"LOGIN_FAILED","adminId":null,"ip":"::1","resourceType":null,"resourceId":null,"details":{"reason":"invalid_password"}}
+{"timestamp":"2026-01-26T23:24:02.625Z","action":"LOGIN_FAILED","adminId":null,"ip":"::1","resourceType":null,"resourceId":null,"details":{"reason":"invalid_password"}}
+{"timestamp":"2026-01-26T23:24:06.322Z","action":"LOGIN_FAILED","adminId":null,"ip":"::1","resourceType":null,"resourceId":null,"details":{"reason":"invalid_password"}}
+{"timestamp":"2026-01-26T23:25:48.707Z","action":"LOGIN_FAILED","adminId":null,"ip":"::1","resourceType":null,"resourceId":null,"details":{"reason":"invalid_password"}}
+{"timestamp":"2026-01-26T23:27:04.193Z","action":"LOGIN","adminId":"1728ae21","ip":"::1","resourceType":null,"resourceId":null,"details":null}
+{"timestamp":"2026-01-26T23:35:19.850Z","action":"LOGIN_FAILED","adminId":null,"ip":"::1","resourceType":null,"resourceId":null,"details":{"reason":"invalid_password"}}
+{"timestamp":"2026-01-26T23:35:19.910Z","action":"LOGIN","adminId":"108ddc4e","ip":"::1","resourceType":null,"resourceId":null,"details":null}
+{"timestamp":"2026-01-26T23:35:20.358Z","action":"GUEST_CREATE","adminId":"2a9e577e","ip":"::1","resourceType":"guest","resourceId":309,"details":{"name":"API Created Guest"}}
+{"timestamp":"2026-01-26T23:35:20.477Z","action":"GUEST_UPDATE","adminId":"2a9e577e","ip":"::1","resourceType":"guest","resourceId":310,"details":{"fields":["name","party_size"]}}
+{"timestamp":"2026-01-26T23:35:20.589Z","action":"GUEST_DELETE","adminId":"2a9e577e","ip":"::1","resourceType":"guest","resourceId":311,"details":null}
+{"timestamp":"2026-01-26T23:35:20.694Z","action":"GUEST_RESTORE","adminId":"2a9e577e","ip":"::1","resourceType":"guest","resourceId":312,"details":null}
+{"timestamp":"2026-01-26T23:35:21.477Z","action":"BLOCKLIST_ADD","adminId":"2a9e577e","ip":"::1","resourceType":"blocklist","resourceId":36,"details":{"name":null,"email":"block-test-1769470521474@example.com"}}
+{"timestamp":"2026-01-26T23:35:21.588Z","action":"BLOCKLIST_REMOVE","adminId":"2a9e577e","ip":"::1","resourceType":"blocklist","resourceId":37,"details":null}
+{"timestamp":"2026-01-26T23:35:21.714Z","action":"LOGIN","adminId":"e44a8f95","ip":"::1","resourceType":null,"resourceId":null,"details":null}
+{"timestamp":"2026-01-26T23:35:21.828Z","action":"PETITION_DENY","adminId":"a51697a5","ip":"::1","resourceType":"petition","resourceId":59,"details":{"addedToBlocklist":false}}
+{"timestamp":"2026-01-26T23:35:21.937Z","action":"PETITION_APPROVE","adminId":"a51697a5","ip":"::1","resourceType":"petition","resourceId":60,"details":{"guestId":321}}
+{"timestamp":"2026-01-26T23:35:22.046Z","action":"PETITION_APPROVE","adminId":"a51697a5","ip":"::1","resourceType":"petition","resourceId":61,"details":{"guestId":322}}
+{"timestamp":"2026-01-26T23:35:22.157Z","action":"PETITION_DENY","adminId":"a51697a5","ip":"::1","resourceType":"petition","resourceId":62,"details":{"addedToBlocklist":true}}
+{"timestamp":"2026-01-26T23:35:22.253Z","action":"LOGIN","adminId":"83ec124a","ip":"::1","resourceType":null,"resourceId":null,"details":null}
+{"timestamp":"2026-01-26T23:35:22.261Z","action":"GUEST_IMPORT","adminId":"d99a4844","ip":"::1","resourceType":null,"resourceId":null,"details":{"added":2,"skipped":0,"errors":0}}
+{"timestamp":"2026-01-26T23:35:22.265Z","action":"GUEST_IMPORT","adminId":"d99a4844","ip":"::1","resourceType":null,"resourceId":null,"details":{"added":1,"skipped":0,"errors":0}}
+{"timestamp":"2026-01-26T23:35:22.282Z","action":"GUEST_IMPORT","adminId":"d99a4844","ip":"::1","resourceType":null,"resourceId":null,"details":{"added":1,"skipped":0,"errors":0}}

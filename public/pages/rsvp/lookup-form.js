@@ -65,7 +65,7 @@ async function handleLookupSubmit(e) {
     }
 
     if (data.canPetition && !data.found) {
-      showLookupResult(data.message, false)
+      showLookupResult(data.message || "", false)
       if (onShowPetitionForm) {
         onShowPetitionForm(name, contact)
       }

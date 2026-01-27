@@ -102,7 +102,6 @@ describe("API Integration Tests", async () => {
           attending: true,
           actual_party_size: 2,
           dietary_restrictions: "Vegetarian",
-          song_request: "Dancing Queen",
           message: "So excited!",
         }),
       })

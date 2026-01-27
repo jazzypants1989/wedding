@@ -1,9 +1,12 @@
 /** @file Underwater caustics — light refraction patterns rippling across the page */
+/** @import * as Types from './types.js' */
 
 import { mapSlider } from "./effect-helpers.js"
 
+/** @type {Types.createCaustics} */
 export function createCaustics(config) {
   const cfg = config || {}
+  /** @type {HTMLDivElement | null} */
   let container = null
 
   const intensity = cfg.intensity !== undefined ? cfg.intensity : 50

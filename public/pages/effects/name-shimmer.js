@@ -1,9 +1,12 @@
 /** @file Name shimmer effect — traveling light highlight on the couple's names */
+/** @import * as Types from './types.js' */
 
 import { mapSlider } from "./effect-helpers.js"
 
+/** @type {Types.createNameShimmer} */
 export function createNameShimmer(config) {
   const cfg = config || {}
+  /** @type {HTMLElement | null} */
   let target = null
   let active = false
 
@@ -18,7 +21,7 @@ export function createNameShimmer(config) {
     if (active) return
     active = true
 
-    target = document.querySelector(".couple-names")
+    target = /** @type {HTMLElement | null} */ (document.querySelector(".couple-names"))
     if (!target) return
 
     const duration = mapSlider(shimmerSpeed, 12, 4, true)

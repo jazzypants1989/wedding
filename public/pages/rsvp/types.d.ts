@@ -242,7 +242,6 @@ export interface ExistingRsvp {
   attending: 0 | 1
   actual_party_size: number | null
   dietary_restrictions: string | null
-  song_request: string | null
   message: string | null
 }
 
@@ -359,6 +358,12 @@ export interface RsvpSubmitPayload {
   attending: boolean
   actual_party_size: number | null
   dietary_restrictions: string | null
-  song_request: string | null
   message: string | null
 }
+
+/**
+ * Mini Sparkle effect on an element.
+ * @example
+ * miniSparkle(element);
+ */
+export function miniSparkle(element: HTMLElement): void

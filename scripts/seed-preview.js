@@ -83,7 +83,7 @@ for (const g of guests) {
 
 // Insert RSVPs for Carol (yes) and Dave (no)
 const insertRsvp = db.prepare(
-  "INSERT INTO rsvps (guest_id, attending, actual_party_size, dietary_restrictions, song_request, message) VALUES (?, ?, ?, ?, ?, ?)",
+  "INSERT INTO rsvps (guest_id, attending, actual_party_size, dietary_restrictions, message) VALUES (?, ?, ?, ?, ?)",
 )
 
 insertRsvp.run(
@@ -91,14 +91,12 @@ insertRsvp.run(
   1,
   2,
   "Vegetarian",
-  "At Last by Etta James",
   "So excited for your big day!",
 )
 
 insertRsvp.run(
   guestIds["PREVIEWd"],
   0,
-  null,
   null,
   null,
   "Sorry we can not make it, congratulations!",

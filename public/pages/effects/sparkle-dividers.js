@@ -1,9 +1,12 @@
 /** @file Sparkle dividers — animated sparkle lines between content sections */
+/** @import * as Types from './types.js' */
 
 import { mapSlider } from "./effect-helpers.js"
 
+/** @type {Types.createSparkleDividers} */
 export function createSparkleDividers(config) {
   const cfg = config || {}
+  /** @type {HTMLDivElement[]} */
   let dividers = []
 
   const dotDensity = cfg.dotDensity !== undefined ? cfg.dotDensity : 50

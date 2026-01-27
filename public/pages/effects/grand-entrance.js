@@ -1,12 +1,18 @@
 /** @file Grand entrance — choreographed welcome cascade on page load */
+/** @import * as Types from './types.js' */
 
 import { isMobile, randomFrom, randomBetween, mapSlider, prefersReducedMotion } from "./effect-helpers.js"
 
+/** @type {Types.createGrandEntrance} */
 export function createGrandEntrance(config) {
   const cfg = config || {}
+  /** @type {HTMLDivElement | null} */
   let overlay = null
+  /** @type {HTMLDivElement | null} */
   let sparkleContainer = null
+  /** @type {number | null} */
   let animationId = null
+  /** @type {ReturnType<typeof setTimeout>[]} */
   let timeoutIds = []
   let active = false
 
@@ -24,6 +30,7 @@ export function createGrandEntrance(config) {
     return mapSlider(speed, 1.5, 0.4, true)
   }
 
+  /** @param {number} startY @param {number} waveWidth */
   function createSparkleWave(startY, waveWidth) {
     if (!sparkleContainer || !active) return
     var count = getSparkleCount()
@@ -169,7 +176,7 @@ export function createGrandEntrance(config) {
         sparkle.style.animationDelay = randomBetween(0, 0.3) + "s"
 
         sparkle.addEventListener("animationend", function () { sparkle.remove() })
-        sparkleContainer.appendChild(sparkle)
+        if (sparkleContainer) sparkleContainer.appendChild(sparkle)
       }
     }, 400 * speedFactor)
     timeoutIds.push(burstId)

@@ -1,4 +1,5 @@
 /** @file Mermaid shimmer effect — iridescent holographic overlay */
+/** @import * as Types from './types.js' */
 
 import { mapSlider } from "./effect-helpers.js"
 
@@ -8,8 +9,10 @@ const PALETTES = {
   sunset: "#ff6b6b 0%, #ffa500 20%, #ff69b4 40%, #ff4500 60%, #ffd700 80%, #ff6b6b 100%",
 }
 
+/** @type {Types.createMermaidShimmer} */
 export function createMermaidShimmer(config) {
   const cfg = config || {}
+  /** @type {HTMLDivElement | null} */
   let overlay = null
 
   const opacityCfg = cfg.opacity !== undefined ? cfg.opacity : 50

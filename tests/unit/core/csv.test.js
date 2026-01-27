@@ -236,7 +236,6 @@ describe("rsvpsToCSV", () => {
         attending: 1,
         actual_party_size: 2,
         dietary_restrictions: "Vegetarian",
-        song_request: "Song Title",
         message: "Thanks!",
         submitted_at: "2024-01-01",
       },
@@ -257,7 +256,6 @@ describe("rsvpsToCSV", () => {
     assert.ok(firstLine.includes("attending"))
     assert.ok(firstLine.includes("party_size"))
     assert.ok(firstLine.includes("dietary_restrictions"))
-    assert.ok(firstLine.includes("song_request"))
     assert.ok(firstLine.includes("message"))
     assert.ok(firstLine.includes("submitted_at"))
   })

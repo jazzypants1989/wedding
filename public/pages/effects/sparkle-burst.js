@@ -1,11 +1,14 @@
 /** @file Page load sparkle burst — cascading sparkles on first load */
+/** @import * as Types from './types.js' */
 
 import { isMobile, randomFrom, randomBetween, mapSlider } from "./effect-helpers.js"
 
 const DEFAULT_COLORS = ["#fff", "#ffd700", "#ffe4e1", "rgb(221, 115, 100)", "#87ceeb", "#c44dff"]
 
+/** @type {Types.createSparkleBurst} */
 export function createSparkleBurst(config) {
   const cfg = config || {}
+  /** @type {HTMLDivElement | null} */
   let container = null
   let remaining = 0
 

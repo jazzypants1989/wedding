@@ -217,6 +217,15 @@ export function getSelectElement(id: string): HTMLSelectElement
 export function getTableElement(id: string): HTMLTableElement
 
 /**
+ * Get iframe element by ID with proper type.
+ * Throws if element not found or not an iframe.
+ * @example
+ * const iframe = getIFrameElement('my-frame'); // HTMLIFrameElement
+ * iframe.src = 'https://example.com';
+ */
+export function getIFrameElement(id: string): HTMLIFrameElement
+
+/**
  * Get dialog element by ID with proper type.
  * Throws if element not found or not a dialog.
  * @example

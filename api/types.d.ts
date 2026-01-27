@@ -51,7 +51,6 @@ export interface UpsertRsvpInput {
   attending: boolean
   actual_party_size: number | null
   dietary_restrictions: string | null
-  song_request: string | null
   message: string | null
 }
 

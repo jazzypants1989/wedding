@@ -1,11 +1,16 @@
 /** @file Parallax sparkles — multi-depth sparkle layers that shift on scroll */
+/** @import * as Types from './types.js' */
 
 import { isMobile, randomFrom, randomBetween, mapSlider, prefersReducedMotion } from "./effect-helpers.js"
 
+/** @type {Types.createParallaxSparkles} */
 export function createParallaxSparkles(config) {
   const cfg = config || {}
+  /** @type {HTMLDivElement | null} */
   let container = null
+  /** @type {Types.ParallaxLayer[]} */
   let layers = []
+  /** @type {(() => void) | null} */
   let scrollHandler = null
   let lastScrollY = 0
 
@@ -65,7 +70,7 @@ export function createParallaxSparkles(config) {
         layer.appendChild(sparkle)
       }
 
-      container.appendChild(layer)
+      container?.appendChild(layer)
       builtLayers.push({ element: layer, depth: depth })
     }
 

@@ -708,7 +708,7 @@ export function initPetitions(): void
 
 /**
  * Render RSVP data to the table body.
- * Shows name, attendance status, party size, dietary info, song request, and date.
+ * Shows name, attendance status, party size, dietary info, and date.
  * @example
  * renderRsvps(rsvps);
  */
