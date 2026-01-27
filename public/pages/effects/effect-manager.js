@@ -5,7 +5,6 @@
  */
 /** @import * as Types from './types.js' */
 
-import { createSparkleStars } from "./sparkle-stars.js"
 import { createDiscoBall } from "./disco-ball.js"
 import { createCursorTrail } from "./cursor-trail.js"
 import { createMermaidShimmer } from "./mermaid-shimmer.js"
@@ -22,7 +21,6 @@ import { getDefaultConfig } from "./effect-config.js"
 
 /** @type {Types.EffectDefinition[]} */
 const EFFECT_DEFINITIONS = [
-  { id: "sparkles", create: createSparkleStars },
   { id: "disco", create: createDiscoBall },
   { id: "cursor", create: createCursorTrail },
   { id: "shimmer", create: createMermaidShimmer },

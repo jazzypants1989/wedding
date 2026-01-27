@@ -94,10 +94,10 @@ export const EFFECT_CONFIGS = {
 
   parallaxsparkles: {
     defaults: {
-      layerCount: 3,
-      density: 50,
-      speedMultiplier: 50,
-      colorScheme: "gold",
+      layerCount: 5,
+      density: 35,
+      speedMultiplier: 80,
+      colorScheme: "rainbow",
     },
   },
 
