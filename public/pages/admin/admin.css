@@ -236,6 +236,53 @@ tr:hover td {
   display: none;
 }
 
+/* Expandable row details (mobile) */
+.row-details {
+  display: none;
+  background: var(--color-background);
+}
+
+.row-details td {
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+
+.row-details-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.row-details-content strong {
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+.expandable-row {
+  cursor: pointer;
+}
+
+.expandable-row:active {
+  background: var(--color-background);
+}
+
+.expand-indicator {
+  display: inline-block;
+  margin-left: var(--spacing-xs);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  transition: transform var(--duration-fast);
+}
+
+.expandable-row.expanded .expand-indicator {
+  transform: rotate(180deg);
+}
+
+.expandable-row.expanded + .row-details {
+  display: table-row;
+}
+
 /* Actions cell in table */
 .actions-cell {
   white-space: nowrap;
@@ -698,5 +745,22 @@ tr:hover td {
 
   .hide-mobile {
     display: table-cell;
+  }
+
+  /* Hide mobile expand features on desktop */
+  .expand-indicator {
+    display: none;
+  }
+
+  .expandable-row {
+    cursor: default;
+  }
+
+  .expandable-row:active {
+    background: inherit;
+  }
+
+  .row-details {
+    display: none !important;
   }
 }

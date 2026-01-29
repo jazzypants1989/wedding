@@ -12,3 +12,6 @@
 {"timestamp":"2026-01-29T01:53:37.473Z","action":"RSVP_SUBMIT","adminId":null,"ip":"::1","resourceType":"guest","resourceId":"269","details":{"attending":true,"partySize":1}}
 {"timestamp":"2026-01-29T01:54:31.173Z","action":"RSVP_SUBMIT","adminId":null,"ip":"::1","resourceType":"guest","resourceId":"269","details":{"attending":true,"partySize":1}}
 {"timestamp":"2026-01-29T01:55:06.375Z","action":"RSVP_SUBMIT","adminId":null,"ip":"::1","resourceType":"guest","resourceId":"269","details":{"attending":true,"partySize":1}}
+{"timestamp":"2026-01-29T04:10:49.936Z","action":"LOGIN","adminId":"b73e3cdc","ip":"::1","resourceType":null,"resourceId":null,"details":null}
+{"timestamp":"2026-01-29T04:11:16.995Z","action":"RSVP_SUBMIT","adminId":null,"ip":"::1","resourceType":"guest","resourceId":"269","details":{"attending":true,"partySize":1}}
+{"timestamp":"2026-01-29T04:11:32.407Z","action":"RSVP_SUBMIT","adminId":null,"ip":"::1","resourceType":"guest","resourceId":"269","details":{"attending":true,"partySize":1}}
