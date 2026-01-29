@@ -1,82 +1,5 @@
 import type { LookupResponse } from "../types.js"
 
-/** @file fetch-helper.js - Types for fetch helper utilities */
-
-/**
- * Options for fetch requests with timeout support.
- * Extends standard RequestInit with optional timeout.
- * @example
- * const options: FetchOptions = {
- *   method: 'POST',
- *   timeout: 5000,
- *   headers: { 'Content-Type': 'application/json' }
- * };
- */
-export interface FetchOptions extends RequestInit {
-  timeout?: number
-}
-
-/**
- * Result from apiRequest function.
- * Contains response status and parsed JSON data.
- * @example
- * const result: ApiRequestResult = {
- *   ok: true,
- *   status: 200,
- *   data: { guest: { id: 1, name: "John" } }
- * };
- */
-export interface ApiRequestResult<T = Record<string, unknown>> {
-  ok: boolean
-  status: number
-  data: T
-}
-
-/**
- * Error response from API.
- * @example
- * const err: ApiErrorResponse = { error: "Guest not found" };
- */
-export interface ApiErrorResponse {
-  error?: string
-}
-
-/**
- * Make a fetch request with timeout support.
- * Aborts the request if it exceeds the timeout (default 30s).
- * @example
- * const response = await fetchWithTimeout('/api/guest', { timeout: 5000 });
- */
-export function fetchWithTimeout(
-  url: string,
-  options?: FetchOptions,
-): Promise<Response>
-
-/**
- * Make a JSON API request with timeout and error handling.
- * Automatically sets Content-Type header and parses JSON response.
- * @example
- * const { ok, status, data } = await apiRequest('/api/rsvp', {
- *   method: 'POST',
- *   body: JSON.stringify({ attending: true })
- * });
- */
-export function apiRequest<T = Record<string, unknown>>(
-  url: string,
-  options?: FetchOptions,
-): Promise<ApiRequestResult<T>>
-
-/**
- * Get user-friendly error message from Error or API response.
- * Handles network errors, timeout errors, and API error responses.
- * @example
- * getErrorMessage(new Error('Network error')) // "Unable to connect..."
- * getErrorMessage({ error: 'Invalid code' }) // "Invalid code"
- */
-export function getErrorMessage(
-  error: Error | ApiErrorResponse | unknown,
-): string
-
 /** @file lookup-form.js - Types for guest invitation lookup form module */
 
 /**
@@ -98,8 +21,10 @@ export type ShowPetitionFormCallback = (name: string, contact: string) => void
  */
 export interface LookupFormElements {
   result: HTMLElement
+  nameGroup: HTMLElement
   name: HTMLInputElement
   contact: HTMLInputElement
+  contactLabel: HTMLElement
   submit: HTMLButtonElement
   section: HTMLElement
 }
@@ -120,9 +45,9 @@ export interface LookupFormState {
  * const result = await lookupGuest('John', 'john@example.com');
  */
 export function lookupGuest(
-  name: string,
+  name: string | null,
   contact: string,
-): Promise<ApiRequestResult<LookupResponse>>
+): Promise<LookupResponse>
 
 /**
  * Display a result message in the lookup form.
@@ -157,6 +82,17 @@ export function initLookupForm(
   onShowPetitionForm?: ShowPetitionFormCallback | null,
 ): void
 
+export interface ConfigResponse {
+  features?: {
+    enableNameLookup?: boolean
+    enableEmailLookup?: boolean
+  }
+}
+
+export function getConfig(): Promise<ConfigResponse>
+
+export function fetchConfig(): Promise<void>
+
 /** @file petition-form.js - Types for petition form module */
 
 /**
@@ -188,7 +124,7 @@ export interface PetitionResponse {
  */
 export function submitPetition(
   payload: PetitionPayload,
-): Promise<ApiRequestResult<PetitionResponse>>
+): Promise<PetitionResponse>
 
 /**
  * Show petition result message.
@@ -296,13 +232,6 @@ export function showSuccess(message: string): void
 export function prefillForm(rsvp: ExistingRsvp): void
 
 /**
- * Update radio label checked styles.
- * @example
- * updateRadioStyles();
- */
-export function updateRadioStyles(): void
-
-/**
  * Set up form event listeners.
  * @example
  * setupFormListeners();
@@ -333,21 +262,19 @@ export function initRsvpForm(): Promise<void>
 /**
  * Fetch RSVP data for a guest by invite code.
  * @example
- * const { ok, data } = await fetchRsvpData('ABC123');
+ * const data = await fetchRsvpData('ABC123');
  */
-export function fetchRsvpData(
-  inviteCode: string,
-): Promise<ApiRequestResult<RsvpFormData>>
+export function fetchRsvpData(inviteCode: string): Promise<RsvpFormData>
 
 /**
  * Submit RSVP response.
  * @example
- * const { ok, data } = await submitRsvp('ABC123', payload);
+ * const data = await submitRsvp('ABC123', payload);
  */
 export function submitRsvp(
   inviteCode: string,
   payload: RsvpSubmitPayload,
-): Promise<ApiRequestResult<RsvpSubmitResponse>>
+): Promise<RsvpSubmitResponse>
 
 /**
  * Payload for RSVP submission.
@@ -367,3 +294,21 @@ export interface RsvpSubmitPayload {
  * miniSparkle(element);
  */
 export function miniSparkle(element: HTMLElement): void
+
+/** @file utils.js - Types for shared form utilities */
+
+export function showResult(
+  el: HTMLElement,
+  message: string,
+  isError: boolean,
+  errorClass: string,
+  successClass: string,
+  shakeClass: string,
+): void
+
+export function setButtonLoading(
+  btn: HTMLButtonElement,
+  isLoading: boolean,
+): void
+
+export function fireConfetti(): void

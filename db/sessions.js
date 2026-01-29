@@ -2,29 +2,28 @@
 /** @import * as Types from './types.js' */
 
 import crypto from "node:crypto"
-import { getDb, queryOne } from "./connection.js"
+import { sql } from "./sql.js"
 import { now } from "./utils.js"
 import { SESSION } from "../types.js"
 
 /** @type {Types.hashToken} */
-function hashToken(token) {
+export function hashToken(token) {
   return crypto.createHash("sha256").update(token).digest("hex")
 }
 
 /** @type {Types.createSession} */
 export function createSession() {
-  const db = getDb()
+  // Single-admin system: invalidate all previous sessions on new login
+  sql`DELETE FROM sessions`.run()
+
   const token = crypto.randomBytes(32).toString("hex")
   const tokenHash = hashToken(token) // Hash before storing
   const csrf_token = crypto.randomBytes(32).toString("hex")
-  const timestamp = new Date().toISOString()
-  const expires_at = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24 hours
+  const timestamp = now()
+  const expires_at = new Date(Date.now() + SESSION.DURATION_MS).toISOString()
 
-  const stmt = db.prepare(`
-    INSERT INTO sessions (token, csrf_token, expires_at, csrf_rotated_at)
-    VALUES (?, ?, ?, ?)
-  `)
-  stmt.run(tokenHash, csrf_token, expires_at, timestamp) // Store hash
+  sql`INSERT INTO sessions (token, csrf_token, expires_at, csrf_rotated_at)
+    VALUES (${tokenHash}, ${csrf_token}, ${expires_at}, ${timestamp})`.run()
 
   return { token, csrf_token, expires_at } // Return plaintext to client
 }
@@ -32,7 +31,7 @@ export function createSession() {
 /** @type {Types.getSession} */
 export function getSession(token) {
   const tokenHash = hashToken(token)
-  const session = queryOne("SELECT * FROM sessions WHERE token = ?", tokenHash)
+  const session = sql`SELECT * FROM sessions WHERE token = ${tokenHash}`.get()
 
   if (!session) return null
 
@@ -59,39 +58,30 @@ export function getSession(token) {
 
 /** @type {Types.updateSessionActivity} */
 export function updateSessionActivity(token) {
-  const db = getDb()
   const tokenHash = hashToken(token)
-  db.prepare("UPDATE sessions SET last_activity_at = ? WHERE token = ?").run(
-    now(),
-    tokenHash
-  )
+  sql`UPDATE sessions SET last_activity_at = ${now()} WHERE token = ${tokenHash}`.run()
 }
 
 /** @type {Types.deleteSession} */
 export function deleteSession(token) {
-  const db = getDb()
   const tokenHash = hashToken(token)
-  const stmt = db.prepare("DELETE FROM sessions WHERE token = ?")
-  stmt.run(tokenHash)
+  sql`DELETE FROM sessions WHERE token = ${tokenHash}`.run()
 }
 
 /** @type {Types.rotateCsrfToken} */
 export function rotateCsrfToken(token) {
-  const db = getDb()
   const tokenHash = hashToken(token)
   const newCsrfToken = crypto.randomBytes(32).toString("hex")
-  const timestamp = new Date().toISOString()
+  const timestamp = now()
 
-  db.prepare(
-    "UPDATE sessions SET csrf_token = ?, csrf_rotated_at = ? WHERE token = ?"
-  ).run(newCsrfToken, timestamp, tokenHash)
+  sql`UPDATE sessions SET csrf_token = ${newCsrfToken}, csrf_rotated_at = ${timestamp} WHERE token = ${tokenHash}`.run()
 
   return newCsrfToken
 }
 
 /** @type {Types.cleanExpiredSessions} */
 export function cleanExpiredSessions() {
-  const db = getDb()
-  const stmt = db.prepare("DELETE FROM sessions WHERE expires_at < ?")
-  stmt.run(now())
+  const currentTime = now()
+  const idleCutoff = new Date(Date.now() - SESSION.IDLE_TIMEOUT_MS).toISOString()
+  sql`DELETE FROM sessions WHERE expires_at < ${currentTime} OR last_activity_at < ${idleCutoff}`.run()
 }

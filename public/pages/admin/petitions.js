@@ -2,12 +2,13 @@
 /** @import * as Types from './types.js' */
 
 import { state } from "./state.js"
-import { api } from "./api.js"
-import { openModal, closeModal } from "./modal.js"
+import { api, openModal, closeModal, showError } from "./utils.js"
 import { loadGuests, loadStats } from "./guests.js"
 import { loadBlocklist } from "./blocklist.js"
 import {
-  escapeHtml,
+  html,
+  raw,
+  join,
   formatDate,
   getElement,
   getSelectElement,
@@ -41,6 +42,7 @@ export async function loadPetitions() {
     updatePetitionBadge(response.counts.pending)
   } catch (err) {
     console.error("Failed to load petitions:", err)
+    showError("Failed to load petitions. Please refresh the page.")
   }
 }
 
@@ -60,42 +62,41 @@ function renderPetitions(petitions) {
   const tbody = getElement("petitions-tbody")
 
   if (petitions.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="6" class="empty-state">No petitions found</td></tr>`
+    tbody.innerHTML = html`<tr>
+      <td colspan="6" class="empty-state">No petitions found</td>
+    </tr>`
     return
   }
 
-  tbody.innerHTML = petitions
-    .map(
-      (petition) => `
-    <tr data-id="${petition.id}">
-      <td><strong>${escapeHtml(petition.name)}</strong></td>
-      <td>
-        ${petition.email ? escapeHtml(petition.email) : ""}
-        ${petition.email && petition.phone ? "<br>" : ""}
-        ${petition.phone ? escapeHtml(petition.phone) : ""}
-      </td>
-      <td class="hide-mobile">${
-        petition.relationship ? escapeHtml(petition.relationship) : "-"
-      }</td>
-      <td><span class="status-badge status-${petition.status}">${
-        petition.status
-      }</span></td>
-      <td class="hide-mobile">${formatDate(petition.created_at)}</td>
-      <td class="actions-cell">
-        <button class="btn btn-secondary btn-sm" data-action="view">View</button>
-        ${
-          petition.status === "pending"
-            ? `
-          <button class="btn btn-primary btn-sm" data-action="approve">Approve</button>
-          <button class="btn btn-danger btn-sm" data-action="deny">Deny</button>
-        `
-            : ""
-        }
-      </td>
-    </tr>
-  `,
-    )
-    .join("")
+  tbody.innerHTML = html`${petitions.map(
+    (petition) => html`
+      <tr data-id="${petition.id}">
+        <td><strong>${petition.name}</strong></td>
+        <td>${join([petition.email, petition.phone], raw("<br>"))}</td>
+        <td class="hide-mobile">${petition.relationship || "-"}</td>
+        <td>
+          <span class="status-badge status-${petition.status}"
+            >${petition.status}</span
+          >
+        </td>
+        <td class="hide-mobile">${formatDate(petition.created_at)}</td>
+        <td class="actions-cell">
+          <button class="btn btn-secondary btn-sm" data-action="view">
+            View
+          </button>
+          ${petition.status === "pending" &&
+          html`
+            <button class="btn btn-primary btn-sm" data-action="approve">
+              Approve
+            </button>
+            <button class="btn btn-danger btn-sm" data-action="deny">
+              Deny
+            </button>
+          `}
+        </td>
+      </tr>
+    `,
+  )}`
 }
 
 /** @type {Types.viewPetition} */
@@ -104,42 +105,35 @@ export function viewPetition(id) {
   if (!petition) return
 
   const details = getElement("petition-details")
-  details.innerHTML = `
-    <div class="detail-row"><strong>Name:</strong> ${escapeHtml(
-      petition.name,
-    )}</div>
-    <div class="detail-row"><strong>Email:</strong> ${escapeHtml(
-      petition.email,
-    )}</div>
-    <div class="detail-row"><strong>Phone:</strong> ${
-      petition.phone ? escapeHtml(petition.phone) : "-"
-    }</div>
-    <div class="detail-row"><strong>Relationship:</strong> ${
-      petition.relationship ? escapeHtml(petition.relationship) : "-"
-    }</div>
-    <div class="detail-row"><strong>Message:</strong> ${
-      petition.message ? escapeHtml(petition.message) : "-"
-    }</div>
-    <div class="detail-row"><strong>Status:</strong> <span class="status-badge status-${
-      petition.status
-    }">${petition.status}</span></div>
-    <div class="detail-row"><strong>Submitted:</strong> ${formatDate(
-      petition.created_at,
-    )}</div>
-    ${
-      petition.admin_notes
-        ? `<div class="detail-row"><strong>Admin Notes:</strong> ${escapeHtml(
-            petition.admin_notes,
-          )}</div>`
-        : ""
-    }
-    ${
-      petition.reviewed_at
-        ? `<div class="detail-row"><strong>Reviewed:</strong> ${formatDate(
-            petition.reviewed_at,
-          )}</div>`
-        : ""
-    }
+  details.innerHTML = html`
+    <div class="detail-row"><strong>Name:</strong> ${petition.name}</div>
+    <div class="detail-row"><strong>Email:</strong> ${petition.email}</div>
+    <div class="detail-row">
+      <strong>Phone:</strong> ${petition.phone || "-"}
+    </div>
+    <div class="detail-row">
+      <strong>Relationship:</strong> ${petition.relationship || "-"}
+    </div>
+    <div class="detail-row">
+      <strong>Message:</strong> ${petition.message || "-"}
+    </div>
+    <div class="detail-row">
+      <strong>Status:</strong>
+      <span class="status-badge status-${petition.status}"
+        >${petition.status}</span
+      >
+    </div>
+    <div class="detail-row">
+      <strong>Submitted:</strong> ${formatDate(petition.created_at)}
+    </div>
+    ${petition.admin_notes &&
+    html`<div class="detail-row">
+      <strong>Admin Notes:</strong> ${petition.admin_notes}
+    </div>`}
+    ${petition.reviewed_at &&
+    html`<div class="detail-row">
+      <strong>Reviewed:</strong> ${formatDate(petition.reviewed_at)}
+    </div>`}
   `
 
   const approveBtn = getButtonElement("petition-approve-btn")
@@ -206,9 +200,9 @@ async function handleApproveConfirm() {
     })
 
     closeModal(getDialogElement("petition-approve-modal"))
-    loadPetitions()
-    loadGuests()
-    loadStats()
+    await loadPetitions()
+    await loadGuests()
+    await loadStats()
   } catch (err) {
     const errorEl = getElement("approve-error")
     errorEl.textContent = getErrorMessage(err)
@@ -239,8 +233,8 @@ async function handleDenyConfirm() {
     })
 
     closeModal(getDialogElement("petition-deny-modal"))
-    loadPetitions()
-    if (addToBlocklist) loadBlocklist()
+    await loadPetitions()
+    if (addToBlocklist) await loadBlocklist()
   } catch (err) {
     const errorEl = getElement("deny-error")
     errorEl.textContent = getErrorMessage(err)

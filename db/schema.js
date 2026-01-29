@@ -170,14 +170,67 @@ export function createTables(db) {
 }
 
 /** @type {Types.runMigrations} */
-export function runMigrations(_db) {
-  // Future migrations go here. Example:
-  //
-  // const applied = db.prepare("SELECT 1 FROM migrations WHERE name = ?")
-  // const record = db.prepare("INSERT INTO migrations (name) VALUES (?)")
-  //
-  // if (!applied.get('migration_name')) {
-  //   db.exec("ALTER TABLE guests ADD COLUMN new_col TEXT")
-  //   record.run('migration_name')
-  // }
+export function runMigrations(db) {
+  const applied = db.prepare("SELECT 1 FROM migrations WHERE name = ?")
+  const record = db.prepare("INSERT INTO migrations (name) VALUES (?)")
+
+  // Add CHECK constraints on communications type and status
+  if (!applied.get("add_communications_check_triggers")) {
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS check_communication_type_insert
+      BEFORE INSERT ON communications
+      FOR EACH ROW
+      WHEN NEW.type NOT IN ('email', 'sms')
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid communication type. Must be: email or sms');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS check_communication_type_update
+      BEFORE UPDATE ON communications
+      FOR EACH ROW
+      WHEN NEW.type NOT IN ('email', 'sms')
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid communication type. Must be: email or sms');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS check_communication_status_insert
+      BEFORE INSERT ON communications
+      FOR EACH ROW
+      WHEN NEW.status NOT IN ('sent', 'failed')
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid communication status. Must be: sent or failed');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS check_communication_status_update
+      BEFORE UPDATE ON communications
+      FOR EACH ROW
+      WHEN NEW.status NOT IN ('sent', 'failed')
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid communication status. Must be: sent or failed');
+      END
+    `)
+    record.run("add_communications_check_triggers")
+  }
+
+  // Add updated_at auto-triggers
+  if (!applied.get("add_updated_at_triggers")) {
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS auto_updated_at_guests
+      AFTER UPDATE ON guests
+      FOR EACH ROW
+      WHEN NEW.updated_at = OLD.updated_at
+      BEGIN
+        UPDATE guests SET updated_at = datetime('now') WHERE id = NEW.id;
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS auto_updated_at_rsvps
+      AFTER UPDATE ON rsvps
+      FOR EACH ROW
+      WHEN NEW.updated_at = OLD.updated_at
+      BEGIN
+        UPDATE rsvps SET updated_at = datetime('now') WHERE id = NEW.id;
+      END
+    `)
+    record.run("add_updated_at_triggers")
+  }
 }

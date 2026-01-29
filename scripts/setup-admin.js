@@ -21,8 +21,8 @@ function hashPassword(password) {
 
 /** @type {Types.ValidatePasswordStrength} */
 function validatePasswordStrength(password) {
-  if (!password || password.length < 8) {
-    return "Password must be at least 8 characters"
+  if (!password || password.length < 12) {
+    return "Password must be at least 12 characters"
   }
 
   let hasUpper = false

@@ -1,25 +1,24 @@
 /** @file Admin invite sending endpoints */
 /** @import * as Types from './types.js' */
 
-import { withAdmin } from "../../core/auth.js"
 import { getGuestById, updateGuestInvitedAt } from "../guests/data.js"
 import { logCommunication } from "../../db/utils.js"
 import { sendJson, parseBody, checkRateLimit } from "../../core/http.js"
-import { ValidationError } from "../../core/errors.js"
 import { limiters, getClientIp } from "../../core/rate-limit.js"
-import { BASE_URL } from "../../types.js"
+import { BASE_URL, EMAIL_SUBJECTS } from "../../types.js"
 import {
+  ValidationError,
   validateIdArray,
   validateCommunicationType,
   validateServiceConfigured,
 } from "../../core/validation.js"
-import { log, AUDIT_ACTIONS } from "../../core/log.js"
+import { log, AUDIT_ACTIONS } from "../../core/utils.js"
 import { formatTemplate } from "../../services/templates.js"
 import * as twilio from "../../services/twilio.js"
 import * as email from "../../services/email.js"
 
 /** @type {Types.configHandler} */
-async function configHandler(req, res) {
+export async function config(req, res) {
   return sendJson(res, 200, {
     sms: {
       configured: twilio.isConfigured(),
@@ -33,13 +32,8 @@ async function configHandler(req, res) {
 }
 
 /** @type {Types.previewHandler} */
-async function previewHandler(req, res) {
-  let body
-  try {
-    body = await parseBody(req)
-  } catch (err) {
-    throw new ValidationError("Invalid JSON body")
-  }
+export async function preview(req, res) {
+  const body = await parseBody(req)
 
   const { guestIds, type, customMessage } = body
 
@@ -85,7 +79,7 @@ async function previewHandler(req, res) {
       continue
     }
 
-    const inviteUrl = `${BASE_URL}/rsvp.html?code=${guest.invite_code}`
+    const inviteUrl = `${BASE_URL}/rsvp?code=${guest.invite_code}`
     let messagePreview
 
     if (commType === "sms") {
@@ -122,16 +116,11 @@ async function previewHandler(req, res) {
 }
 
 /** @type {Types.sendHandler} */
-async function sendHandler(req, res, { session }) {
+export async function send(req, res, { session }) {
   // Rate limit: 100 messages per hour
   if (checkRateLimit(res, limiters.adminInvite, session.token)) return
 
-  let body
-  try {
-    body = await parseBody(req)
-  } catch (err) {
-    throw new ValidationError("Invalid JSON body")
-  }
+  const body = await parseBody(req)
 
   const { guestIds, type, customMessage } = body
 
@@ -163,7 +152,7 @@ async function sendHandler(req, res, { session }) {
       continue
     }
 
-    const inviteUrl = `${BASE_URL}/rsvp.html?code=${guest.invite_code}`
+    const inviteUrl = `${BASE_URL}/rsvp?code=${guest.invite_code}`
     let sendResult
     let messagePreview
 
@@ -195,7 +184,7 @@ async function sendHandler(req, res, { session }) {
 
       const emailData = template
         ? {
-            subject: "You're Invited! Jesse & Jordana's Wedding",
+            subject: EMAIL_SUBJECTS.INVITE,
             text: formatTemplate(template, {
               name: guest.name,
               url: inviteUrl,
@@ -213,19 +202,18 @@ async function sendHandler(req, res, { session }) {
       })
     }
 
-    // Log communication
-    logCommunication(
-      guest.id,
-      commType,
-      sendResult.success ? "sent" : "failed",
-      messagePreview,
-      sendResult.error ?? null,
-    )
-
     if (sendResult.success) {
+      logCommunication(guest.id, commType, "sent", messagePreview, null)
       updateGuestInvitedAt(guest.id)
       results.sent.push({ id: guest.id, name: guest.name })
     } else {
+      logCommunication(
+        guest.id,
+        commType,
+        "failed",
+        messagePreview,
+        sendResult.error,
+      )
       results.failed.push({
         id: guest.id,
         name: guest.name,
@@ -258,7 +246,3 @@ async function sendHandler(req, res, { session }) {
     },
   })
 }
-
-export const config = withAdmin(configHandler)
-export const preview = withAdmin(previewHandler)
-export const send = withAdmin(sendHandler)

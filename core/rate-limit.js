@@ -1,17 +1,13 @@
 /** @file SQLite-backed rate limiting */
 /** @import * as Types from './types.js' */
 
-import { getDb } from "../db/connection.js"
-import { TRUSTED_PROXIES } from "../types.js"
+import { TRUSTED_PROXIES, RATE_LIMITS } from "../types.js"
+import { sql } from "../db/sql.js"
 
 /** @type {Types.cleanExpired} */
 function cleanExpired(name) {
-  const db = getDb()
   const now = Date.now()
-  db.prepare("DELETE FROM rate_limits WHERE limiter = ? AND reset_at <= ?").run(
-    name,
-    now,
-  )
+  sql`DELETE FROM rate_limits WHERE limiter = ${name} AND reset_at <= ${now}`.run()
 }
 
 /** @type {Types.createLimiter} */
@@ -29,30 +25,23 @@ function createLimiter({ name, windowMs, max }) {
 
   return {
     check(key) {
-      const db = getDb()
       const now = Date.now()
       const resetAt = now + windowMs
 
-      const result = db
-        .prepare(
-          `
-        INSERT INTO rate_limits (key, limiter, count, reset_at)
-        VALUES (?, ?, 1, ?)
+      const result = sql`INSERT INTO rate_limits (key, limiter, count, reset_at)
+        VALUES (${key}, ${name}, 1, ${resetAt})
         ON CONFLICT (key, limiter) DO UPDATE SET
           count = CASE
-            WHEN rate_limits.reset_at <= ?
+            WHEN rate_limits.reset_at <= ${now}
             THEN 1
             ELSE rate_limits.count + 1
           END,
           reset_at = CASE
-            WHEN rate_limits.reset_at <= ?
+            WHEN rate_limits.reset_at <= ${now}
             THEN excluded.reset_at
             ELSE rate_limits.reset_at
           END
-        RETURNING count, reset_at
-      `,
-        )
-        .get(key, name, resetAt, now, now)
+        RETURNING count, reset_at`.get()
 
       const count = Number(result?.count ?? 1)
       const resultResetAt = Number(result?.reset_at ?? resetAt)
@@ -65,9 +54,7 @@ function createLimiter({ name, windowMs, max }) {
     },
 
     reset(key) {
-      getDb()
-        .prepare("DELETE FROM rate_limits WHERE key = ? AND limiter = ?")
-        .run(key, name)
+      sql`DELETE FROM rate_limits WHERE key = ${key} AND limiter = ${name}`.run()
     },
   }
 }
@@ -80,7 +67,9 @@ function getClientIp(req) {
     const forwarded = req.headers["x-forwarded-for"]
     if (forwarded) {
       const forwardedStr = Array.isArray(forwarded) ? forwarded[0] : forwarded
-      return forwardedStr.split(",")[0].trim()
+      const parts = forwardedStr.split(",").map(s => s.trim())
+      const depth = parseInt(process.env.TRUSTED_PROXY_DEPTH || "1", 10)
+      return parts[Math.max(0, parts.length - depth)]
     }
   }
 
@@ -90,39 +79,38 @@ function getClientIp(req) {
 const limiters = {
   rsvp: createLimiter({
     name: "rsvp",
-    windowMs: 60 * 1000,
-    max: 10,
+    windowMs: RATE_LIMITS.RSVP.windowMs,
+    max: RATE_LIMITS.RSVP.max,
   }),
 
   lookup: createLimiter({
     name: "lookup",
-    windowMs: 60 * 1000,
-    max: 3,
+    windowMs: RATE_LIMITS.LOOKUP.windowMs,
+    max: RATE_LIMITS.LOOKUP.max,
   }),
 
   adminLogin: createLimiter({
     name: "adminLogin",
-    windowMs: 60 * 1000,
-    max: 3,
+    windowMs: RATE_LIMITS.ADMIN_LOGIN.windowMs,
+    max: RATE_LIMITS.ADMIN_LOGIN.max,
   }),
 
   adminInvite: createLimiter({
     name: "adminInvite",
-    windowMs: 60 * 60 * 1000,
-    max: 100,
+    windowMs: RATE_LIMITS.ADMIN_INVITE.windowMs,
+    max: RATE_LIMITS.ADMIN_INVITE.max,
   }),
 }
 
 /** @type {Types.clearAllStores} */
 function clearAllStores() {
-  getDb().prepare("DELETE FROM rate_limits").run()
+  sql`DELETE FROM rate_limits`.run()
 }
 
 /** @type {Types.cleanAllExpired} */
 function cleanAllExpired() {
-  const db = getDb()
   const now = Date.now()
-  db.prepare("DELETE FROM rate_limits WHERE reset_at <= ?").run(now)
+  sql`DELETE FROM rate_limits WHERE reset_at <= ${now}`.run()
 }
 
 export { createLimiter, getClientIp, limiters, clearAllStores, cleanAllExpired }

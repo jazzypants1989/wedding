@@ -1,0 +1,459 @@
+/* ============ RSVP Page Styles ============ */
+
+.hero-small .hero-image {
+  max-height: 200px;
+  object-fit: cover;
+  object-position: center bottom;
+}
+
+@media (min-width: 768px) {
+  .hero-small .hero-image {
+    max-height: 300px;
+  }
+}
+
+.home-link {
+  text-decoration: none;
+  transition: opacity var(--duration-fast);
+}
+
+.home-link:hover {
+  opacity: 0.8;
+}
+
+.rsvp-section {
+  text-align: left;
+}
+
+.rsvp-section h2 {
+  text-align: center;
+}
+
+.rsvp-loading,
+.rsvp-error,
+.rsvp-success {
+  text-align: center;
+  padding: var(--spacing-xl) 0;
+}
+
+.rsvp-error-message {
+  color: var(--color-danger);
+  margin-bottom: var(--spacing-lg);
+}
+
+.rsvp-lookup {
+  max-width: var(--container-sm);
+  margin: 0 auto;
+  padding: var(--spacing-lg);
+  background-color: var(--color-primary-faint);
+  border-radius: var(--radius-md);
+}
+
+.rsvp-lookup p {
+  margin-bottom: var(--spacing-md);
+}
+
+.lookup-form,
+.petition-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+#lookup-result,
+#petition-result {
+  margin-top: var(--spacing-md);
+  margin-bottom: 0;
+}
+
+/* Petition Form */
+.rsvp-petition {
+  max-width: var(--container-md);
+  margin: var(--spacing-lg) auto 0;
+  padding: var(--spacing-lg);
+  background-color: var(--color-primary-faint);
+  border-radius: var(--radius-md);
+}
+
+.rsvp-petition h3 {
+  margin-bottom: var(--spacing-sm);
+  color: var(--color-primary);
+}
+
+.rsvp-petition > p {
+  margin-bottom: var(--spacing-md);
+  font-size: var(--text-base);
+}
+
+/* RSVP Form */
+.rsvp-form {
+  max-width: var(--container-md);
+  margin: 0 auto;
+}
+
+.rsvp-greeting,
+.rsvp-success h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  color: var(--color-primary);
+}
+
+.rsvp-greeting {
+  margin-bottom: var(--spacing-sm);
+}
+
+.rsvp-intro {
+  margin-bottom: var(--spacing-xl);
+}
+
+.form-fieldset {
+  border: none;
+  margin-bottom: var(--spacing-lg);
+}
+
+/* Radio buttons */
+.radio-card {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
+  background-color: var(--color-white);
+  border: 2px solid var(--color-text-20);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast),
+    background-color var(--duration-fast),
+    transform var(--duration-instant) ease;
+}
+
+.radio-card:active {
+  transform: scale(0.98);
+}
+
+.radio-card:hover {
+  border-color: var(--color-text-40);
+}
+
+.radio-card:has(input:checked) {
+  border-color: var(--color-primary);
+  background-color: var(--color-primary-faint);
+}
+
+.radio-card input[type="radio"] {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.radio-text {
+  font-size: var(--text-base);
+  color: var(--color-text);
+}
+
+.attending-details {
+  background-color: var(--color-text-3);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  clip-path: inset(0 0 100% 0);
+  opacity: 0;
+  padding: 0 var(--spacing-lg);
+  margin-bottom: 0;
+  transition:
+    clip-path var(--duration-slow) ease,
+    opacity var(--duration-moderate) ease,
+    padding var(--duration-moderate) ease,
+    margin-bottom var(--duration-moderate) ease;
+}
+
+.attending-details-open {
+  clip-path: inset(0);
+  opacity: 1;
+  padding: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
+}
+
+/* Success state */
+.rsvp-success h3 {
+  margin-bottom: var(--spacing-md);
+}
+
+.rsvp-success p {
+  margin-bottom: var(--spacing-md);
+}
+
+.rsvp-update-note {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  font-style: italic;
+  margin-bottom: var(--spacing-lg);
+}
+
+/* Reduced Motion - Respect user preferences for animations */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Form state transitions (fade-in-up) */
+.form-state {
+  opacity: 0;
+  transform: translateY(12px);
+  transition:
+    opacity var(--duration-moderate) ease,
+    transform var(--duration-moderate) ease;
+}
+
+.form-state-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Staggered field entrance */
+@keyframes field-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.form-state-visible .form-fieldset,
+.form-state-visible .form-group,
+.form-state-visible > .btn-large {
+  animation: field-enter var(--duration-moderate) ease var(--stagger, 0s)
+    backwards;
+}
+
+.form-state-visible .form-fieldset {
+  --stagger: 0.1s;
+}
+.form-state-visible .form-group:nth-child(1) {
+  --stagger: 0.15s;
+}
+.form-state-visible .form-group:nth-child(2) {
+  --stagger: 0.2s;
+}
+.form-state-visible .form-group:nth-child(3) {
+  --stagger: 0.25s;
+}
+.form-state-visible .form-group:nth-child(4) {
+  --stagger: 0.3s;
+}
+.form-state-visible .form-group:nth-child(5) {
+  --stagger: 0.35s;
+}
+.form-state-visible .form-group:nth-child(6) {
+  --stagger: 0.4s;
+}
+.form-state-visible > .btn-large {
+  --stagger: 0.45s;
+}
+
+/* Radio selection pop */
+@keyframes radio-pop {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.02);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.radio-card:has(input:checked) {
+  animation: radio-pop 0.3s ease;
+}
+
+/* Greeting entrance */
+.rsvp-greeting {
+  animation: greeting-entrance 0.6s ease backwards;
+}
+
+@keyframes greeting-entrance {
+  0% {
+    opacity: 0;
+    transform: scale(0.9) translateY(8px);
+  }
+  60% {
+    transform: scale(1.02) translateY(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.rsvp-intro {
+  animation: field-enter var(--duration-moderate) ease 0.1s backwards;
+}
+
+/* Submit button loading spinner */
+.btn-loading {
+  color: transparent;
+  pointer-events: none;
+  position: relative;
+}
+
+.btn-loading::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  border: 2px solid color-mix(in srgb, var(--color-on-primary) 30%, transparent);
+  border-top-color: var(--color-on-primary);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+/* Error shake */
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-6px);
+  }
+  40% {
+    transform: translateX(6px);
+  }
+  60% {
+    transform: translateX(-4px);
+  }
+  80% {
+    transform: translateX(4px);
+  }
+}
+
+.form-error-shake,
+.lookup-result-shake,
+.petition-result-shake {
+  animation: shake var(--duration-moderate) ease;
+}
+
+.lookup-result:not([hidden]),
+.petition-result:not([hidden]) {
+  animation: field-enter 0.3s ease;
+}
+
+/* Success state celebration */
+@keyframes success-title {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  60% {
+    transform: scale(1.05);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.rsvp-success.form-state-visible h3 {
+  animation: success-title 0.6s ease 0.2s backwards;
+}
+
+.rsvp-success.form-state-visible p {
+  animation: field-enter var(--duration-moderate) ease 0.4s backwards;
+}
+
+.rsvp-success.form-state-visible .btn-secondary {
+  animation: field-enter var(--duration-moderate) ease 0.6s backwards;
+}
+
+/* Confetti burst */
+.confetti-piece {
+  position: absolute;
+  border-radius: 2px;
+  animation: confetti-fall ease-out forwards;
+  will-change: transform, opacity;
+}
+
+@keyframes confetti-fall {
+  0% {
+    transform: translate(0, 0) rotate(0deg) scale(0);
+    opacity: 0;
+  }
+  10% {
+    transform: translate(0, 0) rotate(0deg) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--confetti-tx), var(--confetti-ty))
+      rotate(var(--confetti-rot)) scale(0.5);
+    opacity: 0;
+  }
+}
+
+/* Mini sparkle (Yes selection) */
+.mini-sparkle {
+  position: fixed;
+  width: var(--sparkle-size, 5px);
+  height: var(--sparkle-size, 5px);
+  background: var(--sparkle-color, var(--color-primary));
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: var(--z-grand-entrance);
+  animation: mini-sparkle-pop 0.6s ease forwards;
+}
+
+.mini-sparkle::before,
+.mini-sparkle::after {
+  content: "";
+  position: absolute;
+  background: inherit;
+  border-radius: 1px;
+}
+
+.mini-sparkle::before {
+  width: 2px;
+  height: calc(var(--sparkle-size, 5px) * 2);
+  top: calc(var(--sparkle-size, 5px) * -0.5);
+  left: calc(var(--sparkle-size, 5px) / 2 - 1px);
+}
+
+.mini-sparkle::after {
+  width: calc(var(--sparkle-size, 5px) * 2);
+  height: 2px;
+  top: calc(var(--sparkle-size, 5px) / 2 - 1px);
+  left: calc(var(--sparkle-size, 5px) * -0.5);
+}
+
+@keyframes mini-sparkle-pop {
+  0% {
+    transform: translate(0, 0) scale(0) rotate(0deg);
+    opacity: 0.8;
+  }
+  35% {
+    transform: translate(
+        calc(var(--sparkle-tx) * 0.4),
+        calc(var(--sparkle-ty) * 0.4)
+      )
+      scale(1.1) rotate(35deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--sparkle-tx), var(--sparkle-ty)) scale(0)
+      rotate(90deg);
+    opacity: 0;
+  }
+}

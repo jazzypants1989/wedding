@@ -81,25 +81,33 @@ export const BRAND = Object.freeze({
   BACKGROUND_COLOR: "#eee6dc",
 })
 
+export const FEATURES = Object.freeze({
+  /** Enable fuzzy name matching in guest lookup.
+   *  When enabled, name matches require caller's contact info to match the
+   *  found guest's contact info before returning an invite code.
+   *  Default: false — lookup uses exact email/phone matching only.
+   *  Enable for open-source deployments where guest names are individual
+   *  (not couple-style like "Josh & Jessica"). */
+  ENABLE_NAME_LOOKUP: false,
+  /** Enable email as a lookup contact method.
+   *  When false, the lookup form only accepts phone numbers.
+   *  Default: false — phone-only lookup. */
+  ENABLE_EMAIL_LOOKUP: false,
+})
+
 /** @type {Types.isGuestStatus} */
 export function isGuestStatus(value) {
-  return typeof value === "string" && value in GUEST_STATUS
+  return typeof value === "string" && /** @type {readonly string[]} */ (GUEST_STATUS_VALUES).includes(value)
 }
 
-/**
- * @param {unknown} value
- * @returns {value is Types.PetitionStatus}
- */
+/** @type {Types.isPetitionStatus} */
 export function isPetitionStatus(value) {
-  return typeof value === "string" && value in PETITION_STATUS
+  return typeof value === "string" && /** @type {readonly string[]} */ (PETITION_STATUS_VALUES).includes(value)
 }
 
-/**
- * @param {unknown} value
- * @returns {value is Types.CommunicationType}
- */
+/** @type {Types.isCommunicationType} */
 export function isCommunicationType(value) {
-  return typeof value === "string" && value in COMMUNICATION_TYPE
+  return typeof value === "string" && /** @type {readonly string[]} */ (COMMUNICATION_TYPE_VALUES).includes(value)
 }
 
 export const PROJECT_ROOT = import.meta.dirname

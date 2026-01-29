@@ -1,7 +1,7 @@
 /** @file Types for authentication module */
 
 import type { IncomingMessage, ServerResponse } from "node:http"
-import type { Guest, RSVPWithGuest } from "./db/types.js"
+import type { Guest, RSVPWithGuest } from "../db/types.js"
 
 export interface SessionCookieData {
   token: string
@@ -63,6 +63,8 @@ export type WrappedHandler = (
   routeInfo: RouteInfo,
 ) => Promise<void>
 
+export function withErrorHandling(handler: RouteHandler): WrappedHandler
+
 export function withAdmin(handler: AdminHandler): WrappedHandler
 
 export interface CSVRow {
@@ -70,7 +72,7 @@ export interface CSVRow {
   [key: string]: string | number
 }
 
-export type GuestForCSV = Partial<Guest> & { name: string }
+export type GuestForCSV = Partial<Guest> & { name: string; [key: string]: unknown }
 
 export interface RSVPForCSV {
   name: string
@@ -79,7 +81,6 @@ export interface RSVPForCSV {
   attending?: number
   actual_party_size?: number | null
   dietary_restrictions?: string | null
-  song_request?: string | null
   message?: string | null
   submitted_at?: string
 }
@@ -116,6 +117,14 @@ export class AuthorizationError extends AppError {
   constructor(message?: string)
 }
 
+export class PayloadTooLargeError extends AppError {
+  constructor(message?: string)
+}
+
+export class RateLimitError extends AppError {
+  constructor(message?: string)
+}
+
 type Params<T> = ConstructorParameters<T>
 export type AppErrorParams = Params<typeof AppError>
 export type ValidationErrorParams = Params<typeof ValidationError>
@@ -123,15 +132,8 @@ export type NotFoundErrorParams = Params<typeof NotFoundError>
 export type ConflictErrorParams = Params<typeof ConflictError>
 export type AuthenticationErrorParams = Params<typeof AuthenticationError>
 export type AuthorizationErrorParams = Params<typeof AuthorizationError>
-
-export interface RateLimitResult {
-  allowed: boolean
-  resetAt: number
-}
-
-export interface RateLimiter {
-  check(key: string): RateLimitResult
-}
+export type PayloadTooLargeErrorParams = Params<typeof PayloadTooLargeError>
+export type RateLimitErrorParams = Params<typeof RateLimitError>
 
 export interface ErrorBody {
   error: string
@@ -173,8 +175,10 @@ export function sendCsv(
   content: string,
 ): void
 
-export function sanitize(str: string, maxLen?: number): string | null
-export function isValidEmail(email: string): boolean
+export function addSecurityHeaders(headers: ResponseHeaders): ResponseHeaders
+
+export function sanitize(str: unknown, maxLen?: number): string | null
+export function isValidEmail(email: string | null | undefined): boolean
 
 /** @file Types for audit logging */
 
@@ -196,12 +200,17 @@ interface AuditActions {
   readonly GUEST_DELETE: "GUEST_DELETE"
   readonly GUEST_RESTORE: "GUEST_RESTORE"
   readonly GUEST_IMPORT: "GUEST_IMPORT"
+  readonly GUEST_EXPORT: "GUEST_EXPORT"
   readonly PETITION_APPROVE: "PETITION_APPROVE"
   readonly PETITION_DENY: "PETITION_DENY"
+  readonly PETITION_CREATE: "PETITION_CREATE"
   readonly BLOCKLIST_ADD: "BLOCKLIST_ADD"
   readonly BLOCKLIST_REMOVE: "BLOCKLIST_REMOVE"
   readonly INVITE_SEND: "INVITE_SEND"
+  readonly INVITE_SEND_FAILED: "INVITE_SEND_FAILED"
   readonly MANUAL_SMS_MARK: "MANUAL_SMS_MARK"
+  readonly RSVP_SUBMIT: "RSVP_SUBMIT"
+  readonly CSRF_FAILURE: "CSRF_FAILURE"
 }
 
 export function log(event: AuditEvent): void
@@ -259,6 +268,8 @@ export function serveStatic(
   res: ServerResponse,
 ): Promise<boolean>
 
+export function addCacheBusters(html: string): string
+
 export interface MimeTypes {
   [ext: string]: string
 }
@@ -267,25 +278,11 @@ export interface CacheControl {
   [ext: string]: string
 }
 
-export function escapeAttribute(str: string): string
-
 export function escapeHtml(str: string): string
 
 /** @file Types for centralized validation utilities */
 
-import type { GuestStatus, CommunicationType } from "./db/types.ts"
-
-export interface ValidationSuccess<T> {
-  valid: true
-  value: T
-}
-
-export interface ValidationFailure {
-  valid: false
-  error: string
-}
-
-export type ValidationResult<T> = ValidationSuccess<T> | ValidationFailure
+import type { GuestStatus, CommunicationType, ValidationResult } from "../types.js"
 
 export interface RequiredOptions {
   required?: boolean
@@ -330,6 +327,7 @@ export function validateId(
 export function validateIdArray(
   value: unknown,
   fieldName?: string,
+  maxLength?: number,
 ): ValidationResult<number[]>
 
 export function validateInviteCode(value: unknown): ValidationResult<string>
@@ -357,6 +355,11 @@ export interface RouteContext {
   params: Record<string, string>
 }
 
+export interface RouteOptions {
+  admin?: boolean
+  errorHandling?: boolean
+}
+
 export interface Route {
   method: string
   segments: RouteSegment[]
@@ -370,16 +373,31 @@ export type RouteHandler = (
   context: RouteContext,
 ) => Promise<void> | void
 
-export function ParseRoutePattern(pattern: string): ParsedPattern
-export function MatchRoute(
+export function parseRoutePattern(pattern: string): ParsedPattern
+export function matchRoute(
   urlPath: string,
   segments: RouteSegment[],
 ): string[] | null
 export function route(
   method: string,
   pattern: string,
-  handler: RouteHandler,
+  handler: AdminHandler,
+  options: { admin: true },
 ): void
+export function route(
+  method: string,
+  pattern: string,
+  handler: RouteHandler,
+  options?: { errorHandling?: boolean },
+): void
+
+/** Implementation signature for route() — used by @type in router.js */
+export type routeImpl = (
+  method: string,
+  pattern: string,
+  handler: RouteHandler | AdminHandler,
+  options?: RouteOptions,
+) => void
 export function clearRoutes(): void
 export function dispatch(
   req: IncomingMessage,

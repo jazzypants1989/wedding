@@ -6,6 +6,17 @@ import type { RouteInfo } from "../core/types.js"
 
 export function getHealth(req: IncomingMessage, res: ServerResponse): void
 
+/** @file config.js - Types for public config endpoint */
+
+export interface PublicConfig {
+  features: {
+    enableNameLookup: boolean
+    enableEmailLookup: boolean
+  }
+}
+
+export function getConfig(req: IncomingMessage, res: ServerResponse): void
+
 /** @file lookup.js - Types for guest lookup and petition endpoints */
 
 /**

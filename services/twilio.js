@@ -4,6 +4,7 @@
 import https from "node:https"
 import { WEDDING } from "../types.js"
 import { withRetry, isRetryableError } from "./retry.js"
+import { makeServiceRequest } from "./http-client.js"
 
 const ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID
 const AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN
@@ -35,7 +36,7 @@ function createSMSService(httpClient = defaultHttpClient) {
       port: 443,
       path: `/2010-04-01/Accounts/${ACCOUNT_SID}/Messages.json`,
       method: "POST",
-      timeout: 30000, // 30 second timeout
+      timeout: 30000,
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
         "Content-Length": Buffer.byteLength(postData),
@@ -45,47 +46,11 @@ function createSMSService(httpClient = defaultHttpClient) {
       },
     }
 
-    return new Promise((resolve) => {
-      const req = httpClient.request(options, (res) => {
-        let data = ""
-        res.on("data", (/** @type {string} */ chunk) => {
-          data += chunk
-        })
-        res.on("end", () => {
-          try {
-            const json = JSON.parse(data)
-            const statusCode = res.statusCode ?? 0
-            if (statusCode >= 200 && statusCode < 300) {
-              resolve({ success: true, sid: json.sid })
-            } else {
-              resolve({
-                success: false,
-                error:
-                  json.message || json.error_message || `HTTP ${statusCode}`,
-              })
-            }
-          } catch (e) {
-            resolve({
-              success: false,
-              error: `Parse error: ${
-                e instanceof Error ? e.message : String(e)
-              }`,
-            })
-          }
-        })
-      })
-
-      req.on("timeout", () => {
-        req.destroy()
-        resolve({ success: false, error: "Request timed out" })
-      })
-
-      req.on("error", (/** @type {Error} */ e) => {
-        resolve({ success: false, error: e.message })
-      })
-
-      req.write(postData)
-      req.end()
+    return makeServiceRequest(httpClient, options, postData).then((result) => {
+      if (result.success) {
+        return { success: true, sid: /** @type {string | undefined} */ (result.data?.sid) }
+      }
+      return { success: false, error: result.error }
     })
   }
 

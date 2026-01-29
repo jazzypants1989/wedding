@@ -5,12 +5,18 @@
 import { DatabaseSync } from "node:sqlite"
 import path from "node:path"
 import { createTables, runMigrations } from "./schema.js"
+import { bindExecutor } from "./sql.js"
 
 const __dirname = import.meta.dirname
-const DB_PATH = path.join(__dirname, "..", "data", "wedding.db")
+const DB_PATH = process.env.DATABASE_PATH || path.join(__dirname, "..", "data", "wedding.db")
 
 /** @type {DatabaseSync | null} */
 let db = null
+
+/** @type {Map<string, import('node:sqlite').StatementSync>} */
+// Unbounded cache — acceptable because all SQL strings are static templates.
+// Max entries ≈ number of distinct sql`` call sites × conditional variants.
+const stmtCache = new Map()
 
 /** @type {Types.init} */
 export function init() {
@@ -27,6 +33,7 @@ export function init() {
 
   createTables(db)
   runMigrations(db)
+  bindExecutor(getStmt)
 
   return db
 }
@@ -39,6 +46,7 @@ export function getDb() {
 
 /** @type {Types.close} */
 export function close() {
+  stmtCache.clear()
   if (db) {
     db.close()
     db = null
@@ -46,29 +54,15 @@ export function close() {
 }
 
 /**
- * @template T
  * @param {string} sql
- * @param {SQLInputValue[]} params
- * @returns {T | undefined}
+ * @returns {import('node:sqlite').StatementSync}
  */
-export function queryOne(sql, ...params) {
-  return /** @type {T | undefined} */ (
-    getDb()
-      .prepare(sql)
-      .get(...params)
-  )
+export function getStmt(sql) {
+  let stmt = stmtCache.get(sql)
+  if (!stmt) {
+    stmt = getDb().prepare(sql)
+    stmtCache.set(sql, stmt)
+  }
+  return stmt
 }
 
-/**
- * @template T
- * @param {string} sql
- * @param {SQLInputValue[]} params
- * @returns {T[]}
- */
-export function queryAll(sql, ...params) {
-  return /** @type {T[]} */ (
-    getDb()
-      .prepare(sql)
-      .all(...params)
-  )
-}

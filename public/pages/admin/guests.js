@@ -2,10 +2,11 @@
 /** @import * as Types from './types.js' */
 
 import { state } from "./state.js"
-import { api } from "./api.js"
-import { openModal, closeModal } from "./modal.js"
+import { api, showError, openModal, closeModal } from "./utils.js"
 import {
-  escapeHtml,
+  html,
+  raw,
+  join,
   formatDate,
   getElement,
   getFormElement,
@@ -19,6 +20,9 @@ import {
 
 /** @type {Types.GuestModuleState} */
 const moduleState = { deleteId: null, searchTimeout: undefined }
+
+/** @type {AbortController | null} */
+let searchController = null
 
 /** @type {Types.loadStats} */
 export async function loadStats() {
@@ -37,11 +41,15 @@ export async function loadStats() {
     getElement("stat-headcount").textContent = String(stats.total_headcount)
   } catch (err) {
     console.error("Failed to load stats:", err)
+    showError("Failed to load stats. Please refresh the page.")
   }
 }
 
 /** @type {Types.loadGuests} */
 export async function loadGuests() {
+  if (searchController) searchController.abort()
+  searchController = new AbortController()
+
   const search = getInputElement("guest-search").value
   const status = getSelectElement("guest-status-filter").value
   const offset = state.currentPage * state.PAGE_SIZE
@@ -54,12 +62,16 @@ export async function loadGuests() {
     if (search) params.set("search", search)
     if (status) params.set("status", status)
 
-    const data = await api(`/api/admin/guests?${params}`)
+    const data = await api(`/api/admin/guests?${params}`, {
+      signal: searchController.signal,
+    })
     const response = /** @type {Types.GuestsApiResponse} */ (data)
     state.currentGuests = response.guests
     renderGuests(response.guests, response.pagination)
   } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") return
     console.error("Failed to load guests:", err)
+    showError("Failed to load guests. Please refresh the page.")
   }
 }
 
@@ -70,62 +82,63 @@ function renderGuests(guests, pagination) {
     getSelectElement("guest-status-filter").value === "archived"
 
   if (guests.length === 0) {
-    tbody.innerHTML = `
+    tbody.innerHTML = html`
       <tr>
-        <td colspan="6" class="empty-state">${
-          isViewingArchived ? "No archived guests" : "No guests found"
-        }</td>
+        <td colspan="6" class="empty-state">
+          ${isViewingArchived ? "No archived guests" : "No guests found"}
+        </td>
       </tr>
     `
     renderPagination(pagination)
     return
   }
 
-  tbody.innerHTML = guests
-    .map((guest) => {
-      const isArchived = !!guest.deleted_at
-      const statusDisplay = isArchived ? "archived" : guest.status
+  tbody.innerHTML = html`${guests.map((guest) => {
+    const isArchived = !!guest.deleted_at
+    const statusDisplay = isArchived ? "archived" : guest.status
 
-      return `
-    <tr data-id="${guest.id}" class="${isArchived ? "archived-row" : ""}">
-      <td>
-        <strong>${escapeHtml(guest.name)}</strong>
-        <br><span class="invite-code">${guest.invite_code}</span>
-      </td>
-      <td>
-        ${guest.email ? escapeHtml(guest.email) : ""}
-        ${guest.email && guest.phone ? "<br>" : ""}
-        ${guest.phone ? escapeHtml(guest.phone) : ""}
-        ${
-          !guest.email && !guest.phone
-            ? '<span style="color: var(--color-text-muted)">No contact</span>'
-            : ""
-        }
-      </td>
-      <td>
-        <span class="status-badge status-${statusDisplay}">${statusDisplay}</span>
-      </td>
-      <td class="hide-mobile">${guest.party_size}</td>
-      <td class="hide-mobile">
-        ${guest.last_invited_at ? formatDate(guest.last_invited_at) : "-"}
-        ${
-          guest.invite_count > 0
-            ? `<br><small>(${guest.invite_count}x)</small>`
-            : ""
-        }
-      </td>
-      <td class="actions-cell">
-        ${
-          isArchived
-            ? `<button class="btn btn-secondary btn-sm" data-action="restore">Restore</button>`
-            : `<button class="btn btn-secondary btn-sm" data-action="edit">Edit</button>
-             <button class="btn btn-danger btn-sm" data-action="archive">Archive</button>`
-        }
-      </td>
-    </tr>
-  `
-    })
-    .join("")
+    return html`
+      <tr data-id="${guest.id}" class="${isArchived ? "archived-row" : ""}">
+        <td>
+          <strong>${guest.name}</strong>
+          <br /><span class="invite-code">${guest.invite_code}</span>
+        </td>
+        <td>
+          ${guest.email || guest.phone
+            ? join([guest.email, guest.phone], raw("<br>"))
+            : raw(
+                '<span style="color: var(--color-text-muted)">No contact</span>',
+              )}
+        </td>
+        <td>
+          <span class="status-badge status-${statusDisplay}"
+            >${statusDisplay}</span
+          >
+        </td>
+        <td class="hide-mobile">${guest.party_size}</td>
+        <td class="hide-mobile">
+          ${guest.last_invited_at ? formatDate(guest.last_invited_at) : "-"}
+          ${guest.invite_count > 0 &&
+          html`<br /><small>(${guest.invite_count}x)</small>`}
+        </td>
+        <td class="actions-cell">
+          ${isArchived
+            ? html`<button
+                class="btn btn-secondary btn-sm"
+                data-action="restore"
+              >
+                Restore
+              </button>`
+            : html`<button class="btn btn-secondary btn-sm" data-action="edit">
+                  Edit
+                </button>
+                <button class="btn btn-danger btn-sm" data-action="archive">
+                  Archive
+                </button>`}
+        </td>
+      </tr>
+    `
+  })}`
 
   renderPagination(pagination)
 }
@@ -136,24 +149,33 @@ function renderPagination(pagination) {
   const totalPages = Math.ceil(pagination.total / pagination.limit)
 
   if (totalPages <= 1) {
-    container.innerHTML = `<span class="pagination-info">${
-      pagination.total
-    } guest${pagination.total !== 1 ? "s" : ""}</span>`
+    container.innerHTML = html`<span class="pagination-info"
+      >${pagination.total} guest${pagination.total !== 1 ? "s" : ""}</span
+    >`
     return
   }
 
   const currentPageNum = Math.floor(pagination.offset / pagination.limit)
 
-  container.innerHTML = `
-    <button class="btn btn-secondary btn-sm" ${
-      currentPageNum === 0 ? "disabled" : ""
-    } data-action="prev-page">Prev</button>
-    <span class="pagination-info">Page ${
-      currentPageNum + 1
-    } of ${totalPages} (${pagination.total} guests)</span>
-    <button class="btn btn-secondary btn-sm" ${
-      currentPageNum >= totalPages - 1 ? "disabled" : ""
-    } data-action="next-page">Next</button>
+  container.innerHTML = html`
+    <button
+      class="btn btn-secondary btn-sm"
+      ${currentPageNum === 0 ? "disabled" : ""}
+      data-action="prev-page"
+    >
+      Prev
+    </button>
+    <span class="pagination-info"
+      >Page ${currentPageNum + 1} of ${totalPages} (${pagination.total}
+      guests)</span
+    >
+    <button
+      class="btn btn-secondary btn-sm"
+      ${currentPageNum >= totalPages - 1 ? "disabled" : ""}
+      data-action="next-page"
+    >
+      Next
+    </button>
   `
 }
 
@@ -213,10 +235,10 @@ export async function restoreGuest(id) {
 
   try {
     await api(`/api/admin/guests/${id}/restore`, { method: "POST" })
-    loadGuests()
-    loadStats()
+    await loadGuests()
+    await loadStats()
   } catch (err) {
-    alert("Failed to restore guest: " + getErrorMessage(err))
+    showError("Failed to restore guest: " + getErrorMessage(err))
   }
 }
 
@@ -254,8 +276,8 @@ async function handleGuestFormSubmit(e) {
     }
 
     closeModal(getDialogElement("guest-modal"))
-    loadGuests()
-    loadStats()
+    await loadGuests()
+    await loadStats()
   } catch (err) {
     errorEl.textContent = getErrorMessage(err)
     errorEl.hidden = false
@@ -271,13 +293,17 @@ async function handleDeleteConfirm() {
 
   btn.disabled = true
 
+  const errorEl = getElement("delete-error")
+  errorEl.hidden = true
+
   try {
     await api(`/api/admin/guests/${moduleState.deleteId}`, { method: "DELETE" })
     closeModal(getDialogElement("delete-modal"))
-    loadGuests()
-    loadStats()
+    await loadGuests()
+    await loadStats()
   } catch (err) {
-    alert("Failed to archive guest: " + getErrorMessage(err))
+    errorEl.textContent = getErrorMessage(err)
+    errorEl.hidden = false
   } finally {
     btn.disabled = false
     moduleState.deleteId = null

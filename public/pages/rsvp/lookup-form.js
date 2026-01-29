@@ -1,14 +1,16 @@
 /** @file Guest invitation lookup form module */
 /** @import * as Types from './types.js' */
 
-import { apiRequest, getErrorMessage } from "./fetch-helper.js"
 import {
   getElement,
   getInputElement,
   getButtonElement,
   getFormElement,
   detectContactType,
+  getErrorMessage,
+  api,
 } from "../utils.js"
+import { showResult, setButtonLoading } from "./utils.js"
 
 /** @type {Types.LookupFormState | null} */
 let state = null
@@ -16,8 +18,10 @@ let state = null
 /** @type {Types.lookupGuest} */
 async function lookupGuest(name, contact) {
   const contactType = detectContactType(contact)
-  const payload = { name, [contactType]: contact }
-  return apiRequest("/api/lookup", {
+  /** @type {Record<string, string>} */
+  const payload = { [contactType]: contact }
+  if (name) payload.name = name
+  return api("/api/lookup", {
     method: "POST",
     body: JSON.stringify(payload),
   })
@@ -26,18 +30,14 @@ async function lookupGuest(name, contact) {
 /** @type {Types.showLookupResult} */
 function showLookupResult(message, isError = false) {
   if (!state) return
-  state.elements.result.textContent = message
-  state.elements.result.hidden = false
-  state.elements.result.classList.toggle("lookup-result--error", isError)
-  state.elements.result.classList.toggle("lookup-result--success", !isError)
-  if (isError) {
-    state.elements.result.classList.add("lookup-result--shake")
-    state.elements.result.addEventListener(
-      "animationend",
-      () => state?.elements.result.classList.remove("lookup-result--shake"),
-      { once: true },
-    )
-  }
+  showResult(
+    state.elements.result,
+    message,
+    isError,
+    "alert-error",
+    "alert-success",
+    "lookup-result-shake",
+  )
 }
 
 /** @type {Types.handleLookupSubmit} */
@@ -48,26 +48,33 @@ async function handleLookupSubmit(e) {
   const { elements, onShowPetitionForm } = state
   if (elements.submit.disabled) return
 
-  const name = elements.name.value.trim()
+  const name = elements.name.value.trim() || null
   const contact = elements.contact.value.trim()
-  if (!name || !contact) return
+  if (!contact) return
+  if (!name && !elements.nameGroup.hidden) return
 
-  elements.submit.disabled = true
-  elements.submit.classList.add("btn--loading")
+  const contactType = detectContactType(contact)
+  const phoneOnly = elements.contact.type === "tel"
+  if (contactType === "unknown" || (phoneOnly && contactType !== "phone")) {
+    showLookupResult(
+      phoneOnly
+        ? "Please enter a valid phone number."
+        : "Please enter a valid email address or phone number.",
+      true,
+    )
+    return
+  }
+
+  setButtonLoading(elements.submit, true)
   elements.result.hidden = true
 
   try {
-    const { ok, data } = await lookupGuest(name, contact)
-
-    if (!ok) {
-      showLookupResult(getErrorMessage(data), true)
-      return
-    }
+    const data = await lookupGuest(name, contact)
 
     if (data.canPetition && !data.found) {
       showLookupResult(data.message || "", false)
       if (onShowPetitionForm) {
-        onShowPetitionForm(name, contact)
+        onShowPetitionForm(name || "", contact)
       }
       return
     }
@@ -86,8 +93,7 @@ async function handleLookupSubmit(e) {
     showLookupResult(getErrorMessage(err), true)
   } finally {
     if (state) {
-      state.elements.submit.disabled = false
-      state.elements.submit.classList.remove("btn--loading")
+      setButtonLoading(state.elements.submit, false)
     }
   }
 }
@@ -99,13 +105,40 @@ export function hideLookupSection() {
   }
 }
 
+/** @type {Types.getConfig} */
+function getConfig() {
+  return api("/api/config")
+}
+
+/** @type {Types.fetchConfig} */
+async function fetchConfig() {
+  try {
+    const data = await getConfig()
+    if (!data.features) return
+
+    if (!data.features.enableNameLookup && state) {
+      state.elements.nameGroup.hidden = true
+      state.elements.name.required = false
+    }
+    if (!data.features.enableEmailLookup && state) {
+      state.elements.contactLabel.textContent = "Phone Number"
+      state.elements.contact.type = "tel"
+      state.elements.contact.placeholder = "(555) 123-4567"
+    }
+  } catch {
+    // Config fetch failure is non-critical; form works with generic defaults
+  }
+}
+
 /** @type {Types.initLookupForm} */
 export function initLookupForm(onShowPetitionForm) {
   state = {
     elements: {
       result: getElement("lookup-result"),
+      nameGroup: getElement("lookup-name-group"),
       name: getInputElement("lookup-name"),
       contact: getInputElement("lookup-contact"),
+      contactLabel: getElement("lookup-contact-label"),
       submit: getButtonElement("lookup-submit"),
       section: getElement("rsvp-lookup"),
     },
@@ -113,4 +146,5 @@ export function initLookupForm(onShowPetitionForm) {
   }
 
   getFormElement("lookup-form").addEventListener("submit", handleLookupSubmit)
+  fetchConfig()
 }

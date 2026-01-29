@@ -67,6 +67,7 @@ const insertGuest = db.prepare(
   "INSERT INTO guests (name, email, phone, party_size, invite_code, status, notes) VALUES (?, ?, ?, ?, ?, ?, ?)",
 )
 
+/** @type {Record<string, number | bigint>} */
 const guestIds = {}
 for (const g of guests) {
   const result = insertGuest.run(

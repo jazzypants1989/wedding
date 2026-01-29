@@ -1,39 +1,35 @@
 /** @file Admin blocklist management endpoints */
 /** @import * as Types from './types.js' */
 
-import { withAdmin } from "../../core/auth.js"
 import { sendJson, parseBody } from "../../core/http.js"
-import { ValidationError, NotFoundError } from "../../core/errors.js"
 import {
+  ValidationError,
+  NotFoundError,
   validateEmail,
   validatePhone,
   validateOptionalString,
   validateId,
 } from "../../core/validation.js"
 import { LIMITS } from "../../types.js"
-import { log, AUDIT_ACTIONS } from "../../core/log.js"
+import { log, AUDIT_ACTIONS } from "../../core/utils.js"
 import { getClientIp } from "../../core/rate-limit.js"
-import { getDb, queryOne, queryAll } from "../../db/connection.js"
+import { sql } from "../../db/sql.js"
 import {
   normalizePhone,
+  normalizeEmail,
   normalizeName,
   levenshteinDistance,
 } from "../../db/utils.js"
 
 /** @type {Types.listHandler} */
-async function listHandler(req, res) {
+export async function list(req, res) {
   const blocklist = getAllBlocklist()
   return sendJson(res, 200, { blocklist, total: blocklist.length })
 }
 
 /** @type {Types.createHandler} */
-async function createHandler(req, res, { session }) {
-  let body
-  try {
-    body = await parseBody(req)
-  } catch (err) {
-    throw new ValidationError("Invalid JSON body")
-  }
+export async function create(req, res, { session }) {
+  const body = await parseBody(req)
 
   const { name, email: inputEmail, phone: inputPhone, reason } = body
 
@@ -51,7 +47,7 @@ async function createHandler(req, res, { session }) {
 
   if (!nameResult.value && !emailResult.value && !phoneResult.value) {
     throw new ValidationError(
-      "At least one of name, email, or phone is required"
+      "At least one of name, email, or phone is required",
     )
   }
 
@@ -81,7 +77,7 @@ async function createHandler(req, res, { session }) {
 }
 
 /** @type {Types.removeHandler} */
-async function removeHandler(req, res, { params, session }) {
+export async function remove(req, res, { params, session }) {
   const idResult = validateId(params.id, "blocklist entry ID")
   if (!idResult.valid) {
     throw new ValidationError(idResult.error)
@@ -106,76 +102,35 @@ async function removeHandler(req, res, { params, session }) {
   })
 }
 
-export const list = withAdmin(listHandler)
-export const create = withAdmin(createHandler)
-export const remove = withAdmin(removeHandler)
-
 /** @type {Types.isBlocked} */
 export function isBlocked({ name, email, phone }) {
-  const normalizedInputEmail = email ? email.toLowerCase().trim() : null
+  const normalizedInputEmail = normalizeEmail(email)
   const normalizedInputPhone = normalizePhone(phone)
 
   if (normalizedInputEmail) {
-    const emailMatch = queryOne(
-      "SELECT * FROM blocklist WHERE LOWER(email) = ? LIMIT 1",
-      normalizedInputEmail
-    )
+    const emailMatch =
+      sql`SELECT * FROM blocklist WHERE LOWER(email) = ${normalizedInputEmail} LIMIT 1`.get()
     if (emailMatch) return emailMatch
   }
 
   if (normalizedInputPhone) {
-    const phoneMatch = queryOne(
-      "SELECT * FROM blocklist WHERE phone = ? LIMIT 1",
-      normalizedInputPhone
-    )
+    const phoneMatch =
+      sql`SELECT * FROM blocklist WHERE phone = ${normalizedInputPhone} LIMIT 1`.get()
     if (phoneMatch) return phoneMatch
   }
 
   if (name) {
     const normalizedInputName = normalizeName(name)
-    if (normalizedInputName && normalizedInputName.length >= 3) {
-      const prefix = normalizedInputName.slice(0, 3)
-      const prefixEntries = queryAll(
-        "SELECT * FROM blocklist WHERE name IS NOT NULL AND LOWER(name) LIKE ?",
-        prefix + "%"
-      )
-
-      for (const entry of prefixEntries) {
-        const normalizedEntryName = normalizeName(entry.name)
-        const distance = levenshteinDistance(
-          normalizedInputName,
-          normalizedEntryName
-        )
-        if (distance <= 2) {
-          return entry
-        }
-      }
-
-      const otherEntries = queryAll(
-        "SELECT * FROM blocklist WHERE name IS NOT NULL AND LOWER(name) NOT LIKE ?",
-        prefix + "%"
-      )
-
-      for (const entry of otherEntries) {
-        const normalizedEntryName = normalizeName(entry.name)
-        const distance = levenshteinDistance(
-          normalizedInputName,
-          normalizedEntryName
-        )
-        if (distance <= 2) {
-          return entry
-        }
-      }
-    } else if (normalizedInputName) {
-      const namedEntries = queryAll(
-        "SELECT * FROM blocklist WHERE name IS NOT NULL"
-      )
+    if (normalizedInputName) {
+      const namedEntries =
+        sql`SELECT * FROM blocklist WHERE name IS NOT NULL`.all()
 
       for (const entry of namedEntries) {
         const normalizedEntryName = normalizeName(entry.name)
         const distance = levenshteinDistance(
           normalizedInputName,
-          normalizedEntryName
+          normalizedEntryName,
+          2,
         )
         if (distance <= 2) {
           return entry
@@ -189,29 +144,18 @@ export function isBlocked({ name, email, phone }) {
 
 /** @type {Types.getAllBlocklist} */
 export function getAllBlocklist() {
-  return queryAll("SELECT * FROM blocklist ORDER BY created_at DESC")
+  return sql`SELECT * FROM blocklist ORDER BY created_at DESC`.all()
 }
 
 /** @type {Types.addToBlocklist} */
 export function addToBlocklist({ name, email, phone, reason }) {
-  const db = getDb()
-  const stmt = db.prepare(`
-    INSERT INTO blocklist (name, email, phone, reason)
-    VALUES (?, ?, ?, ?)
-  `)
-  const result = stmt.run(
-    name || null,
-    email ? email.toLowerCase().trim() : null,
-    normalizePhone(phone),
-    reason || null
-  )
+  const result = sql`INSERT INTO blocklist (name, email, phone, reason)
+    VALUES (${name || null}, ${normalizeEmail(email)}, ${normalizePhone(phone)}, ${reason || null})`.run()
   return Number(result.lastInsertRowid)
 }
 
 /** @type {Types.removeFromBlocklist} */
 export function removeFromBlocklist(id) {
-  const db = getDb()
-  const stmt = db.prepare("DELETE FROM blocklist WHERE id = ?")
-  const result = stmt.run(id)
+  const result = sql`DELETE FROM blocklist WHERE id = ${id}`.run()
   return result.changes > 0
 }

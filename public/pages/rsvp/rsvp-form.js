@@ -6,21 +6,22 @@ import {
   getFormElement,
   getSelectElement,
   getTextAreaElement,
+  getErrorMessage,
+  api,
 } from "../utils.js"
-import { apiRequest, getErrorMessage } from "./fetch-helper.js"
-import { fireConfetti } from "./confetti.js"
+import { fireConfetti, setButtonLoading } from "./utils.js"
 
 /** @type {Types.RsvpFormState} */
 const state = { inviteCode: null, guestData: null }
 
 /** @type {Types.fetchRsvpData} */
 function fetchRsvpData(code) {
-  return apiRequest(`/api/rsvp/${code}`)
+  return api(`/api/rsvp/${code}`)
 }
 
 /** @type {Types.submitRsvp} */
 function submitRsvp(code, payload) {
-  return apiRequest(`/api/rsvp/${code}`, {
+  return api(`/api/rsvp/${code}`, {
     method: "POST",
     body: JSON.stringify(payload),
   })
@@ -35,7 +36,7 @@ function showError(message) {
   errorEl.hidden = false
   getElement("rsvp-error-message").textContent = message
   requestAnimationFrame(() => {
-    errorEl.classList.add("form-state--visible")
+    errorEl.classList.add("form-state-visible")
   })
 }
 
@@ -48,7 +49,7 @@ function showSuccess(message) {
   successEl.hidden = false
   getElement("success-message").textContent = message
   requestAnimationFrame(() => {
-    successEl.classList.add("form-state--visible")
+    successEl.classList.add("form-state-visible")
   })
   fireConfetti()
 }
@@ -65,23 +66,12 @@ function prefillForm(rsvp) {
   }
 
   if (rsvp.attending) {
-    getElement("attending-details").classList.add("attending-details--open")
+    getElement("attending-details").classList.add("attending-details-open")
     getSelectElement("party-size").value = String(rsvp.actual_party_size || 1)
     getTextAreaElement("dietary").value = rsvp.dietary_restrictions || ""
   }
 
   getTextAreaElement("message").value = rsvp.message || ""
-}
-
-/** @type {Types.updateRadioStyles} */
-function updateRadioStyles() {
-  const form = getFormElement("rsvp-form")
-  form.querySelectorAll(".radio-label").forEach((label) => {
-    const input = label.querySelector('input[type="radio"]')
-    if (input instanceof HTMLInputElement) {
-      label.classList.toggle("radio-label--checked", input.checked)
-    }
-  })
 }
 
 /** @type {Types.setupFormListeners} */
@@ -94,9 +84,8 @@ function setupFormListeners() {
     radio.addEventListener("change", (e) => {
       if (e.target instanceof HTMLInputElement) {
         const isAttending = e.target.value === "yes"
-        attendingDetails.classList.toggle("attending-details--open", isAttending)
+        attendingDetails.classList.toggle("attending-details-open", isAttending)
         partySize.required = isAttending
-        updateRadioStyles()
         if (isAttending) {
           miniSparkle(e.target)
         }
@@ -104,7 +93,6 @@ function setupFormListeners() {
     })
   })
 
-  updateRadioStyles()
   form.addEventListener("submit", handleSubmit)
 }
 
@@ -118,8 +106,7 @@ async function handleSubmit(e) {
 
   if (submitBtn.disabled) return
 
-  submitBtn.disabled = true
-  submitBtn.classList.add("btn--loading")
+  setButtonLoading(submitBtn, true)
   const formError = getElement("form-error")
   formError.hidden = true
 
@@ -141,24 +128,18 @@ async function handleSubmit(e) {
   }
 
   try {
-    const { ok, data } = await submitRsvp(state.inviteCode, payload)
-
-    if (!ok) {
-      throw new Error(data.message)
-    }
-
+    const data = await submitRsvp(state.inviteCode, payload)
     showSuccess(data.message)
   } catch (err) {
     formError.textContent = getErrorMessage(err)
     formError.hidden = false
-    formError.classList.add("form-error--shake")
+    formError.classList.add("form-error-shake")
     formError.addEventListener(
       "animationend",
-      () => formError.classList.remove("form-error--shake"),
+      () => formError.classList.remove("form-error-shake"),
       { once: true },
     )
-    submitBtn.disabled = false
-    submitBtn.classList.remove("btn--loading")
+    setButtonLoading(submitBtn, false)
   }
 }
 
@@ -170,7 +151,7 @@ function showForm(data) {
   const form = getFormElement("rsvp-form")
   form.hidden = false
   requestAnimationFrame(() => {
-    form.classList.add("form-state--visible")
+    form.classList.add("form-state-visible")
   })
 
   getElement("guest-name").textContent = data.guest.name
@@ -204,15 +185,7 @@ export async function initRsvpForm() {
   }
 
   try {
-    const { ok, data } = await fetchRsvpData(state.inviteCode)
-
-    if (!ok) {
-      showError(
-        "Unable to load your invitation. Please check your link and try again.",
-      )
-      return
-    }
-
+    const data = await fetchRsvpData(state.inviteCode)
     state.guestData = data
     showForm(data)
   } catch (err) {
@@ -222,25 +195,33 @@ export async function initRsvpForm() {
 
 /** @type {Types.miniSparkle} */
 function miniSparkle(element) {
+  console.log("sparkle")
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return
 
-  const label = element.closest(".radio-label")
+  const label = element.closest(".radio-card")
   if (!label) return
   const rect = label.getBoundingClientRect()
-  const count = 6
+  const count = 9
+  const colors = ["var(--color-primary)", "#FFD700", "#FFF0D4"]
+  const cx = rect.left + rect.width / 2
+  const cy = rect.top + rect.height / 2
 
   for (let i = 0; i < count; i++) {
     const dot = document.createElement("div")
     dot.className = "mini-sparkle"
 
-    const angle = (i / count) * 360
+    const angle = (i / count) * 360 + (Math.random() * 20 - 10)
     const rad = (angle * Math.PI) / 180
-    const dist = 20 + Math.random() * 30
+    const dist = 18 + Math.random() * 35
+    const size = 3 + Math.random() * 4
 
-    dot.style.left = rect.left + rect.width / 2 + "px"
-    dot.style.top = rect.top + rect.height / 2 + "px"
+    dot.style.left = cx + "px"
+    dot.style.top = cy + "px"
+    dot.style.setProperty("--sparkle-size", size + "px")
+    dot.style.setProperty("--sparkle-color", colors[i % colors.length])
     dot.style.setProperty("--sparkle-tx", Math.cos(rad) * dist + "px")
     dot.style.setProperty("--sparkle-ty", Math.sin(rad) * dist + "px")
+    dot.style.animationDelay = Math.random() * 120 + "ms"
 
     dot.addEventListener("animationend", () => dot.remove())
     document.body.appendChild(dot)

@@ -17,7 +17,8 @@ import {
   validatePhone,
   validateOptionalString,
 } from "../core/validation.js"
-import { LIMITS } from "../types.js"
+import { LIMITS, FEATURES } from "../types.js"
+import { log, AUDIT_ACTIONS } from "../core/utils.js"
 
 /** @type {Types.notFoundResponse} */
 function notFoundResponse(res) {
@@ -34,20 +35,13 @@ export async function lookup(req, res) {
   const clientIp = getClientIp(req)
   if (checkRateLimit(res, limiters.lookup, clientIp)) return
 
-  let body
-  try {
-    body = await parseBody(req)
-  } catch (err) {
-    return sendJson(res, 400, { error: "Invalid JSON body" })
-  }
+  const body = await parseBody(req)
 
   const { name, email: inputEmail, phone: inputPhone } = body
 
-  const nameResult = validateRequiredString(
-    name,
-    "Name",
-    LIMITS.NAME_MAX_LENGTH,
-  )
+  const nameResult = FEATURES.ENABLE_NAME_LOOKUP
+    ? validateRequiredString(name, "Name", LIMITS.NAME_MAX_LENGTH)
+    : validateOptionalString(name, LIMITS.NAME_MAX_LENGTH)
   if (!nameResult.valid) {
     return sendJson(res, 400, { error: nameResult.error })
   }
@@ -67,7 +61,7 @@ export async function lookup(req, res) {
   }
 
   const blocked = isBlocked({
-    name: nameResult.value,
+    name: nameResult.value || "",
     email: emailResult.value,
     phone: phoneResult.value,
   })
@@ -88,17 +82,27 @@ export async function lookup(req, res) {
     if (guest) matchMethod = "phone"
   }
 
-  if (!guest) {
+  if (!guest && FEATURES.ENABLE_NAME_LOOKUP && nameResult.value) {
     const nameMatches = searchGuestsByName(nameResult.value)
 
     if (nameMatches.length === 1) {
       const match = nameMatches[0]
-      if (match.email) {
+
+      // Verify caller's contact info matches the found guest
+      let contactVerified = false
+
+      if (emailResult.value && match.email) {
+        contactVerified =
+          emailResult.value.toLowerCase() === match.email.toLowerCase()
+      }
+
+      if (!contactVerified && phoneResult.value && match.phone) {
+        contactVerified = phoneResult.value === match.phone
+      }
+
+      if (contactVerified) {
         guest = match
-        matchMethod = "email"
-      } else if (match.phone) {
-        guest = match
-        matchMethod = "phone"
+        matchMethod = "name"
       }
     }
   }
@@ -120,12 +124,7 @@ export async function petition(req, res) {
   const clientIp = getClientIp(req)
   if (checkRateLimit(res, limiters.lookup, clientIp)) return
 
-  let body
-  try {
-    body = await parseBody(req)
-  } catch (err) {
-    return sendJson(res, 400, { error: "Invalid JSON body" })
-  }
+  const body = await parseBody(req)
 
   const {
     name,
@@ -173,7 +172,7 @@ export async function petition(req, res) {
     phone: phoneResult.value,
   })
   if (blocked) {
-    return sendJson(res, 403, { error: "Unable to process your request." })
+    return notFoundResponse(res)
   }
 
   const existingPetition = getPetitionByEmail(petitionEmail)
@@ -189,6 +188,12 @@ export async function petition(req, res) {
     phone: phoneResult.value,
     relationship: relationshipResult.value,
     message: messageResult.value,
+  })
+
+  log({
+    action: AUDIT_ACTIONS.PETITION_CREATE,
+    ip: clientIp,
+    details: { email: petitionEmail },
   })
 
   return sendJson(res, 201, {

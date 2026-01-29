@@ -1,11 +1,10 @@
 /** @file CSV Import module */
 /** @import * as Types from './types.js' */
 
-import { api } from "./api.js"
-import { openModal } from "./modal.js"
+import { api, openModal } from "./utils.js"
 import { loadGuests, loadStats } from "./guests.js"
 import {
-  escapeHtml,
+  html,
   getElement,
   getInputElement,
   getButtonElement,
@@ -63,28 +62,32 @@ function showCSVPreview(csvText) {
   const headers = parseRow(lines[0])
   const previewRows = lines.slice(1, 6).map(parseRow)
 
-  let html = '<table class="preview-table"><thead><tr>'
-  headers.forEach((h) => {
-    html += `<th>${escapeHtml(h)}</th>`
-  })
-  html += "</tr></thead><tbody>"
-
-  previewRows.forEach((row) => {
-    html += "<tr>"
-    headers.forEach((_, i) => {
-      html += `<td>${escapeHtml(row[i] || "")}</td>`
-    })
-    html += "</tr>"
-  })
-
-  if (lines.length > 6) {
-    html += `<tr><td colspan="${headers.length}" class="text-muted">...and ${
-      lines.length - 6
-    } more rows</td></tr>`
-  }
-
-  html += "</tbody></table>"
-  getElement("csv-preview-table").innerHTML = html
+  getElement("csv-preview-table").innerHTML = html`
+    <table class="preview-table">
+      <thead>
+        <tr>
+          ${headers.map((h) => html`<th>${h}</th>`)}
+        </tr>
+      </thead>
+      <tbody>
+        ${previewRows.map(
+          (row) => html`
+            <tr>
+              ${headers.map((_, i) => html`<td>${row[i] || ""}</td>`)}
+            </tr>
+          `,
+        )}
+        ${lines.length > 6 &&
+        html`
+          <tr>
+            <td colspan="${headers.length}" class="text-muted">
+              ...and ${lines.length - 6} more rows
+            </td>
+          </tr>
+        `}
+      </tbody>
+    </table>
+  `
   getElement("csv-preview").hidden = false
 }
 
@@ -158,37 +161,43 @@ async function handleImportSubmit() {
     getElement("import-instructions").hidden = true
     getElement("import-results").hidden = false
 
-    let html = `<div class="import-summary">
-      <div class="import-stat success"><strong>${result.added}</strong> guests added</div>
-      <div class="import-stat warning"><strong>${result.skipped.length}</strong> skipped</div>
-      <div class="import-stat error"><strong>${result.errors.length}</strong> errors</div>
-    </div>`
-
-    if (result.skipped.length > 0) {
-      html += '<h4>Skipped (duplicates):</h4><ul class="import-list">'
-      result.skipped.forEach((s) => {
-        html += `<li><strong>Line ${s.line}:</strong> ${escapeHtml(
-          s.name,
-        )} - ${escapeHtml(s.reason)}</li>`
-      })
-      html += "</ul>"
-    }
-
-    if (result.errors.length > 0) {
-      html += '<h4>Errors:</h4><ul class="import-list error-list">'
-      result.errors.forEach((e) => {
-        html += `<li><strong>Line ${e.line}:</strong> ${escapeHtml(
-          e.error,
-        )}</li>`
-      })
-      html += "</ul>"
-    }
-
-    getElement("import-results-content").innerHTML = html
+    getElement("import-results-content").innerHTML = html`
+      <div class="import-summary">
+        <div class="import-stat success">
+          <strong>${result.added}</strong> guests added
+        </div>
+        <div class="import-stat warning">
+          <strong>${result.skipped.length}</strong> skipped
+        </div>
+        <div class="import-stat error">
+          <strong>${result.errors.length}</strong> errors
+        </div>
+      </div>
+      ${result.skipped.length > 0 &&
+      html`
+        <h4>Skipped (duplicates):</h4>
+        <ul class="import-list">
+          ${result.skipped.map(
+            (s) => html`
+              <li><strong>Line ${s.line}:</strong> ${s.name} - ${s.reason}</li>
+            `,
+          )}
+        </ul>
+      `}
+      ${result.errors.length > 0 &&
+      html`
+        <h4>Errors:</h4>
+        <ul class="import-list error-list">
+          ${result.errors.map(
+            (e) => html` <li><strong>Line ${e.line}:</strong> ${e.error}</li> `,
+          )}
+        </ul>
+      `}
+    `
     submitBtn.textContent = "Done"
 
-    loadGuests()
-    loadStats()
+    await loadGuests()
+    await loadStats()
   } catch (err) {
     errorEl.textContent = getErrorMessage(err)
     errorEl.hidden = false

@@ -1,10 +1,10 @@
 /** @file Admin petition management endpoints */
 /** @import * as Types from './types.js' */
-import { withAdmin } from "../../core/auth.js"
 import { isPetitionStatus } from "../../types.js"
 import {
   withTransaction,
   normalizePhone,
+  normalizeEmail,
   now,
   generateInviteCode,
 } from "../../db/utils.js"
@@ -12,23 +12,24 @@ import { getGuestById, updateGuestInvitedAt } from "../guests/data.js"
 import { logCommunication } from "../../db/utils.js"
 import { addToBlocklist } from "./blocklist.js"
 import { sendJson, parseBody } from "../../core/http.js"
-import { ValidationError, NotFoundError } from "../../core/errors.js"
 import { BASE_URL } from "../../types.js"
 import {
   validateId,
   validatePartySize,
   validateOptionalString,
+  ValidationError,
+  NotFoundError,
 } from "../../core/validation.js"
 import { LIMITS, PETITION_STATUS } from "../../types.js"
-import { log, AUDIT_ACTIONS } from "../../core/log.js"
+import { log, AUDIT_ACTIONS } from "../../core/utils.js"
 import { getClientIp } from "../../core/rate-limit.js"
 import * as twilio from "../../services/twilio.js"
 import * as email from "../../services/email.js"
 
-import { getDb, queryOne, queryAll } from "../../db/connection.js"
+import { sql } from "../../db/sql.js"
 
 /** @type {Types.listPetitions} */
-async function listPetitions(req, res) {
+export async function list(req, res) {
   const urlObj = new URL(req.url ?? "/", `http://${req.headers.host}`)
   const statusParam = urlObj.searchParams.get("status")
   const status = isPetitionStatus(statusParam) ? statusParam : undefined
@@ -44,22 +45,13 @@ async function listPetitions(req, res) {
 }
 
 /** @type {Types.ParamsHandler} */
-async function approvePetitionHandler(req, res, { params, session }) {
+export async function approve(req, res, { params, session }) {
   const idResult = validateId(params.id, "petition ID")
   if (!idResult.valid) {
     throw new ValidationError(idResult.error)
   }
 
-  let body
-  try {
-    body = await parseBody(req)
-  } catch (err) {
-    const message = err instanceof Error ? err.message : ""
-    if (message === "Payload too large") {
-      throw new ValidationError("Payload too large")
-    }
-    throw new ValidationError("Invalid JSON body")
-  }
+  const body = await parseBody(req)
 
   const partySizeResult = validatePartySize(body.party_size ?? 1)
   if (!partySizeResult.valid) {
@@ -103,7 +95,7 @@ async function approvePetitionHandler(req, res, { params, session }) {
 
   let inviteSent = false
   if (sendInvite && petition) {
-    const inviteUrl = `${BASE_URL}/rsvp.html?code=${guestResult.invite_code}`
+    const inviteUrl = `${BASE_URL}/rsvp?code=${guestResult.invite_code}`
 
     if (petition.email && email.isConfigured()) {
       const emailData = email.getDefaultInviteEmail(petition.name, inviteUrl)
@@ -147,7 +139,7 @@ async function approvePetitionHandler(req, res, { params, session }) {
 }
 
 /** @type {Types.ParamsHandler} */
-async function denyPetitionHandler(req, res, { params, session }) {
+export async function deny(req, res, { params, session }) {
   const idResult = validateId(params.id, "petition ID")
   if (!idResult.valid) {
     throw new ValidationError(idResult.error)
@@ -162,12 +154,7 @@ async function denyPetitionHandler(req, res, { params, session }) {
     throw new ValidationError(`Petition already ${petition.status}`)
   }
 
-  let body
-  try {
-    body = await parseBody(req)
-  } catch (err) {
-    throw new ValidationError("Invalid JSON body")
-  }
+  const body = await parseBody(req)
 
   const adminNotesResult = validateOptionalString(
     body.admin_notes,
@@ -214,81 +201,43 @@ async function denyPetitionHandler(req, res, { params, session }) {
   })
 }
 
-export const list = withAdmin(listPetitions)
-export const approve = withAdmin(approvePetitionHandler)
-export const deny = withAdmin(denyPetitionHandler)
-
 /** @type {Types.createPetition} */
 export function createPetition({ name, email, phone, relationship, message }) {
-  const db = getDb()
-  const stmt = db.prepare(`
-    INSERT INTO petitions (name, email, phone, relationship, message)
-    VALUES (?, ?, ?, ?, ?)
-  `)
-  const result = stmt.run(
-    name,
-    email.toLowerCase().trim(),
-    normalizePhone(phone),
-    relationship || null,
-    message || null,
-  )
+  const result =
+    sql`INSERT INTO petitions (name, email, phone, relationship, message)
+    VALUES (${name}, ${normalizeEmail(email)}, ${normalizePhone(phone)}, ${relationship || null}, ${message || null})`.run()
   return result.lastInsertRowid
 }
 
 /** @type {Types.getPetitionById} */
 export function getPetitionById(id) {
-  return queryOne("SELECT * FROM petitions WHERE id = ?", id)
+  return sql`SELECT * FROM petitions WHERE id = ${id}`.get()
 }
 
 /** @type {Types.getPetitionByEmail} */
 export function getPetitionByEmail(email) {
-  return queryOne(
-    "SELECT * FROM petitions WHERE email = ? AND status = 'pending'",
-    email.toLowerCase().trim(),
-  )
+  return sql`SELECT * FROM petitions WHERE email = ${normalizeEmail(email)} AND status = 'pending'`.get()
 }
 
 /** @type {Types.getAllPetitions} */
 export function getAllPetitions({ status } = {}) {
-  let sql = "SELECT * FROM petitions"
-  /** @type {string[]} */
-  const params = []
-
-  if (status) {
-    sql += " WHERE status = ?"
-    params.push(status)
-  }
-
-  sql += " ORDER BY created_at DESC"
-
-  return queryAll(sql, ...params)
+  const where = status ? sql`WHERE status = ${status}` : sql.empty
+  return sql`SELECT * FROM petitions ${where} ORDER BY created_at DESC`.all()
 }
 
 /** @type {Types.countPetitions} */
 export function countPetitions({ status } = {}) {
-  let sql = "SELECT COUNT(*) as count FROM petitions"
-  /** @type {string[]} */
-  const params = []
-
-  if (status) {
-    sql += " WHERE status = ?"
-    params.push(status)
-  }
-
+  const where = status ? sql`WHERE status = ${status}` : sql.empty
   /** @type {Types.CountResult | undefined} */
-  const result = queryOne(sql, ...params)
+  const result = sql`SELECT COUNT(*) as count FROM petitions ${where}`.get()
   return result ? result.count : 0
 }
 
 /** @type {Types.updatePetitionStatus} */
 export function updatePetitionStatus(id, status, adminNotes = null) {
-  const db = getDb()
-  const stmt = db.prepare(`
-    UPDATE petitions
-    SET status = ?, admin_notes = ?, reviewed_at = ?
-    WHERE id = ?
-  `)
-  const result = stmt.run(status, adminNotes, now(), id)
+  const result = sql`UPDATE petitions
+    SET status = ${status}, admin_notes = ${adminNotes}, reviewed_at = ${now()}
+    WHERE id = ${id}`.run()
   return result.changes > 0
 }
 
@@ -297,7 +246,7 @@ export function approvePetitionDb(
   petitionId,
   { partySize = 1, adminNotes = null } = {},
 ) {
-  return withTransaction((db) => {
+  return withTransaction(() => {
     const petition = getPetitionById(petitionId)
     if (!petition) {
       throw new Error("Petition not found")
@@ -308,26 +257,14 @@ export function approvePetitionDb(
 
     // Create guest from petition
     const invite_code = generateInviteCode()
-    const createStmt = db.prepare(`
-      INSERT INTO guests (name, email, phone, party_size, invite_code, notes)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `)
-    const guestResult = createStmt.run(
-      petition.name,
-      petition.email,
-      petition.phone,
-      partySize,
-      invite_code,
-      `From petition: ${petition.relationship || "No relationship specified"}`,
-    )
+    const guestResult =
+      sql`INSERT INTO guests (name, email, phone, party_size, invite_code, notes)
+      VALUES (${petition.name}, ${petition.email}, ${petition.phone}, ${partySize}, ${invite_code}, ${`From petition: ${petition.relationship || "No relationship specified"}`})`.run()
 
     // Update petition status
-    const updateStmt = db.prepare(`
-      UPDATE petitions
-      SET status = ?, admin_notes = ?, reviewed_at = ?
-      WHERE id = ?
-    `)
-    updateStmt.run(PETITION_STATUS.APPROVED, adminNotes, now(), petitionId)
+    sql`UPDATE petitions
+      SET status = ${PETITION_STATUS.APPROVED}, admin_notes = ${adminNotes}, reviewed_at = ${now()}
+      WHERE id = ${petitionId}`.run()
 
     return { id: guestResult.lastInsertRowid, invite_code }
   })

@@ -2,7 +2,9 @@
 /** @import * as Types from './types.js' */
 
 import { sendJson } from "./http.js"
+import { withErrorHandling, withAdmin } from "./auth.js"
 import * as health from "../api/health.js"
+import * as config from "../api/config.js"
 import * as rsvp from "../api/rsvp.js"
 import * as lookup from "../api/lookup.js"
 import * as sessions from "../api/admin/sessions.js"
@@ -25,7 +27,7 @@ import * as manualSms from "../api/admin/manual-sms.js"
 /** @type {Types.Route[]} */
 const routes = []
 
-/** @type {Types.ParseRoutePattern} */
+/** @type {Types.parseRoutePattern} */
 function parseRoutePattern(pattern) {
   /** @type {string[]} */
   const keys = []
@@ -43,7 +45,7 @@ function parseRoutePattern(pattern) {
   return { segments, keys }
 }
 
-/** @type {Types.MatchRoute} */
+/** @type {Types.matchRoute} */
 function matchRoute(urlPath, segments) {
   const urlSegments = urlPath.split("/").filter((s) => s !== "")
 
@@ -67,10 +69,18 @@ function matchRoute(urlPath, segments) {
   return paramValues
 }
 
-/** @type {Types.route} */
-export function route(method, pattern, handler) {
+/** @type {Types.routeImpl} */
+export function route(method, pattern, handler, options = {}) {
   const { segments, keys } = parseRoutePattern(pattern)
-  routes.push({ method, segments, keys, handler })
+  let wrappedHandler
+  if (options.admin) {
+    wrappedHandler = withAdmin(/** @type {Types.AdminHandler} */ (handler))
+  } else if (options.errorHandling) {
+    wrappedHandler = withErrorHandling(/** @type {Types.RouteHandler} */ (handler))
+  } else {
+    wrappedHandler = handler
+  }
+  routes.push({ method, segments, keys, handler: /** @type {Types.RouteHandler} */ (wrappedHandler) })
 }
 
 /** @type {Types.clearRoutes} */
@@ -118,45 +128,46 @@ export async function dispatch(req, res) {
 }
 
 route("GET", "/api/health", health.get)
-route("GET", "/api/rsvp/:code", rsvp.get)
-route("POST", "/api/rsvp/:code", rsvp.post)
-route("POST", "/api/lookup", lookup.lookup)
-route("POST", "/api/petition", lookup.petition)
+route("GET", "/api/config", config.get)
+route("GET", "/api/rsvp/:code", rsvp.get, { errorHandling: true })
+route("POST", "/api/rsvp/:code", rsvp.post, { errorHandling: true })
+route("POST", "/api/lookup", lookup.lookup, { errorHandling: true })
+route("POST", "/api/petition", lookup.petition, { errorHandling: true })
 
-// Admin auth routes
-route("POST", "/api/admin/login", sessions.login)
-route("POST", "/api/admin/logout", sessions.logout)
+// Admin auth routes (error handling only, no session required)
+route("POST", "/api/admin/login", sessions.login, { errorHandling: true })
+route("POST", "/api/admin/logout", sessions.logout, { errorHandling: true })
 
-// Admin guest routes
-route("GET", "/api/admin/stats", stats)
-route("GET", "/api/admin/guests", list)
-route("GET", "/api/admin/guests/export", exportCSV)
-route("POST", "/api/admin/guests", create)
-route("POST", "/api/admin/guests/import", importCSV)
-route("PUT", "/api/admin/guests/:id", update)
-route("DELETE", "/api/admin/guests/:id", remove)
-route("POST", "/api/admin/guests/:id/restore", restore)
+// Admin guest routes — handlers receive AuthenticatedRouteInfo via withAdmin wrapping
+route("GET", "/api/admin/stats", stats, { admin: true })
+route("GET", "/api/admin/guests", list, { admin: true })
+route("GET", "/api/admin/guests/export", exportCSV, { admin: true })
+route("POST", "/api/admin/guests", create, { admin: true })
+route("POST", "/api/admin/guests/import", importCSV, { admin: true })
+route("PUT", "/api/admin/guests/:id", update, { admin: true })
+route("DELETE", "/api/admin/guests/:id", remove, { admin: true })
+route("POST", "/api/admin/guests/:id/restore", restore, { admin: true })
 
 // Admin RSVP routes
-route("GET", "/api/admin/rsvps", rsvps.list)
-route("GET", "/api/admin/rsvps/export", rsvps.exportCSV)
+route("GET", "/api/admin/rsvps", rsvps.list, { admin: true })
+route("GET", "/api/admin/rsvps/export", rsvps.exportCSV, { admin: true })
 
 // Admin invite routes
-route("GET", "/api/admin/invite/config", invites.config)
-route("POST", "/api/admin/invite/preview", invites.preview)
-route("POST", "/api/admin/invite/send", invites.send)
+route("GET", "/api/admin/invite/config", invites.config, { admin: true })
+route("POST", "/api/admin/invite/preview", invites.preview, { admin: true })
+route("POST", "/api/admin/invite/send", invites.send, { admin: true })
 
 // Admin petition routes
-route("GET", "/api/admin/petitions", petitions.list)
-route("POST", "/api/admin/petitions/:id/approve", petitions.approve)
-route("POST", "/api/admin/petitions/:id/deny", petitions.deny)
+route("GET", "/api/admin/petitions", petitions.list, { admin: true })
+route("POST", "/api/admin/petitions/:id/approve", petitions.approve, { admin: true })
+route("POST", "/api/admin/petitions/:id/deny", petitions.deny, { admin: true })
 
 // Admin blocklist routes
-route("GET", "/api/admin/blocklist", blocklist.list)
-route("POST", "/api/admin/blocklist", blocklist.create)
-route("DELETE", "/api/admin/blocklist/:id", blocklist.remove)
+route("GET", "/api/admin/blocklist", blocklist.list, { admin: true })
+route("POST", "/api/admin/blocklist", blocklist.create, { admin: true })
+route("DELETE", "/api/admin/blocklist/:id", blocklist.remove, { admin: true })
 
 // Admin manual SMS routes
-route("GET", "/api/admin/manual-sms/guests", manualSms.getEligibleGuests)
-route("POST", "/api/admin/manual-sms/mark-sent", manualSms.markSent)
-route("POST", "/api/admin/manual-sms/mark-sent-batch", manualSms.markSentBatch)
+route("GET", "/api/admin/manual-sms/guests", manualSms.getEligibleGuests, { admin: true })
+route("POST", "/api/admin/manual-sms/mark-sent", manualSms.markSent, { admin: true })
+route("POST", "/api/admin/manual-sms/mark-sent-batch", manualSms.markSentBatch, { admin: true })

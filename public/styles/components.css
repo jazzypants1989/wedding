@@ -1,0 +1,418 @@
+/* ============ Buttons ============ */
+
+.btn {
+  display: inline-block;
+  padding: var(--spacing-sm) var(--spacing-lg);
+  font-size: var(--text-base);
+  font-weight: 500;
+  text-align: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast),
+    opacity var(--duration-fast),
+    transform var(--duration-instant) ease,
+    box-shadow var(--duration-fast) ease;
+  text-decoration: none;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.btn-primary {
+  background-color: var(--color-primary);
+  color: var(--color-on-primary);
+  border-color: var(--color-primary);
+}
+
+.btn-primary:hover {
+  background-color: var(--color-primary-dark);
+  border-color: var(--color-primary-dark);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px var(--color-text-25);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 4px var(--color-text-20);
+}
+
+.btn-secondary {
+  background-color: transparent;
+  color: var(--color-primary);
+  border: 2px solid var(--color-primary);
+}
+
+.btn-secondary:hover {
+  background-color: var(--color-primary-faint);
+}
+
+.btn-large {
+  width: 100%;
+  padding: var(--spacing-md) var(--spacing-lg);
+  font-size: var(--text-md);
+}
+
+.btn-danger {
+  background: var(--color-danger);
+  color: var(--color-on-primary);
+  border-color: var(--color-danger);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: var(--color-danger-dark);
+  border-color: var(--color-danger-dark);
+}
+
+.btn-sm {
+  padding: var(--spacing-xs) var(--spacing-md);
+  font-size: var(--text-sm);
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  padding: 0;
+  text-decoration: underline;
+}
+
+.btn-link:hover {
+  color: var(--color-primary-dark);
+}
+
+/* ============ Forms ============ */
+
+.form-group {
+  margin-bottom: var(--spacing-lg);
+}
+
+.form-group label {
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-primary);
+  margin-bottom: var(--spacing-sm);
+}
+
+.form-group
+  :is(
+    input[type="text"],
+    input[type="email"],
+    input[type="tel"],
+    input[type="password"],
+    textarea,
+    select
+  ) {
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  color: var(--color-text);
+  background-color: var(--color-white);
+  border: 1px solid var(--color-text-30);
+  border-radius: var(--radius-sm);
+  transition:
+    border-color var(--duration-fast),
+    box-shadow var(--duration-normal) ease,
+    transform var(--duration-fast) ease;
+}
+
+.form-group
+  :is(
+    input[type="text"],
+    input[type="email"],
+    input[type="tel"],
+    input[type="password"],
+    textarea,
+    select
+  ):focus {
+  outline: 2px solid transparent;
+  border-color: var(--color-primary);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent),
+    0 2px 8px color-mix(in srgb, var(--color-primary) 10%, transparent);
+  transform: translateY(-1px);
+}
+
+.form-group:focus-within > label {
+  color: var(--color-primary-dark);
+  transition: color var(--duration-fast) ease;
+}
+
+.form-group input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.form-group textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.form-group select {
+  cursor: pointer;
+}
+
+.form-error {
+  margin-top: var(--spacing-md);
+  padding: var(--spacing-md);
+  background-color: var(--color-danger-bg);
+  border-radius: var(--radius-sm);
+  color: var(--color-danger);
+}
+
+/* ============ Dialog / Modal ============ */
+
+dialog {
+  border: none;
+  border-radius: var(--radius-md);
+  padding: var(--spacing-lg);
+  width: 90%;
+  max-width: var(--container-md);
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--color-card-bg);
+  box-shadow: var(--shadow-lg);
+}
+
+dialog::backdrop {
+  background: light-dark(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.6));
+}
+
+dialog[open] {
+  animation: dialogFadeIn 0.2s ease-out;
+}
+
+@keyframes dialogFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+dialog.modal-lg {
+  max-width: var(--container-modal-lg);
+}
+
+.modal-header {
+  margin-bottom: var(--spacing-md);
+}
+
+.modal-close {
+  font-size: var(--text-xl);
+  color: var(--color-text-muted);
+  line-height: 1;
+  padding: var(--spacing-sm);
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.modal-close:hover {
+  color: var(--color-text);
+}
+
+.modal-actions {
+  display: flex;
+  gap: var(--spacing-md);
+  justify-content: flex-end;
+  margin-top: var(--spacing-lg);
+}
+
+/* ============ Alerts ============ */
+
+.alert {
+  padding: var(--spacing-md);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.alert-error,
+.alert-success,
+.alert-warning {
+  background: var(--_alert-bg);
+  color: var(--_alert-text);
+  border: 1px solid var(--_alert-border);
+}
+
+.alert-error {
+  --_alert-bg: var(--color-alert-error-bg);
+  --_alert-text: var(--color-danger);
+  --_alert-border: var(--color-alert-error-border);
+}
+.alert-success {
+  --_alert-bg: var(--color-alert-success-bg);
+  --_alert-text: var(--color-success);
+  --_alert-border: var(--color-alert-success-border);
+}
+.alert-warning {
+  --_alert-bg: var(--color-alert-warning-bg);
+  --_alert-text: var(--color-alert-warning-text);
+  --_alert-border: var(--color-alert-warning-border);
+  margin: var(--spacing-md) 0;
+}
+
+/* ============ Loading & Empty States ============ */
+
+.empty-state {
+  text-align: center;
+  padding: var(--spacing-xl);
+  color: var(--color-text-muted);
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-lg);
+  color: var(--color-text-muted);
+}
+
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-right: var(--spacing-sm);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+code {
+  background: var(--color-background);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-family: monospace;
+  font-size: 0.875em;
+}
+
+/* Focus ring */
+.btn:focus-visible,
+.nav-link:focus-visible,
+.hamburger-button:focus-visible,
+.home-link:focus-visible,
+.modal-close:focus-visible,
+.msms-placeholder-tag:focus-visible,
+.file-input-label:focus-within,
+.checkbox-label:focus-within {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.pagination {
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
+}
+
+.pagination-info {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+/* ============ Theme Toggle ============ */
+
+.theme-toggle {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.theme-icon-sun,
+.theme-icon-moon {
+  position: absolute;
+  transition:
+    transform var(--duration-normal) ease,
+    opacity var(--duration-normal) ease;
+}
+
+/* Sun: circle with 8 radiating rays via box-shadow */
+.theme-icon-sun {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  box-shadow:
+    0 -10px 0 -3.5px var(--color-primary),
+    0 10px 0 -3.5px var(--color-primary),
+    -10px 0 0 -3.5px var(--color-primary),
+    10px 0 0 -3.5px var(--color-primary),
+    -7px -7px 0 -4px var(--color-primary),
+    7px -7px 0 -4px var(--color-primary),
+    -7px 7px 0 -4px var(--color-primary),
+    7px 7px 0 -4px var(--color-primary);
+  opacity: 1;
+  transform: rotate(0deg) scale(1);
+}
+
+/* Moon: crescent via offset box-shadow */
+.theme-icon-moon {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: -5px 0 0 0 var(--color-primary);
+  margin-left: 15px;
+  opacity: 0;
+  transform: rotate(-90deg) scale(0.5);
+}
+
+/* Dark mode: sun rotates out, moon rotates in */
+.theme-toggle-dark .theme-icon-sun {
+  opacity: 0;
+  transform: rotate(90deg) scale(0.5);
+}
+
+.theme-toggle-dark .theme-icon-moon {
+  opacity: 1;
+  transform: rotate(0deg) scale(1);
+}
+
+/* Hover: scale up the visible icon */
+.theme-toggle-light:hover .theme-icon-sun {
+  transform: scale(1.15);
+}
+
+.theme-toggle-dark:hover .theme-icon-moon {
+  transform: scale(1.15);
+}
+
+/* Desktop floating toggle: fixed bottom-right, hidden on mobile */
+.desktop-theme-toggle {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .desktop-theme-toggle {
+    display: inline-flex;
+    position: fixed;
+    bottom: var(--spacing-lg);
+    right: var(--spacing-lg);
+    left: auto;
+    z-index: 10;
+    background: var(--color-card-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-full);
+    box-shadow: var(--shadow-md);
+    width: 48px;
+    height: 48px;
+    overflow: visible;
+  }
+}

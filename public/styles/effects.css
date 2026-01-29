@@ -5,68 +5,46 @@
   inset: 0;
   pointer-events: none;
   overflow: hidden;
-  z-index: 50;
+  z-index: var(--z-effect-layer);
 }
 
-/* ============ 2. Sparkle Stars ============ */
-
-.sparkle-star {
-  position: absolute;
-  width: 4px;
-  height: 4px;
-  background: #fff;
-  border-radius: 50%;
-  animation: twinkle ease-in-out forwards;
-  pointer-events: none;
-  will-change: transform, opacity;
+.trail-container,
+.caustics-container,
+.parallax-sparkle-container,
+.disco-spotlight-container,
+.mirror-reflection-container {
+  overflow: visible;
 }
 
-.sparkle-star::before,
-.sparkle-star::after {
+/* ============ Shared Cross-Star Pseudo-Elements ============ */
+
+.trail-sparkle::before,
+.trail-sparkle::after,
+.sparkle-burst-particle::before,
+.sparkle-burst-particle::after,
+.grand-entrance-sparkle::before,
+.grand-entrance-sparkle::after {
   content: "";
   position: absolute;
   background: inherit;
   border-radius: 1px;
 }
 
-.sparkle-star::before {
+.trail-sparkle::before,
+.sparkle-burst-particle::before,
+.grand-entrance-sparkle::before {
   width: 2px;
-  height: 14px;
-  top: -5px;
-  left: 1px;
+  height: 10px;
 }
 
-.sparkle-star::after {
-  width: 14px;
+.trail-sparkle::after,
+.sparkle-burst-particle::after,
+.grand-entrance-sparkle::after {
+  width: 10px;
   height: 2px;
-  top: 1px;
-  left: -5px;
 }
 
-@keyframes twinkle {
-  0% {
-    transform: scale(0) rotate(0deg);
-    opacity: 0;
-  }
-  20% {
-    transform: scale(var(--scale, 1)) rotate(30deg);
-    opacity: 1;
-  }
-  50% {
-    transform: scale(calc(var(--scale, 1) * 0.6)) rotate(60deg);
-    opacity: 0.5;
-  }
-  80% {
-    transform: scale(calc(var(--scale, 1) * 1.2)) rotate(90deg);
-    opacity: 1;
-  }
-  100% {
-    transform: scale(0) rotate(120deg);
-    opacity: 0;
-  }
-}
-
-/* ============ 4. Disco Ball ============ */
+/* ============ Disco Ball ============ */
 
 .disco-ball-wrapper {
   position: fixed;
@@ -74,7 +52,7 @@
   left: 50%;
   transform: translateX(-50%);
   transform-origin: top center;
-  z-index: 55;
+  z-index: var(--z-disco-ball);
   pointer-events: none;
   display: flex;
   flex-direction: column;
@@ -83,7 +61,8 @@
 }
 
 @keyframes disco-sway {
-  0%, 100% {
+  0%,
+  100% {
     transform: translateX(-50%) rotate(0deg);
   }
   25% {
@@ -134,7 +113,6 @@
   left: 50%;
   width: 0;
   height: 0;
-  pointer-events: none;
 }
 
 .disco-ray {
@@ -149,7 +127,7 @@
     rgba(255, 255, 255, 0)
   );
   transform-origin: 0 50%;
-  animation: ray-sweep linear infinite;
+  animation: spin linear infinite;
   opacity: 0.35;
   will-change: transform;
 }
@@ -163,15 +141,6 @@
   }
 }
 
-@keyframes ray-sweep {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 @media (min-width: 768px) {
   .disco-ball-string {
     height: 40px;
@@ -182,16 +151,11 @@
   }
 }
 
-/* ============ 5. Cursor Trail ============ */
-
-.trail-container {
-  overflow: visible;
-}
+/* ============ Cursor Trail ============ */
 
 .trail-particle {
   position: fixed;
-  pointer-events: none;
-  z-index: 9999;
+  z-index: var(--z-cursor-trail);
   animation: trail-fade 600ms ease-out forwards;
   will-change: transform, opacity;
 }
@@ -228,24 +192,12 @@
   border-radius: 50%;
 }
 
-.trail-sparkle::before,
-.trail-sparkle::after {
-  content: "";
-  position: absolute;
-  background: inherit;
-  border-radius: 1px;
-}
-
 .trail-sparkle::before {
-  width: 2px;
-  height: 10px;
   top: -3.5px;
   left: 0.5px;
 }
 
 .trail-sparkle::after {
-  width: 10px;
-  height: 2px;
   top: 0.5px;
   left: -3.5px;
 }
@@ -269,13 +221,13 @@
   }
 }
 
-/* ============ 7. Mermaid Shimmer ============ */
+/* ============ Mermaid Shimmer ============ */
 
 .mermaid-shimmer {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  z-index: 40;
+  z-index: var(--z-mermaid-shimmer);
   opacity: 0.08;
   background: linear-gradient(
     135deg,
@@ -304,7 +256,8 @@
     rgba(255, 255, 255, 0.12) 42%,
     transparent 55%
   );
-  background-size: var(--scale-pattern-size, 40px) var(--scale-pattern-size, 40px);
+  background-size: var(--scale-pattern-size, 40px)
+    var(--scale-pattern-size, 40px);
   opacity: 0.5;
 }
 
@@ -326,7 +279,7 @@
   }
 }
 
-/* ============ 15. Sparkle Burst ============ */
+/* ============ Sparkle Burst ============ */
 
 .sparkle-burst-particle {
   position: absolute;
@@ -335,28 +288,15 @@
   height: 4px;
   border-radius: 50%;
   animation: sparkle-burst-fall ease-out forwards;
-  pointer-events: none;
   will-change: transform, opacity;
 }
 
-.sparkle-burst-particle::before,
-.sparkle-burst-particle::after {
-  content: "";
-  position: absolute;
-  background: inherit;
-  border-radius: 1px;
-}
-
 .sparkle-burst-particle::before {
-  width: 2px;
-  height: 10px;
   top: -3px;
   left: 1px;
 }
 
 .sparkle-burst-particle::after {
-  width: 10px;
-  height: 2px;
   top: 1px;
   left: -3px;
 }
@@ -370,12 +310,13 @@
     opacity: 1;
   }
   100% {
-    transform: translateY(110vh) translateX(var(--burst-drift, 0px)) scale(var(--burst-scale, 1));
+    transform: translateY(110vh) translateX(var(--burst-drift, 0px))
+      scale(var(--burst-scale, 1));
     opacity: 0;
   }
 }
 
-/* ============ 16. Sparkle Dividers ============ */
+/* ============ Sparkle Dividers ============ */
 
 .sparkle-divider {
   position: relative;
@@ -405,9 +346,9 @@
   }
 }
 
-/* ============ 17. Name Shimmer ============ */
+/* ============ Name Shimmer ============ */
 
-.couple-names--shimmer {
+.couple-names-shimmer {
   background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
@@ -415,40 +356,30 @@
   animation: name-shimmer var(--shimmer-duration, 8s) ease-in-out infinite;
 }
 
-.couple-names--shimmer-gold {
+.couple-names-shimmer-gold {
+  --shimmer-accent: #ffd700;
+}
+.couple-names-shimmer-white {
+  --shimmer-accent: #fff;
+}
+.couple-names-shimmer-pink {
+  --shimmer-accent: #ff69b4;
+}
+
+.couple-names-shimmer-gold,
+.couple-names-shimmer-white,
+.couple-names-shimmer-pink {
   background-image: linear-gradient(
     90deg,
     var(--color-primary, rgb(221, 115, 100)) 0%,
     var(--color-primary, rgb(221, 115, 100)) 40%,
-    #ffd700 50%,
+    var(--shimmer-accent) 50%,
     var(--color-primary, rgb(221, 115, 100)) 60%,
     var(--color-primary, rgb(221, 115, 100)) 100%
   );
 }
 
-.couple-names--shimmer-white {
-  background-image: linear-gradient(
-    90deg,
-    var(--color-primary, rgb(221, 115, 100)) 0%,
-    var(--color-primary, rgb(221, 115, 100)) 40%,
-    #fff 50%,
-    var(--color-primary, rgb(221, 115, 100)) 60%,
-    var(--color-primary, rgb(221, 115, 100)) 100%
-  );
-}
-
-.couple-names--shimmer-pink {
-  background-image: linear-gradient(
-    90deg,
-    var(--color-primary, rgb(221, 115, 100)) 0%,
-    var(--color-primary, rgb(221, 115, 100)) 40%,
-    #ff69b4 50%,
-    var(--color-primary, rgb(221, 115, 100)) 60%,
-    var(--color-primary, rgb(221, 115, 100)) 100%
-  );
-}
-
-.couple-names--shimmer a {
+.couple-names-shimmer a {
   -webkit-text-fill-color: inherit;
   background: inherit;
   -webkit-background-clip: inherit;
@@ -456,7 +387,8 @@
 }
 
 @keyframes name-shimmer {
-  0%, 62.5% {
+  0%,
+  62.5% {
     background-position: 100% 0;
   }
   37.5% {
@@ -464,54 +396,81 @@
   }
 }
 
-/* ============ 18. Underwater Caustics ============ */
-
-.caustics-container {
-  overflow: visible;
-}
+/* ============ Underwater Caustics ============ */
 
 .caustics-layer {
   position: absolute;
   inset: 0;
   background-size: 200% 200%;
-  pointer-events: none;
   will-change: background-position;
 }
 
-.caustics-layer--1 {
-  background: radial-gradient(ellipse at 30% 40%, rgba(255,255,255,0.12), transparent 60%);
+.caustics-layer-1 {
+  background: radial-gradient(
+    ellipse at 30% 40%,
+    rgba(255, 255, 255, 0.12),
+    transparent 60%
+  );
   animation: caustics-move-1 8s ease-in-out infinite;
 }
 
-.caustics-layer--2 {
-  background: radial-gradient(ellipse at 60% 50%, rgba(255,255,255,0.10), transparent 55%);
+.caustics-layer-2 {
+  background: radial-gradient(
+    ellipse at 60% 50%,
+    rgba(255, 255, 255, 0.1),
+    transparent 55%
+  );
   animation: caustics-move-2 11s ease-in-out infinite reverse;
 }
 
-.caustics-layer--3 {
-  background: radial-gradient(ellipse at 50% 30%, rgba(255,255,255,0.08), transparent 50%);
+.caustics-layer-3 {
+  background: radial-gradient(
+    ellipse at 50% 30%,
+    rgba(255, 255, 255, 0.08),
+    transparent 50%
+  );
   animation: caustics-move-3 15s ease-in-out infinite alternate;
 }
 
 @keyframes caustics-move-1 {
-  0%, 100% { background-position: 0% 0%; }
-  25% { background-position: 100% 30%; }
-  50% { background-position: 50% 100%; }
-  75% { background-position: 0% 60%; }
+  0%,
+  100% {
+    background-position: 0% 0%;
+  }
+  25% {
+    background-position: 100% 30%;
+  }
+  50% {
+    background-position: 50% 100%;
+  }
+  75% {
+    background-position: 0% 60%;
+  }
 }
 
 @keyframes caustics-move-2 {
-  0%, 100% { background-position: 100% 100%; }
-  33% { background-position: 0% 50%; }
-  66% { background-position: 80% 0%; }
+  0%,
+  100% {
+    background-position: 100% 100%;
+  }
+  33% {
+    background-position: 0% 50%;
+  }
+  66% {
+    background-position: 80% 0%;
+  }
 }
 
 @keyframes caustics-move-3 {
-  0% { background-position: 0% 0%; }
-  100% { background-position: 100% 100%; }
+  0% {
+    background-position: 0% 0%;
+  }
+  100% {
+    background-position: 100% 100%;
+  }
 }
 
-/* ============ 20. Text Sparkle on Scroll ============ */
+/* ============ Text Sparkle on Scroll ============ */
 
 .text-sparkle-in {
   animation: text-glow-in 1.5s ease-out forwards;
@@ -529,18 +488,11 @@
   }
 }
 
-/* ============ 23. Scroll Confetti (canvas-based, no CSS needed) ============ */
-
-/* ============ 24. Parallax Sparkles ============ */
-
-.parallax-sparkle-container {
-  overflow: visible;
-}
+/* ============ Parallax Sparkles ============ */
 
 .parallax-sparkle-layer {
   position: absolute;
   inset: 0;
-  pointer-events: none;
   will-change: transform;
 }
 
@@ -548,11 +500,11 @@
   position: absolute;
   border-radius: 50%;
   animation: parallax-sparkle-pulse 3s ease-in-out infinite;
-  pointer-events: none;
 }
 
 @keyframes parallax-sparkle-pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 0.3;
     transform: scale(0.8);
   }
@@ -573,12 +525,12 @@
     rgba(221, 115, 100, 0.06) 40%,
     rgba(0, 0, 0, 0.4) 100%
   );
-  z-index: 100;
+  z-index: var(--z-grand-entrance);
   pointer-events: none;
   animation: grand-entrance-reveal 1.2s ease-out forwards;
 }
 
-.grand-entrance-overlay--golden {
+.grand-entrance-overlay-golden {
   background: radial-gradient(
     ellipse at center,
     rgba(255, 215, 0, 0.15) 0%,
@@ -587,47 +539,34 @@
   );
 }
 
-.grand-entrance-overlay--fade {
+.grand-entrance-overlay-fade {
   animation: grand-entrance-fade 1s ease-out forwards;
 }
 
 .grand-entrance-sparkles {
-  z-index: 101;
+  z-index: var(--z-grand-entrance-sparkles);
 }
 
 .grand-entrance-sparkle {
   position: absolute;
   border-radius: 50%;
   animation: grand-entrance-sparkle-fall 1.5s ease-out forwards;
-  pointer-events: none;
   will-change: transform, opacity;
 }
 
-.grand-entrance-sparkle::before,
-.grand-entrance-sparkle::after {
-  content: "";
-  position: absolute;
-  background: inherit;
-  border-radius: 1px;
-}
-
 .grand-entrance-sparkle::before {
-  width: 2px;
-  height: 10px;
   top: -3px;
   left: 50%;
   margin-left: -1px;
 }
 
 .grand-entrance-sparkle::after {
-  width: 10px;
-  height: 2px;
   top: 50%;
   margin-top: -1px;
   left: -3px;
 }
 
-.grand-entrance-sparkle--radial {
+.grand-entrance-sparkle-radial {
   animation: grand-entrance-sparkle-radial 2s ease-out forwards;
 }
 
@@ -671,7 +610,11 @@
   }
   20% {
     opacity: 1;
-    transform: translate(calc(var(--tx, 50px) * 0.2), calc(var(--ty, 50px) * 0.2)) scale(1);
+    transform: translate(
+        calc(var(--tx, 50px) * 0.2),
+        calc(var(--ty, 50px) * 0.2)
+      )
+      scale(1);
   }
   100% {
     transform: translate(var(--tx, 50px), var(--ty, 50px)) scale(0);
@@ -679,11 +622,17 @@
   }
 }
 
-/* ============ 26. Disco Spotlight ============ */
-
-.disco-spotlight-container {
-  overflow: visible;
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
 }
+
+/* ============ Disco Spotlight ============ */
 
 .disco-spotlight-beam {
   position: absolute;
@@ -694,33 +643,18 @@
   margin-left: -100vmax;
   margin-top: -100vmax;
   border-radius: 50%;
-  pointer-events: none;
-  animation: spotlight-sweep 8s linear infinite;
+  animation: spin 8s linear infinite;
   will-change: transform;
   mix-blend-mode: screen;
 }
 
-@keyframes spotlight-sweep {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* ============ 27. Mirror Reflections ============ */
-
-.mirror-reflection-container {
-  overflow: visible;
-}
+/* ============ Mirror Reflections ============ */
 
 .mirror-reflection {
   position: absolute;
   top: 0;
   left: 0;
   border-radius: 1px;
-  pointer-events: none;
   will-change: transform, opacity;
   box-shadow: 0 0 6px 1px rgba(255, 255, 255, 0.3);
 }

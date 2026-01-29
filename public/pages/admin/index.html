@@ -5,10 +5,24 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin Dashboard - Wedding RSVP</title>
+  <meta name="theme-color" content="#eee6dc" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1a1614" media="(prefers-color-scheme: dark)">
+  <link rel="icon" type="image/png" href="/images/favicon.png">
+  <script src="/components/theme-init.js"></script>
+  <link rel="stylesheet" href="/styles/tokens.css">
+  <link rel="stylesheet" href="/styles/components.css">
   <link rel="stylesheet" href="/pages/admin/admin.css">
 </head>
 
 <body>
+  <noscript>
+    <div style="max-width: 600px; margin: 2rem auto; padding: 1rem; text-align: center;">
+      <h2>JavaScript Required</h2>
+      <p>The admin dashboard requires JavaScript to function. Please enable JavaScript in your browser and reload the
+        page.</p>
+    </div>
+  </noscript>
+
   <div id="login-section" class="login-container">
     <div class="login-card">
       <h1>Admin Login</h1>
@@ -29,6 +43,9 @@
     <header class="header">
       <h1>Wedding RSVP Admin</h1>
       <div class="header-actions">
+        <button class="theme-toggle btn btn-secondary btn-sm" type="button" aria-label="Switch to dark mode"><span
+            class="theme-icon-sun" aria-hidden="true"></span><span class="theme-icon-moon"
+            aria-hidden="true"></span></button>
         <a href="/" class="btn btn-secondary btn-sm">View Site</a>
         <button id="logout-btn" class="btn btn-secondary btn-sm">Logout</button>
       </div>
@@ -36,42 +53,44 @@
 
     <main class="main-content">
       <div class="stats-grid" id="stats-grid">
-        <div class="stat-card">
+        <div class="stat-card text-center">
           <div class="stat-label">Total Guests</div>
           <div class="stat-value" id="stat-total">-</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card text-center">
           <div class="stat-label">Responded</div>
           <div class="stat-value" id="stat-responded">-</div>
           <div class="stat-detail" id="stat-responded-detail"></div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card text-center">
           <div class="stat-label">Pending</div>
           <div class="stat-value" id="stat-pending">-</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card text-center">
           <div class="stat-label">Expected Headcount</div>
           <div class="stat-value" id="stat-headcount">-</div>
         </div>
       </div>
 
+      <div id="notification-banner" class="alert alert-error" role="alert" aria-live="polite" hidden></div>
+
       <div class="tabs" role="tablist" aria-label="Admin dashboard sections">
         <button class="tab-btn active" data-tab="guests" role="tab" id="tab-btn-guests" aria-selected="true"
-          aria-controls="tab-guests">Guests</button>
+          aria-controls="tab-guests" tabindex="0">Guests</button>
         <button class="tab-btn" data-tab="rsvps" role="tab" id="tab-btn-rsvps" aria-selected="false"
-          aria-controls="tab-rsvps">RSVPs</button>
+          aria-controls="tab-rsvps" tabindex="-1">RSVPs</button>
         <button class="tab-btn" data-tab="petitions" role="tab" id="tab-btn-petitions" aria-selected="false"
-          aria-controls="tab-petitions">
+          aria-controls="tab-petitions" tabindex="-1">
           Petitions
           <span id="petitions-badge" class="tab-badge" hidden aria-label="pending petitions">0</span>
         </button>
         <button class="tab-btn" data-tab="blocklist" role="tab" id="tab-btn-blocklist" aria-selected="false"
-          aria-controls="tab-blocklist">Blocklist</button>
+          aria-controls="tab-blocklist" tabindex="-1">Blocklist</button>
       </div>
 
       <div id="tab-guests" class="tab-content active" role="tabpanel" aria-labelledby="tab-btn-guests">
         <div class="card">
-          <div class="card-header">
+          <div class="card-header flex-between">
             <h2>Guest List</h2>
             <div class="header-buttons">
               <button id="import-csv-btn" class="btn btn-secondary btn-sm">Import CSV</button>
@@ -83,6 +102,7 @@
           </div>
 
           <div class="filters">
+            <label for="guest-search" class="sr-only">Search guests</label>
             <input type="text" id="guest-search" class="search-input" placeholder="Search by name, email, or phone...">
             <select id="guest-status-filter" class="filter-select">
               <option value="">All Statuses</option>
@@ -111,7 +131,7 @@
             </table>
           </div>
 
-          <div id="guests-pagination" class="pagination">
+          <div id="guests-pagination" class="pagination flex-center">
             <!-- Populated by JS -->
           </div>
         </div>
@@ -119,7 +139,7 @@
 
       <div id="tab-rsvps" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-rsvps" hidden>
         <div class="card">
-          <div class="card-header">
+          <div class="card-header flex-between">
             <h2>RSVP Responses</h2>
             <a href="/api/admin/rsvps/export" id="export-rsvps-btn" class="btn btn-secondary btn-sm">Export CSV</a>
           </div>
@@ -146,7 +166,7 @@
       <!-- Petitions Tab -->
       <div id="tab-petitions" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-petitions" hidden>
         <div class="card">
-          <div class="card-header">
+          <div class="card-header flex-between">
             <h2>Invitation Requests</h2>
             <div class="header-buttons">
               <select id="petition-status-filter" class="filter-select">
@@ -180,7 +200,7 @@
 
       <div id="tab-blocklist" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-blocklist" hidden>
         <div class="card">
-          <div class="card-header">
+          <div class="card-header flex-between">
             <h2>Blocklist</h2>
             <button id="add-blocklist-btn" class="btn btn-primary btn-sm">Add Entry</button>
           </div>
@@ -211,9 +231,9 @@
   </div>
 
   <dialog id="guest-modal" aria-labelledby="guest-modal-title">
-    <div class="modal-header">
+    <div class="modal-header flex-between">
       <h2 id="guest-modal-title">Add Guest</h2>
-      <button type="button" class="modal-close" data-close-modal aria-label="Close">&times;</button>
+      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
     </div>
     <form id="guest-form">
       <input type="hidden" id="guest-id" name="id">
@@ -259,14 +279,15 @@
   </dialog>
 
   <dialog id="delete-modal" aria-labelledby="delete-modal-title">
-    <div class="modal-header">
+    <div class="modal-header flex-between">
       <h2 id="delete-modal-title">Archive Guest</h2>
-      <button type="button" class="modal-close" data-close-modal aria-label="Close">&times;</button>
+      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
     </div>
     <p id="delete-message">Are you sure you want to archive this guest?</p>
     <div id="delete-rsvp-warning" class="alert alert-warning" hidden>
       This guest has submitted an RSVP. Their response will be preserved but hidden from stats.
     </div>
+    <div id="delete-error" class="alert alert-error" role="alert" hidden></div>
     <div class="modal-actions">
       <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
       <button type="button" class="btn btn-danger" id="confirm-delete-btn">Archive</button>
@@ -274,9 +295,9 @@
   </dialog>
 
   <dialog id="rsvp-modal" aria-labelledby="rsvp-modal-title">
-    <div class="modal-header">
+    <div class="modal-header flex-between">
       <h2 id="rsvp-modal-title">RSVP Details</h2>
-      <button type="button" class="modal-close" data-close-modal aria-label="Close">&times;</button>
+      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
     </div>
     <div id="rsvp-details">
       <!-- Populated by JS -->
@@ -287,9 +308,9 @@
   </dialog>
 
   <dialog id="invite-modal" class="modal-lg" aria-labelledby="invite-modal-title">
-    <div class="modal-header">
+    <div class="modal-header flex-between">
       <h2 id="invite-modal-title">Send Invites</h2>
-      <button type="button" class="modal-close" data-close-modal aria-label="Close">&times;</button>
+      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
     </div>
 
     <div id="invite-step-config" class="invite-step">
@@ -342,16 +363,16 @@
   </dialog>
 
   <dialog id="import-modal" class="modal-lg" aria-labelledby="import-modal-title">
-    <div class="modal-header">
+    <div class="modal-header flex-between">
       <h2 id="import-modal-title">Import Guests from CSV</h2>
-      <button type="button" class="modal-close" data-close-modal aria-label="Close">&times;</button>
+      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
     </div>
     <div id="import-instructions" class="import-section">
       <p>Upload a CSV file with guest information. Required column: <strong>name</strong></p>
       <p>Optional columns: <code>email</code>, <code>phone</code>, <code>party_size</code>, <code>notes</code></p>
       <p class="text-muted">Guests with duplicate email or phone numbers will be skipped.</p>
       <div class="form-group">
-        <label for="csv-file" class="file-input-label">
+        <label for="csv-file" class="file-input-label text-center">
           <span id="file-name">Choose CSV file...</span>
           <input type="file" id="csv-file" accept=".csv" class="file-input">
         </label>
@@ -372,9 +393,9 @@
   </dialog>
 
   <dialog id="petition-modal" aria-labelledby="petition-modal-title">
-    <div class="modal-header">
+    <div class="modal-header flex-between">
       <h2 id="petition-modal-title">Petition Details</h2>
-      <button type="button" class="modal-close" data-close-modal aria-label="Close">&times;</button>
+      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
     </div>
     <div id="petition-details">
       <!-- Populated by JS -->
@@ -387,9 +408,9 @@
   </dialog>
 
   <dialog id="petition-approve-modal" aria-labelledby="petition-approve-modal-title">
-    <div class="modal-header">
+    <div class="modal-header flex-between">
       <h2 id="petition-approve-modal-title">Approve Petition</h2>
-      <button type="button" class="modal-close" data-close-modal aria-label="Close">&times;</button>
+      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
     </div>
     <p>Approving this petition will create a guest and send them an invite.</p>
     <input type="hidden" id="approve-petition-id">
@@ -421,9 +442,9 @@
   </dialog>
 
   <dialog id="petition-deny-modal" aria-labelledby="petition-deny-modal-title">
-    <div class="modal-header">
+    <div class="modal-header flex-between">
       <h2 id="petition-deny-modal-title">Deny Petition</h2>
-      <button type="button" class="modal-close" data-close-modal aria-label="Close">&times;</button>
+      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
     </div>
     <p>This will deny the petition request.</p>
     <input type="hidden" id="deny-petition-id">
@@ -445,9 +466,9 @@
   </dialog>
 
   <dialog id="blocklist-modal" aria-labelledby="blocklist-modal-title">
-    <div class="modal-header">
+    <div class="modal-header flex-between">
       <h2 id="blocklist-modal-title">Add to Blocklist</h2>
-      <button type="button" class="modal-close" data-close-modal aria-label="Close">&times;</button>
+      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
     </div>
     <p class="text-muted">At least one of name, email, or phone is required.</p>
     <form id="blocklist-form">
@@ -476,12 +497,13 @@
   </dialog>
 
   <dialog id="blocklist-delete-modal" aria-labelledby="blocklist-delete-modal-title">
-    <div class="modal-header">
+    <div class="modal-header flex-between">
       <h2 id="blocklist-delete-modal-title">Remove from Blocklist</h2>
-      <button type="button" class="modal-close" data-close-modal aria-label="Close">&times;</button>
+      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
     </div>
     <p id="blocklist-delete-message">Are you sure you want to remove this entry from the blocklist?</p>
     <input type="hidden" id="blocklist-delete-id">
+    <div id="blocklist-delete-error" class="alert alert-error" role="alert" hidden></div>
     <div class="modal-actions">
       <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
       <button type="button" class="btn btn-danger" id="confirm-blocklist-delete-btn">Remove</button>
@@ -489,9 +511,9 @@
   </dialog>
 
   <dialog id="manual-sms-modal" class="modal-lg" aria-labelledby="manual-sms-modal-title">
-    <div class="modal-header">
+    <div class="modal-header flex-between">
       <h2 id="manual-sms-modal-title">Manual SMS</h2>
-      <button type="button" class="modal-close" data-close-modal aria-label="Close">&times;</button>
+      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
     </div>
 
     <details id="msms-template-section" class="msms-template-section">
@@ -518,7 +540,7 @@
 
     <div id="msms-focus-view">
       <div class="msms-guest-card">
-        <div class="msms-guest-header">
+        <div class="msms-guest-header flex-between">
           <strong id="msms-guest-name"></strong>
           <span id="msms-guest-phone" class="msms-phone"></span>
         </div>
@@ -528,7 +550,7 @@
           <button type="button" id="msms-mark-sent-btn" class="btn btn-primary btn-sm">Mark as Sent</button>
         </div>
       </div>
-      <div class="msms-nav">
+      <div class="msms-nav flex-between">
         <button type="button" id="msms-prev-btn" class="btn btn-secondary btn-sm">&larr; Prev</button>
         <button type="button" id="msms-next-btn" class="btn btn-secondary btn-sm">Next &rarr;</button>
       </div>
@@ -555,7 +577,7 @@
     </div>
   </dialog>
 
-  <script type="module" src="/pages/admin/dashboard.js"></script>
+  <script type="module" src="/pages/admin/main.js"></script>
 </body>
 
 </html>

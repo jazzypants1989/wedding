@@ -5,6 +5,7 @@ import https from "node:https"
 import { escapeHtml } from "../core/utils.js"
 import { WEDDING, EMAIL_SUBJECTS, BRAND } from "../types.js"
 import { withRetry, isRetryableError } from "./retry.js"
+import { makeServiceRequest } from "./http-client.js"
 
 const API_KEY = process.env.RESEND_API_KEY
 const FROM_EMAIL = process.env.FROM_EMAIL || "wedding@example.com"
@@ -37,7 +38,7 @@ function createEmailService(httpClient = defaultHttpClient) {
       port: 443,
       path: "/emails",
       method: "POST",
-      timeout: 30000, // 30 second timeout
+      timeout: 30000,
       headers: {
         "Content-Type": "application/json",
         "Content-Length": Buffer.byteLength(postData),
@@ -45,47 +46,11 @@ function createEmailService(httpClient = defaultHttpClient) {
       },
     }
 
-    return new Promise((resolve) => {
-      const req = httpClient.request(options, (res) => {
-        let data = ""
-        res.on("data", (/** @type {string} */ chunk) => {
-          data += chunk
-        })
-        res.on("end", () => {
-          try {
-            const json = JSON.parse(data)
-            const statusCode = res.statusCode ?? 0
-            if (statusCode >= 200 && statusCode < 300) {
-              resolve({ success: true, id: json.id })
-            } else {
-              resolve({
-                success: false,
-                error:
-                  json.message || json.error?.message || `HTTP ${statusCode}`,
-              })
-            }
-          } catch (e) {
-            resolve({
-              success: false,
-              error: `Parse error: ${
-                e instanceof Error ? e.message : String(e)
-              }`,
-            })
-          }
-        })
-      })
-
-      req.on("timeout", () => {
-        req.destroy()
-        resolve({ success: false, error: "Request timed out" })
-      })
-
-      req.on("error", (/** @type {Error} */ e) => {
-        resolve({ success: false, error: e.message })
-      })
-
-      req.write(postData)
-      req.end()
+    return makeServiceRequest(httpClient, options, postData).then((result) => {
+      if (result.success) {
+        return { success: true, id: /** @type {string | undefined} */ (result.data?.id) }
+      }
+      return { success: false, error: result.error }
     })
   }
 

@@ -4,14 +4,26 @@
 import "./core/env.js"
 import http from "node:http"
 import { sendJson } from "./core/http.js"
-import { close } from "./db/connection.js"
+import { init, close } from "./db/connection.js"
+import { cleanExpiredSessions } from "./db/sessions.js"
+import { cleanAllExpired as cleanExpiredRateLimits } from "./core/rate-limit.js"
+import { cleanOldLogs } from "./core/utils.js"
 
 import * as router from "./core/router.js"
 import { serveStatic } from "./core/static.js"
-
-const PORT = process.env.PORT ? Number(process.env.PORT) : 3000
+import { PORT } from "./types.js"
 
 export const server = http.createServer(async (req, res) => {
+  if (shuttingDown) {
+    res.writeHead(503, {
+      "Content-Type": "application/json",
+      "Connection": "close",
+    })
+    res.end(JSON.stringify({ error: "Server is shutting down" }))
+    return
+  }
+
+  activeRequests++
   const urlPath = (req.url ?? "/").split("?")[0]
 
   try {
@@ -33,8 +45,30 @@ export const server = http.createServer(async (req, res) => {
     if (!res.headersSent) {
       sendJson(res, 500, { error: "Internal server error" })
     }
+  } finally {
+    activeRequests--
   }
 })
+
+init()
+console.log("Database initialized")
+
+cleanExpiredSessions()
+cleanExpiredRateLimits()
+cleanOldLogs()
+console.log("Expired sessions, rate limits, and old audit logs cleaned")
+
+setInterval(
+  () => {
+    cleanExpiredSessions()
+    cleanExpiredRateLimits()
+    cleanOldLogs()
+  },
+  60 * 60 * 1000,
+).unref()
+
+server.requestTimeout = 30_000
+server.headersTimeout = 35_000
 
 server.listen(PORT, () => {
   console.log(`Wedding website running at http://localhost:${PORT}/`)
@@ -53,14 +87,36 @@ process.on("unhandledRejection", (reason, promise) => {
   handleFatalError("unhandled rejection")
 })
 
+let shuttingDown = false
+let activeRequests = 0
+
 /** @type {Types.handleGracefulShutdown} */
 function handleGracefulShutdown(signal) {
+  if (shuttingDown) return
+  shuttingDown = true
+
   console.log(`\nShutting down${signal ? ` (${signal})` : ""}...`)
-  close()
   server.close(() => {
-    console.log("Server closed")
-    process.exit(0)
+    console.log("Server closed, waiting for active requests to drain...")
+    waitForDrain()
   })
+
+  setTimeout(() => {
+    console.error("Graceful shutdown timed out, forcing exit.")
+    close()
+    process.exit(1)
+  }, 10000).unref()
+}
+
+function waitForDrain() {
+  if (activeRequests <= 0) {
+    console.log("All requests drained")
+    close()
+    process.exit(0)
+    return
+  }
+  console.log(`Waiting for ${activeRequests} active request(s)...`)
+  setTimeout(waitForDrain, 250)
 }
 
 /** @type {Types.handleFatalError} */

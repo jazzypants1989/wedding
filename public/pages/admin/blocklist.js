@@ -1,12 +1,10 @@
 /** @file Blocklist management module */
 /** @import * as Types from './types.js' */
-/** @import { BlocklistResponse } from '../types.js' */
 
 import { state } from "./state.js"
-import { api } from "./api.js"
-import { openModal, closeModal } from "./modal.js"
+import { api, openModal, closeModal, showError } from "./utils.js"
 import {
-  escapeHtml,
+  html,
   getElement,
   getFormElement,
   getInputElement,
@@ -22,11 +20,12 @@ const moduleState = { deleteId: null }
 export async function loadBlocklist() {
   try {
     const data = await api("/api/admin/blocklist")
-    const response = /** @type {BlocklistResponse} */ (data)
+    const response = /** @type {Types.BlocklistResponse} */ (data)
     state.currentBlocklist = response.blocklist
     renderBlocklist(response.blocklist)
   } catch (err) {
     console.error("Failed to load blocklist:", err)
+    showError("Failed to load blocklist. Please refresh the page.")
   }
 }
 
@@ -35,27 +34,26 @@ function renderBlocklist(entries) {
   const tbody = getElement("blocklist-tbody")
 
   if (entries.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" class="empty-state">No blocklist entries</td></tr>`
+    tbody.innerHTML = html`<tr>
+      <td colspan="5" class="empty-state">No blocklist entries</td>
+    </tr>`
     return
   }
 
-  tbody.innerHTML = entries
-    .map(
-      (entry) => `
-    <tr data-id="${entry.id}">
-      <td>${entry.name ? escapeHtml(entry.name) : "-"}</td>
-      <td>${entry.email ? escapeHtml(entry.email) : "-"}</td>
-      <td>${entry.phone ? escapeHtml(entry.phone) : "-"}</td>
-      <td class="hide-mobile">${
-        entry.reason ? escapeHtml(entry.reason) : "-"
-      }</td>
-      <td class="actions-cell">
-        <button class="btn btn-danger btn-sm" data-action="remove">Remove</button>
-      </td>
-    </tr>
-  `,
-    )
-    .join("")
+  tbody.innerHTML = html`${entries.map(
+    (entry) =>
+      html` <tr data-id="${entry.id}">
+        <td>${entry.name || "-"}</td>
+        <td>${entry.email || "-"}</td>
+        <td>${entry.phone || "-"}</td>
+        <td class="hide-mobile">${entry.reason || "-"}</td>
+        <td class="actions-cell">
+          <button class="btn btn-danger btn-sm" data-action="remove">
+            Remove
+          </button>
+        </td>
+      </tr>`,
+  )}`
 }
 
 /** @type {Types.openAddBlocklistModal} */
@@ -92,7 +90,7 @@ async function handleBlocklistFormSubmit(e) {
     })
 
     closeModal(getDialogElement("blocklist-modal"))
-    loadBlocklist()
+    await loadBlocklist()
   } catch (err) {
     errorEl.textContent = getErrorMessage(err)
     errorEl.hidden = false
@@ -120,15 +118,18 @@ async function handleBlocklistDeleteConfirm() {
 
   const btn = getButtonElement("confirm-blocklist-delete-btn")
   btn.disabled = true
+  const errorEl = getElement("blocklist-delete-error")
+  errorEl.hidden = true
 
   try {
     await api(`/api/admin/blocklist/${moduleState.deleteId}`, {
       method: "DELETE",
     })
     closeModal(getDialogElement("blocklist-delete-modal"))
-    loadBlocklist()
+    await loadBlocklist()
   } catch (err) {
-    alert("Failed to remove from blocklist: " + getErrorMessage(err))
+    errorEl.textContent = getErrorMessage(err)
+    errorEl.hidden = false
   } finally {
     btn.disabled = false
     moduleState.deleteId = null

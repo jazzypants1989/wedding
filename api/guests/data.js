@@ -8,11 +8,9 @@ import {
   COMMUNICATION_STATUS,
   GUEST_STATUS,
 } from "../../types.js"
-import { withAdmin } from "../../core/auth.js"
 import { sendJson, parseBody } from "../../core/http.js"
-import { log, AUDIT_ACTIONS } from "../../core/log.js"
+import { log, AUDIT_ACTIONS } from "../../core/utils.js"
 import { getClientIp } from "../../core/rate-limit.js"
-import { ValidationError, NotFoundError } from "../../core/errors.js"
 import {
   validateRequiredString,
   validatePartySize,
@@ -21,58 +19,46 @@ import {
   validateOptionalString,
   validateGuestStatus,
   validateId,
+  ValidationError,
+  NotFoundError,
 } from "../../core/validation.js"
 import { getStats, getRsvpByGuestId } from "../rsvp.js"
-import { getDb, queryOne, queryAll } from "../../db/connection.js"
+import { sql } from "../../db/sql.js"
 import {
   generateInviteCode,
   now,
   escapeLikePattern,
   normalizePhone,
+  normalizeEmail,
 } from "../../db/utils.js"
 
 /** @type {Types.getGuestByInviteCode} */
 export function getGuestByInviteCode(code) {
-  return queryOne(
-    "SELECT * FROM guests WHERE invite_code = ? AND deleted_at IS NULL",
-    code,
-  )
+  return sql`SELECT * FROM guests WHERE invite_code = ${code} AND deleted_at IS NULL`.get()
 }
 
 /** @type {Types.getGuestByEmail} */
 export function getGuestByEmail(email) {
-  return queryOne(
-    "SELECT * FROM guests WHERE email = ? AND deleted_at IS NULL",
-    email ? email.toLowerCase().trim() : null,
-  )
+  return sql`SELECT * FROM guests WHERE email = ${normalizeEmail(email)} AND deleted_at IS NULL`.get()
 }
 
 /** @type {Types.getGuestByPhone} */
 export function getGuestByPhone(phone) {
   const normalized = normalizePhone(phone)
-  return queryOne(
-    "SELECT * FROM guests WHERE phone = ? AND deleted_at IS NULL",
-    normalized,
-  )
+  return sql`SELECT * FROM guests WHERE phone = ${normalized} AND deleted_at IS NULL`.get()
 }
 
 /** @type {Types.getGuestById} */
 export function getGuestById(id, { includeDeleted = false } = {}) {
-  const sql = includeDeleted
-    ? "SELECT * FROM guests WHERE id = ?"
-    : "SELECT * FROM guests WHERE id = ? AND deleted_at IS NULL"
-  return queryOne(sql, id)
+  const deleted = includeDeleted ? sql.empty : sql`AND deleted_at IS NULL`
+  return sql`SELECT * FROM guests WHERE id = ${id} ${deleted}`.get()
 }
 
 /** @type {Types.getGuestsByIds} */
 export function getGuestsByIds(ids, { includeDeleted = false } = {}) {
   if (!ids || ids.length === 0) return []
-  const placeholders = ids.map(() => "?").join(",")
-  const deletedClause = includeDeleted ? "" : "AND deleted_at IS NULL"
-  return queryAll(
-    `SELECT * FROM guests WHERE id IN (${placeholders}) ${deletedClause}`,
-    ...ids,
-  )
+  const deleted = includeDeleted ? sql.empty : sql`AND deleted_at IS NULL`
+  return sql`SELECT * FROM guests WHERE id IN ${sql.list(ids)} ${deleted}`.all()
 }
 
 /** @type {Types.getAllGuests} */
@@ -84,41 +70,33 @@ export function getAllGuests({
   includeDeleted = false,
   onlyDeleted = false,
 } = {}) {
-  let sql = `
-    SELECT g.*, COALESCE(ic.invite_count, 0) as invite_count
+  const deletedFilter = onlyDeleted
+    ? sql`AND g.deleted_at IS NOT NULL`
+    : !includeDeleted
+      ? sql`AND g.deleted_at IS NULL`
+      : sql.empty
+
+  const statusFilter = status ? sql`AND g.status = ${status}` : sql.empty
+
+  const searchFilter = search
+    ? (() => {
+        const pattern = `%${escapeLikePattern(search)}%`
+        return sql`AND (g.name LIKE ${pattern} ESCAPE '\\' OR g.email LIKE ${pattern} ESCAPE '\\' OR g.phone LIKE ${pattern} ESCAPE '\\')`
+      })()
+    : sql.empty
+
+  return sql`SELECT g.*, COALESCE(ic.invite_count, 0) as invite_count
     FROM guests g
     LEFT JOIN (
       SELECT guest_id, COUNT(*) as invite_count
-      FROM communications WHERE status = ?
+      FROM communications WHERE status = ${COMMUNICATION_STATUS.SENT}
       GROUP BY guest_id
     ) ic ON g.id = ic.guest_id
     WHERE 1=1
-  `
-  /** @type {(string | number)[]} */
-  const params = [COMMUNICATION_STATUS.SENT]
-
-  if (onlyDeleted) {
-    sql += " AND g.deleted_at IS NOT NULL"
-  } else if (!includeDeleted) {
-    sql += " AND g.deleted_at IS NULL"
-  }
-
-  if (status) {
-    sql += " AND g.status = ?"
-    params.push(status)
-  }
-
-  if (search) {
-    sql +=
-      " AND (g.name LIKE ? ESCAPE '\\' OR g.email LIKE ? ESCAPE '\\' OR g.phone LIKE ? ESCAPE '\\')"
-    const searchPattern = `%${escapeLikePattern(search)}%`
-    params.push(searchPattern, searchPattern, searchPattern)
-  }
-
-  sql += " ORDER BY g.created_at DESC LIMIT ? OFFSET ?"
-  params.push(limit, offset)
-
-  return queryAll(sql, ...params)
+    ${deletedFilter}
+    ${statusFilter}
+    ${searchFilter}
+    ORDER BY g.created_at DESC LIMIT ${limit} OFFSET ${offset}`.all()
 }
 
 /** @type {Types.countGuests} */
@@ -128,30 +106,26 @@ export function countGuests({
   includeDeleted = false,
   onlyDeleted = false,
 } = {}) {
-  let sql = "SELECT COUNT(*) as count FROM guests WHERE 1=1"
-  /** @type {(string | number)[]} */
-  const params = []
+  const deletedFilter = onlyDeleted
+    ? sql`AND deleted_at IS NOT NULL`
+    : !includeDeleted
+      ? sql`AND deleted_at IS NULL`
+      : sql.empty
 
-  if (onlyDeleted) {
-    sql += " AND deleted_at IS NOT NULL"
-  } else if (!includeDeleted) {
-    sql += " AND deleted_at IS NULL"
-  }
+  const statusFilter = status ? sql`AND status = ${status}` : sql.empty
 
-  if (status) {
-    sql += " AND status = ?"
-    params.push(status)
-  }
-
-  if (search) {
-    sql +=
-      " AND (name LIKE ? ESCAPE '\\' OR email LIKE ? ESCAPE '\\' OR phone LIKE ? ESCAPE '\\')"
-    const searchPattern = `%${escapeLikePattern(search)}%`
-    params.push(searchPattern, searchPattern, searchPattern)
-  }
+  const searchFilter = search
+    ? (() => {
+        const pattern = `%${escapeLikePattern(search)}%`
+        return sql`AND (name LIKE ${pattern} ESCAPE '\\' OR email LIKE ${pattern} ESCAPE '\\' OR phone LIKE ${pattern} ESCAPE '\\')`
+      })()
+    : sql.empty
 
   /** @type {Types.CountResult | undefined} */
-  const result = queryOne(sql, ...params)
+  const result = sql`SELECT COUNT(*) as count FROM guests WHERE 1=1
+    ${deletedFilter}
+    ${statusFilter}
+    ${searchFilter}`.get()
   return result ? result.count : 0
 }
 
@@ -163,21 +137,10 @@ export function createGuest({
   party_size = 1,
   notes = null,
 }) {
-  const db = getDb()
   const invite_code = generateInviteCode()
-  const normalizedEmail = email ? email.toLowerCase().trim() : null
-  const stmt = db.prepare(`
-    INSERT INTO guests (name, email, phone, party_size, invite_code, notes)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `)
-  const result = stmt.run(
-    name,
-    normalizedEmail,
-    phone || null,
-    party_size,
-    invite_code,
-    notes,
-  )
+  const result =
+    sql`INSERT INTO guests (name, email, phone, party_size, invite_code, notes)
+    VALUES (${name}, ${normalizeEmail(email)}, ${normalizePhone(phone)}, ${party_size}, ${invite_code}, ${notes})`.run()
   return { id: result.lastInsertRowid, invite_code }
 }
 
@@ -186,109 +149,76 @@ export function updateGuest(
   id,
   { name, email, phone, party_size, notes, status },
 ) {
-  const db = getDb()
-  /** @type {string[]} */
-  const updates = []
-  /** @type {(string | number | null)[]} */
-  const params = []
+  /** @type {import('../../db/sql.js').SqlFragment[]} */
+  const sets = []
 
-  if (name !== undefined) {
-    updates.push("name = ?")
-    params.push(name)
-  }
-  if (email !== undefined) {
-    updates.push("email = ?")
-    params.push(email ? email.toLowerCase().trim() : null)
-  }
-  if (phone !== undefined) {
-    updates.push("phone = ?")
-    params.push(phone || null)
-  }
-  if (party_size !== undefined) {
-    updates.push("party_size = ?")
-    params.push(party_size)
-  }
-  if (notes !== undefined) {
-    updates.push("notes = ?")
-    params.push(notes || null)
-  }
-  if (status !== undefined) {
-    updates.push("status = ?")
-    params.push(status)
-  }
+  if (name !== undefined) sets.push(sql`name = ${name}`)
+  if (email !== undefined) sets.push(sql`email = ${normalizeEmail(email)}`)
+  if (phone !== undefined) sets.push(sql`phone = ${normalizePhone(phone)}`)
+  if (party_size !== undefined) sets.push(sql`party_size = ${party_size}`)
+  if (notes !== undefined) sets.push(sql`notes = ${notes || null}`)
+  if (status !== undefined) sets.push(sql`status = ${status}`)
 
-  if (updates.length === 0) return false
+  if (sets.length === 0) return false
 
-  updates.push("updated_at = ?")
-  params.push(now())
-  params.push(id)
+  sets.push(sql`updated_at = ${now()}`)
 
-  const stmt = db.prepare(
-    `UPDATE guests SET ${updates.join(", ")} WHERE id = ?`,
-  )
-  const result = stmt.run(...params)
+  const setClause = sql.join(sets, ", ")
+  const result = sql`UPDATE guests SET ${setClause} WHERE id = ${id}`.run()
   return result.changes > 0
 }
 
 /** @type {Types.softDeleteGuest} */
 export function softDeleteGuest(id) {
-  const db = getDb()
-  const stmt = db.prepare(
-    "UPDATE guests SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL",
-  )
   const timestamp = now()
-  const result = stmt.run(timestamp, timestamp, id)
+  const result =
+    sql`UPDATE guests SET deleted_at = ${timestamp}, updated_at = ${timestamp} WHERE id = ${id} AND deleted_at IS NULL`.run()
   return result.changes > 0
 }
 
 /** @type {Types.restoreGuest} */
 export function restoreGuest(id) {
-  const db = getDb()
-  const stmt = db.prepare(
-    "UPDATE guests SET deleted_at = NULL, updated_at = ? WHERE id = ? AND deleted_at IS NOT NULL",
-  )
-  const result = stmt.run(now(), id)
+  const result =
+    sql`UPDATE guests SET deleted_at = NULL, updated_at = ${now()} WHERE id = ${id} AND deleted_at IS NOT NULL`.run()
   return result.changes > 0
 }
 
 /** @type {Types.hardDeleteGuest} */
 export function hardDeleteGuest(id) {
-  const db = getDb()
-  const stmt = db.prepare("DELETE FROM guests WHERE id = ?")
-  const result = stmt.run(id)
+  const result = sql`DELETE FROM guests WHERE id = ${id}`.run()
   return result.changes > 0
 }
 
 /** @type {Types.updateGuestInvitedAt} */
 export function updateGuestInvitedAt(id) {
-  const db = getDb()
-  const stmt = db.prepare(`
-    UPDATE guests
-    SET last_invited_at = ?, status = CASE WHEN status = ? THEN ? ELSE status END, updated_at = ?
-    WHERE id = ?
-  `)
   const timestamp = now()
-  stmt.run(timestamp, GUEST_STATUS.PENDING, GUEST_STATUS.INVITED, timestamp, id)
+  sql`UPDATE guests
+    SET last_invited_at = ${timestamp}, status = CASE WHEN status = ${GUEST_STATUS.PENDING} THEN ${GUEST_STATUS.INVITED} ELSE status END, updated_at = ${timestamp}
+    WHERE id = ${id}`.run()
 }
 
 /** @type {Types.statsHandler} */
-function statsHandler(req, res) {
-  const stats = getStats()
-  return sendJson(res, 200, { stats })
+export function stats(req, res) {
+  const statsData = getStats()
+  return sendJson(res, 200, { stats: statsData })
 }
 
 /** @type {Types.listHandler} */
-function listHandler(req, res) {
+export function list(req, res) {
   const urlObj = new URL(req.url ?? "/", `http://${req.headers.host}`)
   const statusParam = urlObj.searchParams.get("status")
   const search = urlObj.searchParams.get("search") ?? undefined
   const limitParam = urlObj.searchParams.get("limit")
   const offsetParam = urlObj.searchParams.get("offset")
-  const limit = Math.min(
-    limitParam ? parseInt(limitParam, 10) : PAGINATION.DEFAULT_PAGE_SIZE,
-    PAGINATION.MAX_PAGE_SIZE,
-  )
-  const offset = offsetParam ? parseInt(offsetParam, 10) : 0
+  const parsedLimit = limitParam
+    ? parseInt(limitParam, 10)
+    : PAGINATION.DEFAULT_PAGE_SIZE
+  const limit =
+    isNaN(parsedLimit) || parsedLimit < 1
+      ? PAGINATION.DEFAULT_PAGE_SIZE
+      : Math.min(parsedLimit, PAGINATION.MAX_PAGE_SIZE)
+  const parsedOffset = offsetParam ? parseInt(offsetParam, 10) : 0
+  const offset = isNaN(parsedOffset) || parsedOffset < 0 ? 0 : parsedOffset
   const onlyDeleted = statusParam === "archived"
 
   let status
@@ -316,13 +246,8 @@ function listHandler(req, res) {
 }
 
 /** @type {Types.createHandler} */
-async function createHandler(req, res, { session }) {
-  let body
-  try {
-    body = await parseBody(req)
-  } catch (err) {
-    throw new ValidationError("Invalid JSON body")
-  }
+export async function create(req, res, { session }) {
+  const body = await parseBody(req)
 
   const { name, email, phone, party_size, notes } = body
 
@@ -379,7 +304,7 @@ async function createHandler(req, res, { session }) {
 }
 
 /** @type {Types.updateHandler} */
-async function updateHandler(req, res, { params, session }) {
+export async function update(req, res, { params, session }) {
   const idResult = validateId(params.id, "guest ID")
   if (!idResult.valid) {
     throw new ValidationError(idResult.error)
@@ -390,12 +315,7 @@ async function updateHandler(req, res, { params, session }) {
     throw new NotFoundError("Guest")
   }
 
-  let body
-  try {
-    body = await parseBody(req)
-  } catch (err) {
-    throw new ValidationError("Invalid JSON body")
-  }
+  const body = await parseBody(req)
 
   const updates = {}
 
@@ -475,7 +395,7 @@ async function updateHandler(req, res, { params, session }) {
 }
 
 /** @type {Types.deleteHandler} */
-async function deleteHandler(req, res, { params, session }) {
+export async function remove(req, res, { params, session }) {
   const idResult = validateId(params.id, "guest ID")
   if (!idResult.valid) {
     throw new ValidationError(idResult.error)
@@ -509,7 +429,7 @@ async function deleteHandler(req, res, { params, session }) {
 }
 
 /** @type {Types.restoreHandler} */
-async function restoreHandler(req, res, { params, session }) {
+export async function restore(req, res, { params, session }) {
   const idResult = validateId(params.id, "guest ID")
   if (!idResult.valid) {
     throw new ValidationError(idResult.error)
@@ -540,10 +460,3 @@ async function restoreHandler(req, res, { params, session }) {
     guest: getGuestById(idResult.value),
   })
 }
-
-export const stats = withAdmin(statsHandler)
-export const list = withAdmin(listHandler)
-export const create = withAdmin(createHandler)
-export const update = withAdmin(updateHandler)
-export const remove = withAdmin(deleteHandler)
-export const restore = withAdmin(restoreHandler)

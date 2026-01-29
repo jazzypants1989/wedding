@@ -1,7 +1,7 @@
 /** @file RSVP endpoints */
 /** @import * as Types from './types.js' */
 
-import { queryOne, queryAll } from "../db/connection.js"
+import { sql } from "../db/sql.js"
 import { now, withTransaction } from "../db/utils.js"
 import { getGuestByInviteCode } from "./guests/data.js"
 import { sendJson, parseBody, checkRateLimit } from "../core/http.js"
@@ -9,8 +9,10 @@ import { limiters, getClientIp } from "../core/rate-limit.js"
 import {
   validateInviteCode,
   validateOptionalString,
+  NotFoundError,
 } from "../core/validation.js"
 import { GUEST_STATUS, LIMITS } from "../types.js"
+import { log, AUDIT_ACTIONS } from "../core/utils.js"
 
 /** @type {Types.get} */
 export async function get(req, res, { params }) {
@@ -66,12 +68,7 @@ export async function post(req, res, { params }) {
     return sendJson(res, 404, { error: "Invite code not found" })
   }
 
-  let body
-  try {
-    body = await parseBody(req)
-  } catch (err) {
-    return sendJson(res, 400, { error: "Invalid JSON body" })
-  }
+  const body = await parseBody(req)
 
   if (typeof body.attending !== "boolean") {
     return sendJson(res, 400, { error: "attending must be a boolean" })
@@ -105,6 +102,14 @@ export async function post(req, res, { params }) {
     message: messageResult.value,
   })
 
+  log({
+    action: AUDIT_ACTIONS.RSVP_SUBMIT,
+    ip: clientIp,
+    resourceType: "guest",
+    resourceId: String(guest.id),
+    details: { attending: body.attending, partySize: actualPartySize },
+  })
+
   return sendJson(res, 200, {
     success: true,
     message:
@@ -120,7 +125,7 @@ export async function post(req, res, { params }) {
 
 /** @type {Types.getRsvpByGuestId} */
 export function getRsvpByGuestId(guestId) {
-  return queryOne("SELECT * FROM rsvps WHERE guest_id = ?", guestId)
+  return sql`SELECT * FROM rsvps WHERE guest_id = ${guestId}`.get()
 }
 
 /** @type {Types.upsertRsvp} */
@@ -130,32 +135,22 @@ export function upsertRsvp(
 ) {
   const timestamp = now()
 
-  return withTransaction((db) => {
-    const stmt = db.prepare(`
-      INSERT INTO rsvps (guest_id, attending, actual_party_size, dietary_restrictions, message, submitted_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+  return withTransaction(() => {
+    // Defense-in-depth: verify guest is not soft-deleted before writing
+    const guest =
+      sql`SELECT id FROM guests WHERE id = ${guestId} AND deleted_at IS NULL`.get()
+    if (!guest) throw new NotFoundError("Guest not found or deleted")
+
+    sql`INSERT INTO rsvps (guest_id, attending, actual_party_size, dietary_restrictions, message, submitted_at, updated_at)
+      VALUES (${guestId}, ${attending ? 1 : 0}, ${actual_party_size || null}, ${dietary_restrictions || null}, ${message || null}, ${timestamp}, ${timestamp})
       ON CONFLICT(guest_id) DO UPDATE SET
         attending = excluded.attending,
         actual_party_size = excluded.actual_party_size,
         dietary_restrictions = excluded.dietary_restrictions,
         message = excluded.message,
-        updated_at = excluded.updated_at
-    `)
+        updated_at = excluded.updated_at`.run()
 
-    stmt.run(
-      guestId,
-      attending ? 1 : 0,
-      actual_party_size || null,
-      dietary_restrictions || null,
-      message || null,
-      timestamp,
-      timestamp,
-    )
-
-    const updateStmt = db.prepare(
-      "UPDATE guests SET status = ?, updated_at = ? WHERE id = ?",
-    )
-    updateStmt.run(GUEST_STATUS.RESPONDED, timestamp, guestId)
+    sql`UPDATE guests SET status = ${GUEST_STATUS.RESPONDED}, updated_at = ${timestamp} WHERE id = ${guestId}`.run()
 
     return true
   })
@@ -163,20 +158,17 @@ export function upsertRsvp(
 
 /** @type {Types.getAllRsvps} */
 export function getAllRsvps({ includeDeleted = false } = {}) {
-  const whereClause = includeDeleted ? "" : "WHERE g.deleted_at IS NULL"
-  return queryAll(`
-    SELECT r.*, g.name, g.email, g.phone, g.party_size as max_party_size, g.deleted_at as guest_deleted_at
+  const where = includeDeleted ? sql.empty : sql`WHERE g.deleted_at IS NULL`
+  return sql`SELECT r.*, g.name, g.email, g.phone, g.party_size as max_party_size, g.deleted_at as guest_deleted_at
     FROM rsvps r
     JOIN guests g ON r.guest_id = g.id
-    ${whereClause}
-    ORDER BY r.submitted_at DESC
-  `)
+    ${where}
+    ORDER BY r.submitted_at DESC`.all()
 }
 
 /** @type {Types.getStats} */
 export function getStats() {
-  const stats = queryOne(`
-    SELECT
+  const stats = sql`SELECT
       SUM(CASE WHEN g.deleted_at IS NULL THEN 1 ELSE 0 END) as total_guests,
       SUM(CASE WHEN g.deleted_at IS NULL AND g.status = 'pending' THEN 1 ELSE 0 END) as pending,
       SUM(CASE WHEN g.deleted_at IS NULL AND g.status = 'invited' THEN 1 ELSE 0 END) as invited,
@@ -186,8 +178,7 @@ export function getStats() {
       COALESCE(SUM(CASE WHEN g.deleted_at IS NULL AND r.attending = 1 THEN r.actual_party_size ELSE 0 END), 0) as total_headcount,
       SUM(CASE WHEN g.deleted_at IS NOT NULL THEN 1 ELSE 0 END) as deleted_guests
     FROM guests g
-    LEFT JOIN rsvps r ON g.id = r.guest_id
-  `)
+    LEFT JOIN rsvps r ON g.id = r.guest_id`.get()
   return (
     stats || {
       total_guests: 0,

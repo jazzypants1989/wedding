@@ -1,10 +1,10 @@
 /** @file Manual SMS module for copy-paste texting workflow */
+/** @import * as Types from './types.js' */
 
-import { api } from "./api.js"
-import { openModal, closeModal } from "./modal.js"
 import { loadGuests, loadStats } from "./guests.js"
+import { api, openModal, closeModal, showError } from "./utils.js"
 import {
-  escapeHtml,
+  html,
   getElement,
   getTextAreaElement,
   getButtonElement,
@@ -12,12 +12,7 @@ import {
   getErrorMessage,
 } from "../utils.js"
 
-/**
- * @typedef {{ id: number, name: string, phone: string, invite_code: string, status: string, last_invited_at: string | null }} EligibleGuest
- * @typedef {{ date: string, location: string, coupleNames: string, baseUrl: string }} WeddingInfo
- */
-
-/** @type {{ viewMode: string, template: string, guests: EligibleGuest[], weddingInfo: WeddingInfo | null, currentIndex: number, sentIds: Set<number> }} */
+/** @type {Types.ManualSmsState} */
 const moduleState = {
   viewMode: "focus",
   template: "",
@@ -27,11 +22,7 @@ const moduleState = {
   sentIds: new Set(),
 }
 
-/**
- * @param {string} template
- * @param {EligibleGuest} guest
- * @returns {string}
- */
+/** @type {Types.renderMessage} */
 function renderMessage(template, guest) {
   if (!moduleState.weddingInfo) return template
   const url =
@@ -43,10 +34,7 @@ function renderMessage(template, guest) {
     .replaceAll("{location}", moduleState.weddingInfo.location)
 }
 
-/**
- * @param {string} text
- * @param {HTMLButtonElement} button
- */
+/** @type {Types.copyToClipboard} */
 async function copyToClipboard(text, button) {
   const originalText = button.textContent || ""
   let success = false
@@ -78,12 +66,14 @@ async function copyToClipboard(text, button) {
   }, 1500)
 }
 
+/** @type {Types.getTemplate} */
 function getTemplate() {
   return (
     getTextAreaElement("msms-template").value.trim() || moduleState.template
   )
 }
 
+/** @type {Types.updateProgressCounter} */
 function updateProgressCounter() {
   const counter = getElement("msms-progress-counter")
   const sent = moduleState.sentIds.size
@@ -96,6 +86,7 @@ function updateProgressCounter() {
   }
 }
 
+/** @type {Types.renderFocusView} */
 function renderFocusView() {
   if (moduleState.guests.length === 0) return
 
@@ -132,46 +123,51 @@ function renderFocusView() {
   updateProgressCounter()
 }
 
+/** @type {Types.renderListView} */
 function renderListView() {
   const tbody = getElement("msms-list-tbody")
   const template = getTemplate()
-  let html = ""
 
-  for (const guest of moduleState.guests) {
+  tbody.innerHTML = html`${moduleState.guests.map((guest) => {
     const isSent = moduleState.sentIds.has(guest.id)
     const message = renderMessage(template, guest)
     const previewText =
       message.length > 80 ? message.slice(0, 80) + "..." : message
 
-    html += "<tr>"
-    html += "<td>" + escapeHtml(guest.name) + "</td>"
-    html +=
-      '<td><span class="msms-phone">' + escapeHtml(guest.phone) + "</span></td>"
-    html +=
-      '<td class="hide-mobile"><span class="text-muted" style="font-size:0.8rem">' +
-      escapeHtml(previewText) +
-      "</span></td>"
-    html += '<td class="msms-list-actions">'
-    html +=
-      '<button type="button" class="btn btn-secondary btn-sm msms-list-copy-btn" data-guest-id="' +
-      guest.id +
-      '">Copy</button>'
-    if (isSent) {
-      html += '<span class="msms-sent-badge">Sent</span>'
-    } else {
-      html +=
-        '<button type="button" class="btn btn-primary btn-sm msms-list-mark-btn" data-guest-id="' +
-        guest.id +
-        '">Send</button>'
-    }
-    html += "</td>"
-    html += "</tr>"
-  }
-
-  tbody.innerHTML = html
+    return html`
+      <tr>
+        <td>${guest.name}</td>
+        <td><span class="msms-phone">${guest.phone}</span></td>
+        <td class="hide-mobile">
+          <span class="text-muted" style="font-size:0.8rem"
+            >${previewText}</span
+          >
+        </td>
+        <td class="msms-list-actions">
+          <button
+            type="button"
+            class="btn btn-secondary btn-sm msms-list-copy-btn"
+            data-guest-id="${guest.id}"
+          >
+            Copy
+          </button>
+          ${isSent
+            ? html`<span class="msms-sent-badge">Sent</span>`
+            : html`<button
+                type="button"
+                class="btn btn-primary btn-sm msms-list-mark-btn"
+                data-guest-id="${guest.id}"
+              >
+                Send
+              </button>`}
+        </td>
+      </tr>
+    `
+  })}`
   updateProgressCounter()
 }
 
+/** @type {Types.renderCurrentView} */
 function renderCurrentView() {
   if (moduleState.viewMode === "focus") {
     renderFocusView()
@@ -180,7 +176,7 @@ function renderCurrentView() {
   }
 }
 
-/** @param {number} guestId */
+/** @type {Types.markGuestSent} */
 async function markGuestSent(guestId) {
   const guest = moduleState.guests.find((g) => g.id === guestId)
   if (!guest) return
@@ -198,25 +194,42 @@ async function markGuestSent(guestId) {
     })
     moduleState.sentIds.add(guestId)
   } catch (err) {
-    alert("Failed to mark as sent: " + getErrorMessage(err))
+    showError("Failed to mark as sent: " + getErrorMessage(err))
   }
 }
 
+/** @type {Types.isManualSmsData} */
+function isManualSmsData(data) {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    "guests" in data &&
+    Array.isArray(data.guests) &&
+    "wedding" in data &&
+    "defaultTemplate" in data &&
+    typeof data.defaultTemplate === "string"
+  )
+}
+
+/** @type {Types.openManualSmsModal} */
 async function openManualSmsModal() {
   try {
     const data = await api("/api/admin/manual-sms/guests")
+    if (!isManualSmsData(data)) {
+      throw new Error("Invalid data format")
+    }
     moduleState.guests = data.guests || []
     moduleState.weddingInfo = data.wedding || null
     moduleState.template = data.defaultTemplate || ""
     moduleState.currentIndex = 0
     moduleState.sentIds = new Set()
   } catch (err) {
-    alert("Failed to load guests: " + getErrorMessage(err))
+    showError("Failed to load guests: " + getErrorMessage(err))
     return
   }
 
   if (moduleState.guests.length === 0) {
-    alert(
+    showError(
       "No eligible guests found. Guests need a phone number and status of pending or invited.",
     )
     return
@@ -241,13 +254,14 @@ async function openManualSmsModal() {
   openModal(getDialogElement("manual-sms-modal"))
 }
 
-function handleDone() {
+/** @type {Types.handleDone} */
+async function handleDone() {
   closeModal(getDialogElement("manual-sms-modal"))
-  loadGuests()
-  loadStats()
+  await loadGuests()
+  await loadStats()
 }
 
-/** @param {string} mode */
+/** @type {Types.switchViewMode} */
 function switchViewMode(mode) {
   moduleState.viewMode = mode
 
@@ -271,6 +285,7 @@ function switchViewMode(mode) {
   }
 }
 
+/** @type {Types.initManualSms} */
 export function initManualSms() {
   getElement("manual-sms-btn").addEventListener("click", openManualSmsModal)
   getButtonElement("msms-done-btn").addEventListener("click", handleDone)

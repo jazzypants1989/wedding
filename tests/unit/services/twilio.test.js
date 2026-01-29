@@ -1,60 +1,15 @@
 /**
  * @file Unit tests for Twilio SMS service
  */
-/** @import { CreateMockHttpClientFn, MockHttpCall, MockResponse, MockRequest, MockRequestFn } from './types.js' */
 
 import { describe, it, beforeEach } from "node:test"
 import assert from "node:assert"
-import { EventEmitter } from "node:events"
 import {
   createSMSService,
   getDefaultInviteMessage,
   isRetryableError,
 } from "../../../services/twilio.js"
-
-/** @type {CreateMockHttpClientFn} */
-function createMockHttpClient(responseConfig = {}) {
-  /** @type {MockHttpCall[]} */
-  const calls = []
-
-  /** @type {MockRequestFn} */
-  function request(options, callback) {
-    calls.push({ options })
-
-    /** @type {MockResponse} */
-    const mockRes = Object.assign(new EventEmitter(), {
-      statusCode: responseConfig.statusCode || 200,
-    })
-
-    /** @type {MockRequest} */
-    const mockReq = Object.assign(new EventEmitter(), {
-      write: (/** @type {string} */ data) => {
-        calls[calls.length - 1].data = data
-      },
-      end: () => {
-        setImmediate(() => {
-          callback(mockRes)
-
-          if (responseConfig.error) {
-            mockReq.emit("error", new Error(responseConfig.error))
-          } else if (responseConfig.timeout) {
-            mockReq.emit("timeout")
-          } else {
-            const responseBody =
-              responseConfig.body || JSON.stringify({ sid: "test-sms-sid" })
-            mockRes.emit("data", responseBody)
-            mockRes.emit("end")
-          }
-        })
-      },
-      destroy: () => {},
-    })
-
-    return mockReq
-  }
-
-  return { request, calls }
-}
+import { createMockHttpClient } from "../../mocks/http-client.js"
 
 describe("isRetryableError (twilio)", () => {
   it("returns true for timeout errors", () => {
@@ -80,10 +35,23 @@ describe("isRetryableError (twilio)", () => {
     assert.strictEqual(isRetryableError("Invalid credentials"), false)
   })
 
-  it("returns true for unknown errors", () => {
-    assert.strictEqual(isRetryableError("Something went wrong"), true)
-    assert.strictEqual(isRetryableError(""), true)
-    assert.strictEqual(isRetryableError(null), true)
+  it("returns false for unknown errors", () => {
+    assert.strictEqual(isRetryableError("Something went wrong"), false)
+    assert.strictEqual(isRetryableError(""), false)
+    assert.strictEqual(isRetryableError(null), false)
+  })
+
+  it("returns true for HTTP server errors and rate limits", () => {
+    assert.strictEqual(isRetryableError("HTTP 429"), true)
+    assert.strictEqual(isRetryableError("HTTP 500"), true)
+    assert.strictEqual(isRetryableError("HTTP 502"), true)
+    assert.strictEqual(isRetryableError("HTTP 503"), true)
+    assert.strictEqual(isRetryableError("HTTP 504"), true)
+  })
+
+  it("returns true for pipe and host unreachable errors", () => {
+    assert.strictEqual(isRetryableError("EPIPE"), true)
+    assert.strictEqual(isRetryableError("EHOSTUNREACH"), true)
   })
 })
 
@@ -91,7 +59,7 @@ describe("createSMSService", () => {
   describe("isConfigured", () => {
     it("returns false when Twilio credentials are not set", () => {
       const mockClient = createMockHttpClient()
-      const service = createSMSService(mockClient)
+      const service = createSMSService(/** @type {import('../../../services/types.js').HttpClient} */ (/** @type {unknown} */ (mockClient)))
       // isConfigured checks env vars which are not set in tests
       assert.strictEqual(service.isConfigured(), false)
     })
@@ -100,7 +68,7 @@ describe("createSMSService", () => {
   describe("sendSMS", () => {
     it("returns not configured error when credentials are missing", async () => {
       const mockClient = createMockHttpClient()
-      const service = createSMSService(mockClient)
+      const service = createSMSService(/** @type {import('../../../services/types.js').HttpClient} */ (/** @type {unknown} */ (mockClient)))
 
       const result = await service.sendSMS("+15551234567", "Test message")
 
@@ -143,75 +111,3 @@ describe("getDefaultInviteMessage", () => {
   })
 })
 
-// Test the mock HTTP client helper works correctly
-describe("mock HTTP client (twilio)", () => {
-  it("captures request options and data", async () => {
-    const mockClient = createMockHttpClient({ statusCode: 201 })
-
-    const result = await new Promise((resolve) => {
-      const req = mockClient.request(
-        { hostname: "api.twilio.com", path: "/messages" },
-        (res) => {
-          let data = ""
-          res.on("data", (chunk) => (data += chunk))
-          res.on("end", () => resolve({ statusCode: res.statusCode, data }))
-        }
-      )
-      req.write("To=+15551234567&Body=test")
-      req.end()
-    })
-
-    assert.strictEqual(result.statusCode, 201)
-    assert.strictEqual(mockClient.calls.length, 1)
-    assert.strictEqual(mockClient.calls[0].options.hostname, "api.twilio.com")
-    assert.strictEqual(mockClient.calls[0].data, "To=+15551234567&Body=test")
-  })
-
-  it("simulates error responses", async () => {
-    const mockClient = createMockHttpClient({ error: "Connection refused" })
-
-    const result = await new Promise((resolve) => {
-      const req = mockClient.request({}, () => {})
-      req.on("error", (err) =>
-        resolve({ error: err instanceof Error ? err.message : String(err) })
-      )
-      req.write("")
-      req.end()
-    })
-
-    assert.strictEqual(result.error, "Connection refused")
-  })
-
-  it("simulates timeout", async () => {
-    const mockClient = createMockHttpClient({ timeout: true })
-
-    const result = await new Promise((resolve) => {
-      const req = mockClient.request({}, () => {})
-      req.on("timeout", () => resolve({ timeout: true }))
-      req.write("")
-      req.end()
-    })
-
-    assert.strictEqual(result.timeout, true)
-  })
-
-  it("returns custom response body with Twilio format", async () => {
-    const mockClient = createMockHttpClient({
-      statusCode: 201,
-      body: JSON.stringify({ sid: "SM123", status: "queued" }),
-    })
-
-    const result = await new Promise((resolve) => {
-      const req = mockClient.request({}, (res) => {
-        let data = ""
-        res.on("data", (chunk) => (data += chunk))
-        res.on("end", () => resolve(JSON.parse(data)))
-      })
-      req.write("")
-      req.end()
-    })
-
-    assert.strictEqual(result.sid, "SM123")
-    assert.strictEqual(result.status, "queued")
-  })
-})

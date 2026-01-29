@@ -14,6 +14,10 @@ import {
   parseBody,
   checkRateLimit,
 } from "../../../core/http.js"
+import {
+  ValidationError,
+  PayloadTooLargeError,
+} from "../../../core/validation.js"
 import { mockResponse } from "../../unit-helpers.js"
 
 describe("sanitize", () => {
@@ -40,6 +44,7 @@ describe("sanitize", () => {
   it("uses default maxLen of 500", () => {
     const long = "a".repeat(600)
     const result = sanitize(long)
+    assert.ok(result)
     assert.strictEqual(result.length, 500)
   })
 
@@ -121,20 +126,20 @@ describe("isValidEmail", () => {
 describe("sendJson", () => {
   it("sends JSON response with correct status and headers", () => {
     const res = mockResponse()
-    sendJson(res, 200, { ok: true })
+    sendJson(/** @type {import('node:http').ServerResponse} */ (/** @type {unknown} */ (res)), 200, { ok: true })
 
     assert.strictEqual(res.statusCode, 200)
     assert.strictEqual(res.headers["Content-Type"], "application/json")
     assert.strictEqual(res.headers["X-Content-Type-Options"], "nosniff")
     assert.ok(res.ended)
 
-    const body = JSON.parse(res.body)
+    const body = JSON.parse(/** @type {string} */ (res.body))
     assert.deepStrictEqual(body, { ok: true })
   })
 
   it("sets Content-Length header", () => {
     const res = mockResponse()
-    sendJson(res, 200, { key: "value" })
+    sendJson(/** @type {import('node:http').ServerResponse} */ (/** @type {unknown} */ (res)), 200, { key: "value" })
 
     const expectedLength = Buffer.byteLength(JSON.stringify({ key: "value" }))
     assert.strictEqual(res.headers["Content-Length"], expectedLength)
@@ -142,44 +147,44 @@ describe("sendJson", () => {
 
   it("merges extra headers", () => {
     const res = mockResponse()
-    sendJson(res, 200, {}, { "X-Custom": "value" })
+    sendJson(/** @type {import('node:http').ServerResponse} */ (/** @type {unknown} */ (res)), 200, {}, { "X-Custom": "value" })
 
     assert.strictEqual(res.headers["X-Custom"], "value")
   })
 
   it("handles empty data object", () => {
     const res = mockResponse()
-    sendJson(res, 204, {})
+    sendJson(/** @type {import('node:http').ServerResponse} */ (/** @type {unknown} */ (res)), 204, {})
 
     assert.strictEqual(res.statusCode, 204)
-    assert.strictEqual(JSON.parse(res.body).constructor, Object)
+    assert.strictEqual(JSON.parse(/** @type {string} */ (res.body)).constructor, Object)
   })
 })
 
 describe("sendError", () => {
   it("sends error response with message", () => {
     const res = mockResponse()
-    sendError(res, 400, "Bad request")
+    sendError(/** @type {import('node:http').ServerResponse} */ (/** @type {unknown} */ (res)), 400, "Bad request")
 
     assert.strictEqual(res.statusCode, 400)
-    const body = JSON.parse(res.body)
+    const body = JSON.parse(/** @type {string} */ (res.body))
     assert.strictEqual(body.error, "Bad request")
   })
 
   it("includes error code when provided", () => {
     const res = mockResponse()
-    sendError(res, 404, "Not found", "NOT_FOUND")
+    sendError(/** @type {import('node:http').ServerResponse} */ (/** @type {unknown} */ (res)), 404, "Not found", "NOT_FOUND")
 
-    const body = JSON.parse(res.body)
+    const body = JSON.parse(/** @type {string} */ (res.body))
     assert.strictEqual(body.error, "Not found")
     assert.strictEqual(body.code, "NOT_FOUND")
   })
 
   it("omits code when not provided", () => {
     const res = mockResponse()
-    sendError(res, 500, "Server error")
+    sendError(/** @type {import('node:http').ServerResponse} */ (/** @type {unknown} */ (res)), 500, "Server error")
 
-    const body = JSON.parse(res.body)
+    const body = JSON.parse(/** @type {string} */ (res.body))
     assert.strictEqual(body.error, "Server error")
     assert.strictEqual(body.code, undefined)
   })
@@ -188,36 +193,41 @@ describe("sendError", () => {
 describe("sendCsv", () => {
   it("sends CSV with correct content-type", () => {
     const res = mockResponse()
-    sendCsv(res, "guests.csv", "name,email\nJohn,john@test.com")
+    sendCsv(/** @type {import('node:http').ServerResponse} */ (/** @type {unknown} */ (res)), "guests.csv", "name,email\nJohn,john@test.com")
 
-    assert.ok(res.headers["Content-Type"].includes("text/csv"))
+    assert.ok(String(res.headers["Content-Type"]).includes("text/csv"))
   })
 
   it("sets Content-Disposition with filename", () => {
     const res = mockResponse()
-    sendCsv(res, "export.csv", "data")
+    sendCsv(/** @type {import('node:http').ServerResponse} */ (/** @type {unknown} */ (res)), "export.csv", "data")
 
-    assert.ok(res.headers["Content-Disposition"].includes('filename="export.csv"'))
+    assert.ok(
+      String(res.headers["Content-Disposition"]).includes('filename="export.csv"'),
+    )
   })
 
   it("sets no-store cache control", () => {
     const res = mockResponse()
-    sendCsv(res, "test.csv", "data")
+    sendCsv(/** @type {import('node:http').ServerResponse} */ (/** @type {unknown} */ (res)), "test.csv", "data")
 
-    assert.ok(res.headers["Cache-Control"].includes("no-store"))
+    assert.ok(String(res.headers["Cache-Control"]).includes("no-store"))
   })
 
   it("sets Content-Length", () => {
     const content = "name,email\nJohn,john@test.com"
     const res = mockResponse()
-    sendCsv(res, "test.csv", content)
+    sendCsv(/** @type {import('node:http').ServerResponse} */ (/** @type {unknown} */ (res)), "test.csv", content)
 
-    assert.strictEqual(res.headers["Content-Length"], Buffer.byteLength(content))
+    assert.strictEqual(
+      res.headers["Content-Length"],
+      Buffer.byteLength(content),
+    )
   })
 
   it("sends status 200", () => {
     const res = mockResponse()
-    sendCsv(res, "test.csv", "data")
+    sendCsv(/** @type {import('node:http').ServerResponse} */ (/** @type {unknown} */ (res)), "test.csv", "data")
 
     assert.strictEqual(res.statusCode, 200)
   })
@@ -225,19 +235,22 @@ describe("sendCsv", () => {
 
 describe("parseBody", () => {
   /**
-   * Create a mock request using EventEmitter that works with parseBody
-   * @param {object} options
-   * @returns {EventEmitter}
+   * @param {{ body?: unknown, empty?: boolean, chunks?: string[], error?: string }} [options]
+   * @returns {import('node:http').IncomingMessage}
    */
   function createMockReq(options = {}) {
-    const req = new EventEmitter()
-    req.destroy = () => {}
+    const emitter = new EventEmitter()
+    /** @type {() => void} */
+    const destroy = () => {}
+    Object.assign(emitter, { destroy })
+    const req = /** @type {import('node:http').IncomingMessage} */ (/** @type {unknown} */ (emitter))
 
     if (options.body !== undefined) {
       setImmediate(() => {
-        const data = typeof options.body === "string"
-          ? options.body
-          : JSON.stringify(options.body)
+        const data =
+          typeof options.body === "string"
+            ? options.body
+            : JSON.stringify(options.body)
         req.emit("data", Buffer.from(data))
         req.emit("end")
       })
@@ -246,8 +259,9 @@ describe("parseBody", () => {
         req.emit("end")
       })
     } else if (options.chunks) {
+      const chunks = options.chunks
       setImmediate(() => {
-        for (const chunk of options.chunks) {
+        for (const chunk of chunks) {
           req.emit("data", Buffer.from(chunk))
         }
         req.emit("end")
@@ -275,13 +289,27 @@ describe("parseBody", () => {
 
   it("rejects invalid JSON", async () => {
     const req = createMockReq({ body: "not valid json" })
-    await assert.rejects(() => parseBody(req), { message: "Invalid JSON" })
+    await assert.rejects(
+      () => parseBody(req),
+      (err) => {
+        assert.ok(err instanceof ValidationError)
+        assert.strictEqual(err.message, "Invalid JSON body")
+        return true
+      },
+    )
   })
 
   it("rejects payload exceeding maxSize", async () => {
     const largeData = "a".repeat(100)
     const req = createMockReq({ body: largeData })
-    await assert.rejects(() => parseBody(req, 10), { message: "Payload too large" })
+    await assert.rejects(
+      () => parseBody(req, 10),
+      (err) => {
+        assert.ok(err instanceof PayloadTooLargeError)
+        assert.strictEqual(err.message, "Payload too large")
+        return true
+      },
+    )
   })
 
   it("handles request errors", async () => {
@@ -294,10 +322,14 @@ describe("checkRateLimit", () => {
   it("returns false when request is allowed", () => {
     const res = mockResponse()
     const limiter = {
-      check: () => ({ allowed: true, remaining: 5, resetAt: Date.now() + 60000 }),
+      check: () => ({
+        allowed: true,
+        remaining: 5,
+        resetAt: Date.now() + 60000,
+      }),
     }
 
-    const blocked = checkRateLimit(res, limiter, "test-key")
+    const blocked = checkRateLimit(/** @type {import('node:http').ServerResponse} */ (/** @type {unknown} */ (res)), /** @type {import('../../../core/types.js').RateLimiter} */ (/** @type {unknown} */ (limiter)), "test-key")
     assert.strictEqual(blocked, false)
     assert.strictEqual(res.ended, false)
   })
@@ -305,10 +337,14 @@ describe("checkRateLimit", () => {
   it("returns true and sends 429 when blocked", () => {
     const res = mockResponse()
     const limiter = {
-      check: () => ({ allowed: false, remaining: 0, resetAt: Date.now() + 30000 }),
+      check: () => ({
+        allowed: false,
+        remaining: 0,
+        resetAt: Date.now() + 30000,
+      }),
     }
 
-    const blocked = checkRateLimit(res, limiter, "test-key")
+    const blocked = checkRateLimit(/** @type {import('node:http').ServerResponse} */ (/** @type {unknown} */ (res)), /** @type {import('../../../core/types.js').RateLimiter} */ (/** @type {unknown} */ (limiter)), "test-key")
     assert.strictEqual(blocked, true)
     assert.strictEqual(res.statusCode, 429)
   })
@@ -316,22 +352,30 @@ describe("checkRateLimit", () => {
   it("includes Retry-After header when blocked", () => {
     const res = mockResponse()
     const limiter = {
-      check: () => ({ allowed: false, remaining: 0, resetAt: Date.now() + 30000 }),
+      check: () => ({
+        allowed: false,
+        remaining: 0,
+        resetAt: Date.now() + 30000,
+      }),
     }
 
-    checkRateLimit(res, limiter, "test-key")
+    checkRateLimit(/** @type {import('node:http').ServerResponse} */ (/** @type {unknown} */ (res)), /** @type {import('../../../core/types.js').RateLimiter} */ (/** @type {unknown} */ (limiter)), "test-key")
     assert.ok(res.headers["Retry-After"])
-    assert.ok(parseInt(res.headers["Retry-After"], 10) > 0)
+    assert.ok(parseInt(String(res.headers["Retry-After"]), 10) > 0)
   })
 
   it("includes error message when blocked", () => {
     const res = mockResponse()
     const limiter = {
-      check: () => ({ allowed: false, remaining: 0, resetAt: Date.now() + 30000 }),
+      check: () => ({
+        allowed: false,
+        remaining: 0,
+        resetAt: Date.now() + 30000,
+      }),
     }
 
-    checkRateLimit(res, limiter, "test-key")
-    const body = JSON.parse(res.body)
+    checkRateLimit(/** @type {import('node:http').ServerResponse} */ (/** @type {unknown} */ (res)), /** @type {import('../../../core/types.js').RateLimiter} */ (/** @type {unknown} */ (limiter)), "test-key")
+    const body = JSON.parse(/** @type {string} */ (res.body))
     assert.ok(body.error.includes("Too many requests"))
   })
 })

@@ -49,14 +49,16 @@ function showDashboard() {
 /** @type {Types.checkSession} */
 export async function checkSession() {
   try {
-    const res = await fetch("/api/admin/stats")
+    const res = await fetch("/api/admin/stats", {
+      signal: AbortSignal.timeout(10000),
+    })
     if (res.ok) {
       state.csrfToken = getCookie("csrf")
       showDashboard()
       onLoginSuccess()
     }
   } catch (err) {
-    // Not logged in, show login
+    // Not logged in or timed out, show login
   }
 }
 
@@ -74,6 +76,7 @@ async function handleLoginSubmit(e) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password }),
+      signal: AbortSignal.timeout(30000),
     })
 
     const data = await res.json()

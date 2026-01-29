@@ -3,13 +3,11 @@
 /** @import { Guest } from '../../../types.js' */
 
 import { state } from "./state.js"
-import { api } from "./api.js"
-import { openModal, closeModal } from "./modal.js"
 import { loadGuests, loadStats } from "./guests.js"
+import { api, openModal, closeModal, showError } from "./utils.js"
 import {
-  escapeHtml,
+  html,
   getElement,
-  getInputElement,
   getButtonElement,
   getDialogElement,
   getTextAreaElement,
@@ -56,71 +54,78 @@ function updateInviteConfigUI() {
 function renderInvitePreview() {
   if (!moduleState.previewData) return
 
-  const content = getElement("invite-preview-content")
-  let html = ""
-
-  if (moduleState.previewData.skipped.length > 0) {
-    html += `<div class="alert alert-warning">
-      <strong>${moduleState.previewData.skipped.length} guest(s) will be skipped:</strong>
-      <ul>`
-    moduleState.previewData.skipped.forEach((s) => {
-      html += `<li>${escapeHtml(s.name || `ID ${s.id}`)}: ${escapeHtml(
-        s.reason,
-      )}</li>`
-    })
-    html += "</ul></div>"
-  }
-
-  html += `<h4>Will send to ${moduleState.previewData.recipients.length} recipient(s):</h4>`
-  html += '<div class="preview-list">'
-
-  moduleState.previewData.recipients.slice(0, 5).forEach((r) => {
-    html += `<div class="preview-item">
-      <strong>${escapeHtml(r.name)}</strong> (${escapeHtml(r.contact)})
-      <div class="preview-message">${escapeHtml(r.messagePreview)}...</div>
-    </div>`
-  })
-
-  if (moduleState.previewData.recipients.length > 5) {
-    html += `<div class="preview-item text-muted">...and ${
-      moduleState.previewData.recipients.length - 5
-    } more</div>`
-  }
-
-  html += "</div>"
-  content.innerHTML = html
+  getElement("invite-preview-content").innerHTML = html`
+    ${moduleState.previewData.skipped.length > 0 &&
+    html`
+      <div class="alert alert-warning">
+        <strong
+          >${moduleState.previewData.skipped.length} guest(s) will be
+          skipped:</strong
+        >
+        <ul>
+          ${moduleState.previewData.skipped.map(
+            (s) => html` <li>${s.name || `ID ${s.id}`}: ${s.reason}</li> `,
+          )}
+        </ul>
+      </div>
+    `}
+    <h4>
+      Will send to ${moduleState.previewData.recipients.length} recipient(s):
+    </h4>
+    <div class="preview-list">
+      ${moduleState.previewData.recipients.slice(0, 5).map(
+        (r) => html`
+          <div class="preview-item">
+            <strong>${r.name}</strong> (${r.contact})
+            <div class="preview-message">${r.messagePreview}...</div>
+          </div>
+        `,
+      )}
+      ${moduleState.previewData.recipients.length > 5 &&
+      html`
+        <div class="preview-item text-muted">
+          ...and ${moduleState.previewData.recipients.length - 5} more
+        </div>
+      `}
+    </div>
+  `
 }
 
 /** @type {Types.renderInviteResults} */
 function renderInviteResults(result) {
-  const content = getElement("invite-results-content")
-  let html = `<div class="import-summary">
-    <div class="import-stat success"><strong>${result.summary.sent}</strong> sent</div>
-    <div class="import-stat error"><strong>${result.summary.failed}</strong> failed</div>
-    <div class="import-stat warning"><strong>${result.summary.skipped}</strong> skipped</div>
-  </div>`
-
-  if (result.results.failed.length > 0) {
-    html += '<h4>Failed:</h4><ul class="import-list error-list">'
-    result.results.failed.forEach((f) => {
-      html += `<li><strong>${escapeHtml(f.name)}</strong>: ${escapeHtml(
-        f.error,
-      )}</li>`
-    })
-    html += "</ul>"
-  }
-
-  if (result.results.skipped.length > 0) {
-    html += '<h4>Skipped:</h4><ul class="import-list">'
-    result.results.skipped.forEach((s) => {
-      html += `<li><strong>${escapeHtml(
-        s.name || `ID ${s.id}`,
-      )}</strong>: ${escapeHtml(s.reason)}</li>`
-    })
-    html += "</ul>"
-  }
-
-  content.innerHTML = html
+  getElement("invite-results-content").innerHTML = html`
+    <div class="import-summary">
+      <div class="import-stat success">
+        <strong>${result.summary.sent}</strong> sent
+      </div>
+      <div class="import-stat error">
+        <strong>${result.summary.failed}</strong> failed
+      </div>
+      <div class="import-stat warning">
+        <strong>${result.summary.skipped}</strong> skipped
+      </div>
+    </div>
+    ${result.results.failed.length > 0 &&
+    html`
+      <h4>Failed:</h4>
+      <ul class="import-list error-list">
+        ${result.results.failed.map(
+          (f) => html` <li><strong>${f.name}</strong>: ${f.error}</li> `,
+        )}
+      </ul>
+    `}
+    ${result.results.skipped.length > 0 &&
+    html`
+      <h4>Skipped:</h4>
+      <ul class="import-list">
+        ${result.results.skipped.map(
+          (s) => html`
+            <li><strong>${s.name || `ID ${s.id}`}</strong>: ${s.reason}</li>
+          `,
+        )}
+      </ul>
+    `}
+  `
 }
 
 /** @type {Types.openSendInvitesModal} */
@@ -132,7 +137,7 @@ async function openSendInvitesModal() {
   moduleState.guestIds = state.currentGuests.flatMap(getInvitableId)
 
   if (moduleState.guestIds.length === 0) {
-    alert(
+    showError(
       "No guests available to invite. All guests have either responded or are archived.",
     )
     return
@@ -143,7 +148,7 @@ async function openSendInvitesModal() {
     moduleState.config = /** @type {Types.InviteConfig} */ (data)
     updateInviteConfigUI()
   } catch (err) {
-    alert("Failed to load invite configuration: " + getErrorMessage(err))
+    showError("Failed to load invite configuration: " + getErrorMessage(err))
     return
   }
 
@@ -175,9 +180,12 @@ async function openSendInvitesModal() {
   const { pending: pendingCount, invited: invitedCount } =
     state.currentGuests.reduce(countByStatus, { pending: 0, invited: 0 })
 
-  getElement("invite-recipients-summary").innerHTML = `
+  getElement("invite-recipients-summary").innerHTML = html`
     <p><strong>${moduleState.guestIds.length}</strong> guests selected</p>
-    <small class="text-muted">${pendingCount} pending, ${invitedCount} previously invited (not yet responded)</small>
+    <small class="text-muted"
+      >${pendingCount} pending, ${invitedCount} previously invited (not yet
+      responded)</small
+    >
   `
 
   openModal(getDialogElement("invite-modal"))
@@ -280,10 +288,10 @@ async function handleInviteNext() {
       nextBtn.textContent = "Done"
       backBtn.hidden = true
 
-      loadGuests()
-      loadStats()
+      await loadGuests()
+      await loadStats()
     } catch (err) {
-      alert("Failed to send invites: " + getErrorMessage(err))
+      showError("Failed to send invites: " + getErrorMessage(err))
       nextBtn.disabled = false
       if (moduleState.previewData) {
         nextBtn.textContent = `Send ${moduleState.previewData.totalToSend} Invites`

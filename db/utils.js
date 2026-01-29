@@ -2,15 +2,24 @@
 /** @import * as Types from './types.js' */
 
 import crypto from "node:crypto"
-import { queryOne, queryAll, getDb } from "./connection.js"
+import { getDb } from "./connection.js"
+import { sql } from "./sql.js"
 
 /** @type {Types.generateInviteCode} */
 export function generateInviteCode() {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-  const bytes = crypto.randomBytes(8)
+  const maxUnbiased = 248 // 248 = 62 * 4, largest multiple of 62 ≤ 256
   let code = ""
-  for (let i = 0; i < 8; i++) {
-    code += chars[bytes[i] % chars.length]
+  const bytes = crypto.randomBytes(16)
+  let byteIdx = 0
+  while (code.length < 8) {
+    if (byteIdx >= bytes.length) {
+      return generateInviteCode()
+    }
+    const b = bytes[byteIdx++]
+    if (b < maxUnbiased) {
+      code += chars[b % chars.length]
+    }
   }
   return code
 }
@@ -47,7 +56,16 @@ export function extractDigits(str) {
 /** @type {Types.normalizePhone} */
 export function normalizePhone(phone) {
   if (!phone) return null
-  const digits = extractDigits(phone)
+  // Strip common extension patterns before digit extraction
+  let cleaned = phone
+  const extPatterns = [" ext ", " ext.", " x ", " x.", "#"]
+  for (const pat of extPatterns) {
+    const idx = cleaned.toLowerCase().indexOf(pat)
+    if (idx !== -1) {
+      cleaned = cleaned.slice(0, idx)
+    }
+  }
+  const digits = extractDigits(cleaned)
 
   if (digits.length === 10) return "+1" + digits
 
@@ -72,23 +90,39 @@ export function normalizeName(name) {
   return words.join(" ")
 }
 
+/** @type {Types.normalizeEmail} */
+export function normalizeEmail(email) {
+  if (!email || typeof email !== "string") return null
+  const trimmed = email.trim().toLowerCase()
+  return trimmed || null
+}
+
 /** @type {Types.levenshteinDistance} */
-export function levenshteinDistance(a, b) {
+export function levenshteinDistance(a, b, maxDistance = Infinity) {
   if (!a || !b) return Math.max((a || "").length, (b || "").length)
+
+  // Early exit: if length difference exceeds threshold, skip computation
+  if (Math.abs(a.length - b.length) > maxDistance) return maxDistance + 1
+
+  // Cap input length for DoS protection
+  const maxLen = 200
+  const sa = a.length > maxLen ? a.slice(0, maxLen) : a
+  const sb = b.length > maxLen ? b.slice(0, maxLen) : b
 
   /** @type {number[][]} */
   const matrix = []
 
-  for (let i = 0; i <= b.length; i++) {
+  for (let i = 0; i <= sb.length; i++) {
     matrix[i] = [i]
   }
-  for (let j = 0; j <= a.length; j++) {
+  for (let j = 0; j <= sa.length; j++) {
     matrix[0][j] = j
   }
 
-  for (let i = 1; i <= b.length; i++) {
-    for (let j = 1; j <= a.length; j++) {
-      if (b[i - 1] === a[j - 1]) {
+  for (let i = 1; i <= sb.length; i++) {
+    let rowMin = Infinity
+    for (let j = 1; j <= sa.length; j++) {
+      if (sb[i - 1] === sa[j - 1]) {
         matrix[i][j] = matrix[i - 1][j - 1]
       } else {
         matrix[i][j] = Math.min(
@@ -97,22 +131,41 @@ export function levenshteinDistance(a, b) {
           matrix[i - 1][j] + 1, // deletion
         )
       }
+      if (matrix[i][j] < rowMin) rowMin = matrix[i][j]
     }
+    // Early exit: if all values in this row exceed threshold, stop
+    if (rowMin > maxDistance) return maxDistance + 1
   }
 
-  return matrix[b.length][a.length]
+  return matrix[sb.length][sa.length]
 }
 
 /** @type {Types.withTransaction} */
 export function withTransaction(fn) {
   const db = getDb()
   db.exec("BEGIN IMMEDIATE TRANSACTION")
+  let committed = false
   try {
     const result = fn(db)
+    if (
+      result &&
+      typeof result === "object" &&
+      typeof /** @type {{ then?: unknown }} */ (/** @type {unknown} */ (result)).then === "function"
+    ) {
+      db.exec("ROLLBACK")
+      throw new Error("withTransaction does not support async callbacks")
+    }
     db.exec("COMMIT")
+    committed = true
     return result
   } catch (err) {
-    db.exec("ROLLBACK")
+    if (!committed) {
+      try {
+        db.exec("ROLLBACK")
+      } catch {
+        /* already rolled back */
+      }
+    }
     throw err
   }
 }
@@ -125,21 +178,14 @@ export function logCommunication(
   messagePreview = null,
   errorMessage = null,
 ) {
-  const db = getDb()
-  const stmt = db.prepare(`
-    INSERT INTO communications (guest_id, type, status, message_preview, error_message)
-    VALUES (?, ?, ?, ?, ?)
-  `)
-  stmt.run(guestId, type, status, messagePreview, errorMessage)
+  sql`INSERT INTO communications (guest_id, type, status, message_preview, error_message)
+    VALUES (${guestId}, ${type}, ${status}, ${messagePreview}, ${errorMessage})`.run()
 }
 
 /** @type {Types.getInviteCountForGuest} */
 export function getInviteCountForGuest(guestId) {
   /** @type {Types.CountResult | undefined} */
-  const result = queryOne(
-    "SELECT COUNT(*) as count FROM communications WHERE guest_id = ? AND status = 'sent'",
-    guestId,
-  )
+  const result = sql`SELECT COUNT(*) as count FROM communications WHERE guest_id = ${guestId} AND status = 'sent'`.get()
   return result ? result.count : 0
 }
 
@@ -148,10 +194,7 @@ export function searchGuestsByName(name) {
   const normalizedInput = normalizeName(name)
   if (!normalizedInput) return []
 
-  const exactMatch = queryOne(
-    "SELECT * FROM guests WHERE deleted_at IS NULL AND LOWER(name) = ?",
-    normalizedInput,
-  )
+  const exactMatch = sql`SELECT * FROM guests WHERE deleted_at IS NULL AND LOWER(name) = ${normalizedInput}`.get()
 
   if (exactMatch) {
     return [{ ...exactMatch, matchDistance: 0 }]
@@ -161,14 +204,11 @@ export function searchGuestsByName(name) {
   const matches = []
   if (normalizedInput.length >= 3) {
     const prefix = normalizedInput.slice(0, 3)
-    const prefixMatches = queryAll(
-      "SELECT * FROM guests WHERE deleted_at IS NULL AND LOWER(name) LIKE ?",
-      prefix + "%",
-    )
+    const prefixMatches = sql`SELECT * FROM guests WHERE deleted_at IS NULL AND LOWER(name) LIKE ${escapeLikePattern(prefix) + "%"} ESCAPE '\\'`.all()
 
     for (const guest of prefixMatches) {
       const normalizedGuest = normalizeName(guest.name)
-      const distance = levenshteinDistance(normalizedInput, normalizedGuest)
+      const distance = levenshteinDistance(normalizedInput, normalizedGuest, 2)
       if (distance <= 2) {
         matches.push({ ...guest, matchDistance: distance })
       }
@@ -176,11 +216,11 @@ export function searchGuestsByName(name) {
   }
 
   if (matches.length === 0) {
-    const allGuests = queryAll("SELECT * FROM guests WHERE deleted_at IS NULL")
+    const allGuests = sql`SELECT * FROM guests WHERE deleted_at IS NULL`.all()
 
     for (const guest of allGuests) {
       const normalizedGuest = normalizeName(guest.name)
-      const distance = levenshteinDistance(normalizedInput, normalizedGuest)
+      const distance = levenshteinDistance(normalizedInput, normalizedGuest, 2)
       if (distance <= 2) {
         matches.push({ ...guest, matchDistance: distance })
       }

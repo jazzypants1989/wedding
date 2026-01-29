@@ -1,16 +1,23 @@
 /** @file Admin manual SMS endpoints for copy-paste texting workflow */
 /** @import * as Types from './types.js' */
 
-import { withAdmin } from "../../core/auth.js"
 import { getGuestById, updateGuestInvitedAt } from "../guests/data.js"
-import { logCommunication } from "../../db/utils.js"
+import { logCommunication, withTransaction } from "../../db/utils.js"
 import { sendJson, parseBody } from "../../core/http.js"
-import { ValidationError } from "../../core/errors.js"
-import { validateId, validateIdArray } from "../../core/validation.js"
-import { log, AUDIT_ACTIONS } from "../../core/log.js"
+import {
+  ValidationError,
+  validateId,
+  validateIdArray,
+} from "../../core/validation.js"
+import { log, AUDIT_ACTIONS } from "../../core/utils.js"
 import { getClientIp } from "../../core/rate-limit.js"
-import { BASE_URL, WEDDING, COMMUNICATION_TYPE, COMMUNICATION_STATUS } from "../../types.js"
-import { getDb } from "../../db/connection.js"
+import {
+  BASE_URL,
+  WEDDING,
+  COMMUNICATION_TYPE,
+  COMMUNICATION_STATUS,
+} from "../../types.js"
+import { sql } from "../../db/sql.js"
 
 const DEFAULT_TEMPLATE =
   "Hi {name}! You're invited to " +
@@ -18,18 +25,14 @@ const DEFAULT_TEMPLATE =
   "'s wedding on {date} in {location}. Please RSVP here: {url}"
 
 /** @type {Types.AuthedHandler} */
-async function getEligibleGuestsHandler(req, res) {
-  const db = getDb()
-  const guests = db
-    .prepare(
-      `SELECT id, name, phone, invite_code, status, last_invited_at
-       FROM guests
-       WHERE phone IS NOT NULL
-         AND deleted_at IS NULL
-         AND status IN ('pending', 'invited')
-       ORDER BY name`,
-    )
-    .all()
+export async function getEligibleGuests(req, res) {
+  const guests =
+    sql`SELECT id, name, phone, invite_code, status, last_invited_at
+     FROM guests
+     WHERE phone IS NOT NULL
+       AND deleted_at IS NULL
+       AND status IN ('pending', 'invited')
+     ORDER BY name`.all()
 
   return sendJson(res, 200, {
     guests,
@@ -44,13 +47,8 @@ async function getEligibleGuestsHandler(req, res) {
 }
 
 /** @type {Types.AuthedHandler} */
-async function markSentHandler(req, res, { session }) {
-  let body
-  try {
-    body = await parseBody(req)
-  } catch {
-    throw new ValidationError("Invalid JSON body")
-  }
+export async function markSent(req, res, { session }) {
+  const body = await parseBody(req)
 
   const { guestId, messagePreview } = body
 
@@ -98,13 +96,8 @@ async function markSentHandler(req, res, { session }) {
 }
 
 /** @type {Types.AuthedHandler} */
-async function markSentBatchHandler(req, res, { session }) {
-  let body
-  try {
-    body = await parseBody(req)
-  } catch {
-    throw new ValidationError("Invalid JSON body")
-  }
+export async function markSentBatch(req, res, { session }) {
+  const body = await parseBody(req)
 
   const { guestIds, messagePreview } = body
 
@@ -121,35 +114,37 @@ async function markSentBatchHandler(req, res, { session }) {
   /** @type {{ id: number, name?: string, error: string }[]} */
   const failed = []
 
-  for (const id of idsResult.value) {
-    const guest = getGuestById(id)
-    if (!guest) {
-      failed.push({ id, error: "Guest not found" })
-      continue
-    }
-    if (!guest.phone) {
-      failed.push({ id, name: guest.name, error: "No phone number" })
-      continue
-    }
+  withTransaction(() => {
+    for (const id of idsResult.value) {
+      const guest = getGuestById(id)
+      if (!guest) {
+        failed.push({ id, error: "Guest not found" })
+        continue
+      }
+      if (!guest.phone) {
+        failed.push({ id, name: guest.name, error: "No phone number" })
+        continue
+      }
 
-    try {
-      updateGuestInvitedAt(id)
-      logCommunication(
-        id,
-        COMMUNICATION_TYPE.SMS,
-        COMMUNICATION_STATUS.SENT,
-        preview,
-        null,
-      )
-      sent.push({ id: guest.id, name: guest.name })
-    } catch (err) {
-      failed.push({
-        id,
-        name: guest.name,
-        error: err instanceof Error ? err.message : "Unknown error",
-      })
+      try {
+        updateGuestInvitedAt(id)
+        logCommunication(
+          id,
+          COMMUNICATION_TYPE.SMS,
+          COMMUNICATION_STATUS.SENT,
+          preview,
+          null,
+        )
+        sent.push({ id: guest.id, name: guest.name })
+      } catch (err) {
+        failed.push({
+          id,
+          name: guest.name,
+          error: err instanceof Error ? err.message : "Unknown error",
+        })
+      }
     }
-  }
+  })
 
   if (sent.length > 0) {
     log({
@@ -171,7 +166,3 @@ async function markSentBatchHandler(req, res, { session }) {
     summary: { sent: sent.length, failed: failed.length },
   })
 }
-
-export const getEligibleGuests = withAdmin(getEligibleGuestsHandler)
-export const markSent = withAdmin(markSentHandler)
-export const markSentBatch = withAdmin(markSentBatchHandler)

@@ -275,4 +275,32 @@ describe("validateIdArray", () => {
     const result = validateIdArray([1, "abc", 3])
     assert.strictEqual(result.valid, false)
   })
+
+  it("rejects array exceeding default max length of 50", () => {
+    const ids = Array.from({ length: 51 }, (_, i) => i + 1)
+    const result = validateIdArray(ids)
+    assert.strictEqual(result.valid, false)
+    assert.ok(result.error.includes("exceeds maximum"))
+    assert.ok(result.error.includes("50"))
+  })
+
+  it("accepts array at exactly max length", () => {
+    const ids = Array.from({ length: 50 }, (_, i) => i + 1)
+    const result = validateIdArray(ids)
+    assert.strictEqual(result.valid, true)
+    assert.strictEqual(result.value.length, 50)
+  })
+
+  it("accepts custom max length", () => {
+    const ids = [1, 2, 3, 4, 5]
+    const result = validateIdArray(ids, "IDs", 10)
+    assert.strictEqual(result.valid, true)
+  })
+
+  it("rejects array exceeding custom max length", () => {
+    const ids = [1, 2, 3, 4, 5]
+    const result = validateIdArray(ids, "guestIds", 3)
+    assert.strictEqual(result.valid, false)
+    assert.ok(result.error.includes("3"))
+  })
 })

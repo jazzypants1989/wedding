@@ -1,7 +1,6 @@
 /** @file Types for integration test helpers */
 
 import type { DatabaseSync } from "node:sqlite"
-import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import type {
   Guest,
   Petition,
@@ -10,9 +9,7 @@ import type {
   RSVP,
 } from "../core/db/types.ts"
 
-export interface ApiData {
-  [key: string]: any
-}
+export type ApiData<T extends object = Record<string, unknown>> = T
 
 export interface HealthResponse {
   status: string
@@ -34,14 +31,17 @@ export interface ErrorResponse {
 }
 
 export interface StatsResponse {
-  total: number
-  responded: number
-  attending: number
+  stats: {
+    total_guests: number
+    responded: number
+    attending_yes: number
+    [key: string]: unknown
+  }
 }
 
 export interface GuestListResponse {
   guests: Guest[]
-  total: number
+  pagination: { total: number; [key: string]: unknown }
 }
 
 export interface GuestResponse {
@@ -58,8 +58,8 @@ export interface BlocklistResponse {
   blocklist: BlocklistEntry[]
 }
 
-export interface BlocklistEntryResponse {
-  entry: BlocklistEntry
+export interface BlocklistCreateResponse {
+  id: number | bigint
 }
 
 export interface RSVPListResponse {
@@ -79,6 +79,31 @@ export interface ImportResponse {
 export interface ConfigResponse {
   sms: object
   email: object
+}
+
+export interface LookupBlockedResponse {
+  found: boolean
+  canPetition: boolean
+}
+
+export interface ManualSmsGuestsResponse {
+  guests: { invite_code: string; [key: string]: unknown }[]
+  defaultTemplate: unknown
+  wedding: { date: unknown; location: unknown; [key: string]: unknown }
+}
+
+export interface ManualSmsMarkSentResponse {
+  success: boolean
+  guest: { id: number; status: string; [key: string]: unknown }
+}
+
+export interface ManualSmsBatchResponse {
+  success: boolean
+  summary: { sent: number; failed: number }
+  results: {
+    sent: unknown[]
+    failed: { error: string; [key: string]: unknown }[]
+  }
 }
 
 export const TEST_PORT: number

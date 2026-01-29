@@ -11,7 +11,7 @@ import {
   ConflictError,
   AuthenticationError,
   AuthorizationError,
-} from "../../../core/errors.js"
+} from "../../../core/validation.js"
 
 describe("AppError", () => {
   it("creates error with message, statusCode, and code", () => {

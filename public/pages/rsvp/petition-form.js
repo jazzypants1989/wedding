@@ -1,8 +1,6 @@
 /** @file Petition form module */
 /** @import * as Types from './types.js' */
 
-import { hideLookupSection } from "./lookup-form.js"
-import { apiRequest, getErrorMessage } from "./fetch-helper.js"
 import {
   getElement,
   getInputElement,
@@ -10,11 +8,15 @@ import {
   getFormElement,
   getTextAreaElement,
   detectContactType,
+  getErrorMessage,
+  api,
 } from "../utils.js"
+import { hideLookupSection } from "./lookup-form.js"
+import { showResult, setButtonLoading } from "./utils.js"
 
 /** @type {Types.submitPetition} */
 async function submitPetition(payload) {
-  return apiRequest("/api/petition", {
+  return api("/api/petition", {
     method: "POST",
     body: JSON.stringify(payload),
   })
@@ -22,19 +24,14 @@ async function submitPetition(payload) {
 
 /** @type {Types.showPetitionResult} */
 function showPetitionResult(message, isError = false) {
-  const resultEl = getElement("petition-result")
-  resultEl.textContent = message
-  resultEl.hidden = false
-  resultEl.classList.toggle("petition-result--error", isError)
-  resultEl.classList.toggle("petition-result--success", !isError)
-  if (isError) {
-    resultEl.classList.add("petition-result--shake")
-    resultEl.addEventListener(
-      "animationend",
-      () => resultEl.classList.remove("petition-result--shake"),
-      { once: true },
-    )
-  }
+  showResult(
+    getElement("petition-result"),
+    message,
+    isError,
+    "alert-error",
+    "alert-success",
+    "petition-result-shake",
+  )
 }
 
 /** @type {Types.showPetitionForm} */
@@ -45,7 +42,7 @@ export function showPetitionForm(prefillName, prefillContact) {
   hideLookupSection()
   sectionEl.hidden = false
   requestAnimationFrame(() => {
-    sectionEl.classList.add("form-state--visible")
+    sectionEl.classList.add("form-state-visible")
   })
 
   if (prefillName) {
@@ -55,7 +52,7 @@ export function showPetitionForm(prefillName, prefillContact) {
     const contactType = detectContactType(prefillContact)
     if (contactType === "email") {
       getInputElement("petition-email").value = prefillContact
-    } else {
+    } else if (contactType === "phone") {
       getInputElement("petition-phone").value = prefillContact
     }
   }
@@ -79,8 +76,7 @@ async function handlePetitionSubmit(e) {
     return
   }
 
-  submitEl.disabled = true
-  submitEl.classList.add("btn--loading")
+  setButtonLoading(submitEl, true)
   getElement("petition-result").hidden = true
 
   /** @type {Types.PetitionPayload} */
@@ -90,22 +86,13 @@ async function handlePetitionSubmit(e) {
   if (message) payload.message = message
 
   try {
-    const { ok, data } = await submitPetition(payload)
-
-    if (!ok) {
-      showPetitionResult(getErrorMessage(data), true)
-      submitEl.disabled = false
-      submitEl.classList.remove("btn--loading")
-      return
-    }
-
+    const data = await submitPetition(payload)
     getFormElement("petition-form").hidden = true
     showPetitionResult(data.message, false)
   } catch (err) {
     console.error("Petition error:", err)
     showPetitionResult(getErrorMessage(err), true)
-    submitEl.disabled = false
-    submitEl.classList.remove("btn--loading")
+    setButtonLoading(submitEl, false)
   }
 }
 

@@ -17,3 +17,7 @@ pnpm-lock.yaml
 
 # OS
 .DS_Store
+
+# Claude
+CLAUDE.md
+.claude

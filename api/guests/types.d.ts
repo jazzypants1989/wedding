@@ -82,12 +82,12 @@ export type updateHandler = ParamsHandler
 export type deleteHandler = ParamsHandler
 export type restoreHandler = ParamsHandler
 
-export const stats: WrappedHandler
-export const list: WrappedHandler
-export const create: WrappedHandler
-export const update: WrappedHandler
-export const remove: WrappedHandler
-export const restore: WrappedHandler
+export const stats: SyncHandler
+export const list: SyncHandler
+export const create: AuthedHandler
+export const update: ParamsHandler
+export const remove: ParamsHandler
+export const restore: ParamsHandler
 
 /** @file export.js - Types for admin guest export endpoints */
 
@@ -96,7 +96,7 @@ import type { WrappedHandler } from "../../core/types.js"
 
 export type ExportHandlerFn = SyncHandler
 
-export const exportCSV: WrappedHandler
+export const exportCSV: SyncHandler
 
 /** @file import.js - Types for admin guest import endpoints */
 
@@ -131,4 +131,4 @@ export interface ImportResult {
 
 export type ImportHandlerFn = AuthedHandler
 
-export const importCSV: WrappedHandler
+export const importCSV: AuthedHandler

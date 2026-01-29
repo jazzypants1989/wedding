@@ -18,9 +18,9 @@
  * which is not currently planned.
  */
 
-/** @import { AdminState } from '../types.js' */
+/** @import * as Types from './types.js' */
 
-/** @type {AdminState} */
+/** @type {Types.AdminState} */
 export const state = {
   csrfToken: null,
   currentGuests: [],

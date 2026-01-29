@@ -1,6 +1,6 @@
 /** @file connection.js - Types for database connection management */
 
-import type { DatabaseSync, SQLInputValue } from "node:sqlite"
+import type { DatabaseSync, SQLInputValue, StatementSync, StatementResultingChanges } from "node:sqlite"
 
 /**
  * Initialize the database connection and create tables if they don't exist.
@@ -25,18 +25,84 @@ export function getDb(): DatabaseSync
 export function close(): void
 
 /**
- * Query a single row from the database.
+ * Get or create a cached prepared statement.
  * @example
- * const guest = queryOne<Guest>('SELECT * FROM guests WHERE id = ?', 1);
+ * const stmt = getStmt('SELECT * FROM guests WHERE id = ?');
  */
-export function queryOne<T>(sql: string, ...params: SQLInputValue[]): T | undefined
+export function getStmt(sql: string): StatementSync
+
+/** @file sql.js - Types for SQL tagged template literal system */
 
 /**
- * Query all rows from the database.
- * @example
- * const guests = queryAll<Guest>('SELECT * FROM guests');
+ * Bind a statement executor to the SQL system.
+ * Must be called during init() before any queries execute.
+ * This decouples sql.js from the connection layer for portability.
  */
-export function queryAll<T>(sql: string, ...params: SQLInputValue[]): T[]
+export type bindExecutor = (getStmtFn: (sql: string) => StatementSync) => void
+
+/**
+ * SQL fragment with text and bound parameters.
+ * Call .get(), .all(), or .run() to execute.
+ */
+export class SqlFragment {
+  text: string
+  params: SQLInputValue[]
+  constructor(text: string, params: SQLInputValue[])
+  get<T>(): T | undefined
+  all<T>(): T[]
+  run(): StatementResultingChanges
+}
+
+/** Factory function type for creating SqlFragment instances */
+export type createFragment = (text: string, params: SQLInputValue[]) => SqlFragment
+
+/**
+ * Tagged template for building SQL fragments.
+ * Scalar values become ? parameters. SqlFragment values compose inline.
+ * @example
+ * sql`SELECT * FROM guests WHERE id = ${id}`.get()
+ */
+export type sqlFn = (
+  strings: TemplateStringsArray,
+  ...values: (SQLInputValue | SqlFragment)[]
+) => SqlFragment
+
+export function sql(
+  strings: TemplateStringsArray,
+  ...values: (SQLInputValue | SqlFragment)[]
+): SqlFragment
+
+export namespace sql {
+  /** Empty fragment for conditional composition (frozen) */
+  const empty: Readonly<SqlFragment>
+  /** Trusted raw SQL text — no parameter escaping */
+  function raw(text: string): SqlFragment
+  /** Join SQL fragments with a separator string */
+  function join(fragments: SqlFragment[], separator?: string): SqlFragment
+  /** Build an IN (...) clause from a list of values. Throws on empty array. */
+  function list(values: SQLInputValue[]): SqlFragment
+  // sql.if(condition, then, otherwise?) is typed via sqlIfFn — `if` is a reserved word in TS declarations
+  /** Join fragments with " AND ", filtering out empty fragments */
+  function and(fragments: SqlFragment[]): SqlFragment
+  /** Join fragments with " OR ", filtering out empty fragments */
+  function or(fragments: SqlFragment[]): SqlFragment
+  /** Build multi-row VALUES clause: (?, ?), (?, ?). Throws on empty array. */
+  function values(rows: SQLInputValue[][]): SqlFragment
+  /** Build SET clause from object, skipping undefined values. Throws if all undefined. */
+  function set(obj: Record<string, SQLInputValue | undefined>): SqlFragment
+  /** Safe double-quote escaping for column/table names (SQLite convention) */
+  function identifier(name: string): SqlFragment
+}
+
+export type sqlRawFn = (text: string) => SqlFragment
+export type sqlJoinFn = (fragments: SqlFragment[], separator?: string) => SqlFragment
+export type sqlListFn = (values: SQLInputValue[]) => SqlFragment
+export type sqlIfFn = (condition: unknown, then: SqlFragment, otherwise?: SqlFragment) => SqlFragment
+export type sqlAndFn = (fragments: SqlFragment[]) => SqlFragment
+export type sqlOrFn = (fragments: SqlFragment[]) => SqlFragment
+export type sqlValuesFn = (rows: SQLInputValue[][]) => SqlFragment
+export type sqlSetFn = (obj: Record<string, SQLInputValue | undefined>) => SqlFragment
+export type sqlIdentifierFn = (name: string) => SqlFragment
 
 /** @file schema.js - Types for database schema and migrations */
 
@@ -172,6 +238,11 @@ export function normalizePhone(
 export function normalizeName(name: string | null | undefined): string
 
 /**
+ * Normalize an email address: trim, lowercase, return null for empty/invalid.
+ */
+export function normalizeEmail(email: string | null | undefined): string | null
+
+/**
  * Calculate Levenshtein distance between two strings.
  * Used for fuzzy name matching (handles typos).
  * @example
@@ -180,6 +251,7 @@ export function normalizeName(name: string | null | undefined): string
 export function levenshteinDistance(
   a: string | null | undefined,
   b: string | null | undefined,
+  maxDistance?: number,
 ): number
 
 /**

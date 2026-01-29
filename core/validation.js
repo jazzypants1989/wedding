@@ -13,6 +13,65 @@ import { isGuestStatus, isCommunicationType } from "../types.js"
 import * as twilioService from "../services/twilio.js"
 import * as emailService from "../services/email.js"
 
+export class AppError extends Error {
+  /** @param {Types.AppErrorParams} _ */
+  constructor(...[message, statusCode = 500, code = "INTERNAL_ERROR"]) {
+    super(message)
+    this.statusCode = statusCode
+    this.code = code
+    this.isOperational = true
+  }
+}
+
+export class ValidationError extends AppError {
+  /** @param {Types.ValidationErrorParams} _ */
+  constructor(...[message]) {
+    super(message, 400, "VALIDATION_ERROR")
+  }
+}
+
+export class NotFoundError extends AppError {
+  /** @param {Types.NotFoundErrorParams} _ */
+  constructor(...[resource = "Resource"]) {
+    super(`${resource} not found`, 404, "NOT_FOUND")
+  }
+}
+
+export class ConflictError extends AppError {
+  /** @param {Types.ConflictErrorParams} _ */
+  constructor(...[message]) {
+    super(message, 409, "CONFLICT")
+  }
+}
+
+export class AuthenticationError extends AppError {
+  /** @param {Types.AuthenticationErrorParams} _ */
+  constructor(...[message = "Authentication required"]) {
+    super(message, 401, "AUTHENTICATION_ERROR")
+  }
+}
+
+export class AuthorizationError extends AppError {
+  /** @param {Types.AuthorizationErrorParams} _ */
+  constructor(...[message = "Access denied"]) {
+    super(message, 403, "AUTHORIZATION_ERROR")
+  }
+}
+
+export class PayloadTooLargeError extends AppError {
+  /** @param {Types.PayloadTooLargeErrorParams} _ */
+  constructor(...[message = "Payload too large"]) {
+    super(message, 413, "PAYLOAD_TOO_LARGE")
+  }
+}
+
+export class RateLimitError extends AppError {
+  /** @param {Types.RateLimitErrorParams} _ */
+  constructor(...[message = "Too many requests. Please try again later."]) {
+    super(message, 429, "RATE_LIMIT_EXCEEDED")
+  }
+}
+
 /** @type {Types.validatePartySize} */
 export function validatePartySize(value) {
   const size = parseInt(String(value), 10)
@@ -109,9 +168,15 @@ export function validateId(value, fieldName = "ID") {
 }
 
 /** @type {Types.validateIdArray} */
-export function validateIdArray(value, fieldName = "IDs") {
+export function validateIdArray(value, fieldName = "IDs", maxLength = 50) {
   if (!Array.isArray(value) || value.length === 0) {
     return { valid: false, error: `${fieldName} array required` }
+  }
+  if (value.length > maxLength) {
+    return {
+      valid: false,
+      error: `${fieldName} array exceeds maximum of ${maxLength} items`,
+    }
   }
   const ids = []
   for (const item of value) {

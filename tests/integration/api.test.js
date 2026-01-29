@@ -1,7 +1,7 @@
 /**
  * @file Integration tests for API endpoints
  */
-/** @import { TestGuest, TestBlocklistEntry, TestPetition, AdminAuth, ApiData } from '../helpers.js' */
+/** @import { TestGuest, TestBlocklistEntry, TestPetition, AdminAuth, ApiData, HealthResponse, RSVPGetResponse, RSVPPostResponse, ErrorResponse, PetitionResponse, LookupBlockedResponse, StatsResponse, GuestListResponse, GuestResponse, RSVPListResponse, ConfigResponse, PetitionListResponse, BlocklistResponse, BlocklistCreateResponse, ImportResponse, ManualSmsGuestsResponse, ManualSmsMarkSentResponse, ManualSmsBatchResponse } from '../helpers.js' */
 /** @import { DatabaseSync } from 'node:sqlite' */
 
 import { describe, it, before, after, beforeEach, afterEach } from "node:test"
@@ -48,7 +48,7 @@ describe("API Integration Tests", async () => {
       const res = await fetch(`${BASE_URL}/api/health`)
       assert.strictEqual(res.status, 200)
 
-      const data = /** @type {ApiData} */ (await res.json())
+      const data = /** @type {ApiData<HealthResponse>} */ (await res.json())
       assert.strictEqual(data.status, "ok")
       assert.ok(data.timestamp)
     })
@@ -75,7 +75,7 @@ describe("API Integration Tests", async () => {
       const res = await fetch(`${BASE_URL}/api/rsvp/${testGuest.invite_code}`)
       assert.strictEqual(res.status, 200)
 
-      const data = /** @type {ApiData} */ (await res.json())
+      const data = /** @type {ApiData<RSVPGetResponse>} */ (await res.json())
       assert.strictEqual(data.guest.name, testGuest.name)
       assert.strictEqual(data.guest.party_size, testGuest.party_size)
       assert.strictEqual(data.rsvp, null)
@@ -85,7 +85,7 @@ describe("API Integration Tests", async () => {
       const res = await fetch(`${BASE_URL}/api/rsvp/invalid!`)
       assert.strictEqual(res.status, 400)
 
-      const data = /** @type {ApiData} */ (await res.json())
+      const data = /** @type {ApiData<ErrorResponse>} */ (await res.json())
       assert.ok(data.error.includes("Invalid invite code"))
     })
 
@@ -107,7 +107,7 @@ describe("API Integration Tests", async () => {
       })
 
       assert.strictEqual(res.status, 200)
-      const data = /** @type {ApiData} */ (await res.json())
+      const data = /** @type {ApiData<RSVPPostResponse>} */ (await res.json())
       assert.strictEqual(data.success, true)
     })
 
@@ -135,7 +135,7 @@ describe("API Integration Tests", async () => {
       })
 
       assert.strictEqual(res.status, 400)
-      const data = /** @type {ApiData} */ (await res.json())
+      const data = /** @type {ApiData<ErrorResponse>} */ (await res.json())
       assert.ok(data.error.includes("cannot exceed"))
     })
 
@@ -147,7 +147,7 @@ describe("API Integration Tests", async () => {
       })
 
       assert.strictEqual(res.status, 400)
-      const data = /** @type {ApiData} */ (await res.json())
+      const data = /** @type {ApiData<ErrorResponse>} */ (await res.json())
       assert.ok(data.error.includes("attending"))
     })
 
@@ -199,7 +199,7 @@ describe("API Integration Tests", async () => {
       deleteTestGuest(db, testGuest.invite_code)
     })
 
-    it("POST /api/lookup requires name", async () => {
+    it("POST /api/lookup accepts request without name when name lookup disabled", async () => {
       await rateLimitDelay()
       const res = await fetch(`${BASE_URL}/api/lookup`, {
         method: "POST",
@@ -210,7 +210,7 @@ describe("API Integration Tests", async () => {
         body: JSON.stringify({ email: "test@example.com" }),
       })
 
-      assert.strictEqual(res.status, 400)
+      assert.strictEqual(res.status, 200)
     })
 
     it("POST /api/lookup requires email or phone", async () => {
@@ -282,7 +282,7 @@ describe("API Integration Tests", async () => {
       })
 
       assert.strictEqual(res.status, 201) // 201 Created
-      const data = /** @type {ApiData} */ (await res.json())
+      const data = /** @type {ApiData<PetitionResponse>} */ (await res.json())
       assert.ok(data.success)
 
       // Verify in DB
@@ -306,7 +306,7 @@ describe("API Integration Tests", async () => {
       assert.strictEqual(res.status, 400)
     })
 
-    it("POST /api/petition rejects blocked email", async () => {
+    it("POST /api/petition returns identical not-found response for blocked email", async () => {
       const blockedEmail = `blocked-${Date.now()}@example.com`
       blockedEntry = addToBlocklist(db, { email: blockedEmail })
 
@@ -323,7 +323,11 @@ describe("API Integration Tests", async () => {
         }),
       })
 
-      assert.strictEqual(res.status, 403)
+      // Blocked users get identical 200 response to prevent info leakage
+      assert.strictEqual(res.status, 200)
+      const data = /** @type {ApiData<LookupBlockedResponse>} */ (await res.json())
+      assert.strictEqual(data.found, false)
+      assert.strictEqual(data.canPetition, true)
     })
 
     it("POST /api/petition rejects duplicate pending petition", async () => {
@@ -413,7 +417,7 @@ describe("API Integration Tests", async () => {
       const res = await adminFetch("/api/admin/stats", {}, auth)
       assert.strictEqual(res.status, 200)
 
-      const data = /** @type {ApiData} */ (await res.json())
+      const data = /** @type {ApiData<StatsResponse>} */ (await res.json())
       assert.ok(data.stats, "Response should have stats object")
       assert.ok(typeof data.stats.total_guests === "number")
       assert.ok(typeof data.stats.responded === "number")
@@ -430,7 +434,7 @@ describe("API Integration Tests", async () => {
       )
       assert.strictEqual(res.status, 200)
 
-      const data = /** @type {ApiData} */ (await res.json())
+      const data = /** @type {ApiData<GuestListResponse>} */ (await res.json())
       assert.ok(Array.isArray(data.guests))
       assert.ok(typeof data.pagination.total === "number")
       assert.ok(data.guests.length <= 10)
@@ -457,7 +461,7 @@ describe("API Integration Tests", async () => {
 
       assert.strictEqual(res.status, 201)
 
-      const data = /** @type {ApiData} */ (await res.json())
+      const data = /** @type {ApiData<GuestResponse>} */ (await res.json())
       assert.strictEqual(data.guest.name, newGuest.name)
       assert.ok(data.guest.invite_code)
       assert.strictEqual(data.guest.invite_code.length, 8)
@@ -481,7 +485,7 @@ describe("API Integration Tests", async () => {
 
       assert.strictEqual(res.status, 200)
 
-      const data = /** @type {ApiData} */ (await res.json())
+      const data = /** @type {ApiData<GuestResponse>} */ (await res.json())
       assert.strictEqual(data.guest.name, "Updated Name")
       assert.strictEqual(data.guest.party_size, 5)
     })
@@ -539,7 +543,7 @@ describe("API Integration Tests", async () => {
       const res = await adminFetch("/api/admin/rsvps", {}, auth)
       assert.strictEqual(res.status, 200)
 
-      const data = /** @type {ApiData} */ (await res.json())
+      const data = /** @type {ApiData<RSVPListResponse>} */ (await res.json())
       assert.ok(Array.isArray(data.rsvps))
     })
 
@@ -567,7 +571,7 @@ describe("API Integration Tests", async () => {
       const res = await adminFetch("/api/admin/invite/config", {}, auth)
       assert.strictEqual(res.status, 200)
 
-      const data = /** @type {ApiData} */ (await res.json())
+      const data = /** @type {ApiData<ConfigResponse>} */ (await res.json())
       assert.ok(typeof data.sms === "object")
       assert.ok(typeof data.email === "object")
     })
@@ -578,7 +582,7 @@ describe("API Integration Tests", async () => {
       const res = await adminFetch("/api/admin/petitions", {}, auth)
       assert.strictEqual(res.status, 200)
 
-      const data = /** @type {ApiData} */ (await res.json())
+      const data = /** @type {ApiData<PetitionListResponse>} */ (await res.json())
       assert.ok(Array.isArray(data.petitions))
     })
 
@@ -588,7 +592,7 @@ describe("API Integration Tests", async () => {
       const res = await adminFetch("/api/admin/blocklist", {}, auth)
       assert.strictEqual(res.status, 200)
 
-      const data = /** @type {ApiData} */ (await res.json())
+      const data = /** @type {ApiData<BlocklistResponse>} */ (await res.json())
       assert.ok(Array.isArray(data.blocklist))
     })
 
@@ -610,7 +614,7 @@ describe("API Integration Tests", async () => {
 
       assert.strictEqual(res.status, 201)
 
-      const data = /** @type {ApiData} */ (await res.json())
+      const data = /** @type {ApiData<BlocklistCreateResponse>} */ (await res.json())
       assert.ok(data.id)
 
       // Cleanup
@@ -711,7 +715,7 @@ describe("API Integration Tests", async () => {
       )
 
       assert.strictEqual(res.status, 200)
-      const data = /** @type {ApiData} */ (await res.json())
+      const data = /** @type {ApiData<PetitionResponse>} */ (await res.json())
       assert.strictEqual(data.success, true)
       assert.ok(data.guest, "Should return created guest")
       assert.strictEqual(data.guest.name, testPetition.name)
@@ -752,7 +756,7 @@ describe("API Integration Tests", async () => {
       )
 
       assert.strictEqual(res.status, 400)
-      const data = /** @type {ApiData} */ (await res.json())
+      const data = /** @type {ApiData<ErrorResponse>} */ (await res.json())
       assert.ok(data.error.includes("already"))
     })
 
@@ -844,7 +848,7 @@ describe("API Integration Tests", async () => {
       })
 
       assert.strictEqual(res.status, 429)
-      const data = /** @type {ApiData} */ (await res.json())
+      const data = /** @type {ApiData<ErrorResponse>} */ (await res.json())
       assert.ok(data.error.includes("Too many requests"))
     })
 
@@ -925,7 +929,7 @@ Jane Smith,csvtest-jane@example.com,,1`
       )
 
       assert.strictEqual(res.status, 200)
-      const data = /** @type {ApiData} */ (await res.json())
+      const data = /** @type {ApiData<ImportResponse>} */ (await res.json())
       assert.strictEqual(data.added, 2)
       assert.strictEqual(data.skipped.length, 0)
       assert.strictEqual(data.errors.length, 0)
@@ -961,7 +965,7 @@ Duplicate Guest,csvtest-dup@example.com,2`
       )
 
       assert.strictEqual(res.status, 200)
-      const data = /** @type {ApiData} */ (await res.json())
+      const data = /** @type {ApiData<ImportResponse>} */ (await res.json())
       assert.strictEqual(data.added, 0)
       assert.strictEqual(data.skipped.length, 1)
       assert.ok(data.skipped[0].reason.includes("exists"))
@@ -984,7 +988,7 @@ Invalid Party,csvtest-invalid@example.com,999`
       )
 
       assert.strictEqual(res.status, 200)
-      const data = /** @type {ApiData} */ (await res.json())
+      const data = /** @type {ApiData<ImportResponse>} */ (await res.json())
       assert.strictEqual(data.added, 0)
       assert.strictEqual(data.errors.length, 1)
       assert.ok(
@@ -1010,7 +1014,7 @@ Invalid Party,csvtest-invalid@example.com,999`
       )
 
       assert.strictEqual(res.status, 200)
-      const data = /** @type {ApiData} */ (await res.json())
+      const data = /** @type {ApiData<ImportResponse>} */ (await res.json())
       assert.strictEqual(data.added, 1)
 
       // Verify name parsed correctly
@@ -1041,7 +1045,7 @@ csvtest-noname@example.com,1`
       )
 
       assert.strictEqual(res.status, 400)
-      const data = /** @type {ApiData} */ (await res.json())
+      const data = /** @type {ApiData<ErrorResponse>} */ (await res.json())
       assert.ok(data.error.includes("name"))
     })
   })
@@ -1069,7 +1073,7 @@ csvtest-noname@example.com,1`
     })
 
     it("Serves CSS files with correct content-type", async () => {
-      const res = await fetch(`${BASE_URL}/styles/global.css`)
+      const res = await fetch(`${BASE_URL}/styles/tokens.css`)
       assert.strictEqual(res.status, 200)
       const cssType = res.headers.get("content-type")
       assert.ok(cssType && cssType.includes("text/css"))
@@ -1080,6 +1084,409 @@ csvtest-noname@example.com,1`
       assert.strictEqual(res.status, 200)
       const jsType = res.headers.get("content-type")
       assert.ok(jsType && jsType.includes("javascript"))
+    })
+  })
+
+  // ==================== Manual SMS ====================
+
+  describe("Manual SMS API", () => {
+    /** @type {Awaited<ReturnType<typeof adminLogin>> | null} */
+    let smsAuth = null
+
+    /** @type {string[]} */
+    const createdCodes = []
+
+    /** @param {TestGuest} guest */
+    function trackGuest(guest) {
+      createdCodes.push(guest.invite_code)
+      return guest
+    }
+
+    before(async () => {
+      const password = process.env.TEST_ADMIN_PASSWORD
+      if (password) {
+        try {
+          smsAuth = await adminLogin(password)
+        } catch {
+          console.log("Admin login failed - check TEST_ADMIN_PASSWORD")
+        }
+      }
+
+      if (!smsAuth) {
+        console.log(
+          "Skipping authenticated manual SMS tests (set TEST_ADMIN_PASSWORD)",
+        )
+      }
+    })
+
+    after(() => {
+      for (const code of createdCodes) {
+        try {
+          deleteTestGuest(db, code)
+        } catch {
+          // ignore cleanup errors
+        }
+      }
+    })
+
+    afterEach(async () => {
+      await rateLimitDelay()
+    })
+
+    // ==================== GET /api/admin/manual-sms/guests ====================
+
+    describe("GET /api/admin/manual-sms/guests", () => {
+      it("returns 401 without auth", async () => {
+        const res = await fetch(
+          `${BASE_URL}/api/admin/manual-sms/guests`,
+        )
+        assert.strictEqual(res.status, 401)
+      })
+
+      it("returns eligible guests with phone numbers", async (t) => {
+        if (!smsAuth) return t.skip("TEST_ADMIN_PASSWORD not set")
+
+        const guest = trackGuest(
+          createTestGuest(db, {
+            phone: "+15551234567",
+            status: "pending",
+          }),
+        )
+
+        const res = await adminFetch(
+          "/api/admin/manual-sms/guests",
+          {},
+          smsAuth,
+        )
+        assert.strictEqual(res.status, 200)
+
+        const data = /** @type {ApiData<ManualSmsGuestsResponse>} */ (await res.json())
+        assert.ok(Array.isArray(data.guests), "should have guests array")
+        assert.ok(data.defaultTemplate, "should have defaultTemplate")
+        assert.ok(data.wedding, "should have wedding info")
+        assert.ok(data.wedding.date, "wedding should have date")
+        assert.ok(data.wedding.location, "wedding should have location")
+
+        const found = data.guests.find(
+          (g) => g.invite_code === guest.invite_code,
+        )
+        assert.ok(found, "eligible guest with phone should be included")
+      })
+
+      it("excludes guests without phone", async (t) => {
+        if (!smsAuth) return t.skip("TEST_ADMIN_PASSWORD not set")
+
+        const guest = trackGuest(
+          createTestGuest(db, { phone: null, status: "pending" }),
+        )
+
+        const res = await adminFetch(
+          "/api/admin/manual-sms/guests",
+          {},
+          smsAuth,
+        )
+        const data = /** @type {ApiData<ManualSmsGuestsResponse>} */ (await res.json())
+
+        const found = data.guests.find(
+          (g) => g.invite_code === guest.invite_code,
+        )
+        assert.strictEqual(
+          found,
+          undefined,
+          "guest without phone should not be included",
+        )
+      })
+
+      it("excludes responded guests", async (t) => {
+        if (!smsAuth) return t.skip("TEST_ADMIN_PASSWORD not set")
+
+        const guest = trackGuest(
+          createTestGuest(db, {
+            phone: "+15551234568",
+            status: "responded",
+          }),
+        )
+
+        const res = await adminFetch(
+          "/api/admin/manual-sms/guests",
+          {},
+          smsAuth,
+        )
+        const data = /** @type {ApiData<ManualSmsGuestsResponse>} */ (await res.json())
+
+        const found = data.guests.find(
+          (g) => g.invite_code === guest.invite_code,
+        )
+        assert.strictEqual(
+          found,
+          undefined,
+          "responded guest should not be included",
+        )
+      })
+
+      it("excludes deleted guests", async (t) => {
+        if (!smsAuth) return t.skip("TEST_ADMIN_PASSWORD not set")
+
+        const guest = trackGuest(
+          createTestGuest(db, {
+            phone: "+15551234569",
+            status: "pending",
+          }),
+        )
+        // Soft-delete the guest
+        db.prepare(
+          "UPDATE guests SET deleted_at = datetime('now') WHERE invite_code = ?",
+        ).run(guest.invite_code)
+
+        const res = await adminFetch(
+          "/api/admin/manual-sms/guests",
+          {},
+          smsAuth,
+        )
+        const data = /** @type {ApiData<ManualSmsGuestsResponse>} */ (await res.json())
+
+        const found = data.guests.find(
+          (g) => g.invite_code === guest.invite_code,
+        )
+        assert.strictEqual(
+          found,
+          undefined,
+          "deleted guest should not be included",
+        )
+      })
+    })
+
+    // ==================== POST /api/admin/manual-sms/mark-sent ====================
+
+    describe("POST /api/admin/manual-sms/mark-sent", () => {
+      it("returns 401 without auth", async () => {
+        const res = await fetch(
+          `${BASE_URL}/api/admin/manual-sms/mark-sent`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ guestId: 1 }),
+          },
+        )
+        assert.strictEqual(res.status, 401)
+      })
+
+      it("returns 403 without CSRF token", async (t) => {
+        if (!smsAuth) return t.skip("TEST_ADMIN_PASSWORD not set")
+
+        const res = await fetch(
+          `${BASE_URL}/api/admin/manual-sms/mark-sent`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Cookie: smsAuth.cookieHeader,
+            },
+            body: JSON.stringify({ guestId: 1 }),
+          },
+        )
+        assert.strictEqual(res.status, 403)
+      })
+
+      it("marks a guest as invited and returns success", async (t) => {
+        if (!smsAuth) return t.skip("TEST_ADMIN_PASSWORD not set")
+
+        const guest = trackGuest(
+          createTestGuest(db, {
+            phone: "+15559999001",
+            status: "pending",
+          }),
+        )
+
+        const res = await adminFetch(
+          "/api/admin/manual-sms/mark-sent",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              guestId: Number(guest.id),
+              messagePreview: "Test message",
+            }),
+          },
+          smsAuth,
+        )
+        assert.strictEqual(res.status, 200)
+
+        const data = /** @type {ApiData<ManualSmsMarkSentResponse>} */ (await res.json())
+        assert.strictEqual(data.success, true)
+        assert.strictEqual(data.guest.id, Number(guest.id))
+        assert.strictEqual(data.guest.status, "invited")
+
+        // Verify communication was logged in DB
+        const comm = db
+          .prepare(
+            "SELECT * FROM communications WHERE guest_id = ? ORDER BY id DESC LIMIT 1",
+          )
+          .get(Number(guest.id))
+        assert.ok(comm, "communication should be logged")
+        assert.strictEqual(comm.type, "sms")
+        assert.strictEqual(comm.status, "sent")
+      })
+
+      it("returns 400 for non-existent guest", async (t) => {
+        if (!smsAuth) return t.skip("TEST_ADMIN_PASSWORD not set")
+
+        const res = await adminFetch(
+          "/api/admin/manual-sms/mark-sent",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ guestId: 999999 }),
+          },
+          smsAuth,
+        )
+        assert.strictEqual(res.status, 400)
+      })
+
+      it("returns 400 for guest without phone", async (t) => {
+        if (!smsAuth) return t.skip("TEST_ADMIN_PASSWORD not set")
+
+        const guest = trackGuest(
+          createTestGuest(db, { phone: null, status: "pending" }),
+        )
+
+        const res = await adminFetch(
+          "/api/admin/manual-sms/mark-sent",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ guestId: Number(guest.id) }),
+          },
+          smsAuth,
+        )
+        assert.strictEqual(res.status, 400)
+
+        const data = /** @type {ApiData<ErrorResponse>} */ (await res.json())
+        assert.ok(
+          data.error.includes("phone"),
+          "error should mention phone: " + data.error,
+        )
+      })
+
+      it("returns 400 for invalid guestId", async (t) => {
+        if (!smsAuth) return t.skip("TEST_ADMIN_PASSWORD not set")
+
+        const res = await adminFetch(
+          "/api/admin/manual-sms/mark-sent",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ guestId: "not-a-number" }),
+          },
+          smsAuth,
+        )
+        assert.strictEqual(res.status, 400)
+      })
+    })
+
+    // ==================== POST /api/admin/manual-sms/mark-sent-batch ====================
+
+    describe("POST /api/admin/manual-sms/mark-sent-batch", () => {
+      it("returns 401 without auth", async () => {
+        const res = await fetch(
+          `${BASE_URL}/api/admin/manual-sms/mark-sent-batch`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ guestIds: [1] }),
+          },
+        )
+        assert.strictEqual(res.status, 401)
+      })
+
+      it("marks multiple guests as invited", async (t) => {
+        if (!smsAuth) return t.skip("TEST_ADMIN_PASSWORD not set")
+
+        const guest1 = trackGuest(
+          createTestGuest(db, {
+            phone: "+15559999011",
+            status: "pending",
+          }),
+        )
+        const guest2 = trackGuest(
+          createTestGuest(db, {
+            phone: "+15559999012",
+            status: "pending",
+          }),
+        )
+
+        const res = await adminFetch(
+          "/api/admin/manual-sms/mark-sent-batch",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              guestIds: [Number(guest1.id), Number(guest2.id)],
+            }),
+          },
+          smsAuth,
+        )
+        assert.strictEqual(res.status, 200)
+
+        const data = /** @type {ApiData<ManualSmsBatchResponse>} */ (await res.json())
+        assert.strictEqual(data.success, true)
+        assert.strictEqual(data.summary.sent, 2)
+        assert.strictEqual(data.summary.failed, 0)
+        assert.strictEqual(data.results.sent.length, 2)
+      })
+
+      it("reports partial failures", async (t) => {
+        if (!smsAuth) return t.skip("TEST_ADMIN_PASSWORD not set")
+
+        const validGuest = trackGuest(
+          createTestGuest(db, {
+            phone: "+15559999013",
+            status: "pending",
+          }),
+        )
+        const noPhoneGuest = trackGuest(
+          createTestGuest(db, { phone: null, status: "pending" }),
+        )
+
+        const res = await adminFetch(
+          "/api/admin/manual-sms/mark-sent-batch",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              guestIds: [Number(validGuest.id), Number(noPhoneGuest.id)],
+            }),
+          },
+          smsAuth,
+        )
+        assert.strictEqual(res.status, 200)
+
+        const data = /** @type {ApiData<ManualSmsBatchResponse>} */ (await res.json())
+        assert.strictEqual(data.success, true)
+        assert.strictEqual(data.summary.sent, 1)
+        assert.strictEqual(data.summary.failed, 1)
+        assert.strictEqual(data.results.sent.length, 1)
+        assert.strictEqual(data.results.failed.length, 1)
+        assert.ok(
+          data.results.failed[0].error.includes("phone"),
+          "failed entry should mention phone",
+        )
+      })
+
+      it("returns 400 for invalid guestIds", async (t) => {
+        if (!smsAuth) return t.skip("TEST_ADMIN_PASSWORD not set")
+
+        const res = await adminFetch(
+          "/api/admin/manual-sms/mark-sent-batch",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ guestIds: "not-an-array" }),
+          },
+          smsAuth,
+        )
+        assert.strictEqual(res.status, 400)
+      })
     })
   })
 })

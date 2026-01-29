@@ -3,13 +3,15 @@
 
 import crypto from "node:crypto"
 import { sendJson, sendError } from "./http.js"
-import { AppError } from "./errors.js"
+import { AppError } from "./validation.js"
 import {
   getSession,
   updateSessionActivity,
   rotateCsrfToken,
 } from "../db/sessions.js"
-import { SESSION } from "../types.js"
+import { SESSION, BASE_URL } from "../types.js"
+import { log, AUDIT_ACTIONS } from "./utils.js"
+import { getClientIp } from "./rate-limit.js"
 
 /** @type {Types.hashPassword} */
 function hashPassword(password) {
@@ -93,51 +95,20 @@ export {
   createSessionCookies,
   clearSessionCookies,
   validateCsrf,
+  withErrorHandling,
 }
 
-/** @type {Types.withAdmin} */
-export function withAdmin(handler) {
+/** @type {Types.withErrorHandling} */
+function withErrorHandling(handler) {
   return async (req, res, routeInfo) => {
     try {
-      const cookies = parseCookies(req.headers.cookie)
-      const sessionToken = cookies.session
-
-      if (!sessionToken) {
-        return sendJson(res, 401, { error: "Authentication required" })
-      }
-
-      const session = getSession(sessionToken)
-      if (!session) {
-        return sendJson(res, 401, { error: "Session expired or invalid" })
-      }
-
-      updateSessionActivity(sessionToken)
-
-      if (
-        req.method &&
-        ["POST", "PUT", "DELETE", "PATCH"].includes(req.method)
-      ) {
-        if (!validateCsrf(req, session)) {
-          return sendJson(res, 403, { error: "Invalid CSRF token" })
-        }
-      }
-
-      let updatedSession = session
-      if (session.csrf_rotated_at) {
-        const rotatedAt = new Date(session.csrf_rotated_at)
-        const csrfAge = Date.now() - rotatedAt.getTime()
-        if (csrfAge > SESSION.CSRF_ROTATION_MS) {
-          const newCsrfToken = rotateCsrfToken(sessionToken)
-          res.setHeader(
-            "Set-Cookie",
-            `csrf=${newCsrfToken}; Path=/; SameSite=Strict; Max-Age=86400`,
-          )
-          updatedSession = { ...session, csrf_token: newCsrfToken }
-        }
-      }
-
-      return await handler(req, res, { ...routeInfo, session: updatedSession })
+      return await handler(req, res, routeInfo)
     } catch (err) {
+      if (res.headersSent) {
+        console.error("Error after response sent:", err)
+        return
+      }
+
       if (err instanceof AppError) {
         return sendError(res, err.statusCode, err.message, err.code)
       }
@@ -158,4 +129,51 @@ export function withAdmin(handler) {
       return sendError(res, 500, "Internal server error", "INTERNAL_ERROR")
     }
   }
+}
+
+/** @type {Types.withAdmin} */
+export function withAdmin(handler) {
+  return withErrorHandling(async (req, res, routeInfo) => {
+    const cookies = parseCookies(req.headers.cookie)
+    const sessionToken = cookies.session
+
+    if (!sessionToken) {
+      return sendJson(res, 401, { error: "Authentication required" })
+    }
+
+    const session = getSession(sessionToken)
+    if (!session) {
+      return sendJson(res, 401, { error: "Session expired or invalid" })
+    }
+
+    updateSessionActivity(sessionToken)
+
+    if (req.method && ["POST", "PUT", "DELETE", "PATCH"].includes(req.method)) {
+      if (!validateCsrf(req, session)) {
+        log({
+          action: AUDIT_ACTIONS.CSRF_FAILURE,
+          ip: getClientIp(req),
+          details: { method: req.method, url: req.url },
+        })
+        return sendJson(res, 403, { error: "Invalid CSRF token" })
+      }
+    }
+
+    let updatedSession = session
+    if (session.csrf_rotated_at) {
+      const rotatedAt = new Date(session.csrf_rotated_at)
+      const csrfAge = Date.now() - rotatedAt.getTime()
+      if (csrfAge > SESSION.CSRF_ROTATION_MS) {
+        const newCsrfToken = rotateCsrfToken(sessionToken)
+        const secureFlag = BASE_URL.startsWith("https") ? "; Secure" : ""
+        res.setHeader(
+          "Set-Cookie",
+          `csrf=${newCsrfToken}; Path=/; SameSite=Strict; Max-Age=86400${secureFlag}`,
+        )
+        updatedSession = { ...session, csrf_token: newCsrfToken }
+      }
+    }
+
+    return await handler(req, res, { ...routeInfo, session: updatedSession })
+  })
 }

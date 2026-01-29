@@ -1,16 +1,19 @@
 /** @import * as Types from './types.js' */
 
 import { LIMITS } from "../../types.js"
-import { withAdmin } from "../../core/auth.js"
 import { parseCSV } from "../../core/csv.js"
 import { createGuest } from "./data.js"
-import { getDb } from "../../db/connection.js"
-import { withTransaction } from "../../db/utils.js"
+import { sql } from "../../db/sql.js"
+import {
+  withTransaction,
+  normalizeEmail,
+  normalizePhone,
+} from "../../db/utils.js"
 import { sendJson, parseBody } from "../../core/http.js"
-import { ValidationError } from "../../core/errors.js"
-import { log, AUDIT_ACTIONS } from "../../core/log.js"
+import { log, AUDIT_ACTIONS } from "../../core/utils.js"
 import { getClientIp } from "../../core/rate-limit.js"
 import {
+  ValidationError,
   validateRequiredString,
   validatePartySize,
   validateEmail,
@@ -19,13 +22,8 @@ import {
 } from "../../core/validation.js"
 
 /** @type {Types.ImportHandlerFn} */
-async function importHandler(req, res, { session }) {
-  let body
-  try {
-    body = await parseBody(req)
-  } catch (err) {
-    throw new ValidationError("Invalid JSON body")
-  }
+export async function importCSV(req, res, { session }) {
+  const body = await parseBody(req)
 
   const { csv } = body
   if (!csv || typeof csv !== "string") {
@@ -46,7 +44,6 @@ async function importHandler(req, res, { session }) {
 
   /** @type {Types.ValidatedRow[]} */
   const validatedRows = []
-  const db = getDb()
 
   for (const row of rows) {
     const lineNum = row._lineNumber
@@ -91,26 +88,16 @@ async function importHandler(req, res, { session }) {
     const notes = notesResult.value
 
     if (email || phone) {
-      let checkSql =
-        "SELECT email, phone FROM guests WHERE deleted_at IS NULL AND ("
       const conditions = []
-      const params = []
-
-      if (email) {
-        conditions.push("email = ?")
-        params.push(email.toLowerCase().trim())
-      }
-      if (phone) {
-        conditions.push("phone = ?")
-        params.push(phone)
-      }
-
-      checkSql += conditions.join(" OR ") + ") LIMIT 1"
-      const existing = db.prepare(checkSql).get(...params)
+      if (email) conditions.push(sql`email = ${normalizeEmail(email)}`)
+      if (phone) conditions.push(sql`phone = ${normalizePhone(phone)}`)
+      const orClause = sql.join(conditions, " OR ")
+      const existing =
+        sql`SELECT email, phone FROM guests WHERE deleted_at IS NULL AND (${orClause}) LIMIT 1`.get()
 
       if (existing) {
         const reason =
-          email && existing.email === email.toLowerCase().trim()
+          email && existing.email === normalizeEmail(email)
             ? `Email already exists: ${email}`
             : `Phone already exists: ${phone}`
         result.skipped.push({ line: lineNum, name, reason })
@@ -121,7 +108,44 @@ async function importHandler(req, res, { session }) {
     validatedRows.push({ lineNum, name, email, phone, partySize, notes })
   }
 
-  if (validatedRows.length > 0) {
+  // Intra-file deduplication: check for duplicate emails/phones within the CSV
+  /** @type {Set<string>} */
+  const seenEmails = new Set()
+  /** @type {Set<string>} */
+  const seenPhones = new Set()
+  /** @type {Types.ValidatedRow[]} */
+  const dedupedRows = []
+
+  for (const row of validatedRows) {
+    const normEmail = row.email ? normalizeEmail(row.email) : null
+    const normPhone = row.phone ? normalizePhone(row.phone) : null
+    let isDuplicate = false
+
+    if (normEmail && seenEmails.has(normEmail)) {
+      result.skipped.push({
+        line: row.lineNum,
+        name: row.name,
+        reason: `Duplicate email within CSV: ${row.email}`,
+      })
+      isDuplicate = true
+    }
+    if (!isDuplicate && normPhone && seenPhones.has(normPhone)) {
+      result.skipped.push({
+        line: row.lineNum,
+        name: row.name,
+        reason: `Duplicate phone within CSV: ${row.phone}`,
+      })
+      isDuplicate = true
+    }
+
+    if (!isDuplicate) {
+      if (normEmail) seenEmails.add(normEmail)
+      if (normPhone) seenPhones.add(normPhone)
+      dedupedRows.push(row)
+    }
+  }
+
+  if (dedupedRows.length > 0) {
     try {
       withTransaction(() => {
         for (const {
@@ -131,7 +155,7 @@ async function importHandler(req, res, { session }) {
           phone,
           partySize,
           notes,
-        } of validatedRows) {
+        } of dedupedRows) {
           try {
             createGuest({ name, email, phone, party_size: partySize, notes })
             result.added++
@@ -173,5 +197,3 @@ async function importHandler(req, res, { session }) {
 
   return sendJson(res, 200, result)
 }
-
-export const importCSV = withAdmin(importHandler)

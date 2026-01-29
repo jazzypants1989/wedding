@@ -2,12 +2,13 @@ import type { ApiOptions, PaginationInfo } from "../types.js"
 import type {
   RSVPWithGuest,
   BlocklistEntry,
+  Guest,
   GuestWithInviteCount,
   Stats,
   Petition,
 } from "../../../types.js"
 
-/** @file api.js - Types for admin API helper */
+/** @file utils.js - Types for admin utilities */
 
 /**
  * Make an authenticated API request.
@@ -17,7 +18,10 @@ import type {
  * const data = await api('/api/admin/guests');
  * const result = await api('/api/admin/guests', { method: 'POST', body: JSON.stringify(data) });
  */
-export function api(endpoint: string, options?: ApiOptions): Promise<unknown>
+export function api(
+  endpoint: string,
+  options?: ApiOptions,
+): Promise<unknown>
 
 /** @file auth.js - Types for admin authentication module */
 
@@ -72,7 +76,26 @@ export function handleLoginSubmit(e: SubmitEvent): Promise<void>
  */
 export function initAuth(loginCallback: VoidCallback): void
 
+/** @file state.js - Types for shared admin dashboard state */
+
+export interface AdminState {
+  csrfToken: string | null
+  currentGuests: Guest[]
+  currentPage: number
+  PAGE_SIZE: number
+  currentPetitions: Petition[]
+  currentBlocklist: BlocklistEntry[]
+  onAuthRequired: () => void
+  getGuestById: (id: number) => Guest | null
+  getBlockedEntryById: (id: number) => BlocklistEntry | null
+  getPetitionById: (id: number) => Petition | null
+}
+
 /** @file blocklist.js - Types for blocklist management module */
+
+export interface BlocklistResponse {
+  blocklist: BlocklistEntry[]
+}
 
 /**
  * Module state for blocklist operations.
@@ -568,7 +591,19 @@ export function handleInviteBack(): void
  */
 export function initInvites(): void
 
-/** @file modal.js - Types for modal management utilities using native dialog element */
+/** @file utils.js - Types for notification banner & modal management utilities  */
+
+/** Show an error notification in the banner.
+ * @example
+ * showError('An error occurred');
+ */
+export function showError(message: string): void
+
+/** Clear any existing notification from the banner.
+ * @example
+ * clearNotification();
+ */
+export function clearNotification(): void
 
 /**
  * Open a modal dialog with optional focus return support.
@@ -706,6 +741,10 @@ export function initPetitions(): void
 
 /** @file rsvps.js - Types for RSVP list display module */
 
+export interface RSVPsResponse {
+  rsvps: RSVPWithGuest[]
+}
+
 /**
  * Render RSVP data to the table body.
  * Shows name, attendance status, party size, dietary info, and date.
@@ -720,3 +759,153 @@ export function renderRsvps(rsvps: RSVPWithGuest[]): void
  * await loadRsvps();
  */
 export function loadRsvps(): Promise<void>
+
+/** @file manual-sms.js - Types for manual SMS copy-paste texting module */
+
+/**
+ * Guest eligible for manual SMS.
+ * @example
+ * const guest: EligibleGuest = { id: 1, name: 'John', phone: '555-1234', invite_code: 'ABC123', status: 'pending', last_invited_at: null };
+ */
+export interface EligibleGuest {
+  id: number
+  name: string
+  phone: string
+  invite_code: string
+  status: string
+  last_invited_at: string | null
+}
+
+/**
+ * Wedding info used for message template rendering.
+ * @example
+ * const info: WeddingInfo = { date: '2026-06-15', location: 'Beach', coupleNames: 'A & B', baseUrl: 'https://example.com' };
+ */
+export interface WeddingInfo {
+  date: string
+  location: string
+  coupleNames: string
+  baseUrl: string
+}
+
+/**
+ * Module state for manual SMS operations.
+ * @example
+ * const state: ManualSmsState = { viewMode: 'focus', template: '', guests: [], weddingInfo: null, currentIndex: 0, sentIds: new Set() };
+ */
+export interface ManualSmsState {
+  viewMode: string
+  template: string
+  guests: EligibleGuest[]
+  weddingInfo: WeddingInfo | null
+  currentIndex: number
+  sentIds: Set<number>
+}
+
+/**
+ * Response data from the manual SMS guests endpoint.
+ * @example
+ * const data: ManualSmsData = { guests: [], wedding: null, defaultTemplate: 'Hello {name}' };
+ */
+export interface ManualSmsData {
+  guests: EligibleGuest[]
+  wedding: WeddingInfo | null
+  defaultTemplate: string
+}
+
+/**
+ * Render a message template with guest and wedding info placeholders.
+ * @example
+ * const msg = renderMessage('Hi {name}, RSVP at {url}', guest);
+ */
+export function renderMessage(
+  template: string,
+  guest: EligibleGuest,
+): string
+
+/**
+ * Copy text to clipboard with button feedback.
+ * @example
+ * await copyToClipboard('Hello', button);
+ */
+export function copyToClipboard(
+  text: string,
+  button: HTMLButtonElement,
+): Promise<void>
+
+/**
+ * Get the current message template from the textarea or module state.
+ * @example
+ * const tpl = getTemplate();
+ */
+export function getTemplate(): string
+
+/**
+ * Update the progress counter display.
+ * @example
+ * updateProgressCounter();
+ */
+export function updateProgressCounter(): void
+
+/**
+ * Render the focus (single-guest) view.
+ * @example
+ * renderFocusView();
+ */
+export function renderFocusView(): void
+
+/**
+ * Render the list (all-guests) view.
+ * @example
+ * renderListView();
+ */
+export function renderListView(): void
+
+/**
+ * Render whichever view mode is currently active.
+ * @example
+ * renderCurrentView();
+ */
+export function renderCurrentView(): void
+
+/**
+ * Mark a guest as sent via the API and update local state.
+ * @example
+ * await markGuestSent(5);
+ */
+export function markGuestSent(guestId: number): Promise<void>
+
+/**
+ * Type guard for manual SMS API response data.
+ * @example
+ * if (isManualSmsData(data)) { ... }
+ */
+export function isManualSmsData(data: unknown): data is ManualSmsData
+
+/**
+ * Open the manual SMS modal and load eligible guests.
+ * @example
+ * await openManualSmsModal();
+ */
+export function openManualSmsModal(): Promise<void>
+
+/**
+ * Handle closing the manual SMS modal and refreshing data.
+ * @example
+ * await handleDone();
+ */
+export function handleDone(): Promise<void>
+
+/**
+ * Switch between focus and list view modes.
+ * @example
+ * switchViewMode('list');
+ */
+export function switchViewMode(mode: string): void
+
+/**
+ * Initialize manual SMS module event listeners.
+ * @example
+ * initManualSms();
+ */
+export function initManualSms(): void

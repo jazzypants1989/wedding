@@ -1,7 +1,7 @@
 /** @file Admin session endpoints */
 /** @import * as Types from './types.js' */
 
-import { createSession, deleteSession } from "../../db/sessions.js"
+import { createSession, deleteSession, hashToken } from "../../db/sessions.js"
 import { sendJson, parseBody } from "../../core/http.js"
 import { limiters, getClientIp } from "../../core/rate-limit.js"
 import { checkRateLimit } from "../../core/http.js"
@@ -11,8 +11,8 @@ import {
   createSessionCookies,
   clearSessionCookies,
 } from "../../core/auth.js"
-import { ADMIN_PASSWORD_HASH } from "../../types.js"
-import { log, AUDIT_ACTIONS } from "../../core/log.js"
+import { ADMIN_PASSWORD_HASH, BASE_URL } from "../../types.js"
+import { log, AUDIT_ACTIONS } from "../../core/utils.js"
 
 /** @type {Types.login} */
 export async function login(req, res) {
@@ -25,15 +25,7 @@ export async function login(req, res) {
     })
   }
 
-  let body
-  try {
-    body = await parseBody(req)
-  } catch (err) {
-    if (err instanceof Error && err.message === "Payload too large") {
-      return sendJson(res, 413, { error: "Payload too large" })
-    }
-    return sendJson(res, 400, { error: "Invalid JSON body" })
-  }
+  const body = await parseBody(req)
 
   const { password } = body
   if (!password || typeof password !== "string") {
@@ -53,13 +45,13 @@ export async function login(req, res) {
 
   log({
     action: AUDIT_ACTIONS.LOGIN,
-    adminId: session.token,
+    adminId: hashToken(session.token),
     ip: clientIp,
   })
 
   limiters.adminLogin.reset(clientIp)
 
-  const isSecure = process.env.NODE_ENV === "production"
+  const isSecure = BASE_URL.startsWith("https")
   const cookies = createSessionCookies(session, isSecure)
 
   return sendJson(
@@ -81,7 +73,7 @@ export async function logout(req, res) {
   if (sessionToken) {
     log({
       action: AUDIT_ACTIONS.LOGOUT,
-      adminId: sessionToken,
+      adminId: hashToken(sessionToken),
     })
     deleteSession(sessionToken)
   }

@@ -15,15 +15,13 @@ export interface EmailOptions {
 }
 
 /**
- * Result from sending an email.
+ * Result from sending an email (discriminated union).
  * @example
  * const result: SendResult = { success: true, id: 'email-123' };
  */
-export interface SendResult {
-  success: boolean
-  id?: string
-  error?: string
-}
+export type SendResult =
+  | { success: true; id?: string }
+  | { success: false; error: string }
 
 /**
  * Invite email data.
@@ -96,17 +94,25 @@ export function getDefaultInviteEmail(
   inviteUrl: string,
 ): InviteEmailData
 
+/** @file http-client.js - Types for shared HTTP request helper */
+
+export type ServiceRequestResult =
+  | { success: true; data?: Record<string, unknown> }
+  | { success: false; error: string }
+
+export function makeServiceRequest(
+  httpClient: HttpClient,
+  options: object,
+  postData: string,
+): Promise<ServiceRequestResult>
+
 /** @file retry.js - Types for retry utilities */
 
 /**
- * Result from retryable operation.
- * @example
- * const result: RetryResult = { success: true };
+ * Result from retryable operation (generic discriminated union).
+ * Preserves the inner result type through the retry wrapper.
  */
-export interface RetryResult {
-  success: boolean
-  error?: string
-}
+export type RetryResult<T> = T | { success: false; error: string }
 
 /**
  * Options for retry behavior.
@@ -119,18 +125,11 @@ export interface RetryOptions {
 }
 
 /**
- * Function that can be retried.
- * @example
- * const fn: RetryableFn = async () => ({ success: true });
- */
-export type RetryableFn = () => Promise<RetryResult>
-
-/**
  * Check if error is retryable.
  * @example
  * if (isRetryableError('timeout')) { ... }
  */
-export function isRetryableError(errorMessage: string | undefined): boolean
+export function isRetryableError(errorMessage: string | null | undefined): boolean
 
 /**
  * Sleep for specified milliseconds.
@@ -141,13 +140,12 @@ export function sleep(ms: number): Promise<void>
 
 /**
  * Retry a function with exponential backoff.
- * @example
- * await withRetry(fn, { maxRetries: 3 });
+ * Returns the inner result type on success, or a failure result.
  */
-export function withRetry(
-  fn: RetryableFn,
+export function withRetry<T extends { success: boolean; error?: string }>(
+  fn: () => Promise<T>,
   options?: RetryOptions,
-): Promise<RetryResult>
+): Promise<RetryResult<T>>
 
 /** @file templates.js - Types for message template utilities */
 
@@ -193,27 +191,14 @@ export function getTemplateExample(): string
 
 /** @file twilio.js - Types for Twilio SMS service */
 
-import type { ClientRequest, IncomingMessage } from "node:http"
-
 /**
- * Result from sending SMS.
+ * Result from sending SMS (discriminated union).
  * @example
  * const result: SendSMSResult = { success: true, sid: 'SM123' };
  */
-export interface SendSMSResult {
-  success: boolean
-  sid?: string
-  error?: string
-}
-
-/**
- * Minimal HTTP client interface for SMS service.
- * @example
- * const client: HttpClient = https;
- */
-export interface HttpClient {
-  request(options: object, callback: (res: any) => void): any
-}
+export type SendSMSResult =
+  | { success: true; sid?: string }
+  | { success: false; error: string }
 
 /**
  * SMS service interface.

@@ -8,30 +8,30 @@ export function isRetryableError(errorMessage) {
   // Retry network and timeout errors
   if (
     message.includes("timeout") ||
+    message.includes("timed out") ||
     message.includes("network") ||
     message.includes("econnrefused") ||
     message.includes("econnreset") ||
-    message.includes("socket hang up")
+    message.includes("socket hang up") ||
+    message.includes("epipe") ||
+    message.includes("ehostunreach")
   ) {
     return true
   }
 
-  // Don't retry auth failures
+  // Retry server errors and rate limits
   if (
-    message.includes("unauthorized") ||
-    message.includes("forbidden") ||
-    message.includes("invalid api key")
+    message.includes("http 429") ||
+    message.includes("http 500") ||
+    message.includes("http 502") ||
+    message.includes("http 503") ||
+    message.includes("http 504")
   ) {
-    return false
+    return true
   }
 
-  // Don't retry validation errors
-  if (message.includes("invalid") || message.includes("missing required")) {
-    return false
-  }
-
-  // Default to retry for unknown errors
-  return true
+  // Default: do NOT retry unknown errors
+  return false
 }
 
 /** @type {Types.sleep} */
@@ -61,7 +61,8 @@ export async function withRetry(
 
     // Don't delay after the last attempt
     if (attempt < maxRetries - 1) {
-      const delay = baseDelayMs * Math.pow(2, attempt) // Exponential: 1s, 2s, 4s
+      const maxDelay = baseDelayMs * Math.pow(2, attempt) // Exponential: 1s, 2s, 4s
+      const delay = Math.floor(Math.random() * maxDelay) // Full jitter
       await sleep(delay)
     }
   }

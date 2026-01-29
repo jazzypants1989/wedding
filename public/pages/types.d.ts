@@ -1,55 +1,21 @@
-import type {
-  RSVPWithGuest,
-  Stats,
-  Guest,
-  Petition,
-  BlocklistEntry,
-} from "../../types.js"
-
 // Options for the api() helper function
 export interface ApiOptions {
   method?: string
   headers?: Record<string, string>
   body?: string
   timeout?: number
+  signal?: AbortSignal
+  csrf?: boolean
+  onUnauthorized?: () => void
 }
 
-// Generic API error response
-export interface ApiError {
-  error: string
-}
+export function api<T = unknown>(endpoint: string, options?: ApiOptions): Promise<T>
 
 // Pagination info included in list responses
 export interface PaginationInfo {
   total: number
   limit: number
   offset: number
-}
-
-// Admin API responses
-export interface StatsResponse {
-  stats: Stats
-}
-
-export interface GuestsResponse {
-  guests: Guest[]
-  pagination: PaginationInfo
-}
-
-export interface GuestResponse {
-  guest: Guest
-}
-
-export interface RSVPsResponse {
-  rsvps: RSVPWithGuest[]
-}
-
-export interface PetitionsResponse {
-  petitions: Petition[]
-}
-
-export interface BlocklistResponse {
-  blocklist: BlocklistEntry[]
 }
 
 // Public API responses
@@ -64,49 +30,6 @@ export interface RSVPSubmitResponse {
   success: boolean
   message: string
 }
-
-export interface FetchResult<T = unknown> {
-  ok: boolean
-  status: number
-  data: T
-}
-
-export interface AdminState {
-  csrfToken: string | null
-  currentGuests: Guest[]
-  currentPage: number
-  PAGE_SIZE: number
-  currentPetitions: Petition[]
-  currentBlocklist: BlocklistEntry[]
-  onAuthRequired: () => void
-  getGuestById: (id: number) => Guest | null
-  getBlockedEntryById: (id: number) => BlocklistEntry | null
-  getPetitionById: (id: number) => Petition | null
-}
-
-/** @file mobile-nav.js - Types for mobile navigation module */
-
-/**
- * Toggle function to open/close the mobile nav.
- * @example
- * toggle(); // Opens if closed, closes if open
- */
-export function toggle(): void
-
-/**
- * Close function to explicitly close the mobile nav.
- * @example
- * close(); // Closes if open, no-op if already closed
- */
-export function close(): void
-
-/**
- * Initialize mobile navigation with hamburger menu.
- * Sets up event listeners for toggle, close, and accessibility.
- * @example
- * initMobileNav();
- */
-export function initMobileNav(): void
 
 /** @file countdown.js - Types for countdown timer module */
 
@@ -141,6 +64,9 @@ export function formatExactTime(ms: number): string
  * pad(12) // "12"
  */
 export function pad(num: number): string
+
+/** @file registry.js */
+export function initRegistryFrame(): void
 
 /** @file utils.js - Types for type-safe DOM element utilities and general helpers */
 
@@ -256,6 +182,47 @@ export function getErrorMessage(err: unknown): string
 export function escapeHtml(str: string): string
 
 /**
+ * Wrapper for pre-escaped HTML content.
+ * Created by the html`` tagged template or raw() function.
+ */
+export class SafeHTML {
+  value: string
+  constructor(value: string)
+  toString(): string
+}
+
+/**
+ * Auto-escaping HTML tagged template.
+ * All interpolated values are escaped unless wrapped in SafeHTML (via raw()).
+ * Arrays of SafeHTML are joined automatically.
+ * Returns SafeHTML at runtime (coerces to string via toString()),
+ * but typed as string so innerHTML assignments type-check directly.
+ * @example
+ * const row = html`<td>${userName}</td><td>${userEmail}</td>`
+ * element.innerHTML = row
+ */
+export function html(
+  strings: TemplateStringsArray,
+  ...values: unknown[]
+): string
+
+/**
+ * Mark a string as trusted HTML (no escaping).
+ * Only use with HTML you control — never with user input.
+ * @example
+ * html`<div>${raw('<br>')}</div>`
+ */
+export function raw(trustedString: string): SafeHTML
+
+/**
+ * Join non-empty values with a separator.
+ * Filters out null, undefined, booleans, and empty strings.
+ * Values are escaped; use SafeHTML separator for trusted HTML like raw("<br>").
+ * Returns SafeHTML at runtime, typed as string (same as html``).
+ */
+export function join(items: unknown[], separator: string | SafeHTML): string
+
+/**
  * Format an ISO date string for human-readable display.
  * Uses US locale with short month, numeric day, and full year.
  * @example
@@ -264,8 +231,8 @@ export function escapeHtml(str: string): string
  */
 export function formatDate(isoString: string): string
 
-/** Contact type - email or phone */
-export type ContactType = "email" | "phone"
+/** Contact type - email, phone, or unknown for ambiguous input */
+export type ContactType = "email" | "phone" | "unknown"
 
 /**
  * Count the number of digit characters (0-9) in a string.
@@ -281,10 +248,10 @@ export function countDigits(str: string): number
  * Detect if input looks like an email or phone number.
  * - Returns 'email' if the string contains '@'
  * - Returns 'phone' if the string has 7 or more digits
- * - Defaults to 'email' for ambiguous input (backend validates further)
+ * - Returns 'unknown' for ambiguous input (callers should show a validation error)
  * @example
  * detectContactType("user@example.com") // "email"
  * detectContactType("5551234567") // "phone"
- * detectContactType("john.doe") // "email" (default)
+ * detectContactType("john.doe") // "unknown"
  */
 export function detectContactType(input: string): ContactType

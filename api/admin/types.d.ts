@@ -78,9 +78,9 @@ export function removeHandler(
   routeInfo: AuthenticatedRouteInfo,
 ): Promise<void>
 
-export const list: WrappedHandler
-export const create: WrappedHandler
-export const remove: WrappedHandler
+export const list: AsyncHandler
+export const create: AuthedHandler
+export const remove: ParamsHandler
 
 /**
  * Input for checking if blocked.
@@ -223,9 +223,9 @@ export function sendHandler(
   routeInfo: AuthenticatedRouteInfo,
 ): Promise<void>
 
-export const config: WrappedHandler
-export const preview: WrappedHandler
-export const send: WrappedHandler
+export const config: AsyncHandler
+export const preview: AsyncHandler
+export const send: AuthedHandler
 
 /** @file Types for admin petitions endpoints */
 
@@ -261,9 +261,9 @@ export function denyPetition(
   routeInfo: AuthenticatedRouteInfo,
 ): Promise<void>
 
-export const list: WrappedHandler
-export const approve: WrappedHandler
-export const deny: WrappedHandler
+export const list: AsyncHandler
+export const approve: ParamsHandler
+export const deny: ParamsHandler
 
 /**
  * Input for creating a petition.
@@ -398,8 +398,8 @@ export function RSVPExportHandler(
   res: ServerResponse,
 ): void
 
-export const list: WrappedHandler
-export const exportCSV: WrappedHandler
+export const list: SyncHandler
+export const exportCSV: SyncHandler
 
 /**
  * Login handler.

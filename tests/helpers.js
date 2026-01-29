@@ -8,6 +8,8 @@ import { spawn } from "node:child_process"
 import { DatabaseSync } from "node:sqlite"
 import path from "node:path"
 import crypto from "node:crypto"
+import fs from "node:fs"
+import os from "node:os"
 import { createTables, runMigrations } from "../db/schema.js"
 
 const PROJECT_ROOT = path.resolve(import.meta.dirname, "..")
@@ -18,7 +20,9 @@ try {
 } catch {
   // .env file is optional
 }
-const TEST_DB_PATH = path.join(PROJECT_ROOT, "data", "wedding.db")
+
+// Use a temporary database file for test isolation (never touch production DB)
+const TEST_DB_PATH = path.join(os.tmpdir(), `wedding-test-${process.pid}-${Date.now()}.db`)
 
 // Test configuration
 export const TEST_PORT = 3001
@@ -35,6 +39,8 @@ export async function startServer() {
         ...process.env,
         PORT: TEST_PORT.toString(),
         NODE_ENV: "test",
+        DATABASE_PATH: TEST_DB_PATH,
+        AUDIT_LOG_DIR: path.join(os.tmpdir(), `wedding-test-audit-${process.pid}`),
         // Trust localhost for X-Forwarded-For headers in tests
         TRUSTED_PROXIES: "127.0.0.1,::1,::ffff:127.0.0.1",
       }
@@ -47,11 +53,20 @@ export async function startServer() {
 
       let started = false
 
+      // Timeout after 10 seconds
+      const startupTimer = setTimeout(() => {
+        if (!started && serverProcess) {
+          serverProcess.kill()
+          reject(new Error("Server startup timeout"))
+        }
+      }, 10000)
+
       serverProcess.stdout.on("data", (data) => {
         const output = data.toString()
         // Server outputs "Wedding website running at..." when ready
         if (output.includes("Wedding website running") && !started) {
           started = true
+          clearTimeout(startupTimer)
           resolve()
         }
       })
@@ -65,52 +80,66 @@ export async function startServer() {
       })
 
       serverProcess.on("error", (err) => {
+        clearTimeout(startupTimer)
+        serverProcess = null
         reject(new Error(`Failed to start server: ${err.message}`))
       })
 
       serverProcess.on("exit", (code) => {
         if (!started) {
+          clearTimeout(startupTimer)
+          serverProcess = null
           reject(new Error(`Server exited with code ${code} before starting`))
         }
       })
-
-      // Timeout after 10 seconds
-      setTimeout(() => {
-        if (!started && serverProcess) {
-          serverProcess.kill()
-          reject(new Error("Server startup timeout"))
-        }
-      }, 10000)
     })
   )
 }
 
 /** @type {StopServerFn} */
 export async function stopServer() {
-  return /** @type {Promise<void>} */ (
+  await /** @type {Promise<void>} */ (
     new Promise((resolve) => {
       if (!serverProcess) {
         resolve()
         return
       }
 
-      serverProcess.on("exit", () => {
-        serverProcess = null
-        resolve()
-      })
-
-      serverProcess.kill("SIGINT")
-
       // Force kill after 5 seconds
-      setTimeout(() => {
+      const killTimer = setTimeout(() => {
         if (serverProcess) {
           serverProcess.kill("SIGKILL")
           serverProcess = null
           resolve()
         }
       }, 5000)
+
+      serverProcess.on("exit", () => {
+        clearTimeout(killTimer)
+        serverProcess = null
+        resolve()
+      })
+
+      serverProcess.kill("SIGINT")
     })
   )
+
+  // Clean up temp database files
+  for (const suffix of ["", "-wal", "-shm"]) {
+    try {
+      fs.unlinkSync(TEST_DB_PATH + suffix)
+    } catch {
+      // file may not exist
+    }
+  }
+
+  // Clean up temp audit log directory
+  const auditDir = path.join(os.tmpdir(), `wedding-test-audit-${process.pid}`)
+  try {
+    fs.rmSync(auditDir, { recursive: true, force: true })
+  } catch {
+    // directory may not exist
+  }
 }
 
 /** @type {GetTestDbFn} */
@@ -124,7 +153,7 @@ export function getTestDb() {
 /** @type {CreateTestGuestFn} */
 export function createTestGuest(db, overrides = {}) {
   const code = overrides.invite_code || generateInviteCode()
-  /** @type {import('../types.js').GuestStatusMap} */
+  /** @type {import('../types.js').GuestStatus} */
   const status = overrides.status || "pending"
   const guest = {
     name: "Test Guest",
