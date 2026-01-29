@@ -91,7 +91,9 @@ export function createParallaxSparkles(config) {
         sparkle.style.height = size + "px"
         sparkle.style.left = randomBetween(0, 100) + "%"
         sparkle.style.top = randomBetween(-20, 120) + "%"
-        sparkle.style.backgroundColor = randomFrom(colors)
+        const color = randomFrom(colors)
+        sparkle.style.backgroundColor = color
+        sparkle.style.color = color // for currentColor in box-shadow
         sparkle.style.opacity = String(randomBetween(0.2, 0.7) * depth)
         sparkle.style.animationDuration = randomBetween(2, 5) + "s"
         sparkle.style.animationDelay = randomBetween(0, 3) + "s"
