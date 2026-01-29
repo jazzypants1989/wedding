@@ -42,6 +42,7 @@ function showError(message) {
 
 /** @type {Types.showSuccess} */
 function showSuccess(message) {
+  window.scrollTo({ top: 0, behavior: "smooth" })
   getElement("rsvp-loading").hidden = true
   getElement("rsvp-error").hidden = true
   getFormElement("rsvp-form").hidden = true
