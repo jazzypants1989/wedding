@@ -20,7 +20,7 @@ function renderRsvps(rsvps) {
       html` <tr class="expandable-row">
           <td>
             <strong>${rsvp.name}</strong>
-            <span class="expand-indicator">▼</span>
+            <span class="expand-indicator"></span>
           </td>
           <td class="${rsvp.attending ? "attending-yes" : "attending-no"}">
             ${rsvp.attending ? "Yes" : "No"}

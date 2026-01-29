@@ -269,14 +269,24 @@ tr:hover td {
 
 .expand-indicator {
   display: inline-block;
-  margin-left: var(--spacing-xs);
-  font-size: var(--text-xs);
-  color: var(--color-text-muted);
-  transition: transform var(--duration-fast);
+  width: 8px;
+  height: 8px;
+  margin-left: var(--spacing-sm);
+  border-right: 1.5px solid var(--color-primary);
+  border-bottom: 1.5px solid var(--color-primary);
+  transform: rotate(45deg);
+  transition: transform var(--duration-normal) ease;
+  vertical-align: middle;
+  opacity: 0.6;
+}
+
+.expandable-row:hover .expand-indicator {
+  opacity: 1;
 }
 
 .expandable-row.expanded .expand-indicator {
-  transform: rotate(180deg);
+  transform: rotate(-135deg);
+  opacity: 1;
 }
 
 .expandable-row.expanded + .row-details {
