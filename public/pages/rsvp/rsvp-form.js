@@ -42,7 +42,6 @@ function showError(message) {
 
 /** @type {Types.showSuccess} */
 function showSuccess(message) {
-  window.scrollTo({ top: 0, behavior: "smooth" })
   getElement("rsvp-loading").hidden = true
   getElement("rsvp-error").hidden = true
   getFormElement("rsvp-form").hidden = true
@@ -51,7 +50,11 @@ function showSuccess(message) {
   getElement("success-message").textContent = message
   requestAnimationFrame(() => {
     successEl.classList.add("form-state-visible")
+    const rect = getElement("main-content").getBoundingClientRect()
+    const scrollTarget = window.scrollY + rect.top - 40
+    window.scrollTo({ top: Math.max(0, scrollTarget), behavior: "smooth" })
   })
+
   fireConfetti()
 }
 

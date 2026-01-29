@@ -29,7 +29,7 @@ export function createGrandEntrance(config) {
   ]
 
   function getSparkleCount() {
-    const base = isMobile() ? 25 : 60
+    const base = isMobile() ? 15 : 60
     return Math.round(mapSlider(sparkleIntensity, base * 0.3, base * 2))
   }
 
@@ -61,14 +61,6 @@ export function createGrandEntrance(config) {
       sparkle.style.animationDuration = duration + "s"
       sparkle.style.animationDelay = randomBetween(0, 0.5) + "s"
 
-      sparkle.addEventListener(
-        "animationend",
-        function () {
-          sparkle.remove()
-        },
-        { once: true },
-      )
-
       sparkleContainer.appendChild(sparkle)
     }
   }
@@ -87,6 +79,12 @@ export function createGrandEntrance(config) {
     sparkleContainer = document.createElement("div")
     sparkleContainer.className = "effect-layer grand-entrance-sparkles"
     sparkleContainer.setAttribute("aria-hidden", "true")
+    sparkleContainer.addEventListener("animationend", function (e) {
+      const target = /** @type {HTMLElement} */ (e.target)
+      if (target.classList.contains("grand-entrance-sparkle")) {
+        target.remove()
+      }
+    })
     document.body.appendChild(sparkleContainer)
 
     const h = window.innerHeight
@@ -141,6 +139,12 @@ export function createGrandEntrance(config) {
     sparkleContainer = document.createElement("div")
     sparkleContainer.className = "effect-layer grand-entrance-sparkles"
     sparkleContainer.setAttribute("aria-hidden", "true")
+    sparkleContainer.addEventListener("animationend", function (e) {
+      const target = /** @type {HTMLElement} */ (e.target)
+      if (target.classList.contains("grand-entrance-sparkle")) {
+        target.remove()
+      }
+    })
     document.body.appendChild(sparkleContainer)
 
     const waveCount = 8
@@ -180,6 +184,12 @@ export function createGrandEntrance(config) {
     sparkleContainer = document.createElement("div")
     sparkleContainer.className = "effect-layer grand-entrance-sparkles"
     sparkleContainer.setAttribute("aria-hidden", "true")
+    sparkleContainer.addEventListener("animationend", function (e) {
+      const target = /** @type {HTMLElement} */ (e.target)
+      if (target.classList.contains("grand-entrance-sparkle")) {
+        target.remove()
+      }
+    })
     document.body.appendChild(sparkleContainer)
 
     // Radial sparkle burst from center
@@ -210,13 +220,6 @@ export function createGrandEntrance(config) {
         sparkle.style.animationDuration = randomBetween(1, 2.5) + "s"
         sparkle.style.animationDelay = randomBetween(0, 0.3) + "s"
 
-        sparkle.addEventListener(
-          "animationend",
-          function () {
-            sparkle.remove()
-          },
-          { once: true },
-        )
         if (sparkleContainer) sparkleContainer.appendChild(sparkle)
       }
     }, 400 * speedFactor)

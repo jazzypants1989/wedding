@@ -35,6 +35,17 @@ export function createSparkleBurst(config) {
     container = document.createElement("div")
     container.className = "effect-layer"
     container.setAttribute("aria-hidden", "true")
+    container.addEventListener("animationend", function (e) {
+      const target = /** @type {HTMLElement} */ (e.target)
+      if (target.classList.contains("sparkle-burst-particle")) {
+        target.remove()
+        remaining--
+        if (remaining <= 0 && container) {
+          container.remove()
+          container = null
+        }
+      }
+    })
     document.body.appendChild(container)
 
     const count = getCount()
@@ -58,15 +69,6 @@ export function createSparkleBurst(config) {
 
       const scale = randomBetween(0.5, 1.5)
       sparkle.style.setProperty("--burst-scale", String(scale))
-
-      sparkle.addEventListener("animationend", function () {
-        sparkle.remove()
-        remaining--
-        if (remaining <= 0 && container) {
-          container.remove()
-          container = null
-        }
-      })
 
       container.appendChild(sparkle)
     }

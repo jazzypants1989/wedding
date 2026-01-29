@@ -1,7 +1,7 @@
 /** @file Mermaid shimmer effect — iridescent holographic overlay */
 /** @import * as Types from './types.js' */
 
-import { mapSlider } from "./main.js"
+import { isMobile, mapSlider } from "./main.js"
 
 const PALETTES = {
   iridescent:
@@ -25,6 +25,8 @@ export function createMermaidShimmer(config) {
 
   function start() {
     if (overlay) return
+    // Skip on mobile - full viewport animated gradient is too expensive
+    if (isMobile()) return
 
     overlay = document.createElement("div")
     overlay.className = "mermaid-shimmer"

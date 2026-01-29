@@ -13,6 +13,8 @@ export function createMirrorReflections(config) {
   /** @type {Types.Reflection[]} */
   let reflections = []
   let active = false
+  let lastFrameTime = 0
+  const FRAME_INTERVAL = 33 // ~30fps
 
   const reflectionCount =
     cfg.reflectionCount !== undefined ? cfg.reflectionCount : 50
@@ -74,8 +76,17 @@ export function createMirrorReflections(config) {
     return refs
   }
 
-  function render() {
+  /** @param {number} timestamp */
+  function render(timestamp) {
     if (!active) return
+
+    // Throttle to ~30fps
+    if (timestamp - lastFrameTime < FRAME_INTERVAL) {
+      animationId = requestAnimationFrame(render)
+      return
+    }
+    lastFrameTime = timestamp
+
     var w = window.innerWidth
     var h = window.innerHeight
 
@@ -112,11 +123,11 @@ export function createMirrorReflections(config) {
       var flicker = 0.5 + 0.5 * Math.sin(ref.flickerPhase)
       ref.el.style.opacity = String(ref.baseBrightness * flicker)
       ref.el.style.transform =
-        "translate(" +
+        "translate3d(" +
         Math.round(ref.x) +
         "px, " +
         Math.round(ref.y) +
-        "px) rotate(" +
+        "px, 0) rotate(" +
         Math.round(ref.flickerPhase * 30) +
         "deg)"
     }
@@ -134,7 +145,8 @@ export function createMirrorReflections(config) {
     document.body.appendChild(container)
 
     reflections = initReflections()
-    render()
+    lastFrameTime = 0
+    render(0)
   }
 
   function stop() {

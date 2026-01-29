@@ -76,11 +76,6 @@ export function createCursorTrail(config) {
     el.style.transform = "scale(" + particleScale + ")"
 
     count++
-    el.addEventListener("animationend", function () {
-      el.remove()
-      count--
-    })
-
     container.appendChild(el)
   }
 
@@ -114,6 +109,13 @@ export function createCursorTrail(config) {
     container = document.createElement("div")
     container.className = "effect-layer trail-container"
     container.setAttribute("aria-hidden", "true")
+    container.addEventListener("animationend", function (e) {
+      const target = /** @type {HTMLElement} */ (e.target)
+      if (target.classList.contains("trail-particle")) {
+        target.remove()
+        count--
+      }
+    })
     document.body.appendChild(container)
 
     mouseMoveHandler = onMouseMove

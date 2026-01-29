@@ -29,10 +29,6 @@ export function createDiscoBall(config) {
   const cfg = config || {}
   /** @type {HTMLDivElement | null} */
   let wrapper = null
-  /** @type {ReturnType<typeof setInterval> | null} */
-  let tileIntervalId = null
-  /** @type {ReturnType<typeof setTimeout>[]} */
-  const pendingTimeouts = []
 
   const spinSpeed = cfg.spinSpeed !== undefined ? cfg.spinSpeed : 50
   const ballSizeSlider = cfg.ballSize !== undefined ? cfg.ballSize : 50
@@ -75,6 +71,7 @@ export function createDiscoBall(config) {
         tile.style.left = col * (tileSize + tileGap) + "px"
         tile.style.top = row * (tileSize + tileGap) + "px"
         tile.style.backgroundColor = randomFrom(DEFAULT_TILE_SHADES)
+        tile.style.setProperty("--tile-delay", Math.random() * 4 + "s")
         ball.appendChild(tile)
       }
     }
@@ -108,57 +105,6 @@ export function createDiscoBall(config) {
     return container
   }
 
-  /** @param {HTMLDivElement} ball */
-  function startTileCycling(ball) {
-    const tiles = /** @type {NodeListOf<HTMLElement>} */ (
-      ball.querySelectorAll(".disco-tile")
-    )
-    const flashColors = [
-      "#ffc0cb",
-      EFFECT_PALETTE.gold,
-      EFFECT_PALETTE.sky,
-      "#e8e8e8",
-      "#d4d4d4",
-    ]
-    const specularColors = ["#fff", "#fffde8", "#fff5f5"]
-
-    tileIntervalId = setInterval(function () {
-      // Cap pendingTimeouts to prevent unbounded growth
-      if (pendingTimeouts.length > 50) {
-        for (const id of pendingTimeouts) clearTimeout(id)
-        pendingTimeouts.length = 0
-      }
-      // Regular color cycling
-      const count = 5 + Math.floor(Math.random() * 6)
-      for (let i = 0; i < count; i++) {
-        const idx = Math.floor(Math.random() * tiles.length)
-        tiles[idx].style.backgroundColor = randomFrom(flashColors)
-        tiles[idx].style.boxShadow = ""
-      }
-
-      // Specular flash — a few tiles get a bright white highlight
-      const specCount = 1 + Math.floor(Math.random() * 3)
-      for (let s = 0; s < specCount; s++) {
-        const sIdx = Math.floor(Math.random() * tiles.length)
-        tiles[sIdx].style.backgroundColor = randomFrom(specularColors)
-        tiles[sIdx].style.boxShadow = "0 0 8px 2px rgba(255, 255, 255, 0.8)"
-
-        // Clear specular after a short time
-        const tid = setTimeout(
-          function () {
-            if (tiles[sIdx]) {
-              tiles[sIdx].style.backgroundColor =
-                randomFrom(DEFAULT_TILE_SHADES)
-              tiles[sIdx].style.boxShadow = ""
-            }
-          },
-          400 + Math.floor(Math.random() * 300),
-        )
-        pendingTimeouts.push(tid)
-      }
-    }, 2000)
-  }
-
   function start() {
     if (wrapper) return
 
@@ -176,17 +122,9 @@ export function createDiscoBall(config) {
     wrapper.appendChild(ball)
     wrapper.appendChild(rays)
     document.body.appendChild(wrapper)
-
-    startTileCycling(ball)
   }
 
   function stop() {
-    if (tileIntervalId) {
-      clearInterval(tileIntervalId)
-      tileIntervalId = null
-    }
-    for (const tid of pendingTimeouts) clearTimeout(tid)
-    pendingTimeouts.length = 0
     if (wrapper) {
       wrapper.remove()
       wrapper = null

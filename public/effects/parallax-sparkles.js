@@ -54,7 +54,7 @@ export function createParallaxSparkles(config) {
   }
 
   function getSparkleCount() {
-    var base = isMobile() ? 8 : 18
+    const base = isMobile() ? 5 : 18
     return Math.round(mapSlider(density, base * 0.4, base * 2))
   }
 
@@ -97,13 +97,7 @@ export function createParallaxSparkles(config) {
         sparkle.style.animationDelay = randomBetween(0, 3) + "s"
 
         if (depth > 0.6) {
-          sparkle.style.boxShadow =
-            "0 0 " +
-            Math.round(size * 2) +
-            "px " +
-            Math.round(size * 0.5) +
-            "px " +
-            randomFrom(colors)
+          sparkle.classList.add("parallax-sparkle-glow")
         }
 
         layer.appendChild(sparkle)
