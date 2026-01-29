@@ -1,0 +1,78 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+  # Allow manual trigger from GitHub UI
+  workflow_dispatch:
+
+jobs:
+  # Run tests first
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
+
+  # Deploy only if tests pass
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: 2420
+          command_timeout: 5m
+          script: |
+            set -e
+            cd ~/services/wedding
+
+            echo "==> Current state:"
+            echo "    Commit: $(git log -1 --format='%h %s')"
+            echo "    Container: $(docker inspect --format='{{.State.Health.Status}}' wedding 2>/dev/null || echo 'not running')"
+
+            echo ""
+            echo "==> Backing up database..."
+            docker exec wedding cp /app/data/wedding.db /app/data/wedding.db.backup 2>/dev/null \
+              && echo "    Backup created" \
+              || echo "    Skipped (container not running)"
+
+            echo ""
+            echo "==> Pulling latest code..."
+            git pull
+
+            echo ""
+            echo "==> Rebuilding and restarting..."
+            docker compose up -d --build
+
+            echo ""
+            echo "==> Waiting for healthy..."
+            for i in {1..30}; do
+              STATUS=$(docker inspect --format='{{.State.Health.Status}}' wedding 2>/dev/null || echo "starting")
+              echo "    [$i/30] $STATUS"
+              if [ "$STATUS" = "healthy" ]; then
+                echo ""
+                echo "==> Deploy complete!"
+                exit 0
+              fi
+              sleep 1
+            done
+
+            echo ""
+            echo "==> ERROR: Health check timed out"
+            docker logs --tail 20 wedding
+            exit 1

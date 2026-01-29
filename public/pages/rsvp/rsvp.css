@@ -161,11 +161,13 @@
   opacity: 0;
   padding: 0 var(--spacing-lg);
   margin-bottom: 0;
+  max-height: 0;
   transition:
     clip-path var(--duration-slow) ease,
     opacity var(--duration-moderate) ease,
     padding var(--duration-moderate) ease,
-    margin-bottom var(--duration-moderate) ease;
+    margin-bottom var(--duration-moderate) ease,
+    max-height var(--duration-moderate) ease;
 }
 
 .attending-details-open {
@@ -173,6 +175,7 @@
   opacity: 1;
   padding: var(--spacing-lg);
   margin-bottom: var(--spacing-lg);
+  max-height: 500px;
 }
 
 /* Success state */

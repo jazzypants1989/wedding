@@ -16,7 +16,8 @@
     "typecheck:client": "tsc -p public/tsconfig.json",
     "dev": "node --watch-path=server.js --watch-path=types.js --watch-path=core --watch-path=api --watch-path=db --watch-path=services --watch-path=public server.js",
     "setup": "node scripts/setup-admin.js",
-    "seed": "node scripts/seed-preview.js"
+    "seed": "node scripts/seed-preview.js",
+    "deploy": "node scripts/deploy.js"
   },
   "keywords": [
     "wedding",
