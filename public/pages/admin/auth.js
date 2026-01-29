@@ -48,9 +48,12 @@ function showDashboard() {
 
 /** @type {Types.checkSession} */
 export async function checkSession() {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 10000)
+
   try {
     const res = await fetch("/api/admin/stats", {
-      signal: AbortSignal.timeout(10000),
+      signal: controller.signal,
     })
     if (res.ok) {
       state.csrfToken = getCookie("csrf")
@@ -59,6 +62,8 @@ export async function checkSession() {
     }
   } catch (err) {
     // Not logged in or timed out, show login
+  } finally {
+    clearTimeout(timeoutId)
   }
 }
 
@@ -71,12 +76,15 @@ async function handleLoginSubmit(e) {
   const submitBtn = getButtonElement("login-form-submit")
   submitBtn.disabled = true
 
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 30000)
+
   try {
     const res = await fetch("/api/admin/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password }),
-      signal: AbortSignal.timeout(30000),
+      signal: controller.signal,
     })
 
     const data = await res.json()
@@ -92,6 +100,7 @@ async function handleLoginSubmit(e) {
     loginError.textContent = getErrorMessage(err)
     loginError.hidden = false
   } finally {
+    clearTimeout(timeoutId)
     submitBtn.disabled = false
   }
 }

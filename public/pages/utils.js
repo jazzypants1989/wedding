@@ -199,9 +199,15 @@ export async function api(endpoint, options = {}) {
     options.timeout || DEFAULT_API_TIMEOUT,
   )
 
-  const signal = options.signal
-    ? AbortSignal.any([controller.signal, options.signal])
-    : controller.signal
+  // If caller provided a signal, abort our controller when it aborts
+  // (AbortSignal.any is too new for older Safari)
+  if (options.signal) {
+    options.signal.addEventListener("abort", () => controller.abort(), {
+      once: true,
+    })
+  }
+
+  const signal = controller.signal
 
   try {
     const res = await fetch(endpoint, {
