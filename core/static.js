@@ -5,6 +5,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { gzipSync } from "node:zlib"
 import { addSecurityHeaders } from "./http.js"
+import { CSP_NONCE } from "../types.js"
 
 /** @type {Types.MimeTypes} */
 const MIME_TYPES = {
@@ -44,20 +45,46 @@ const CACHE_CONTROL = {
   ".ttf": "public, max-age=31536000, immutable",
 }
 
-const CSP_HEADER = [
-  "default-src 'self'",
-  "script-src 'self'",
-  "style-src 'self' https://fonts.googleapis.com",
+const THEME_INIT_TAG = '<script src="/components/theme-init.js"></script>'
+const THEME_INIT_CODE = 'try{document.documentElement.dataset.theme=localStorage.getItem("theme")||"light"}catch{}'
+const THEME_INIT_HASH = crypto.createHash("sha256").update(THEME_INIT_CODE).digest("base64")
+
+const publicDir = path.join(import.meta.dirname, "..", "public")
+
+const INLINE_CSS_PATHS = ['/styles/tokens.css', '/styles/layout.css', '/styles/components.css']
+let inlineCssContent = ''
+for (const cssUrl of INLINE_CSS_PATHS) {
+  inlineCssContent += fs.readFileSync(path.join(publicDir, cssUrl.slice(1)), 'utf-8')
+}
+const INLINE_CSS_STYLE = '<style>' + inlineCssContent + '</style>'
+const INLINE_CSS_HASH = crypto.createHash("sha256").update(inlineCssContent).digest("base64")
+const CSS_LINK_TAGS = INLINE_CSS_PATHS.map(url => '<link rel="stylesheet" href="' + url + '">')
+
+const CSP_DIRECTIVES = [
+  "style-src 'self' 'sha256-" + INLINE_CSS_HASH + "'",
   "img-src 'self' data:",
-  "font-src 'self' https://fonts.gstatic.com",
+  "font-src 'self'",
   "connect-src 'self'",
   "frame-src https://www.honeyfund.com",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
+]
+
+const HASH_CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'sha256-" + THEME_INIT_HASH + "'",
+  ...CSP_DIRECTIVES,
 ].join("; ")
 
-const publicDir = path.join(import.meta.dirname, "..", "public")
+/** @param {string} nonce */
+function buildNonceCsp(nonce) {
+  return [
+    "default-src 'self'",
+    "script-src 'self' 'nonce-" + nonce + "'",
+    ...CSP_DIRECTIVES,
+  ].join("; ")
+}
 
 const COMPRESSIBLE_EXTS = new Set([".html", ".css", ".js", ".mjs", ".json", ".svg", ".txt"])
 
@@ -125,7 +152,7 @@ function addCacheBusters(html) {
       remaining = remaining.slice(closeIdx)
 
       const version = versionMap.get(url)
-      if (version !== undefined) {
+      if (version !== undefined && !url.startsWith("/fonts/")) {
         output += url + "?v=" + version
         continue
       }
@@ -186,8 +213,10 @@ export async function serveStatic(req, res) {
     "Cache-Control": cacheControl,
   }
 
+  const nonce = CSP_NONCE && ext === ".html" ? crypto.randomBytes(16).toString("base64") : ""
+
   if (ext === ".html") {
-    headers["Content-Security-Policy"] = CSP_HEADER
+    headers["Content-Security-Policy"] = CSP_NONCE ? buildNonceCsp(nonce) : HASH_CSP
     headers["X-Frame-Options"] = "DENY"
     headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
@@ -200,17 +229,25 @@ export async function serveStatic(req, res) {
     const acceptEncoding = req.headers["accept-encoding"] || ""
     const clientAcceptsGzip = typeof acceptEncoding === "string" && acceptEncoding.includes("gzip")
 
-    // Prepare response body (HTML gets cache busters injected)
+    // Prepare response body
     let body
     if (ext === ".html") {
-      const html = addCacheBusters(content.toString("utf-8"))
+      let html = content.toString("utf-8")
+      if (CSP_NONCE) {
+        html = html.replaceAll(THEME_INIT_TAG, '<script nonce="' + nonce + '">' + THEME_INIT_CODE + '</script>')
+      } else {
+        html = html.replaceAll(THEME_INIT_TAG, '<script>' + THEME_INIT_CODE + '</script>')
+      }
+      html = html.replaceAll(CSS_LINK_TAGS[0], INLINE_CSS_STYLE)
+      html = html.replaceAll(CSS_LINK_TAGS[1], '')
+      html = html.replaceAll(CSS_LINK_TAGS[2], '')
+      html = addCacheBusters(html)
       body = html
-      // Lazily compute and cache HTML ETag + gzip
-      if (!etagCache.has(normalizedPath)) {
-        const len = Buffer.byteLength(html)
+      // Cache ETag + gzip in hash mode (nonce mode can't cache — content changes per request)
+      if (!CSP_NONCE && !etagCache.has(normalizedPath)) {
         const hash = crypto.createHash("sha256").update(html).digest("hex").slice(0, 12)
         etagCache.set(normalizedPath, '"h-' + hash + '"')
-        if (len > 1024) {
+        if (Buffer.byteLength(html) > 1024) {
           gzipCache.set(normalizedPath, gzipSync(Buffer.from(html)))
         }
       }
@@ -218,29 +255,39 @@ export async function serveStatic(req, res) {
       body = content
     }
 
-    // Conditional request handling
-    const etag = etagCache.get(normalizedPath)
-    if (etag) {
-      headers["ETag"] = etag
-      if (req.headers["if-none-match"] === etag) {
-        res.writeHead(304, headers)
-        res.end()
-        return true
+    // Conditional request handling (skip in nonce mode — content changes per request)
+    if (!(CSP_NONCE && ext === ".html")) {
+      const etag = etagCache.get(normalizedPath)
+      if (etag) {
+        headers["ETag"] = etag
+        if (req.headers["if-none-match"] === etag) {
+          res.writeHead(304, headers)
+          res.end()
+          return true
+        }
       }
     }
 
     // Serve gzipped version if available and client supports it
-    const gzipped = gzipCache.get(normalizedPath)
-    if (gzipped && clientAcceptsGzip) {
-      headers["Content-Encoding"] = "gzip"
-      headers["Vary"] = "Accept-Encoding"
-      headers["Content-Length"] = gzipped.length
-      res.writeHead(200, headers)
-      res.end(gzipped)
-    } else {
-      res.writeHead(200, headers)
-      res.end(body)
+    if (clientAcceptsGzip) {
+      let gzipped
+      if (CSP_NONCE && ext === ".html") {
+        const buf = Buffer.from(/** @type {string} */ (body))
+        gzipped = buf.length > 1024 ? gzipSync(buf) : null
+      } else {
+        gzipped = gzipCache.get(normalizedPath)
+      }
+      if (gzipped) {
+        headers["Content-Encoding"] = "gzip"
+        headers["Vary"] = "Accept-Encoding"
+        headers["Content-Length"] = gzipped.length
+        res.writeHead(200, headers)
+        res.end(gzipped)
+        return true
+      }
     }
+    res.writeHead(200, headers)
+    res.end(body)
     return true
   } catch (err) {
     if (err instanceof Error && "code" in err && err.code === "ENOENT") {

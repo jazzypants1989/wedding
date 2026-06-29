@@ -117,3 +117,4 @@ export const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`
 export const CONTACT_EMAIL = process.env.CONTACT_EMAIL || "contact@example.com"
 export const TRUSTED_PROXIES =
   process.env.TRUSTED_PROXIES?.split(",").map((s) => s.trim()) || []
+export const CSP_NONCE = process.env.CSP_NONCE === "true"

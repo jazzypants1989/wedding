@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Admin RSVP table preview</title>
+    <style>
+      /* Minimal page reset; the snapshot's real CSS (tokens/layout/components/
+         admin.css) is linked at runtime by table-host.js. */
+      html,
+      body {
+        margin: 0;
+        background: var(--color-bg, #fff);
+      }
+    </style>
+  </head>
+  <body>
+    <!-- .active is required: admin.css hides .dashboard until it's revealed. -->
+    <div class="dashboard active">
+      <main class="main-content" id="root"></main>
+    </div>
+    <script type="module" src="/pages/demo/table-host.js"></script>
+  </body>
+</html>

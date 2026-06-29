@@ -1,8 +1,6 @@
 /** @file Name shimmer effect — traveling light highlight on the couple's names */
 /** @import * as Types from './types.js' */
 
-import { mapSlider } from "./main.js"
-
 /** @type {Types.createNameShimmer} */
 export function createNameShimmer(config) {
   const cfg = config || {}
@@ -10,7 +8,7 @@ export function createNameShimmer(config) {
   let target = null
   let active = false
 
-  const shimmerSpeed = cfg.shimmerSpeed !== undefined ? cfg.shimmerSpeed : 50
+  const shimmerSpeed = cfg.shimmerSpeed !== undefined ? cfg.shimmerSpeed : 8
   const shimmerColor = cfg.shimmerColor || "gold"
 
   function getShimmerClass() {
@@ -26,8 +24,7 @@ export function createNameShimmer(config) {
     )
     if (!target) return
 
-    const duration = mapSlider(shimmerSpeed, 12, 4, true)
-    target.style.setProperty("--shimmer-duration", duration + "s")
+    target.style.setProperty("--shimmer-duration", shimmerSpeed + "s")
 
     const cls = getShimmerClass()
     const parts = cls.split(" ")

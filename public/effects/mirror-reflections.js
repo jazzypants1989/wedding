@@ -1,7 +1,7 @@
 /** @file Mirror reflections — small light squares bouncing around the viewport */
 /** @import * as Types from './types.js' */
 
-import { isMobile, randomFrom, randomBetween, mapSlider } from "./main.js"
+import { isMobile, randomFrom, randomBetween } from "./main.js"
 
 /** @type {Types.createMirrorReflections} */
 export function createMirrorReflections(config) {
@@ -14,12 +14,14 @@ export function createMirrorReflections(config) {
   let reflections = []
   let active = false
   let lastFrameTime = 0
-  const FRAME_INTERVAL = 33 // ~30fps
+  let viewportW = window.innerWidth
+  let viewportH = window.innerHeight
+  const resizeController = new AbortController()
 
   const reflectionCount =
-    cfg.reflectionCount !== undefined ? cfg.reflectionCount : 50
-  const speed = cfg.speed !== undefined ? cfg.speed : 50
-  const brightness = cfg.brightness !== undefined ? cfg.brightness : 50
+    cfg.reflectionCount !== undefined ? cfg.reflectionCount : 22
+  const speed = cfg.speed !== undefined ? cfg.speed : 0.9
+  const brightness = cfg.brightness !== undefined ? cfg.brightness : 0.425
   const colors = cfg.colors || [
     "rgba(255, 255, 255, 0.6)",
     "rgba(255, 215, 0, 0.5)",
@@ -27,31 +29,32 @@ export function createMirrorReflections(config) {
     "rgba(200, 200, 255, 0.4)",
     "rgba(200, 255, 200, 0.3)",
   ]
+  const sizeRange = cfg.sizeRange || [4, 14]
+  const frameInterval = cfg.frameInterval !== undefined ? cfg.frameInterval : 33
 
   function getCount() {
-    var base = isMobile() ? 8 : 18
-    return Math.round(mapSlider(reflectionCount, base * 0.4, base * 2))
+    return isMobile() ? Math.round(reflectionCount * 0.45) : reflectionCount
   }
 
   function getSpeedFactor() {
-    return mapSlider(speed, 0.3, 1.5)
+    return speed
   }
 
   function getBrightness() {
-    return mapSlider(brightness, 0.15, 0.7)
+    return brightness
   }
 
   function initReflections() {
-    var count = getCount()
-    var w = window.innerWidth
-    var h = window.innerHeight
-    var speedFactor = getSpeedFactor()
-    var bright = getBrightness()
-    var refs = []
+    const count = getCount()
+    const w = viewportW
+    const h = viewportH
+    const speedFactor = getSpeedFactor()
+    const bright = getBrightness()
+    const refs = []
 
-    for (var i = 0; i < count; i++) {
-      var size = randomBetween(4, 14)
-      var el = document.createElement("div")
+    for (let i = 0; i < count; i++) {
+      const size = randomBetween(sizeRange[0], sizeRange[1])
+      const el = document.createElement("div")
       el.className = "mirror-reflection"
       el.style.width = size + "px"
       el.style.height = size + "px"
@@ -80,19 +83,19 @@ export function createMirrorReflections(config) {
   function render(timestamp) {
     if (!active) return
 
-    // Throttle to ~30fps
-    if (timestamp - lastFrameTime < FRAME_INTERVAL) {
+    // Throttle to configured frame interval
+    if (timestamp - lastFrameTime < frameInterval) {
       animationId = requestAnimationFrame(render)
       return
     }
     lastFrameTime = timestamp
 
-    var w = window.innerWidth
-    var h = window.innerHeight
+    const w = viewportW
+    const h = viewportH
 
     // Compute pass: update all positions and flicker values
-    for (var i = 0; i < reflections.length; i++) {
-      var r = reflections[i]
+    for (let i = 0; i < reflections.length; i++) {
+      const r = reflections[i]
 
       r.x += r.vx
       r.y += r.vy
@@ -118,9 +121,9 @@ export function createMirrorReflections(config) {
     }
 
     // Write pass: apply all DOM changes in a single batch
-    for (var j = 0; j < reflections.length; j++) {
-      var ref = reflections[j]
-      var flicker = 0.5 + 0.5 * Math.sin(ref.flickerPhase)
+    for (let j = 0; j < reflections.length; j++) {
+      const ref = reflections[j]
+      const flicker = 0.5 + 0.5 * Math.sin(ref.flickerPhase)
       ref.el.style.opacity = String(ref.baseBrightness * flicker)
       ref.el.style.transform =
         "translate3d(" +
@@ -139,6 +142,17 @@ export function createMirrorReflections(config) {
     if (container) return
 
     active = true
+    viewportW = window.innerWidth
+    viewportH = window.innerHeight
+    window.addEventListener(
+      "resize",
+      function () {
+        viewportW = window.innerWidth
+        viewportH = window.innerHeight
+      },
+      { signal: resizeController.signal },
+    )
+
     container = document.createElement("div")
     container.className = "effect-layer mirror-reflection-container"
     container.setAttribute("aria-hidden", "true")
@@ -151,6 +165,7 @@ export function createMirrorReflections(config) {
 
   function stop() {
     active = false
+    resizeController.abort()
     if (animationId) {
       cancelAnimationFrame(animationId)
       animationId = null

@@ -1,8 +1,6 @@
 /** @file Text sparkle on scroll — text sections glow as they scroll into view */
 /** @import * as Types from './types.js' */
 
-import { mapSlider } from "./main.js"
-
 /** @type {Types.createTextSparkle} */
 export function createTextSparkle(config) {
   const cfg = config || {}
@@ -11,7 +9,8 @@ export function createTextSparkle(config) {
   /** @type {HTMLElement[]} */
   let observed = []
 
-  const intensity = cfg.intensity !== undefined ? cfg.intensity : 50
+  const intensity = cfg.intensity !== undefined ? cfg.intensity : 8
+  const threshold = cfg.threshold !== undefined ? cfg.threshold : 0.5
 
   /** @param {IntersectionObserverEntry[]} entries */
   function handleIntersection(entries) {
@@ -21,8 +20,7 @@ export function createTextSparkle(config) {
         const el = /** @type {HTMLElement} */ (entry.target)
         if (!el.classList.contains("text-sparkle-in")) {
           el.classList.add("text-sparkle-in")
-          const glowStrength = mapSlider(intensity, 4, 12)
-          el.style.setProperty("--glow-strength", glowStrength + "px")
+          el.style.setProperty("--glow-strength", intensity + "px")
 
           el.addEventListener("animationend", function handler() {
             el.classList.remove("text-sparkle-in")
@@ -37,10 +35,10 @@ export function createTextSparkle(config) {
     if (observer) return
 
     observer = new IntersectionObserver(handleIntersection, {
-      threshold: 0.5,
+      threshold: threshold,
     })
 
-    var targets = document.querySelectorAll(
+    const targets = document.querySelectorAll(
       ".content-section p, .schedule-details, .rsvp-intro",
     )
     observed = []

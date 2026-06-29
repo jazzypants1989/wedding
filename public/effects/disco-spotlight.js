@@ -1,22 +1,21 @@
 /** @file Disco spotlight — sweeping colored spotlight beams */
 /** @import * as Types from './types.js' */
 
-import { isMobile, randomFrom, randomBetween, mapSlider } from "./main.js"
+import { isMobile, randomFrom, randomBetween, cancellableDelay } from "./main.js"
 
 /** @type {Types.createDiscoSpotlight} */
 export function createDiscoSpotlight(config) {
   const cfg = config || {}
   /** @type {HTMLDivElement | null} */
   let container = null
-  /** @type {ReturnType<typeof setTimeout> | null} */
-  let animationId = null
+  /** @type {AbortController | null} */
+  let controller = null
   /** @type {Types.SpotlightBeam[]} */
   let spotlights = []
-  let active = false
 
   const beamCount = cfg.beamCount !== undefined ? cfg.beamCount : 3
-  const sweepSpeed = cfg.sweepSpeed !== undefined ? cfg.sweepSpeed : 50
-  const beamWidth = cfg.beamWidth !== undefined ? cfg.beamWidth : 50
+  const sweepSpeed = cfg.sweepSpeed !== undefined ? cfg.sweepSpeed : 7.5
+  const beamWidth = cfg.beamWidth !== undefined ? cfg.beamWidth : 38
   const colors = cfg.colors || [
     "rgba(221, 115, 100, 0.15)",
     "rgba(255, 105, 180, 0.12)",
@@ -25,31 +24,33 @@ export function createDiscoSpotlight(config) {
     "rgba(196, 77, 255, 0.1)",
     "rgba(255, 255, 255, 0.08)",
   ]
+  const colorCycleMs = cfg.colorCycleMs !== undefined ? cfg.colorCycleMs : 3000
+  const beamStagger = cfg.beamStagger !== undefined ? cfg.beamStagger : 1.5
 
   function getBeamCount() {
-    var max = isMobile() ? 2 : 4
+    const max = isMobile() ? 2 : 4
     return Math.max(1, Math.min(max, beamCount))
   }
 
   function getSweepDuration() {
-    return mapSlider(sweepSpeed, 12, 3, true)
+    return sweepSpeed
   }
 
   function getBeamWidthDeg() {
-    return Math.round(mapSlider(beamWidth, 15, 60))
+    return Math.round(beamWidth)
   }
 
   function buildSpotlights() {
-    var count = getBeamCount()
-    var widthDeg = getBeamWidthDeg()
-    var built = []
+    const count = getBeamCount()
+    const widthDeg = getBeamWidthDeg()
+    const built = []
 
-    for (var i = 0; i < count; i++) {
-      var spot = document.createElement("div")
+    for (let i = 0; i < count; i++) {
+      const spot = document.createElement("div")
       spot.className = "disco-spotlight-beam"
 
-      var color = randomFrom(colors)
-      var halfWidth = widthDeg / 2
+      const color = randomFrom(colors)
+      const halfWidth = widthDeg / 2
 
       spot.style.background =
         "conic-gradient(from 0deg, transparent, " +
@@ -61,7 +62,7 @@ export function createDiscoSpotlight(config) {
         "deg)"
       spot.style.animationDuration =
         getSweepDuration() + randomBetween(-2, 2) + "s"
-      spot.style.animationDelay = i * 1.5 + "s"
+      spot.style.animationDelay = i * beamStagger + "s"
 
       // Alternate direction for visual interest
       if (i % 2 === 1) {
@@ -79,32 +80,33 @@ export function createDiscoSpotlight(config) {
     return built
   }
 
-  function cycleColors() {
-    if (!active) return
-
-    for (var i = 0; i < spotlights.length; i++) {
-      var spot = spotlights[i]
-      if (Math.random() > 0.7) {
-        var color = randomFrom(colors)
-        var widthDeg = getBeamWidthDeg()
-        var halfWidth = widthDeg / 2
-        spot.element.style.background =
-          "conic-gradient(from 0deg, transparent, " +
-          color +
-          " " +
-          halfWidth +
-          "deg, transparent " +
-          widthDeg +
-          "deg)"
+  /** @param {AbortSignal} signal */
+  async function cycleColors(signal) {
+    while (true) {
+      for (let i = 0; i < spotlights.length; i++) {
+        const spot = spotlights[i]
+        if (Math.random() > 0.7) {
+          const color = randomFrom(colors)
+          const widthDeg = getBeamWidthDeg()
+          const halfWidth = widthDeg / 2
+          spot.element.style.background =
+            "conic-gradient(from 0deg, transparent, " +
+            color +
+            " " +
+            halfWidth +
+            "deg, transparent " +
+            widthDeg +
+            "deg)"
+        }
       }
+      await cancellableDelay(colorCycleMs, signal)
     }
-
-    animationId = setTimeout(cycleColors, 3000)
   }
 
   function start() {
     if (container) return
-    active = true
+
+    controller = new AbortController()
 
     container = document.createElement("div")
     container.className = "effect-layer disco-spotlight-container"
@@ -112,14 +114,16 @@ export function createDiscoSpotlight(config) {
     document.body.appendChild(container)
 
     spotlights = buildSpotlights()
-    cycleColors()
+    cycleColors(controller.signal).catch(function (e) {
+      if (e && typeof e === "object" && "name" in e && /** @type {*} */ (e).name === "AbortError") return
+      console.warn("Spotlight error:", e)
+    })
   }
 
   function stop() {
-    active = false
-    if (animationId) {
-      clearTimeout(animationId)
-      animationId = null
+    if (controller) {
+      controller.abort()
+      controller = null
     }
     spotlights = []
     if (container) {

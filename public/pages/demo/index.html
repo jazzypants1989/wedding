@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Change Review — Wedding Project</title>
+    <link rel="stylesheet" href="/pages/demo/demo.css" />
+    <link rel="icon" href="/images/favicon.png" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <header class="sidebar-head">
+          <h1>Change Review</h1>
+          <p class="subtitle">
+            Decide what to keep before this becomes a portfolio piece.
+          </p>
+          <div id="summary" class="summary"></div>
+        </header>
+        <nav id="nav" class="nav" aria-label="Changes"></nav>
+        <footer class="sidebar-foot">
+          <div class="review-controls">
+            <div class="progress">
+              <div id="progress-bar" class="progress-bar"></div>
+            </div>
+            <p id="progress-text" class="progress-text"></p>
+            <div class="control-btns">
+              <button id="export-btn" class="ctrl-btn" type="button">
+                ⬇ Export
+              </button>
+              <button id="copy-btn" class="ctrl-btn" type="button">⧉ Copy</button>
+              <button id="import-btn" class="ctrl-btn" type="button">
+                ⬆ Import
+              </button>
+            </div>
+            <input
+              id="import-file"
+              class="hidden-file"
+              type="file"
+              accept="application/json,.json"
+            />
+            <p id="flash" class="flash"></p>
+          </div>
+          <p id="build-meta" class="build-meta"></p>
+          <p class="disclaimer">
+            Recommendations are derived from the actual diffs, not from any
+            agent-authored notes.
+          </p>
+        </footer>
+      </aside>
+
+      <main id="panel" class="panel" tabindex="-1">
+        <div class="empty">Select a change on the left to review it.</div>
+      </main>
+    </div>
+
+    <script type="module" src="/pages/demo/main.js"></script>
+  </body>
+</html>

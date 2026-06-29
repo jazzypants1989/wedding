@@ -7,12 +7,15 @@
   <title>Admin Dashboard - Wedding RSVP</title>
   <meta name="theme-color" content="#eee6dc" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#1a1614" media="(prefers-color-scheme: dark)">
+  <meta name="description" content="Admin dashboard for managing wedding RSVPs.">
   <link rel="icon" type="image/png" href="/images/favicon.png">
-  <script src="/components/theme-init.js"></script>
+  <link rel="preload" as="font" type="font/woff2" href="/fonts/dm-serif-display-latin.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="/fonts/jost-latin.woff2" crossorigin>
   <link rel="stylesheet" href="/styles/tokens.css">
   <link rel="stylesheet" href="/styles/layout.css">
   <link rel="stylesheet" href="/styles/components.css">
   <link rel="stylesheet" href="/pages/admin/admin.css">
+  <script src="/components/theme-init.js"></script>
 </head>
 
 <body>
@@ -105,6 +108,7 @@
           <div class="filters">
             <label for="guest-search" class="sr-only">Search guests</label>
             <input type="text" id="guest-search" class="search-input" placeholder="Search by name, email, or phone...">
+            <label for="guest-status-filter" class="sr-only">Filter by status</label>
             <select id="guest-status-filter" class="filter-select">
               <option value="">All Statuses</option>
               <option value="pending">Pending</option>

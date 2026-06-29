@@ -11,13 +11,13 @@ import { createMermaidShimmer } from "./mermaid-shimmer.js"
 import { createSparkleBurst } from "./sparkle-burst.js"
 import { createSparkleDividers } from "./sparkle-dividers.js"
 import { createNameShimmer } from "./name-shimmer.js"
-import { createCaustics } from "./caustics.js"
 import { createTextSparkle } from "./text-sparkle.js"
 import { createParallaxSparkles } from "./parallax-sparkles.js"
 import { createGrandEntrance } from "./grand-entrance.js"
 import { createDiscoSpotlight } from "./disco-spotlight.js"
 import { createMirrorReflections } from "./mirror-reflections.js"
 import { getDefaultConfig } from "./config.js"
+import { getTypedElement } from "../pages/utils.js"
 
 /** @type {Types.EffectDefinition[]} */
 const EFFECT_DEFINITIONS = [
@@ -27,7 +27,6 @@ const EFFECT_DEFINITIONS = [
   { id: "burst", create: createSparkleBurst },
   { id: "dividers", create: createSparkleDividers },
   { id: "namespark", create: createNameShimmer },
-  { id: "caustics", create: createCaustics },
   { id: "textglow", create: createTextSparkle },
   { id: "parallaxsparkles", create: createParallaxSparkles },
   { id: "entrance", create: createGrandEntrance },
@@ -66,6 +65,8 @@ function startEffects() {
 /** @type {Types.initEffectManager} */
 export function initEffectManager() {
   if (prefersReducedMotion()) return
+  const link = getTypedElement("effects-css", HTMLLinkElement)
+  if (link) link.media = "all"
   managerActive = true
   startEffects()
 }
@@ -89,31 +90,39 @@ export function stopEffect(id) {
     try {
       instance.stop()
     } catch {
-      // ignore stop failures
+      console.warn('Effect "' + id + '" failed to stop:')
     }
     activeEffects.delete(id)
   }
 }
 
+const moduleController = new AbortController()
+
 // Pause effects when tab is hidden, resume when visible
-document.addEventListener("visibilitychange", function () {
-  if (!managerActive) return
-  if (document.hidden) {
-    stopAllEffects()
-  } else {
-    startEffects()
-  }
-})
+document.addEventListener(
+  "visibilitychange",
+  function () {
+    if (!managerActive) return
+    if (document.hidden) {
+      stopAllEffects()
+    } else {
+      startEffects()
+    }
+  },
+  { signal: moduleController.signal },
+)
 
 // Stop effects permanently if user enables reduced motion
-window
-  .matchMedia("(prefers-reduced-motion: reduce)")
-  .addEventListener("change", function (e) {
+window.matchMedia("(prefers-reduced-motion: reduce)").addEventListener(
+  "change",
+  function (e) {
     if (e.matches) {
       stopAllEffects()
       managerActive = false
     }
-  })
+  },
+  { signal: moduleController.signal },
+)
 
 /** @type {Types.isMobile} */
 export function isMobile() {
@@ -135,12 +144,21 @@ export function randomBetween(min, max) {
   return min + Math.random() * (max - min)
 }
 
-/** @type {Types.mapSlider} */
-export function mapSlider(sliderValue, min, max, invert) {
-  const clamped = Math.max(0, Math.min(100, sliderValue))
-  const normalized = clamped / 100
-  if (invert) {
-    return max - normalized * (max - min)
-  }
-  return min + normalized * (max - min)
+/** @type {Types.cancellableDelay} */
+export function cancellableDelay(ms, signal) {
+  return new Promise(function (resolve, reject) {
+    if (signal.aborted) {
+      reject(signal.reason)
+      return
+    }
+    const id = setTimeout(resolve, ms)
+    signal.addEventListener(
+      "abort",
+      function () {
+        clearTimeout(id)
+        reject(signal.reason)
+      },
+      { once: true },
+    )
+  })
 }

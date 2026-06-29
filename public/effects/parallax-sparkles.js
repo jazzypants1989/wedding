@@ -1,7 +1,7 @@
 /** @file Parallax sparkles — multi-depth sparkle layers that shift on scroll */
 /** @import * as Types from './types.js' */
 
-import { isMobile, randomFrom, randomBetween, mapSlider } from "./main.js"
+import { isMobile, randomFrom, randomBetween } from "./main.js"
 import { EFFECT_PALETTE } from "./config.js"
 
 /** @type {Types.createParallaxSparkles} */
@@ -11,16 +11,19 @@ export function createParallaxSparkles(config) {
   let container = null
   /** @type {Types.ParallaxLayer[]} */
   let layers = []
-  /** @type {(() => void) | null} */
-  let scrollHandler = null
+  /** @type {AbortController | null} */
+  let controller = null
   let lastScrollY = 0
   let rafId = 0
 
   const layerCount = cfg.layerCount !== undefined ? cfg.layerCount : 3
-  const density = cfg.density !== undefined ? cfg.density : 50
+  const density = cfg.density !== undefined ? cfg.density : 17
   const speedMultiplier =
-    cfg.speedMultiplier !== undefined ? cfg.speedMultiplier : 50
+    cfg.speedMultiplier !== undefined ? cfg.speedMultiplier : 0.5
   const colorScheme = cfg.colorScheme || "gold"
+  const sizeRange = cfg.sizeRange || [2, 5]
+  const opacityRange = cfg.opacityRange || [0.2, 0.7]
+  const glowThreshold = cfg.glowThreshold !== undefined ? cfg.glowThreshold : 0.6
 
   function getColors() {
     if (colorScheme === "rose")
@@ -54,39 +57,38 @@ export function createParallaxSparkles(config) {
   }
 
   function getSparkleCount() {
-    const base = isMobile() ? 5 : 18
-    return Math.round(mapSlider(density, base * 0.4, base * 2))
+    return isMobile() ? Math.round(density * 0.3) : density
   }
 
   function getParallaxFactor() {
-    return mapSlider(speedMultiplier, 0.1, 0.6)
+    return speedMultiplier
   }
 
   function buildLayers() {
-    var count = Math.max(2, Math.min(5, layerCount))
-    var sparkleCount = getSparkleCount()
-    var colors = getColors()
-    var builtLayers = []
+    const count = Math.max(2, Math.min(5, layerCount))
+    const sparkleCount = getSparkleCount()
+    const colors = getColors()
+    const builtLayers = []
 
-    var baseZ =
+    const baseZ =
       parseInt(
         getComputedStyle(document.documentElement).getPropertyValue(
           "--z-parallax-sparkles",
         ),
       ) || 40
-    for (var i = 0; i < count; i++) {
-      var depth = (i + 1) / count
-      var layer = document.createElement("div")
+    for (let i = 0; i < count; i++) {
+      const depth = (i + 1) / count
+      const layer = document.createElement("div")
       layer.className = "parallax-sparkle-layer"
       layer.style.zIndex = String(baseZ + i)
 
-      var sparklesPerLayer = Math.round(sparkleCount * (0.6 + depth * 0.4))
+      const sparklesPerLayer = Math.round(sparkleCount * (0.6 + depth * 0.4))
 
-      for (var s = 0; s < sparklesPerLayer; s++) {
-        var sparkle = document.createElement("div")
+      for (let s = 0; s < sparklesPerLayer; s++) {
+        const sparkle = document.createElement("div")
         sparkle.className = "parallax-sparkle"
 
-        var size = randomBetween(2, 5) * depth
+        const size = randomBetween(sizeRange[0], sizeRange[1]) * depth
         sparkle.style.width = size + "px"
         sparkle.style.height = size + "px"
         sparkle.style.left = randomBetween(0, 100) + "%"
@@ -94,11 +96,11 @@ export function createParallaxSparkles(config) {
         const color = randomFrom(colors)
         sparkle.style.backgroundColor = color
         sparkle.style.color = color // for currentColor in box-shadow
-        sparkle.style.opacity = String(randomBetween(0.2, 0.7) * depth)
+        sparkle.style.opacity = String(randomBetween(opacityRange[0], opacityRange[1]) * depth)
         sparkle.style.animationDuration = randomBetween(2, 5) + "s"
         sparkle.style.animationDelay = randomBetween(0, 3) + "s"
 
-        if (depth > 0.6) {
+        if (depth > glowThreshold) {
           sparkle.classList.add("parallax-sparkle-glow")
         }
 
@@ -113,12 +115,12 @@ export function createParallaxSparkles(config) {
   }
 
   function updateParallax() {
-    var scrollY = window.scrollY || document.documentElement.scrollTop
+    const scrollY = window.scrollY || document.documentElement.scrollTop
     lastScrollY = scrollY
-    var factor = getParallaxFactor()
+    const factor = getParallaxFactor()
 
-    for (var i = 0; i < layers.length; i++) {
-      var shift = -scrollY * factor * layers[i].depth
+    for (let i = 0; i < layers.length; i++) {
+      const shift = -scrollY * factor * layers[i].depth
       layers[i].element.style.transform = "translateY(" + shift + "px)"
     }
     rafId = 0
@@ -133,6 +135,8 @@ export function createParallaxSparkles(config) {
   function start() {
     if (container) return
 
+    controller = new AbortController()
+
     container = document.createElement("div")
     container.className = "effect-layer parallax-sparkle-container"
     container.setAttribute("aria-hidden", "true")
@@ -141,15 +145,17 @@ export function createParallaxSparkles(config) {
     layers = buildLayers()
     lastScrollY = window.scrollY || document.documentElement.scrollTop
 
-    scrollHandler = onScroll
-    window.addEventListener("scroll", scrollHandler, { passive: true })
+    window.addEventListener("scroll", onScroll, {
+      passive: true,
+      signal: controller.signal,
+    })
     updateParallax()
   }
 
   function stop() {
-    if (scrollHandler) {
-      window.removeEventListener("scroll", scrollHandler)
-      scrollHandler = null
+    if (controller) {
+      controller.abort()
+      controller = null
     }
     if (rafId) {
       cancelAnimationFrame(rafId)

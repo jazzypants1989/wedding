@@ -8,11 +8,15 @@
   <meta name="description" content="RSVP for Jordana and Jesse's wedding - April 26, 2026 in Portland, OR">
   <meta name="theme-color" content="#eee6dc">
   <link rel="icon" type="image/png" href="/images/favicon.png">
-  <script src="/components/theme-init.js"></script>
+  <link rel="preload" as="font" type="font/woff2" href="/fonts/dm-serif-display-latin.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="/fonts/jost-latin.woff2" crossorigin>
+  <link rel="preload" as="image" imagesrcset="/images/top-mobile-414w.webp 414w, /images/top-mobile.webp 828w" imagesizes="100vw" media="(max-width: 767px)">
+  <link rel="preload" as="image" imagesrcset="/images/top-desktop-768w.webp 768w, /images/top-desktop-1440w.webp 1440w, /images/top-desktop-2400w.webp 2400w, /images/top-desktop.webp 2880w" imagesizes="100vw" media="(min-width: 768px)">
   <link rel="stylesheet" href="/styles/tokens.css">
   <link rel="stylesheet" href="/styles/layout.css">
   <link rel="stylesheet" href="/styles/components.css">
   <link rel="stylesheet" href="/pages/rsvp/rsvp.css">
+  <script src="/components/theme-init.js"></script>
 </head>
 
 <body>
@@ -20,8 +24,8 @@
 
   <div class="hero hero-small">
     <picture>
-      <source media="(min-width: 768px)" srcset="/images/top-desktop.png">
-      <img src="/images/top-mobile.png" alt="" class="hero-image" loading="eager">
+      <source media="(min-width: 768px)" srcset="/images/top-desktop-768w.webp 768w, /images/top-desktop-1440w.webp 1440w, /images/top-desktop-2400w.webp 2400w, /images/top-desktop.webp 2880w" sizes="100vw">
+      <img src="/images/top-mobile.webp" srcset="/images/top-mobile-414w.webp 414w, /images/top-mobile.webp 828w" sizes="100vw" alt="" class="hero-image" loading="eager" fetchpriority="high" width="828" height="590">
     </picture>
   </div>
 
@@ -221,8 +225,8 @@
 
   <footer class="site-footer">
     <picture>
-      <source media="(min-width: 768px)" srcset="/images/bottom-desktop.png">
-      <img src="/images/bottom-mobile.png" alt="" loading="lazy">
+      <source media="(min-width: 768px)" srcset="/images/bottom-desktop-768w.webp 768w, /images/bottom-desktop-1440w.webp 1440w, /images/bottom-desktop.webp 2880w" sizes="100vw">
+      <img src="/images/bottom-mobile.webp" srcset="/images/bottom-mobile-414w.webp 414w, /images/bottom-mobile.webp 828w" sizes="100vw" alt="" loading="lazy" width="828" height="363">
     </picture>
   </footer>
 

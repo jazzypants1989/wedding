@@ -9,5 +9,6 @@
     "noImplicitAny": true,
     "strictNullChecks": true,
     "lib": ["esnext", "DOM", "DOM.Iterable"]
-  }
+  },
+  "exclude": ["pages/demo", "_demo"]
 }

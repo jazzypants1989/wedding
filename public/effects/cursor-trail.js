@@ -1,7 +1,7 @@
 /** @file Cursor trail effect — hearts and sparkles follow the mouse */
 /** @import * as Types from './types.js' */
 
-import { isMobile, randomFrom, mapSlider } from "./main.js"
+import { isMobile, randomFrom } from "./main.js"
 import { EFFECT_PALETTE } from "./config.js"
 
 const DEFAULT_COLORS = [
@@ -15,7 +15,8 @@ const DEFAULT_COLORS = [
 /** @type {Types.createCursorTrail} */
 export function createCursorTrail(config) {
   const cfg = config || {}
-  let active = false
+  /** @type {AbortController | null} */
+  let controller = null
   /** @type {HTMLDivElement | null} */
   let container = null
   let count = 0
@@ -23,21 +24,16 @@ export function createCursorTrail(config) {
   let lastSpawn = 0
   let lastX = -1
   let lastY = -1
-  /** @type {((e: MouseEvent) => void) | null} */
-  let mouseMoveHandler = null
-  /** @type {((e: TouchEvent) => void) | null} */
-  let touchMoveHandler = null
 
-  const trailDensity = cfg.trailDensity !== undefined ? cfg.trailDensity : 50
+  const trailDensity = cfg.trailDensity !== undefined ? cfg.trailDensity : 23
   const trailType = cfg.trailType || "mix"
-  const fadeSpeed = cfg.fadeSpeed !== undefined ? cfg.fadeSpeed : 50
-  const size = cfg.size !== undefined ? cfg.size : 50
+  const throttleMs = cfg.throttleMs !== undefined ? cfg.throttleMs : 65
+  const fadeDuration = cfg.fadeSpeed !== undefined ? cfg.fadeSpeed : 650
+  const particleScale = cfg.size !== undefined ? cfg.size : 1.15
+  const colors = cfg.colors || DEFAULT_COLORS
+  const minDistance = cfg.minDistance !== undefined ? cfg.minDistance : 5
 
-  const baseMax = isMobile() ? 15 : 40
-  const maxTrail = Math.round(mapSlider(trailDensity, 5, baseMax))
-  const throttleMs = mapSlider(trailDensity, 100, 30, true)
-  const fadeDuration = mapSlider(fadeSpeed, 1000, 300, true)
-  const particleScale = mapSlider(size, 0.5, 1.8)
+  const maxTrail = isMobile() ? Math.round(trailDensity / 2) : trailDensity
 
   function getParticleClass() {
     if (trailType === "hearts") return "trail-heart"
@@ -58,7 +54,7 @@ export function createCursorTrail(config) {
       const dx = x - lastX
       const dy = y - lastY
       const dist = Math.sqrt(dx * dx + dy * dy)
-      if (dist < 5) return
+      if (dist < minDistance) return
     }
     lastX = x
     lastY = y
@@ -66,7 +62,7 @@ export function createCursorTrail(config) {
     const el = document.createElement("div")
     spawnCount++
 
-    const color = randomFrom(DEFAULT_COLORS)
+    const color = randomFrom(colors)
     const cls = getParticleClass()
     el.className = "trail-particle " + cls
     el.style.backgroundColor = color
@@ -98,8 +94,8 @@ export function createCursorTrail(config) {
   }
 
   function start() {
-    if (active) return
-    active = true
+    if (controller) return
+    controller = new AbortController()
     count = 0
     spawnCount = 0
     lastSpawn = 0
@@ -115,28 +111,18 @@ export function createCursorTrail(config) {
         target.remove()
         count--
       }
-    })
+    }, { signal: controller.signal })
     document.body.appendChild(container)
 
-    mouseMoveHandler = onMouseMove
-    touchMoveHandler = onTouchMove
-
-    document.addEventListener("mousemove", mouseMoveHandler)
-    document.addEventListener("touchmove", touchMoveHandler)
+    document.addEventListener("mousemove", onMouseMove, { signal: controller.signal })
+    document.addEventListener("touchmove", onTouchMove, { signal: controller.signal })
   }
 
   function stop() {
-    if (!active) return
-    active = false
+    if (!controller) return
 
-    if (mouseMoveHandler) {
-      document.removeEventListener("mousemove", mouseMoveHandler)
-      mouseMoveHandler = null
-    }
-    if (touchMoveHandler) {
-      document.removeEventListener("touchmove", touchMoveHandler)
-      touchMoveHandler = null
-    }
+    controller.abort()
+    controller = null
 
     if (container) {
       container.remove()

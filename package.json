@@ -17,7 +17,10 @@
     "dev": "node --watch-path=server.js --watch-path=types.js --watch-path=core --watch-path=api --watch-path=db --watch-path=services --watch-path=public server.js",
     "setup": "node scripts/setup-admin.js",
     "seed": "node scripts/seed-preview.js",
-    "deploy": "node scripts/deploy.js"
+    "deploy": "node scripts/deploy.js",
+    "demo:build": "node scripts/build-demo.js",
+    "demo:serve": "node scripts/demo-server.js",
+    "demo": "node scripts/build-demo.js && node scripts/demo-server.js"
   },
   "keywords": [
     "wedding",

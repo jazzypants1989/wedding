@@ -20,7 +20,7 @@ export function getElement(id) {
  * @param {T} ElementClass
  * @returns {InstanceType<T>}
  */
-function getTypedElement(id, ElementClass) {
+export function getTypedElement(id, ElementClass) {
   const el = document.getElementById(id)
   if (!el) throw new Error("Required element not found: #" + id)
   if (!(el instanceof ElementClass))
@@ -29,28 +29,44 @@ function getTypedElement(id, ElementClass) {
 }
 
 /** @type {Types.getInputElement} */
-export function getInputElement(id) { return getTypedElement(id, HTMLInputElement) }
+export function getInputElement(id) {
+  return getTypedElement(id, HTMLInputElement)
+}
 
 /** @type {Types.getTextAreaElement} */
-export function getTextAreaElement(id) { return getTypedElement(id, HTMLTextAreaElement) }
+export function getTextAreaElement(id) {
+  return getTypedElement(id, HTMLTextAreaElement)
+}
 
 /** @type {Types.getButtonElement} */
-export function getButtonElement(id) { return getTypedElement(id, HTMLButtonElement) }
+export function getButtonElement(id) {
+  return getTypedElement(id, HTMLButtonElement)
+}
 
 /** @type {Types.getFormElement} */
-export function getFormElement(id) { return getTypedElement(id, HTMLFormElement) }
+export function getFormElement(id) {
+  return getTypedElement(id, HTMLFormElement)
+}
 
 /** @type {Types.getSelectElement} */
-export function getSelectElement(id) { return getTypedElement(id, HTMLSelectElement) }
+export function getSelectElement(id) {
+  return getTypedElement(id, HTMLSelectElement)
+}
 
 /** @type {Types.getTableElement} */
-export function getTableElement(id) { return getTypedElement(id, HTMLTableElement) }
+export function getTableElement(id) {
+  return getTypedElement(id, HTMLTableElement)
+}
 
 /** @type {Types.getIFrameElement} */
-export function getIFrameElement(id) { return getTypedElement(id, HTMLIFrameElement) }
+export function getIFrameElement(id) {
+  return getTypedElement(id, HTMLIFrameElement)
+}
 
 /** @type {Types.getDialogElement} */
-export function getDialogElement(id) { return getTypedElement(id, HTMLDialogElement) }
+export function getDialogElement(id) {
+  return getTypedElement(id, HTMLDialogElement)
+}
 
 /** @type {Types.getErrorMessage} */
 export function getErrorMessage(err) {

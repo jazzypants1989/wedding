@@ -4,6 +4,9 @@
 import { api, showError } from "./utils.js"
 import { html, formatDate, getElement } from "../utils.js"
 
+/** @type {WeakMap<Element, AbortController>} */
+const pendingTransitions = new WeakMap()
+
 /** @type {Types.renderRsvps} */
 function renderRsvps(rsvps) {
   const tbody = getElement("rsvps-tbody")
@@ -17,41 +20,102 @@ function renderRsvps(rsvps) {
 
   tbody.innerHTML = html`${rsvps.map(
     (rsvp) =>
-      html` <tr class="expandable-row">
-          <td>
+      html` <tr class="rsvp-data-row">
+        <td>
+          <button class="rsvp-toggle" aria-expanded="false">
             <strong>${rsvp.name}</strong>
-            <span class="expand-indicator"></span>
-          </td>
-          <td class="${rsvp.attending ? "attending-yes" : "attending-no"}">
-            ${rsvp.attending ? "Yes" : "No"}
-          </td>
-          <td>${rsvp.attending ? rsvp.actual_party_size : "-"}</td>
-          <td class="hide-mobile">${rsvp.dietary_restrictions || "-"}</td>
-          <td class="hide-mobile">${rsvp.message || "-"}</td>
-          <td class="hide-mobile">${formatDate(rsvp.submitted_at)}</td>
-        </tr>
-        <tr class="row-details">
-          <td colspan="6">
-            <div class="row-details-content">
-              <div>
-                <strong>Food:</strong> ${rsvp.dietary_restrictions || "None"}
-              </div>
+          </button>
+        </td>
+        <td class="${rsvp.attending ? "attending-yes" : "attending-no"}">
+          ${rsvp.attending ? "Yes" : "No"}
+        </td>
+        <td>${rsvp.attending ? rsvp.actual_party_size : "-"}</td>
+        <td class="hide-mobile">
+          ${rsvp.dietary_restrictions || "None"}
+        </td>
+        <td class="hide-mobile">
+          ${rsvp.message || "None"}
+        </td>
+        <td class="hide-mobile">
+          ${formatDate(rsvp.submitted_at)}
+        </td>
+      </tr>
+      <tr class="rsvp-detail-row" aria-hidden="true">
+        <td colspan="6">
+          <div class="rsvp-detail-content">
+            <div class="rsvp-detail-inner">
+              <div><strong>Food:</strong> ${rsvp.dietary_restrictions || "None"}</div>
               <div><strong>Message:</strong> ${rsvp.message || "None"}</div>
-              <div>
-                <strong>Submitted:</strong> ${formatDate(rsvp.submitted_at)}
-              </div>
+              <div><strong>Submitted:</strong> ${formatDate(rsvp.submitted_at)}</div>
             </div>
-          </td>
-        </tr>`,
+          </div>
+        </td>
+      </tr>`,
   )}`
-
-  // Add click handlers for expandable rows
-  tbody.querySelectorAll(".expandable-row").forEach((row) => {
-    row.addEventListener("click", () => {
-      row.classList.toggle("expanded")
-    })
-  })
 }
+
+/**
+ * Toggle RSVP detail row with smooth height animation.
+ * Uses scrollHeight for accurate 0-to-auto transitions.
+ * @param {HTMLElement} btn
+ */
+function toggleRsvpDetail(btn) {
+  const row = btn.closest("tr")
+  if (!row) return
+  const detailRow = row.nextElementSibling
+  if (!detailRow) return
+  const content = /** @type {HTMLElement | null} */ (
+    detailRow.querySelector(".rsvp-detail-content")
+  )
+  if (!content) return
+
+  const pending = pendingTransitions.get(content)
+  if (pending) {
+    pending.abort()
+    pendingTransitions.delete(content)
+  }
+
+  const isExpanded = btn.getAttribute("aria-expanded") === "true"
+
+  if (isExpanded) {
+    content.style.height = content.scrollHeight + "px"
+    void content.offsetHeight
+    content.style.height = "0"
+    btn.setAttribute("aria-expanded", "false")
+    detailRow.setAttribute("aria-hidden", "true")
+  } else {
+    content.style.height = "0"
+    void content.offsetHeight
+    content.style.height = content.scrollHeight + "px"
+    btn.setAttribute("aria-expanded", "true")
+    detailRow.setAttribute("aria-hidden", "false")
+    const ac = new AbortController()
+    pendingTransitions.set(content, ac)
+    content.addEventListener(
+      "transitionend",
+      () => {
+        content.style.height = "auto"
+        pendingTransitions.delete(content)
+      },
+      { once: true, signal: ac.signal },
+    )
+  }
+}
+
+document.addEventListener("click", (e) => {
+  const target = /** @type {Element} */ (e.target)
+  const btn = target.closest(".rsvp-toggle")
+  if (btn) {
+    toggleRsvpDetail(/** @type {HTMLElement} */ (btn))
+    return
+  }
+  const row = target.closest(".rsvp-data-row")
+  if (!row) return
+  const toggle = /** @type {HTMLElement | null} */ (
+    row.querySelector(".rsvp-toggle")
+  )
+  if (toggle) toggleRsvpDetail(toggle)
+})
 
 /** @type {Types.loadRsvps} */
 export async function loadRsvps() {

@@ -206,6 +206,7 @@ export const ADMIN_PASSWORD_HASH: string | undefined
 export const BASE_URL: string
 export const CONTACT_EMAIL: string
 export const TRUSTED_PROXIES: string[]
+export const CSP_NONCE: boolean
 
 export type ValidationResult<T> =
   | { valid: true; value: T }

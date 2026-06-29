@@ -1,7 +1,7 @@
 /** @file Disco ball effect — spinning disco ball with light rays */
 /** @import * as Types from './types.js' */
 
-import { isMobile, randomFrom, mapSlider } from "./main.js"
+import { isMobile, randomFrom, randomBetween } from "./main.js"
 import { EFFECT_PALETTE } from "./config.js"
 
 const DEFAULT_TILE_SHADES = [
@@ -30,19 +30,22 @@ export function createDiscoBall(config) {
   /** @type {HTMLDivElement | null} */
   let wrapper = null
 
-  const spinSpeed = cfg.spinSpeed !== undefined ? cfg.spinSpeed : 50
-  const ballSizeSlider = cfg.ballSize !== undefined ? cfg.ballSize : 50
+  const spinSpeed = cfg.spinSpeed !== undefined ? cfg.spinSpeed : 4.75
+  const ballSize = cfg.ballSize !== undefined ? cfg.ballSize : 88
   const rayCountCfg = cfg.rayCount !== undefined ? cfg.rayCount : 6
-  const rayBrightness = cfg.rayBrightness !== undefined ? cfg.rayBrightness : 50
+  const rayBrightness = cfg.rayBrightness !== undefined ? cfg.rayBrightness : 0.4
   const rayColors = cfg.rayColors || DEFAULT_RAY_COLORS
+  const tileSize = cfg.tileSize !== undefined ? cfg.tileSize : 7
+  const tileGap = cfg.tileGap !== undefined ? cfg.tileGap : 1
+  const rayDurRange = cfg.rayDurationRange || [3, 8]
+  const rayDelRange = cfg.rayDelayRange || [0, 3]
 
   function getBallSize() {
-    const base = isMobile() ? 60 : 80
-    return Math.round(mapSlider(ballSizeSlider, base * 0.6, base * 1.6))
+    return isMobile() ? Math.round(ballSize * 0.75) : ballSize
   }
 
   function getSpinDuration() {
-    return mapSlider(spinSpeed, 8, 1.5, true)
+    return spinSpeed
   }
 
   function getRayCount() {
@@ -52,8 +55,6 @@ export function createDiscoBall(config) {
 
   function buildBall() {
     const ballSize = getBallSize()
-    const tileSize = 7
-    const tileGap = 1
 
     const ball = document.createElement("div")
     ball.className = "disco-ball"
@@ -84,13 +85,13 @@ export function createDiscoBall(config) {
     container.className = "disco-rays"
 
     const rayCount = getRayCount()
-    const brightness = mapSlider(rayBrightness, 0.1, 0.7)
+    const brightness = rayBrightness
 
     for (let i = 0; i < rayCount; i++) {
       const ray = document.createElement("div")
       ray.className = "disco-ray"
-      ray.style.animationDuration = 3 + Math.random() * 5 + "s"
-      ray.style.animationDelay = Math.random() * 3 + "s"
+      ray.style.animationDuration = randomBetween(rayDurRange[0], rayDurRange[1]) + "s"
+      ray.style.animationDelay = randomBetween(rayDelRange[0], rayDelRange[1]) + "s"
       ray.style.opacity = String(brightness)
 
       const colorStr =

@@ -73,18 +73,12 @@ export function randomFrom<T>(arr: T[]): T
 export function randomBetween(min: number, max: number): number
 
 /**
- * Map a 0-100 slider value to an output range.
- * If invert is true, 100 maps to min and 0 maps to max.
+ * Return a Promise that resolves after the given delay, or rejects
+ * with an AbortError when the signal fires.
  * @example
- * mapSlider(50, 0.3, 1.8);          // 1.05
- * mapSlider(50, 700, 150, true);     // 425
+ * await cancellableDelay(300, controller.signal);
  */
-export function mapSlider(
-  sliderValue: number,
-  min: number,
-  max: number,
-  invert?: boolean,
-): number
+export function cancellableDelay(ms: number, signal: AbortSignal): Promise<void>
 
 /** @file config.js - Types for effect configuration defaults */
 
@@ -120,6 +114,10 @@ export interface DiscoBallConfig {
   rayCount?: number
   rayBrightness?: number
   rayColors?: string[]
+  tileSize?: number
+  tileGap?: number
+  rayDurationRange?: [number, number]
+  rayDelayRange?: [number, number]
 }
 
 /**
@@ -135,8 +133,11 @@ export type TrailType = "hearts" | "sparkles" | "stars" | "rings" | "mix"
 export interface CursorTrailConfig {
   trailDensity?: number
   trailType?: TrailType
+  throttleMs?: number
   fadeSpeed?: number
   size?: number
+  colors?: string[]
+  minDistance?: number
 }
 
 /**
@@ -154,6 +155,7 @@ export interface MermaidShimmerConfig {
   gradientSpeed?: number
   colorPalette?: ShimmerPalette
   scaleSize?: number
+  gradientAngle?: number
 }
 
 /**
@@ -164,6 +166,9 @@ export interface MermaidShimmerConfig {
 export interface SparkleBurstConfig {
   particleCount?: number
   colors?: string[]
+  durationRange?: [number, number]
+  driftRange?: [number, number]
+  scaleRange?: [number, number]
 }
 
 /**
@@ -174,6 +179,7 @@ export interface SparkleBurstConfig {
 export interface SparkleDividersConfig {
   dotDensity?: number
   color?: number
+  animationDelayStep?: number
 }
 
 /**
@@ -199,6 +205,7 @@ export interface NameShimmerConfig {
 export interface CausticsConfig {
   intensity?: number
   speed?: number
+  layerCount?: number
 }
 
 /**
@@ -208,6 +215,7 @@ export interface CausticsConfig {
  */
 export interface TextSparkleConfig {
   intensity?: number
+  threshold?: number
 }
 
 /**
@@ -242,6 +250,9 @@ export interface ParallaxSparklesConfig {
   density?: number
   speedMultiplier?: number
   colorScheme?: ParallaxColorScheme
+  sizeRange?: [number, number]
+  opacityRange?: [number, number]
+  glowThreshold?: number
 }
 
 /**
@@ -259,6 +270,8 @@ export interface GrandEntranceConfig {
   sparkleIntensity?: number
   speed?: number
   colors?: string[]
+  sparkleSizeRange?: [number, number]
+  waveCount?: number
 }
 
 /**
@@ -271,6 +284,8 @@ export interface DiscoSpotlightConfig {
   sweepSpeed?: number
   beamWidth?: number
   colors?: string[]
+  colorCycleMs?: number
+  beamStagger?: number
 }
 
 /**
@@ -283,6 +298,8 @@ export interface MirrorReflectionsConfig {
   speed?: number
   brightness?: number
   colors?: string[]
+  sizeRange?: [number, number]
+  frameInterval?: number
 }
 
 /**

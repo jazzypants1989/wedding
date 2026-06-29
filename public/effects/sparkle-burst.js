@@ -1,7 +1,7 @@
 /** @file Page load sparkle burst — cascading sparkles on first load */
 /** @import * as Types from './types.js' */
 
-import { isMobile, randomFrom, randomBetween, mapSlider } from "./main.js"
+import { isMobile, randomFrom, randomBetween } from "./main.js"
 import { EFFECT_PALETTE } from "./config.js"
 
 const DEFAULT_COLORS = [
@@ -20,13 +20,15 @@ export function createSparkleBurst(config) {
   let container = null
   let remaining = 0
 
-  const particleCountSlider =
-    cfg.particleCount !== undefined ? cfg.particleCount : 50
+  const particleCount =
+    cfg.particleCount !== undefined ? cfg.particleCount : 60
   const colors = cfg.colors || DEFAULT_COLORS
+  const durationRange = cfg.durationRange || [1.5, 3]
+  const driftRange = cfg.driftRange || [-40, 40]
+  const scaleRange = cfg.scaleRange || [0.5, 1.5]
 
   function getCount() {
-    const base = isMobile() ? 25 : 50
-    return Math.round(mapSlider(particleCountSlider, base * 0.4, base * 2))
+    return isMobile() ? Math.round(particleCount / 2) : particleCount
   }
 
   function start() {
@@ -61,13 +63,13 @@ export function createSparkleBurst(config) {
       const delay = Math.random() * 0.8
       sparkle.style.animationDelay = delay + "s"
 
-      const duration = randomBetween(1.5, 3)
+      const duration = randomBetween(durationRange[0], durationRange[1])
       sparkle.style.animationDuration = duration + "s"
 
-      const drift = randomBetween(-40, 40)
+      const drift = randomBetween(driftRange[0], driftRange[1])
       sparkle.style.setProperty("--burst-drift", drift + "px")
 
-      const scale = randomBetween(0.5, 1.5)
+      const scale = randomBetween(scaleRange[0], scaleRange[1])
       sparkle.style.setProperty("--burst-scale", String(scale))
 
       container.appendChild(sparkle)

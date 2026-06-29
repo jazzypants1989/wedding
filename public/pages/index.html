@@ -8,11 +8,15 @@
   <meta name="description" content="Wedding website for Jordana North and Jesse Pence - April 26, 2026 in Portland, OR">
   <meta name="theme-color" content="#eee6dc">
   <link rel="icon" type="image/png" href="/images/favicon.png">
-  <script src="/components/theme-init.js"></script>
+  <link rel="preload" as="font" type="font/woff2" href="/fonts/dm-serif-display-latin.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="/fonts/jost-latin.woff2" crossorigin>
+  <link rel="preload" as="image" imagesrcset="/images/top-mobile-414w.webp 414w, /images/top-mobile.webp 828w" imagesizes="100vw" media="(max-width: 767px)">
+  <link rel="preload" as="image" imagesrcset="/images/top-desktop-768w.webp 768w, /images/top-desktop-1440w.webp 1440w, /images/top-desktop-2400w.webp 2400w, /images/top-desktop.webp 2880w" imagesizes="100vw" media="(min-width: 768px)">
   <link rel="stylesheet" href="/styles/tokens.css">
   <link rel="stylesheet" href="/styles/layout.css">
   <link rel="stylesheet" href="/styles/components.css">
-  <link rel="stylesheet" href="/styles/effects.css">
+  <link rel="stylesheet" href="/styles/effects.css" media="print" id="effects-css">
+  <script src="/components/theme-init.js"></script>
 </head>
 
 <body>
@@ -48,8 +52,8 @@
 
   <div class="hero">
     <picture>
-      <source media="(min-width: 768px)" srcset="/images/top-desktop.png">
-      <img src="/images/top-mobile.png" alt="" class="hero-image" loading="eager">
+      <source media="(min-width: 768px)" srcset="/images/top-desktop-768w.webp 768w, /images/top-desktop-1440w.webp 1440w, /images/top-desktop-2400w.webp 2400w, /images/top-desktop.webp 2880w" sizes="100vw">
+      <img src="/images/top-mobile.webp" srcset="/images/top-mobile-414w.webp 414w, /images/top-mobile.webp 828w" sizes="100vw" alt="" class="hero-image" loading="eager" fetchpriority="high" width="828" height="590">
     </picture>
   </div>
 
@@ -57,7 +61,7 @@
     <h1 class="couple-names">Jordana & Jesse</h1>
     <p class="wedding-info">April 26, 2026 &bull; Portland, OR</p>
     <p class="countdown" id="countdown" aria-live="off">Loading... <span id="exact-time" class="exact-time"></span></p>
-    <img src="/images/us.webp" alt="Jordana and Jesse K-I-S-S-I-N-G" class="couple-photo" loading="eager">
+    <img src="/images/us.webp" srcset="/images/us-240w.webp 240w, /images/us.webp 480w" sizes="(min-width: 768px) 240px, 180px" alt="Jordana and Jesse K-I-S-S-I-N-G" class="couple-photo" loading="eager" width="480" height="512">
   </header>
 
   <nav class="desktop-nav" aria-label="Main navigation">
@@ -140,12 +144,12 @@
 
       <div class="dress-code-gallery">
         <figure class="dress-code-figure">
-          <img src="/images/we-wear-pink.png"
-            alt="Karen from Mean Girls with text: At Jesse and Jordana's Wedding we wear pink" class="dress-code-image">
+          <img src="/images/we-wear-pink.webp" srcset="/images/we-wear-pink-400w.webp 400w, /images/we-wear-pink.webp 800w" sizes="(min-width: 400px) 400px, 100vw"
+            alt="Karen from Mean Girls with text: At Jesse and Jordana's Wedding we wear pink" class="dress-code-image" loading="lazy" width="800" height="460">
         </figure>
         <figure class="dress-code-figure">
-          <img src="/images/patrick-star.jpg" alt="Patrick Star from SpongeBob in a pink cowboy outfit singing karaoke"
-            class="dress-code-image">
+          <img src="/images/patrick-star.webp" srcset="/images/patrick-star-400w.webp 400w, /images/patrick-star-600w.webp 600w, /images/patrick-star.webp 736w" sizes="(min-width: 400px) 400px, 100vw"
+            alt="Patrick Star from SpongeBob in a pink cowboy outfit singing karaoke" class="dress-code-image" loading="lazy" width="736" height="988">
           <figcaption class="dress-code-caption">One example of an acceptable outfit</figcaption>
         </figure>
       </div>
@@ -194,8 +198,8 @@
 
   <footer class="site-footer">
     <picture>
-      <source media="(min-width: 768px)" srcset="/images/bottom-desktop.png">
-      <img src="/images/bottom-mobile.png" alt="" loading="lazy">
+      <source media="(min-width: 768px)" srcset="/images/bottom-desktop-768w.webp 768w, /images/bottom-desktop-1440w.webp 1440w, /images/bottom-desktop.webp 2880w" sizes="100vw">
+      <img src="/images/bottom-mobile.webp" srcset="/images/bottom-mobile-414w.webp 414w, /images/bottom-mobile.webp 828w" sizes="100vw" alt="" loading="lazy" width="828" height="363">
     </picture>
   </footer>
 

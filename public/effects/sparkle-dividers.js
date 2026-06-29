@@ -1,7 +1,6 @@
 /** @file Sparkle dividers — animated sparkle lines between content sections */
 /** @import * as Types from './types.js' */
 
-import { mapSlider } from "./main.js"
 import { EFFECT_PALETTE } from "./config.js"
 
 /** @type {Types.createSparkleDividers} */
@@ -10,17 +9,17 @@ export function createSparkleDividers(config) {
   /** @type {HTMLDivElement[]} */
   let dividers = []
 
-  const dotDensity = cfg.dotDensity !== undefined ? cfg.dotDensity : 50
-  const color = cfg.color !== undefined ? cfg.color : 50
+  const dotDensity = cfg.dotDensity !== undefined ? cfg.dotDensity : 19
+  const color = cfg.color !== undefined ? cfg.color : 0.5
+  const animationDelayStep = cfg.animationDelayStep !== undefined ? cfg.animationDelayStep : 0.1
 
   function getDotCount() {
-    return Math.round(mapSlider(dotDensity, 8, 30))
+    return Math.round(dotDensity)
   }
 
   function getDotColor() {
-    const warmth = mapSlider(color, 0, 1)
-    if (warmth > 0.6) return EFFECT_PALETTE.brand
-    if (warmth > 0.3) return EFFECT_PALETTE.gold
+    if (color > 0.6) return EFFECT_PALETTE.brand
+    if (color > 0.3) return EFFECT_PALETTE.gold
     return EFFECT_PALETTE.white
   }
 
@@ -44,7 +43,7 @@ export function createSparkleDividers(config) {
         dot.className = "sparkle-divider-dot"
         dot.style.left = (d / (dotCount - 1)) * 100 + "%"
         dot.style.backgroundColor = dotColor
-        dot.style.animationDelay = d * 0.1 + "s"
+        dot.style.animationDelay = d * animationDelayStep + "s"
         divider.appendChild(dot)
       }
 

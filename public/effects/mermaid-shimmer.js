@@ -1,7 +1,7 @@
 /** @file Mermaid shimmer effect — iridescent holographic overlay */
 /** @import * as Types from './types.js' */
 
-import { isMobile, mapSlider } from "./main.js"
+import { isMobile } from "./main.js"
 
 const PALETTES = {
   iridescent:
@@ -18,10 +18,11 @@ export function createMermaidShimmer(config) {
   /** @type {HTMLDivElement | null} */
   let overlay = null
 
-  const opacityCfg = cfg.opacity !== undefined ? cfg.opacity : 50
-  const gradientSpeed = cfg.gradientSpeed !== undefined ? cfg.gradientSpeed : 50
+  const opacity = cfg.opacity !== undefined ? cfg.opacity : 0.175
+  const gradientSpeed = cfg.gradientSpeed !== undefined ? cfg.gradientSpeed : 9
   const colorPalette = cfg.colorPalette || "iridescent"
-  const scaleSize = cfg.scaleSize !== undefined ? cfg.scaleSize : 50
+  const scaleSize = cfg.scaleSize !== undefined ? cfg.scaleSize : 43
+  const gradientAngle = cfg.gradientAngle !== undefined ? cfg.gradientAngle : 135
 
   function start() {
     if (overlay) return
@@ -32,18 +33,15 @@ export function createMermaidShimmer(config) {
     overlay.className = "mermaid-shimmer"
     overlay.setAttribute("aria-hidden", "true")
 
-    const opacity = mapSlider(opacityCfg, 0.03, 0.15)
     overlay.style.opacity = String(opacity)
 
-    const duration = mapSlider(gradientSpeed, 15, 3, true)
-    overlay.style.animationDuration = duration + "s"
+    overlay.style.animationDuration = gradientSpeed + "s"
 
     const gradientColors = PALETTES[colorPalette] || PALETTES.iridescent
-    overlay.style.background = "linear-gradient(135deg, " + gradientColors + ")"
+    overlay.style.background = "linear-gradient(" + gradientAngle + "deg, " + gradientColors + ")"
     overlay.style.backgroundSize = "400% 400%"
 
-    const patternSize = Math.round(mapSlider(scaleSize, 25, 60))
-    overlay.style.setProperty("--scale-pattern-size", patternSize + "px")
+    overlay.style.setProperty("--scale-pattern-size", scaleSize + "px")
 
     document.body.appendChild(overlay)
   }
