@@ -5,7 +5,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { gzipSync } from "node:zlib"
 import { addSecurityHeaders } from "./http.js"
-import { CSP_NONCE } from "../types.js"
+import { SERVER } from "../types.js"
 
 /** @type {Types.MimeTypes} */
 const MIME_TYPES = {
@@ -213,10 +213,10 @@ export async function serveStatic(req, res) {
     "Cache-Control": cacheControl,
   }
 
-  const nonce = CSP_NONCE && ext === ".html" ? crypto.randomBytes(16).toString("base64") : ""
+  const nonce = SERVER.cspNonce && ext === ".html" ? crypto.randomBytes(16).toString("base64") : ""
 
   if (ext === ".html") {
-    headers["Content-Security-Policy"] = CSP_NONCE ? buildNonceCsp(nonce) : HASH_CSP
+    headers["Content-Security-Policy"] = SERVER.cspNonce ? buildNonceCsp(nonce) : HASH_CSP
     headers["X-Frame-Options"] = "DENY"
     headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
@@ -233,7 +233,7 @@ export async function serveStatic(req, res) {
     let body
     if (ext === ".html") {
       let html = content.toString("utf-8")
-      if (CSP_NONCE) {
+      if (SERVER.cspNonce) {
         html = html.replaceAll(THEME_INIT_TAG, '<script nonce="' + nonce + '">' + THEME_INIT_CODE + '</script>')
       } else {
         html = html.replaceAll(THEME_INIT_TAG, '<script>' + THEME_INIT_CODE + '</script>')
@@ -244,7 +244,7 @@ export async function serveStatic(req, res) {
       html = addCacheBusters(html)
       body = html
       // Cache ETag + gzip in hash mode (nonce mode can't cache — content changes per request)
-      if (!CSP_NONCE && !etagCache.has(normalizedPath)) {
+      if (!SERVER.cspNonce && !etagCache.has(normalizedPath)) {
         const hash = crypto.createHash("sha256").update(html).digest("hex").slice(0, 12)
         etagCache.set(normalizedPath, '"h-' + hash + '"')
         if (Buffer.byteLength(html) > 1024) {
@@ -256,7 +256,7 @@ export async function serveStatic(req, res) {
     }
 
     // Conditional request handling (skip in nonce mode — content changes per request)
-    if (!(CSP_NONCE && ext === ".html")) {
+    if (!(SERVER.cspNonce && ext === ".html")) {
       const etag = etagCache.get(normalizedPath)
       if (etag) {
         headers["ETag"] = etag
@@ -271,7 +271,7 @@ export async function serveStatic(req, res) {
     // Serve gzipped version if available and client supports it
     if (clientAcceptsGzip) {
       let gzipped
-      if (CSP_NONCE && ext === ".html") {
+      if (SERVER.cspNonce && ext === ".html") {
         const buf = Buffer.from(/** @type {string} */ (body))
         gzipped = buf.length > 1024 ? gzipSync(buf) : null
       } else {

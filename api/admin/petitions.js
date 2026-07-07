@@ -12,7 +12,7 @@ import { getGuestById, updateGuestInvitedAt } from "../guests/data.js"
 import { logCommunication } from "../../db/utils.js"
 import { addToBlocklist } from "./blocklist.js"
 import { sendJson, parseBody } from "../../core/http.js"
-import { BASE_URL } from "../../types.js"
+import { SERVER } from "../../types.js"
 import {
   validateId,
   validatePartySize,
@@ -95,7 +95,7 @@ export async function approve(req, res, { params, session }) {
 
   let inviteSent = false
   if (sendInvite && petition) {
-    const inviteUrl = `${BASE_URL}/rsvp?code=${guestResult.invite_code}`
+    const inviteUrl = `${SERVER.baseUrl}/rsvp?code=${guestResult.invite_code}`
 
     if (petition.email && email.isConfigured()) {
       const emailData = email.getDefaultInviteEmail(petition.name, inviteUrl)

@@ -11,7 +11,7 @@ import {
   createSessionCookies,
   clearSessionCookies,
 } from "../../core/auth.js"
-import { ADMIN_PASSWORD_HASH, BASE_URL } from "../../types.js"
+import { SERVER } from "../../types.js"
 import { log, AUDIT_ACTIONS } from "../../core/utils.js"
 
 /** @type {Types.login} */
@@ -19,7 +19,7 @@ export async function login(req, res) {
   const clientIp = getClientIp(req)
   if (checkRateLimit(res, limiters.adminLogin, clientIp)) return
 
-  if (!ADMIN_PASSWORD_HASH) {
+  if (!SERVER.adminPasswordHash) {
     return sendJson(res, 503, {
       error: "Admin not configured. Run: node scripts/setup-admin.js",
     })
@@ -32,7 +32,7 @@ export async function login(req, res) {
     return sendJson(res, 400, { error: "Password required" })
   }
 
-  if (!verifyPassword(password, ADMIN_PASSWORD_HASH)) {
+  if (!verifyPassword(password, SERVER.adminPasswordHash)) {
     log({
       action: AUDIT_ACTIONS.LOGIN_FAILED,
       ip: clientIp,
@@ -51,7 +51,7 @@ export async function login(req, res) {
 
   limiters.adminLogin.reset(clientIp)
 
-  const isSecure = BASE_URL.startsWith("https")
+  const isSecure = SERVER.baseUrl.startsWith("https")
   const cookies = createSessionCookies(session, isSecure)
 
   return sendJson(

@@ -1,7 +1,7 @@
 /** @file SQLite-backed rate limiting */
 /** @import * as Types from './types.js' */
 
-import { TRUSTED_PROXIES, RATE_LIMITS } from "../types.js"
+import { SERVER, RATE_LIMITS } from "../types.js"
 import { sql } from "../db/sql.js"
 
 /** @type {Types.cleanExpired} */
@@ -63,7 +63,7 @@ function createLimiter({ name, windowMs, max }) {
 function getClientIp(req) {
   const remoteAddr = req.socket?.remoteAddress || "unknown"
 
-  if (TRUSTED_PROXIES.length > 0 && TRUSTED_PROXIES.includes(remoteAddr)) {
+  if (SERVER.trustedProxies.length > 0 && SERVER.trustedProxies.includes(remoteAddr)) {
     const forwarded = req.headers["x-forwarded-for"]
     if (forwarded) {
       const forwardedStr = Array.isArray(forwarded) ? forwarded[0] : forwarded

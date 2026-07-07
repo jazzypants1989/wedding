@@ -200,13 +200,15 @@ export interface UpdateGuestInput {
   status?: GuestStatus
 }
 
-export const PROJECT_ROOT: string
-export const PORT: string | number
-export const ADMIN_PASSWORD_HASH: string | undefined
-export const BASE_URL: string
-export const CONTACT_EMAIL: string
-export const TRUSTED_PROXIES: string[]
-export const CSP_NONCE: boolean
+export const SERVER: {
+  readonly projectRoot: string
+  readonly port: string | number
+  readonly adminPasswordHash: string | undefined
+  readonly baseUrl: string
+  readonly contactEmail: string
+  readonly trustedProxies: string[]
+  readonly cspNonce: boolean
+}
 
 export type ValidationResult<T> =
   | { valid: true; value: T }

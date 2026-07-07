@@ -12,7 +12,7 @@ import {
 import { log, AUDIT_ACTIONS } from "../../core/utils.js"
 import { getClientIp } from "../../core/rate-limit.js"
 import {
-  BASE_URL,
+  SERVER,
   WEDDING,
   COMMUNICATION_TYPE,
   COMMUNICATION_STATUS,
@@ -41,7 +41,7 @@ export async function getEligibleGuests(req, res) {
       date: WEDDING.DATE,
       location: WEDDING.LOCATION,
       coupleNames: WEDDING.COUPLE_NAMES,
-      baseUrl: BASE_URL,
+      baseUrl: SERVER.baseUrl,
     },
   })
 }

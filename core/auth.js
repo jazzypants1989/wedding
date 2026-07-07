@@ -9,7 +9,7 @@ import {
   updateSessionActivity,
   rotateCsrfToken,
 } from "../db/sessions.js"
-import { SESSION, BASE_URL } from "../types.js"
+import { SESSION, SERVER } from "../types.js"
 import { log, AUDIT_ACTIONS } from "./utils.js"
 import { getClientIp } from "./rate-limit.js"
 
@@ -165,7 +165,7 @@ export function withAdmin(handler) {
       const csrfAge = Date.now() - rotatedAt.getTime()
       if (csrfAge > SESSION.CSRF_ROTATION_MS) {
         const newCsrfToken = rotateCsrfToken(sessionToken)
-        const secureFlag = BASE_URL.startsWith("https") ? "; Secure" : ""
+        const secureFlag = SERVER.baseUrl.startsWith("https") ? "; Secure" : ""
         res.setHeader(
           "Set-Cookie",
           `csrf=${newCsrfToken}; Path=/; SameSite=Strict; Max-Age=86400${secureFlag}`,

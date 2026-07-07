@@ -5,7 +5,7 @@ import { getGuestById, updateGuestInvitedAt } from "../guests/data.js"
 import { logCommunication } from "../../db/utils.js"
 import { sendJson, parseBody, checkRateLimit } from "../../core/http.js"
 import { limiters, getClientIp } from "../../core/rate-limit.js"
-import { BASE_URL, EMAIL_SUBJECTS } from "../../types.js"
+import { SERVER, EMAIL_SUBJECTS } from "../../types.js"
 import {
   ValidationError,
   validateIdArray,
@@ -79,7 +79,7 @@ export async function preview(req, res) {
       continue
     }
 
-    const inviteUrl = `${BASE_URL}/rsvp?code=${guest.invite_code}`
+    const inviteUrl = `${SERVER.baseUrl}/rsvp?code=${guest.invite_code}`
     let messagePreview
 
     if (commType === "sms") {
@@ -152,7 +152,7 @@ export async function send(req, res, { session }) {
       continue
     }
 
-    const inviteUrl = `${BASE_URL}/rsvp?code=${guest.invite_code}`
+    const inviteUrl = `${SERVER.baseUrl}/rsvp?code=${guest.invite_code}`
     let sendResult
     let messagePreview
 

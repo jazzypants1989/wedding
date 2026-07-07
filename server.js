@@ -11,7 +11,7 @@ import { cleanOldLogs } from "./core/utils.js"
 
 import * as router from "./core/router.js"
 import { serveStatic } from "./core/static.js"
-import { PORT } from "./types.js"
+import { SERVER } from "./types.js"
 
 export const server = http.createServer(async (req, res) => {
   if (shuttingDown) {
@@ -70,9 +70,9 @@ setInterval(
 server.requestTimeout = 30_000
 server.headersTimeout = 35_000
 
-server.listen(PORT, () => {
-  console.log(`Wedding website running at http://localhost:${PORT}/`)
-  console.log(`Health check: http://localhost:${PORT}/api/health`)
+server.listen(SERVER.port, () => {
+  console.log(`Wedding website running at http://localhost:${SERVER.port}/`)
+  console.log(`Health check: http://localhost:${SERVER.port}/api/health`)
 })
 
 process.on("SIGINT", () => handleGracefulShutdown(""))

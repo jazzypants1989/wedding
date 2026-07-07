@@ -110,11 +110,25 @@ export function isCommunicationType(value) {
   return typeof value === "string" && /** @type {readonly string[]} */ (COMMUNICATION_TYPE_VALUES).includes(value)
 }
 
-export const PROJECT_ROOT = import.meta.dirname
-export const PORT = process.env.PORT || 3000
-export const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH
-export const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`
-export const CONTACT_EMAIL = process.env.CONTACT_EMAIL || "contact@example.com"
-export const TRUSTED_PROXIES =
-  process.env.TRUSTED_PROXIES?.split(",").map((s) => s.trim()) || []
-export const CSP_NONCE = process.env.CSP_NONCE === "true"
+const SERVER_PORT = process.env.PORT || 3000
+
+/** Server/runtime configuration derived from the environment.
+ *  Grouped into one frozen object (mirroring FEATURES above) instead of loose
+ *  boolean/string flags scattered across modules. */
+export const SERVER = Object.freeze({
+  /** Absolute path to the project root. */
+  projectRoot: import.meta.dirname,
+  /** HTTP listen port. */
+  port: SERVER_PORT,
+  /** Scrypt hash of the admin password (set by `npm run setup`). */
+  adminPasswordHash: process.env.ADMIN_PASSWORD_HASH,
+  /** Public base URL used in invite links and cookie Secure detection. */
+  baseUrl: process.env.BASE_URL || `http://localhost:${SERVER_PORT}`,
+  /** Reply-to / contact email surfaced to guests. */
+  contactEmail: process.env.CONTACT_EMAIL || "contact@example.com",
+  /** Reverse-proxy IPs whose X-Forwarded-For header we trust. */
+  trustedProxies:
+    process.env.TRUSTED_PROXIES?.split(",").map((s) => s.trim()) || [],
+  /** true → per-request CSP nonce mode; false → static hash mode (cacheable). */
+  cspNonce: process.env.CSP_NONCE === "true",
+})
