@@ -22,6 +22,17 @@ export const COMMUNICATION_STATUS: {
   readonly FAILED: "failed"
 }
 
+export const CONTENT_STATUS: {
+  readonly PENDING: "pending"
+  readonly APPROVED: "approved"
+  readonly HIDDEN: "hidden"
+  readonly REJECTED: "rejected"
+}
+
+export const MODERATION_NOTIFY: {
+  readonly DIGEST_INTERVAL_MS: number
+}
+
 export const SESSION: {
   readonly DURATION_MS: number
   readonly IDLE_TIMEOUT_MS: number
@@ -44,6 +55,7 @@ export const LIMITS: {
   readonly MESSAGE_MAX_LENGTH: number
   readonly RELATIONSHIP_MAX_LENGTH: number
   readonly ACCOUNT_NAME_MAX_LENGTH: number
+  readonly GUESTBOOK_MESSAGE_MAX_LENGTH: number
 }
 
 export const WEDDING: {
@@ -66,6 +78,9 @@ export const RATE_LIMITS: {
   readonly ADMIN_LOGIN: { readonly windowMs: number; readonly max: number }
   readonly ADMIN_INVITE: { readonly windowMs: number; readonly max: number }
   readonly ACCOUNT_REGISTER: { readonly windowMs: number; readonly max: number }
+  readonly GUESTBOOK_POST: { readonly windowMs: number; readonly max: number }
+  readonly CONTENT_DELETE: { readonly windowMs: number; readonly max: number }
+  readonly PUBLIC_READ: { readonly windowMs: number; readonly max: number }
 }
 
 export const REQUEST_LIMITS: {
@@ -92,15 +107,18 @@ export const FEATURES: {
 export const GUEST_STATUS_VALUES: readonly ["pending", "invited", "responded"]
 export const PETITION_STATUS_VALUES: readonly ["pending", "approved", "denied"]
 export const COMMUNICATION_TYPE_VALUES: readonly ["email", "sms"]
+export const CONTENT_STATUS_VALUES: readonly ["pending", "approved", "hidden", "rejected"]
 
 export type GuestStatus = "pending" | "invited" | "responded"
 export type PetitionStatus = "pending" | "approved" | "denied"
 export type CommunicationType = "email" | "sms"
 export type CommunicationStatus = "sent" | "failed"
+export type ContentStatus = "pending" | "approved" | "hidden" | "rejected"
 
 export function isGuestStatus(value: unknown): value is GuestStatus
 export function isPetitionStatus(value: unknown): value is PetitionStatus
 export function isCommunicationType(value: unknown): value is CommunicationType
+export function isContentStatus(value: unknown): value is ContentStatus
 
 export interface Guest {
   id: number
@@ -187,6 +205,52 @@ export interface Petition {
   admin_notes: string | null
   created_at: string
   reviewed_at: string | null
+}
+
+export interface GuestbookEntry {
+  id: number
+  account_id: number
+  message: string
+  status: ContentStatus
+  created_at: string
+  updated_at: string
+  reviewed_at: string | null
+  deleted_at: string | null
+}
+
+/**
+ * A guestbook_entries row joined with its author account, as returned by the
+ * feed and admin-queue queries. `author_trusted` / `is_own` arrive as 0|1 from
+ * SQLite; the API layer maps them to booleans before responding.
+ */
+export interface GuestbookFeedRow {
+  id: number
+  account_id: number
+  message: string
+  status: ContentStatus
+  created_at: string
+  author_name: string
+  author_trusted: 0 | 1
+  is_own: 0 | 1
+}
+
+/** Public /api/guestbook response entry (booleans, no account_id leaked). */
+export interface GuestbookFeedEntry {
+  id: number
+  message: string
+  author_name: string
+  author_trusted: boolean
+  status: ContentStatus
+  created_at: string
+  is_own: boolean
+}
+
+/** Pending counts per moderatable content type for the digest + dashboard badge. */
+export interface ModerationCounts {
+  guestbook: number
+  media: number
+  comments: number
+  total: number
 }
 
 export interface BlocklistEntry {

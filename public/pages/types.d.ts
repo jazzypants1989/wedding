@@ -6,6 +6,8 @@ export interface ApiOptions {
   timeout?: number
   signal?: AbortSignal
   csrf?: boolean
+  /** Cookie name to read the CSRF token from (default "csrf"; guest pages use "guest_csrf"). */
+  csrfCookie?: string
   onUnauthorized?: () => void
 }
 

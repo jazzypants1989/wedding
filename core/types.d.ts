@@ -286,6 +286,9 @@ export interface Limiters {
   adminLogin: RateLimiter
   adminInvite: RateLimiter
   accountRegister: RateLimiter
+  guestbookPost: RateLimiter
+  contentDelete: RateLimiter
+  publicRead: RateLimiter
 }
 export const limiters: Limiters
 
@@ -436,7 +439,7 @@ export function route(
 export type routeImpl = (
   method: string,
   pattern: string,
-  handler: RouteHandler | AdminHandler,
+  handler: RouteHandler | AdminHandler | AccountHandler,
   options?: RouteOptions,
 ) => void
 export function clearRoutes(): void

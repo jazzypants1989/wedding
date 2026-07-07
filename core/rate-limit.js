@@ -106,6 +106,24 @@ const limiters = {
     windowMs: RATE_LIMITS.ACCOUNT_REGISTER.windowMs,
     max: RATE_LIMITS.ACCOUNT_REGISTER.max,
   }),
+
+  guestbookPost: createLimiter({
+    name: "guestbookPost",
+    windowMs: RATE_LIMITS.GUESTBOOK_POST.windowMs,
+    max: RATE_LIMITS.GUESTBOOK_POST.max,
+  }),
+
+  contentDelete: createLimiter({
+    name: "contentDelete",
+    windowMs: RATE_LIMITS.CONTENT_DELETE.windowMs,
+    max: RATE_LIMITS.CONTENT_DELETE.max,
+  }),
+
+  publicRead: createLimiter({
+    name: "publicRead",
+    windowMs: RATE_LIMITS.PUBLIC_READ.windowMs,
+    max: RATE_LIMITS.PUBLIC_READ.max,
+  }),
 }
 
 /** @type {Types.clearAllStores} */

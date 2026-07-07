@@ -85,11 +85,48 @@ export interface AdminState {
   PAGE_SIZE: number
   currentPetitions: Petition[]
   currentBlocklist: BlocklistEntry[]
+  currentModeration: ModerationItem[]
   onAuthRequired: () => void
   getGuestById: (id: number) => Guest | null
   getBlockedEntryById: (id: number) => BlocklistEntry | null
   getPetitionById: (id: number) => Petition | null
+  getModerationById: (id: number) => ModerationItem | null
 }
+
+/** @file moderation.js - Types for the admin Moderation tab (Phase 2: guestbook-only) */
+
+export interface ModerationItem {
+  id: number
+  message: string
+  author_name: string
+  author_trusted: boolean
+  status: string
+  created_at: string
+}
+
+export interface ModerationQueueResponse {
+  items: ModerationItem[]
+  type: string
+}
+
+export interface ModerationCountsResponse {
+  guestbook: number
+  media: number
+  comments: number
+  total: number
+}
+
+/** Load the pending guestbook queue into the Moderation table. */
+export function loadModeration(): Promise<void>
+
+/** Refresh the Moderation tab badge from the counts endpoint. */
+export function loadModerationCount(): Promise<void>
+
+/** Set the Moderation tab badge value/visibility. */
+export function updateModerationBadge(count: number): void
+
+/** Wire up the Moderation table + confirm modal. */
+export function initModeration(): void
 
 /** @file blocklist.js - Types for blocklist management module */
 

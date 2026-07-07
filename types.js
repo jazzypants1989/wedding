@@ -19,6 +19,16 @@ export const COMMUNICATION_TYPE = Object.freeze({
   SMS: "sms",
 })
 
+// Shared moderation status for user-generated content (guestbook entries in
+// Phase 2; comments in Phase 5). Media has its own superset enum (adds
+// `uploading`) defined when Phase 3 lands. See 00-overview reconciliation 2.
+export const CONTENT_STATUS = Object.freeze({
+  PENDING: "pending",
+  APPROVED: "approved",
+  HIDDEN: "hidden",
+  REJECTED: "rejected",
+})
+
 export const COMMUNICATION_STATUS = Object.freeze({
   SENT: "sent",
   FAILED: "failed",
@@ -46,11 +56,19 @@ export const LIMITS = Object.freeze({
   MESSAGE_MAX_LENGTH: 1000,
   RELATIONSHIP_MAX_LENGTH: 200,
   ACCOUNT_NAME_MAX_LENGTH: 100,
+  GUESTBOOK_MESSAGE_MAX_LENGTH: 2000,
 })
 
 export const GUEST_STATUS_VALUES = Object.values(GUEST_STATUS)
 export const PETITION_STATUS_VALUES = Object.values(PETITION_STATUS)
 export const COMMUNICATION_TYPE_VALUES = Object.values(COMMUNICATION_TYPE)
+export const CONTENT_STATUS_VALUES = Object.values(CONTENT_STATUS)
+
+// Moderation digest cadence (owner decision 2026-07-06: digest-only). ~daily,
+// generous of the hourly-tick drift so a run is never skipped by a few minutes.
+export const MODERATION_NOTIFY = Object.freeze({
+  DIGEST_INTERVAL_MS: 22 * 60 * 60 * 1000,
+})
 
 export const WEDDING = Object.freeze({
   COUPLE_NAMES: "Jesse & Jordana",
@@ -72,6 +90,9 @@ export const RATE_LIMITS = Object.freeze({
   ADMIN_LOGIN: { windowMs: 60 * 1000, max: 3 }, // 3 per minute
   ADMIN_INVITE: { windowMs: 60 * 60 * 1000, max: 100 }, // 100 per hour
   ACCOUNT_REGISTER: { windowMs: 60 * 60 * 1000, max: 10 }, // 10 per hour per IP (invite-code oracle guard)
+  GUESTBOOK_POST: { windowMs: 60 * 60 * 1000, max: 10 }, // 10 posts/hour, keyed per account
+  CONTENT_DELETE: { windowMs: 60 * 60 * 1000, max: 30 }, // 30 self-deletes/hour, keyed per account
+  PUBLIC_READ: { windowMs: 60 * 1000, max: 120 }, // 120/min per IP, shared across public list GETs
 })
 
 export const REQUEST_LIMITS = Object.freeze({
@@ -117,6 +138,11 @@ export function isPetitionStatus(value) {
 /** @type {Types.isCommunicationType} */
 export function isCommunicationType(value) {
   return typeof value === "string" && /** @type {readonly string[]} */ (COMMUNICATION_TYPE_VALUES).includes(value)
+}
+
+/** @type {Types.isContentStatus} */
+export function isContentStatus(value) {
+  return typeof value === "string" && /** @type {readonly string[]} */ (CONTENT_STATUS_VALUES).includes(value)
 }
 
 const SERVER_PORT = process.env.PORT || 3000

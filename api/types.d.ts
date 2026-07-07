@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 import type { RSVP, RSVPWithGuest, Stats } from "./types.js"
-import type { RouteInfo } from "../core/types.js"
+import type { RouteInfo, AccountRouteInfo } from "../core/types.js"
 
 /** @file health.js - Types for health check endpoint */
 
@@ -121,3 +121,25 @@ export function logout(req: IncomingMessage, res: ServerResponse): Promise<void>
 
 /** GET /api/account/me — cheap whoami; { account } or { account: null }, never 401. */
 export function me(req: IncomingMessage, res: ServerResponse): Promise<void>
+
+/** @file guestbook.js - Types for public guestbook endpoints */
+
+/** GET /api/guestbook — public keyset feed; interleaves the caller's own pending entries. */
+export function guestbookList(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void>
+
+/** POST /api/guestbook — sign the guestbook (withAccount); hybrid moderation on trust. */
+export function guestbookCreate(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AccountRouteInfo,
+): Promise<void>
+
+/** DELETE /api/guestbook/:id — soft-delete own entry (withAccount). */
+export function guestbookRemove(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AccountRouteInfo,
+): Promise<void>

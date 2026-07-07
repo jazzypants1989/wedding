@@ -445,9 +445,13 @@ export function cleanupTestData(db) {
     // Table might not exist in old databases
   }
 
-  // Clear guest accounts, their sessions, and app_state (wrapped like rate_limits
-  // above so older DBs without these tables don't break cleanup).
+  // Clear guest accounts, their sessions, guestbook entries, and app_state
+  // (wrapped like rate_limits above so older DBs without these tables don't
+  // break cleanup). Delete guestbook_entries explicitly: this helper's own
+  // DatabaseSync connection doesn't enable foreign_keys, so the accounts →
+  // guestbook_entries ON DELETE CASCADE would not fire here.
   try {
+    db.prepare(`DELETE FROM guestbook_entries`).run()
     db.prepare(`DELETE FROM account_sessions`).run()
     db.prepare(`DELETE FROM accounts`).run()
     db.prepare(`DELETE FROM app_state`).run()

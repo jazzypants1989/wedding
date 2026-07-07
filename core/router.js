@@ -24,6 +24,8 @@ import * as petitions from "../api/admin/petitions.js"
 import * as blocklist from "../api/admin/blocklist.js"
 import * as manualSms from "../api/admin/manual-sms.js"
 import * as account from "../api/account.js"
+import * as guestbook from "../api/guestbook.js"
+import * as moderation from "../api/admin/moderation.js"
 
 /** @type {Types.Route[]} */
 const routes = []
@@ -143,6 +145,12 @@ route("POST", "/api/account/register", account.register, { errorHandling: true }
 route("POST", "/api/account/logout", account.logout, { errorHandling: true })
 route("GET", "/api/account/me", account.me, { errorHandling: true })
 
+// Public guestbook routes. GET is public (with getOptionalAccount inside for
+// own-pending interleave); POST/DELETE require a guest account.
+route("GET", "/api/guestbook", guestbook.list, { errorHandling: true })
+route("POST", "/api/guestbook", guestbook.create, { account: true })
+route("DELETE", "/api/guestbook/:id", guestbook.remove, { account: true })
+
 // Admin auth routes (error handling only, no session required)
 route("POST", "/api/admin/login", sessions.login, { errorHandling: true })
 route("POST", "/api/admin/logout", sessions.logout, { errorHandling: true })
@@ -170,6 +178,14 @@ route("POST", "/api/admin/invite/send", invites.send, { admin: true })
 route("GET", "/api/admin/petitions", petitions.list, { admin: true })
 route("POST", "/api/admin/petitions/:id/approve", petitions.approve, { admin: true })
 route("POST", "/api/admin/petitions/:id/deny", petitions.deny, { admin: true })
+
+// Admin moderation routes (guestbook-only in Phase 2; :type is validated against
+// a fixed allowlist in the handler — never interpolated into SQL)
+route("GET", "/api/admin/moderation/queue", moderation.queue, { admin: true })
+route("GET", "/api/admin/moderation/counts", moderation.counts, { admin: true })
+route("POST", "/api/admin/moderation/:type/:id/approve", moderation.approve, { admin: true })
+route("POST", "/api/admin/moderation/:type/:id/reject", moderation.reject, { admin: true })
+route("POST", "/api/admin/moderation/:type/:id/hide", moderation.hide, { admin: true })
 
 // Admin blocklist routes
 route("GET", "/api/admin/blocklist", blocklist.list, { admin: true })

@@ -248,3 +248,16 @@ export function maskPhone(phone) {
   if (digits.length < 4) return "***"
   return "***-***-" + digits.slice(-4)
 }
+
+/** @type {Types.getAppState} */
+export function getAppState(key) {
+  /** @type {{ value: string } | undefined} */
+  const row = sql`SELECT value FROM app_state WHERE key = ${key}`.get()
+  return row ? row.value : null
+}
+
+/** @type {Types.setAppState} */
+export function setAppState(key, value) {
+  sql`INSERT INTO app_state (key, value, updated_at) VALUES (${key}, ${value}, ${now()})
+    ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`.run()
+}

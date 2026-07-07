@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Guestbook - Jordana & Jesse</title>
+  <meta name="description" content="Leave a note in Jordana and Jesse's wedding guestbook.">
+  <meta name="theme-color" content="#eee6dc">
+  <link rel="icon" type="image/png" href="/images/favicon.png">
+  <link rel="preload" as="font" type="font/woff2" href="/fonts/dm-serif-display-latin.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="/fonts/jost-latin.woff2" crossorigin>
+  <link rel="preload" as="image" imagesrcset="/images/top-mobile-414w.webp 414w, /images/top-mobile.webp 828w" imagesizes="100vw" media="(max-width: 767px)">
+  <link rel="preload" as="image" imagesrcset="/images/top-desktop-768w.webp 768w, /images/top-desktop-1440w.webp 1440w, /images/top-desktop-2400w.webp 2400w, /images/top-desktop.webp 2880w" imagesizes="100vw" media="(min-width: 768px)">
+  <link rel="stylesheet" href="/styles/tokens.css">
+  <link rel="stylesheet" href="/styles/layout.css">
+  <link rel="stylesheet" href="/styles/components.css">
+  <link rel="stylesheet" href="/styles/social.css">
+  <link rel="stylesheet" href="/pages/guestbook/guestbook.css">
+  <script src="/components/theme-init.js"></script>
+</head>
+
+<body>
+  <a href="#main-content" class="skip-link">Skip to content</a>
+
+  <div class="hero hero-small">
+    <picture>
+      <source media="(min-width: 768px)" srcset="/images/top-desktop-768w.webp 768w, /images/top-desktop-1440w.webp 1440w, /images/top-desktop-2400w.webp 2400w, /images/top-desktop.webp 2880w" sizes="100vw">
+      <img src="/images/top-mobile.webp" srcset="/images/top-mobile-414w.webp 414w, /images/top-mobile.webp 828w" sizes="100vw" alt="" class="hero-image" loading="eager" fetchpriority="high" width="828" height="590">
+    </picture>
+  </div>
+
+  <header class="site-header text-center">
+    <h1 class="couple-names"><a href="/" class="home-link">Jordana & Jesse</a></h1>
+    <p class="wedding-info">April 26, 2026 &bull; Portland, OR</p>
+  </header>
+
+  <nav class="desktop-nav" aria-label="Main navigation">
+    <ul class="nav-list">
+      <li><a href="/#" class="nav-link">Home</a></li>
+      <li><a href="/#schedule" class="nav-link">Schedule</a></li>
+      <li><a href="/#dress-code" class="nav-link">Dress Code</a></li>
+      <li><a href="/#registry" class="nav-link">Registry</a></li>
+      <li><a href="/rsvp" class="nav-link">RSVP</a></li>
+    </ul>
+  </nav>
+
+  <button class="theme-toggle desktop-theme-toggle" type="button" aria-label="Switch to dark mode"><span
+      class="theme-icon-sun" aria-hidden="true"></span><span class="theme-icon-moon" aria-hidden="true"></span></button>
+
+  <div class="mobile-nav-wrapper" id="mobile-nav-wrapper">
+    <button class="hamburger-button flex-center" id="hamburger-button" aria-expanded="false"
+      aria-label="Open navigation menu">
+      <div class="hamburger-icon" id="hamburger-icon">
+        <span class="hamburger-line"></span>
+        <span class="hamburger-line"></span>
+        <span class="hamburger-line"></span>
+        <span class="hamburger-line"></span>
+      </div>
+      <span class="sr-only">Menu</span>
+    </button>
+
+    <nav class="mobile-nav" id="mobile-nav" aria-label="Mobile navigation">
+      <ul class="nav-list">
+        <li><a href="/#" class="nav-link">Home</a></li>
+        <li><a href="/#schedule" class="nav-link">Schedule</a></li>
+        <li><a href="/#dress-code" class="nav-link">Dress Code</a></li>
+        <li><a href="/#registry" class="nav-link">Registry</a></li>
+        <li><a href="/rsvp" class="nav-link">RSVP</a></li>
+        <li><button class="theme-toggle nav-link" type="button" aria-label="Switch to dark mode"><span
+              class="theme-icon-sun" aria-hidden="true"></span><span class="theme-icon-moon"
+              aria-hidden="true"></span></button></li>
+      </ul>
+    </nav>
+
+    <span class="mobile-logo">J&J</span>
+  </div>
+
+  <noscript>
+    <div style="max-width: 600px; margin: 2rem auto; padding: 1rem; text-align: center;">
+      <h2>JavaScript Required</h2>
+      <p>The guestbook requires JavaScript to function. Please enable JavaScript in your browser and reload the page.</p>
+    </div>
+  </noscript>
+
+  <main id="main-content">
+    <section class="content-section gb-section">
+      <h2 class="gb-title">Guestbook</h2>
+      <p class="gb-intro">Leave us a note — we read every one 💗</p>
+
+      <div class="card gb-composer">
+        <form id="gb-composer-form">
+          <label for="gb-message" class="sr-only">Your message</label>
+          <textarea id="gb-message" class="gb-textarea" rows="3" maxlength="2000"
+            placeholder="Share a memory, a wish, a bit of advice…"></textarea>
+          <div class="gb-composer-actions">
+            <button type="submit" class="btn btn-primary" id="gb-submit">Sign the guestbook</button>
+          </div>
+        </form>
+        <div id="gb-pending-note" class="gb-pending-note" role="status" hidden></div>
+      </div>
+
+      <div id="gb-error" class="alert alert-error" role="alert" hidden></div>
+
+      <div id="gb-feed" class="gb-feed" aria-live="polite"></div>
+
+      <div id="gb-empty" class="empty-state" hidden>
+        No messages yet.
+        <button type="button" class="auth-link" id="gb-empty-cta">Be the first to sign!</button>
+      </div>
+
+      <div class="gb-loadmore-wrap flex-center">
+        <button type="button" class="btn btn-secondary" id="gb-loadmore" hidden>Load more</button>
+      </div>
+    </section>
+  </main>
+
+  <nav class="footer-nav" aria-label="Footer navigation">
+    <ul class="nav-list">
+      <li><a href="/#" class="nav-link">Home</a></li>
+      <li><a href="/#schedule" class="nav-link">Schedule</a></li>
+      <li><a href="/#dress-code" class="nav-link">Dress Code</a></li>
+      <li><a href="/#registry" class="nav-link">Registry</a></li>
+      <li><a href="/rsvp" class="nav-link">RSVP</a></li>
+    </ul>
+  </nav>
+
+  <footer class="site-footer">
+    <picture>
+      <source media="(min-width: 768px)" srcset="/images/bottom-desktop-768w.webp 768w, /images/bottom-desktop-1440w.webp 1440w, /images/bottom-desktop.webp 2880w" sizes="100vw">
+      <img src="/images/bottom-mobile.webp" srcset="/images/bottom-mobile-414w.webp 414w, /images/bottom-mobile.webp 828w" sizes="100vw" alt="" loading="lazy" width="828" height="363">
+    </picture>
+  </footer>
+
+  <script type="module" src="/pages/guestbook/main.js"></script>
+</body>
+
+</html>

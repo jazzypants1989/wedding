@@ -325,27 +325,8 @@
   animation: spin 0.6s linear infinite;
 }
 
-/* Error shake */
-@keyframes shake {
-  0%,
-  100% {
-    transform: translateX(0);
-  }
-  20% {
-    transform: translateX(-6px);
-  }
-  40% {
-    transform: translateX(6px);
-  }
-  60% {
-    transform: translateX(-4px);
-  }
-  80% {
-    transform: translateX(4px);
-  }
-}
-
-.form-error-shake,
+/* Error shake — @keyframes shake + .form-error-shake now live in social.css
+   (shared with the guestbook); these RSVP-only variants reuse that keyframe. */
 .lookup-result-shake,
 .petition-result-shake {
   animation: shake var(--duration-moderate) ease;
@@ -383,80 +364,4 @@
   animation: field-enter var(--duration-moderate) ease 0.6s backwards;
 }
 
-/* Confetti burst */
-.confetti-piece {
-  position: absolute;
-  border-radius: 2px;
-  animation: confetti-fall ease-out forwards;
-  will-change: transform, opacity;
-}
-
-@keyframes confetti-fall {
-  0% {
-    transform: translate(0, 0) rotate(0deg) scale(0);
-    opacity: 0;
-  }
-  10% {
-    transform: translate(0, 0) rotate(0deg) scale(1);
-    opacity: 1;
-  }
-  100% {
-    transform: translate(var(--confetti-tx), var(--confetti-ty))
-      rotate(var(--confetti-rot)) scale(0.5);
-    opacity: 0;
-  }
-}
-
-/* Mini sparkle (Yes selection) */
-.mini-sparkle {
-  position: fixed;
-  width: var(--sparkle-size, 5px);
-  height: var(--sparkle-size, 5px);
-  background: var(--sparkle-color, var(--color-primary));
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: var(--z-grand-entrance);
-  animation: mini-sparkle-pop 0.6s ease forwards;
-}
-
-.mini-sparkle::before,
-.mini-sparkle::after {
-  content: "";
-  position: absolute;
-  background: inherit;
-  border-radius: 1px;
-}
-
-.mini-sparkle::before {
-  width: 2px;
-  height: calc(var(--sparkle-size, 5px) * 2);
-  top: calc(var(--sparkle-size, 5px) * -0.5);
-  left: calc(var(--sparkle-size, 5px) / 2 - 1px);
-}
-
-.mini-sparkle::after {
-  width: calc(var(--sparkle-size, 5px) * 2);
-  height: 2px;
-  top: calc(var(--sparkle-size, 5px) / 2 - 1px);
-  left: calc(var(--sparkle-size, 5px) * -0.5);
-}
-
-@keyframes mini-sparkle-pop {
-  0% {
-    transform: translate(0, 0) scale(0) rotate(0deg);
-    opacity: 0.8;
-  }
-  35% {
-    transform: translate(
-        calc(var(--sparkle-tx) * 0.4),
-        calc(var(--sparkle-ty) * 0.4)
-      )
-      scale(1.1) rotate(35deg);
-    opacity: 1;
-  }
-  100% {
-    transform: translate(var(--sparkle-tx), var(--sparkle-ty)) scale(0)
-      rotate(90deg);
-    opacity: 0;
-  }
-}
+/* Confetti burst + mini sparkle relocated to social.css (shared with guestbook). */

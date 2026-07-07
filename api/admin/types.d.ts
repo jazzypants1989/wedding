@@ -265,6 +265,20 @@ export const list: AsyncHandler
 export const approve: ParamsHandler
 export const deny: ParamsHandler
 
+/** @file moderation.js - Types for admin moderation endpoints (Phase 2: guestbook-only) */
+
+/** GET /api/admin/moderation/queue?type=&limit=&offset= — pending items to review. */
+export function moderationQueueHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void>
+
+/** GET /api/admin/moderation/counts — pending counts per content type + total. */
+export function moderationCountsHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void>
+
 /**
  * Input for creating a petition.
  * @example

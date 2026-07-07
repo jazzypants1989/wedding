@@ -373,3 +373,89 @@ export function maskEmail(email: string | null | undefined): string | null
  * const masked = maskPhone('+15551234567'); // "***-***-4567"
  */
 export function maskPhone(phone: string | null | undefined): string | null
+
+/**
+ * Get a value from the generic app_state KV table, or null if unset.
+ * @example
+ * const ts = getAppState("moderation_last_digest_at");
+ */
+export function getAppState(key: string): string | null
+
+/**
+ * Upsert a value into the app_state KV table (refreshes updated_at).
+ * @example
+ * setAppState("moderation_last_digest_at", new Date().toISOString());
+ */
+export function setAppState(key: string, value: string): void
+
+/** @file guestbook-entries.js - Types for guestbook entry database operations */
+
+import type {
+  GuestbookEntry,
+  GuestbookFeedRow,
+  ContentStatus,
+  ModerationCounts,
+} from "../types.js"
+
+export interface CreateGuestbookEntryInput {
+  accountId: number
+  message: string
+  status: ContentStatus
+}
+
+export interface GuestbookFeedOptions {
+  /** The signed-in caller's account id, or null for anonymous requests. */
+  callerId?: number | null
+  /** Keyset cursor: only rows with id < before. Null = first page. */
+  before?: number | null
+  limit: number
+}
+
+/** Insert an entry and return the full row. */
+export function createGuestbookEntry(
+  input: CreateGuestbookEntryInput,
+): GuestbookEntry
+
+export function getGuestbookEntryById(id: number): GuestbookEntry | undefined
+
+/**
+ * The public feed: approved entries plus the caller's own pending ones,
+ * newest-first (id DESC), keyset-paginated.
+ */
+export function getGuestbookFeed(
+  options: GuestbookFeedOptions,
+): GuestbookFeedRow[]
+
+/** Soft-delete an entry only if it belongs to accountId. Returns true if a row changed. */
+export function softDeleteGuestbookEntry(
+  id: number,
+  accountId: number,
+): boolean
+
+/** Admin queue: pending entries oldest-first, offset-paginated. */
+export function getGuestbookModerationQueue(options: {
+  limit: number
+  offset: number
+}): GuestbookFeedRow[]
+
+/** Count non-deleted pending guestbook entries. */
+export function countPendingGuestbook(): number
+
+/**
+ * Transition an entry's status if its current status is in fromStatuses (and it
+ * isn't soft-deleted); stamps reviewed_at. Returns true if a row changed.
+ */
+export function setGuestbookStatus(
+  id: number,
+  fromStatuses: ContentStatus[],
+  toStatus: ContentStatus,
+): boolean
+
+/**
+ * Pending counts across moderatable content types. Tolerates the media/comments
+ * tables not existing yet (Phases 3/5) — those count 0 until their tables ship.
+ */
+export function getModerationCounts(): ModerationCounts
+
+/** ISO timestamp of the oldest pending guestbook entry, or null if none. */
+export function getOldestPendingGuestbookAt(): string | null

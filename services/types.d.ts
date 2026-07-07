@@ -1,6 +1,7 @@
 /** @file email.js - Types for email service */
 
 import type { ClientRequest, IncomingMessage } from "node:http"
+import type { ModerationCounts } from "../types.js"
 
 /**
  * Email options for sending.
@@ -93,6 +94,52 @@ export function getDefaultInviteEmail(
   guestName: string,
   inviteUrl: string,
 ): InviteEmailData
+
+/** Input for the moderation digest email. */
+export interface ModerationDigestInput {
+  counts: ModerationCounts
+  oldestCreatedAt: string | null
+}
+
+/**
+ * Build the ~daily moderation digest email (subject/text/html).
+ * @example
+ * const email = getModerationDigestEmail({ counts, oldestCreatedAt });
+ */
+export function getModerationDigestEmail(
+  input: ModerationDigestInput,
+): InviteEmailData
+
+/** @file moderation-notify.js - Types for the moderation digest service */
+
+export type DigestReason =
+  | "not_configured"
+  | "no_pending"
+  | "too_soon"
+  | "sent"
+  | "send_failed"
+
+export interface MaybeSendDigestOptions {
+  /** Injectable email service (tests pass a stub); defaults to the real one. */
+  email?: EmailService
+  /** Recipient address; defaults to SERVER.contactEmail. */
+  recipient?: string
+}
+
+export interface MaybeSendDigestResult {
+  sent: boolean
+  reason: DigestReason
+  counts?: ModerationCounts
+}
+
+/**
+ * Send the outstanding-moderation digest iff email is configured, there are
+ * pending items, and it's been >22h since the last digest. Stamps the state
+ * timestamp BEFORE sending (a failed send retries next-day, not next-hour).
+ */
+export function maybeSendModerationDigest(
+  options?: MaybeSendDigestOptions,
+): Promise<MaybeSendDigestResult>
 
 /** @file http-client.js - Types for shared HTTP request helper */
 

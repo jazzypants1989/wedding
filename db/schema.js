@@ -159,6 +159,26 @@ export function createTables(db) {
       value TEXT NOT NULL,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
+
+    -- Guestbook entries (hybrid moderation: trusted → approved, untrusted → pending)
+    CREATE TABLE IF NOT EXISTS guestbook_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id INTEGER NOT NULL,
+      message TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',        -- pending|approved|hidden|rejected
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      reviewed_at TEXT,
+      deleted_at TEXT DEFAULT NULL,
+      FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+    );
+
+    -- Serves admin/status-filtered lists. The public feed's OR-disjunction
+    -- (approved OR own-pending) makes SQLite prefer the PK scan for keyset
+    -- id DESC at this scale; don't expect this index in that query plan.
+    CREATE INDEX IF NOT EXISTS idx_guestbook_feed
+      ON guestbook_entries(status, id DESC) WHERE deleted_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_guestbook_account ON guestbook_entries(account_id);
   `)
 
   // Data integrity triggers
@@ -290,5 +310,35 @@ export function runMigrations(db) {
       END
     `)
     record.run("add_account_triggers")
+  }
+
+  // Guestbook entries: status-enum CHECK triggers + updated_at auto-trigger.
+  if (!applied.get("add_guestbook_triggers")) {
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS check_guestbook_status_insert
+      BEFORE INSERT ON guestbook_entries
+      FOR EACH ROW
+      WHEN NEW.status NOT IN ('pending', 'approved', 'hidden', 'rejected')
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid guestbook status. Must be: pending, approved, hidden, or rejected');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS check_guestbook_status_update
+      BEFORE UPDATE ON guestbook_entries
+      FOR EACH ROW
+      WHEN NEW.status NOT IN ('pending', 'approved', 'hidden', 'rejected')
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid guestbook status. Must be: pending, approved, hidden, or rejected');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS auto_updated_at_guestbook_entries
+      AFTER UPDATE ON guestbook_entries
+      FOR EACH ROW
+      WHEN NEW.updated_at = OLD.updated_at
+      BEGIN
+        UPDATE guestbook_entries SET updated_at = datetime('now') WHERE id = NEW.id;
+      END
+    `)
+    record.run("add_guestbook_triggers")
   }
 }

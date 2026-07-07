@@ -199,10 +199,13 @@ export async function api(endpoint, options = {}) {
   }
 
   if (options.csrf && options.method && options.method !== "GET") {
+    // Admin pages read the "csrf" cookie; guest pages pass csrfCookie:"guest_csrf"
+    // so the correct double-submit token goes out for the guest session.
+    const csrfCookieName = options.csrfCookie || "csrf"
     const cookiePairs = document.cookie.split("; ")
     for (const pair of cookiePairs) {
       const eqIdx = pair.indexOf("=")
-      if (eqIdx !== -1 && pair.slice(0, eqIdx) === "csrf") {
+      if (eqIdx !== -1 && pair.slice(0, eqIdx) === csrfCookieName) {
         headers["X-CSRF-Token"] = pair.slice(eqIdx + 1)
         break
       }

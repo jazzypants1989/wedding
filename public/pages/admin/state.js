@@ -28,6 +28,7 @@ export const state = {
   PAGE_SIZE: 25,
   currentPetitions: [],
   currentBlocklist: [],
+  currentModeration: [],
 
   onAuthRequired: () => {},
   getGuestById(id) {
@@ -38,5 +39,8 @@ export const state = {
   },
   getPetitionById(id) {
     return this.currentPetitions.find((p) => p.id === id) || null
+  },
+  getModerationById(id) {
+    return this.currentModeration.find((m) => m.id === id) || null
   },
 }

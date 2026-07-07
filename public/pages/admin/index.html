@@ -14,6 +14,7 @@
   <link rel="stylesheet" href="/styles/tokens.css">
   <link rel="stylesheet" href="/styles/layout.css">
   <link rel="stylesheet" href="/styles/components.css">
+  <link rel="stylesheet" href="/styles/social.css">
   <link rel="stylesheet" href="/pages/admin/admin.css">
   <script src="/components/theme-init.js"></script>
 </head>
@@ -87,6 +88,11 @@
           aria-controls="tab-petitions" tabindex="-1">
           Petitions
           <span id="petitions-badge" class="tab-badge" hidden aria-label="pending petitions">0</span>
+        </button>
+        <button class="tab-btn" data-tab="moderation" role="tab" id="tab-btn-moderation" aria-selected="false"
+          aria-controls="tab-moderation" tabindex="-1">
+          Moderation
+          <span id="moderation-badge" class="tab-badge" hidden aria-label="items awaiting review">0</span>
         </button>
         <button class="tab-btn" data-tab="blocklist" role="tab" id="tab-btn-blocklist" aria-selected="false"
           aria-controls="tab-blocklist" tabindex="-1">Blocklist</button>
@@ -197,6 +203,31 @@
                 </tr>
               </thead>
               <tbody id="petitions-tbody">
+                <!-- Populated by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Moderation Tab -->
+      <div id="tab-moderation" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-moderation" hidden>
+        <div class="card">
+          <div class="card-header flex-between">
+            <h2>Awaiting Review</h2>
+          </div>
+
+          <div class="table-container">
+            <table id="moderation-table">
+              <thead>
+                <tr>
+                  <th scope="col">Author</th>
+                  <th scope="col">Message</th>
+                  <th scope="col" class="hide-mobile">Submitted</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="moderation-tbody">
                 <!-- Populated by JS -->
               </tbody>
             </table>
@@ -468,6 +499,20 @@
     <div class="modal-actions">
       <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
       <button type="button" class="btn btn-danger" id="confirm-deny-btn">Deny Petition</button>
+    </div>
+  </dialog>
+
+  <dialog id="moderation-modal" aria-labelledby="moderation-modal-title">
+    <div class="modal-header flex-between">
+      <h2 id="moderation-modal-title">Review Message</h2>
+      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
+    </div>
+    <p id="moderation-modal-desc"></p>
+    <blockquote id="moderation-modal-message" class="moderation-quote"></blockquote>
+    <div id="moderation-error" class="alert alert-error" role="alert" hidden></div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
+      <button type="button" class="btn btn-primary" id="moderation-confirm-btn">Approve</button>
     </div>
   </dialog>
 

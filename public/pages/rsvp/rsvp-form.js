@@ -10,6 +10,7 @@ import {
   api,
 } from "../utils.js"
 import { fireConfetti, setButtonLoading } from "./utils.js"
+import { miniSparkle } from "../../components/celebrate.js"
 
 /** @type {Types.RsvpFormState} */
 const state = { inviteCode: null, guestData: null }
@@ -91,7 +92,9 @@ function setupFormListeners() {
         attendingDetails.classList.toggle("attending-details-open", isAttending)
         partySize.required = isAttending
         if (isAttending) {
-          miniSparkle(e.target)
+          // Centre the sparkle burst on the radio card, matching prior behaviour.
+          const card = e.target.closest(".radio-card")
+          miniSparkle(card instanceof HTMLElement ? card : e.target)
         }
       }
     })
@@ -194,40 +197,5 @@ export async function initRsvpForm() {
     showForm(data)
   } catch (err) {
     showError(getErrorMessage(err))
-  }
-}
-
-/** @type {Types.miniSparkle} */
-function miniSparkle(element) {
-  console.log("sparkle")
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return
-
-  const label = element.closest(".radio-card")
-  if (!label) return
-  const rect = label.getBoundingClientRect()
-  const count = 9
-  const colors = ["var(--color-primary)", "#FFD700", "#FFF0D4"]
-  const cx = rect.left + rect.width / 2
-  const cy = rect.top + rect.height / 2
-
-  for (let i = 0; i < count; i++) {
-    const dot = document.createElement("div")
-    dot.className = "mini-sparkle"
-
-    const angle = (i / count) * 360 + (Math.random() * 20 - 10)
-    const rad = (angle * Math.PI) / 180
-    const dist = 18 + Math.random() * 35
-    const size = 3 + Math.random() * 4
-
-    dot.style.left = cx + "px"
-    dot.style.top = cy + "px"
-    dot.style.setProperty("--sparkle-size", size + "px")
-    dot.style.setProperty("--sparkle-color", colors[i % colors.length])
-    dot.style.setProperty("--sparkle-tx", Math.cos(rad) * dist + "px")
-    dot.style.setProperty("--sparkle-ty", Math.sin(rad) * dist + "px")
-    dot.style.animationDelay = Math.random() * 120 + "ms"
-
-    dot.addEventListener("animationend", () => dot.remove())
-    document.body.appendChild(dot)
   }
 }

@@ -9,6 +9,7 @@ import { cleanExpiredSessions } from "./db/sessions.js"
 import { cleanExpiredAccountSessions } from "./db/account-sessions.js"
 import { cleanAllExpired as cleanExpiredRateLimits } from "./core/rate-limit.js"
 import { cleanOldLogs } from "./core/utils.js"
+import { maybeSendModerationDigest } from "./services/moderation-notify.js"
 
 import * as router from "./core/router.js"
 import { serveStatic } from "./core/static.js"
@@ -66,6 +67,12 @@ setInterval(
     cleanExpiredAccountSessions()
     cleanExpiredRateLimits()
     cleanOldLogs()
+    // Discover outstanding pending content and send the ~daily digest (its own
+    // internal 22h guard makes this a no-op most hours). Fire-and-forget: a
+    // failed send must never crash the tick.
+    maybeSendModerationDigest().catch((err) => {
+      console.error("Moderation digest error:", err)
+    })
   },
   60 * 60 * 1000,
 ).unref()

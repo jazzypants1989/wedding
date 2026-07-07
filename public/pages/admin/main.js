@@ -10,6 +10,7 @@ import { initCSVImport } from "./csv-import.js"
 import { initPetitions, loadPetitions, loadPetitionCount } from "./petitions.js"
 import { initBlocklist, loadBlocklist } from "./blocklist.js"
 import { initManualSms } from "./manual-sms.js"
+import { initModeration, loadModeration, loadModerationCount } from "./moderation.js"
 import { initThemeToggle } from "../../components/theme-toggle.js"
 
 /** @type {Types.onLoginSuccess} */
@@ -17,6 +18,7 @@ function onLoginSuccess() {
   loadStats()
   loadGuests()
   loadPetitionCount()
+  loadModerationCount()
 }
 
 /** @type {Types.switchTab} */
@@ -42,6 +44,8 @@ function switchTab(tabId) {
     loadPetitions()
   } else if (tabId === "blocklist") {
     loadBlocklist()
+  } else if (tabId === "moderation") {
+    loadModeration()
   }
 }
 
@@ -95,6 +99,7 @@ function init() {
   initPetitions()
   initBlocklist()
   initManualSms()
+  initModeration()
   initThemeToggle()
 
   checkSession()
