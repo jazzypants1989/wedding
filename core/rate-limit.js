@@ -100,6 +100,12 @@ const limiters = {
     windowMs: RATE_LIMITS.ADMIN_INVITE.windowMs,
     max: RATE_LIMITS.ADMIN_INVITE.max,
   }),
+
+  accountRegister: createLimiter({
+    name: "accountRegister",
+    windowMs: RATE_LIMITS.ACCOUNT_REGISTER.windowMs,
+    max: RATE_LIMITS.ACCOUNT_REGISTER.max,
+  }),
 }
 
 /** @type {Types.clearAllStores} */

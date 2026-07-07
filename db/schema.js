@@ -115,6 +115,50 @@ export function createTables(db) {
     );
 
     CREATE INDEX IF NOT EXISTS idx_rate_limits_reset ON rate_limits(reset_at);
+
+    -- Guest accounts (passwordless; trusted = registered with a household invite code)
+    CREATE TABLE IF NOT EXISTS accounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guest_id INTEGER,                       -- NULL for open (untrusted) registration
+      name TEXT NOT NULL,
+      name_normalized TEXT NOT NULL,          -- normalizeName(name); enables re-login match
+      relation TEXT,
+      contact_email TEXT,                     -- optional; enables magic-link recovery (Phase 6)
+      trusted INTEGER NOT NULL DEFAULT 0 CHECK(trusted IN (0, 1)),
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      deleted_at TEXT DEFAULT NULL,
+      FOREIGN KEY (guest_id) REFERENCES guests(id) ON DELETE SET NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_accounts_guest_id ON accounts(guest_id);
+    CREATE INDEX IF NOT EXISTS idx_accounts_deleted_at ON accounts(deleted_at);
+    -- One account per (household guest record, person name); allows re-login by code+name.
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_guest_name
+      ON accounts(guest_id, name_normalized)
+      WHERE guest_id IS NOT NULL AND deleted_at IS NULL;
+
+    -- Guest sessions (N concurrent per account, unlike the single-admin sessions table)
+    CREATE TABLE IF NOT EXISTS account_sessions (
+      token TEXT PRIMARY KEY,                 -- SHA256 hex of bearer token (hashToken())
+      account_id INTEGER NOT NULL,
+      csrf_token TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      expires_at TEXT NOT NULL,
+      last_activity_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      csrf_rotated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_account_sessions_account_id ON account_sessions(account_id);
+    CREATE INDEX IF NOT EXISTS idx_account_sessions_expires_at ON account_sessions(expires_at);
+
+    -- Generic KV state (used by the Phase 2 moderation digest, and future one-off state)
+    CREATE TABLE IF NOT EXISTS app_state (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
   `)
 
   // Data integrity triggers
@@ -232,5 +276,19 @@ export function runMigrations(db) {
       END
     `)
     record.run("add_updated_at_triggers")
+  }
+
+  // Guest accounts: updated_at auto-trigger
+  if (!applied.get("add_account_triggers")) {
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS auto_updated_at_accounts
+      AFTER UPDATE ON accounts
+      FOR EACH ROW
+      WHEN NEW.updated_at = OLD.updated_at
+      BEGIN
+        UPDATE accounts SET updated_at = datetime('now') WHERE id = NEW.id;
+      END
+    `)
+    record.run("add_account_triggers")
   }
 }

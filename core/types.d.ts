@@ -67,6 +67,36 @@ export function withErrorHandling(handler: RouteHandler): WrappedHandler
 
 export function withAdmin(handler: AdminHandler): WrappedHandler
 
+/** Route info handed to a withAccount()-wrapped handler: the validated guest session. */
+export interface AccountRouteInfo extends RouteInfo {
+  account: AccountSession
+}
+
+export type AccountHandler = (
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AccountRouteInfo,
+) => void | Promise<void>
+
+export function withAccount(handler: AccountHandler): WrappedHandler
+
+/** Guest cookies — SameSite=Lax (deliberate deviation from admin Strict), Max-Age 180d. */
+export function createAccountSessionCookies(
+  session: { token: string; csrf_token: string },
+  secure?: boolean,
+): string[]
+
+export function clearAccountSessionCookies(): string[]
+
+/**
+ * Parse the guest_session cookie and return the validated session, or null.
+ * Never throws / never 401s — for public GETs that flag the caller's own
+ * pending content. Lives in core/auth.js (not db/) to avoid an import cycle.
+ */
+export function getOptionalAccount(
+  req: IncomingMessage,
+): AccountSession | null
+
 export interface CSVRow {
   _lineNumber: number
   [key: string]: string | number
@@ -211,6 +241,9 @@ interface AuditActions {
   readonly MANUAL_SMS_MARK: "MANUAL_SMS_MARK"
   readonly RSVP_SUBMIT: "RSVP_SUBMIT"
   readonly CSRF_FAILURE: "CSRF_FAILURE"
+  readonly ACCOUNT_REGISTER: "ACCOUNT_REGISTER"
+  readonly ACCOUNT_LOGIN: "ACCOUNT_LOGIN"
+  readonly ACCOUNT_LOGOUT: "ACCOUNT_LOGOUT"
 }
 
 export function log(event: AuditEvent): void
@@ -252,6 +285,7 @@ export interface Limiters {
   lookup: RateLimiter
   adminLogin: RateLimiter
   adminInvite: RateLimiter
+  accountRegister: RateLimiter
 }
 export const limiters: Limiters
 
@@ -357,6 +391,7 @@ export interface RouteContext {
 
 export interface RouteOptions {
   admin?: boolean
+  account?: boolean
   errorHandling?: boolean
 }
 
@@ -383,6 +418,12 @@ export function route(
   pattern: string,
   handler: AdminHandler,
   options: { admin: true },
+): void
+export function route(
+  method: string,
+  pattern: string,
+  handler: AccountHandler,
+  options: { account: true },
 ): void
 export function route(
   method: string,

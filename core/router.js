@@ -2,7 +2,7 @@
 /** @import * as Types from './types.js' */
 
 import { sendJson } from "./http.js"
-import { withErrorHandling, withAdmin } from "./auth.js"
+import { withErrorHandling, withAdmin, withAccount } from "./auth.js"
 import * as health from "../api/health.js"
 import * as config from "../api/config.js"
 import * as rsvp from "../api/rsvp.js"
@@ -23,6 +23,7 @@ import * as invites from "../api/admin/invites.js"
 import * as petitions from "../api/admin/petitions.js"
 import * as blocklist from "../api/admin/blocklist.js"
 import * as manualSms from "../api/admin/manual-sms.js"
+import * as account from "../api/account.js"
 
 /** @type {Types.Route[]} */
 const routes = []
@@ -75,6 +76,8 @@ export function route(method, pattern, handler, options = {}) {
   let wrappedHandler
   if (options.admin) {
     wrappedHandler = withAdmin(/** @type {Types.AdminHandler} */ (handler))
+  } else if (options.account) {
+    wrappedHandler = withAccount(/** @type {Types.AccountHandler} */ (handler))
   } else if (options.errorHandling) {
     wrappedHandler = withErrorHandling(/** @type {Types.RouteHandler} */ (handler))
   } else {
@@ -133,6 +136,12 @@ route("GET", "/api/rsvp/:code", rsvp.get, { errorHandling: true })
 route("POST", "/api/rsvp/:code", rsvp.post, { errorHandling: true })
 route("POST", "/api/lookup", lookup.lookup, { errorHandling: true })
 route("POST", "/api/petition", lookup.petition, { errorHandling: true })
+
+// Guest account routes (public: register is an invite-code oracle guarded by its
+// own rate limiter; logout/me are cheap and never 401)
+route("POST", "/api/account/register", account.register, { errorHandling: true })
+route("POST", "/api/account/logout", account.logout, { errorHandling: true })
+route("GET", "/api/account/me", account.me, { errorHandling: true })
 
 // Admin auth routes (error handling only, no session required)
 route("POST", "/api/admin/login", sessions.login, { errorHandling: true })

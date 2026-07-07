@@ -9,7 +9,12 @@ import {
   updateSessionActivity,
   rotateCsrfToken,
 } from "../db/sessions.js"
-import { SESSION, SERVER } from "../types.js"
+import {
+  getAccountSession,
+  updateAccountSessionActivity,
+  rotateAccountCsrfToken,
+} from "../db/account-sessions.js"
+import { SESSION, GUEST_SESSION, SERVER } from "../types.js"
 import { log, AUDIT_ACTIONS } from "./utils.js"
 import { getClientIp } from "./rate-limit.js"
 
@@ -71,6 +76,31 @@ function clearSessionCookies() {
   ]
 }
 
+// Guest sessions are long-lived (180 days) and deliberately SameSite=Lax rather
+// than the admin's Strict: guests arrive by following links in texts/emails, and
+// a Strict cookie is withheld on that cross-site top-level navigation, so every
+// visit would look logged-out. CSRF double-submit still guards every mutation.
+const GUEST_COOKIE_MAX_AGE = GUEST_SESSION.DURATION_MS / 1000 // 15552000s (180d)
+
+/** @type {Types.createAccountSessionCookies} */
+function createAccountSessionCookies(session, secure = false) {
+  const secureFlag = secure ? "; Secure" : ""
+  return [
+    // Session cookie - HttpOnly so JS can't access it
+    `guest_session=${session.token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${GUEST_COOKIE_MAX_AGE}${secureFlag}`,
+    // CSRF cookie - NOT HttpOnly so JS can read it for the header
+    `guest_csrf=${session.csrf_token}; Path=/; SameSite=Lax; Max-Age=${GUEST_COOKIE_MAX_AGE}${secureFlag}`,
+  ]
+}
+
+/** @type {Types.clearAccountSessionCookies} */
+function clearAccountSessionCookies() {
+  return [
+    "guest_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0",
+    "guest_csrf=; Path=/; SameSite=Lax; Max-Age=0",
+  ]
+}
+
 /** @type {Types.validateCsrf} */
 function validateCsrf(req, session) {
   const headerValue = req.headers["x-csrf-token"]
@@ -94,6 +124,8 @@ export {
   parseCookies,
   createSessionCookies,
   clearSessionCookies,
+  createAccountSessionCookies,
+  clearAccountSessionCookies,
   validateCsrf,
   withErrorHandling,
 }
@@ -176,4 +208,59 @@ export function withAdmin(handler) {
 
     return await handler(req, res, { ...routeInfo, session: updatedSession })
   })
+}
+
+/** @type {Types.withAccount} */
+export function withAccount(handler) {
+  return withErrorHandling(async (req, res, routeInfo) => {
+    const cookies = parseCookies(req.headers.cookie)
+    const sessionToken = cookies.guest_session
+
+    if (!sessionToken) {
+      return sendJson(res, 401, { error: "Sign in to participate" })
+    }
+
+    const session = getAccountSession(sessionToken)
+    if (!session) {
+      return sendJson(res, 401, { error: "Session expired or invalid" })
+    }
+
+    updateAccountSessionActivity(sessionToken)
+
+    if (req.method && ["POST", "PUT", "DELETE", "PATCH"].includes(req.method)) {
+      if (!validateCsrf(req, session)) {
+        log({
+          action: AUDIT_ACTIONS.CSRF_FAILURE,
+          ip: getClientIp(req),
+          details: { method: req.method, url: req.url, kind: "guest" },
+        })
+        return sendJson(res, 403, { error: "Invalid CSRF token" })
+      }
+    }
+
+    let updatedSession = session
+    if (session.csrf_rotated_at) {
+      const rotatedAt = new Date(session.csrf_rotated_at)
+      const csrfAge = Date.now() - rotatedAt.getTime()
+      if (csrfAge > GUEST_SESSION.CSRF_ROTATION_MS) {
+        const newCsrfToken = rotateAccountCsrfToken(sessionToken)
+        const secureFlag = SERVER.baseUrl.startsWith("https") ? "; Secure" : ""
+        res.setHeader(
+          "Set-Cookie",
+          `guest_csrf=${newCsrfToken}; Path=/; SameSite=Lax; Max-Age=${GUEST_COOKIE_MAX_AGE}${secureFlag}`,
+        )
+        updatedSession = { ...session, csrf_token: newCsrfToken }
+      }
+    }
+
+    return await handler(req, res, { ...routeInfo, account: updatedSession })
+  })
+}
+
+/** @type {Types.getOptionalAccount} */
+export function getOptionalAccount(req) {
+  const cookies = parseCookies(req.headers.cookie)
+  const sessionToken = cookies.guest_session
+  if (!sessionToken) return null
+  return getAccountSession(sessionToken)
 }

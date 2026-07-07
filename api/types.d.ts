@@ -98,3 +98,26 @@ export function getAllRsvps(options?: GetAllRsvpsOptions): RSVPWithGuest[]
  * const stats = getStats();
  */
 export function getStats(): Stats
+
+/** @file account.js - Types for guest account endpoints */
+
+import type { Account } from "./types.js"
+
+/** Public projection of an account safe to return in API responses. */
+export interface PublicAccount {
+  id: number
+  name: string
+  relation: string | null
+  trusted: 0 | 1
+}
+
+export function publicAccount(account: Account): PublicAccount
+
+/** POST /api/account/register — trusted claim / re-login / untrusted open signup. */
+export function register(req: IncomingMessage, res: ServerResponse): Promise<void>
+
+/** POST /api/account/logout — clears guest cookies, deletes session; 200 always. */
+export function logout(req: IncomingMessage, res: ServerResponse): Promise<void>
+
+/** GET /api/account/me — cheap whoami; { account } or { account: null }, never 401. */
+export function me(req: IncomingMessage, res: ServerResponse): Promise<void>

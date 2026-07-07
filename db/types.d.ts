@@ -185,6 +185,58 @@ export function rotateCsrfToken(token: string): string
  */
 export function cleanExpiredSessions(): void
 
+/** @file accounts.js - Types for guest account database operations */
+
+import type { Account, AccountSession } from "../types.js"
+
+export interface CreateAccountInput {
+  guestId: number | null
+  name: string
+  relation?: string | null
+  contactEmail?: string | null
+  trusted: 0 | 1
+}
+
+/**
+ * Create a guest account (computes name_normalized, normalizes contact email).
+ * @example
+ * const account = createAccount({ guestId: 1, name: "Dana Smith", trusted: 1 });
+ */
+export function createAccount(input: CreateAccountInput): Account
+
+/**
+ * Re-login lookup: the account previously registered against this household
+ * guest record with this normalized name. Excludes soft-deleted accounts.
+ */
+export function findAccountByGuestAndName(
+  guestId: number,
+  nameNormalized: string,
+): Account | undefined
+
+export function getAccountById(id: number): Account | undefined
+
+/** @file account-sessions.js - Types for guest session database operations */
+
+/**
+ * Create a guest session (returns plaintext token to client). Does NOT clear
+ * other sessions — caps at GUEST_SESSION.MAX_SESSIONS_PER_ACCOUNT per account.
+ */
+export function createAccountSession(accountId: number): CreateSessionResult
+
+/**
+ * Get a guest session by token, joined with its account (validates absolute
+ * expiration, idle timeout, and that the account isn't soft-deleted).
+ */
+export function getAccountSession(token: string): AccountSession | null
+
+export function updateAccountSessionActivity(token: string): void
+
+export function deleteAccountSession(token: string): void
+
+export function rotateAccountCsrfToken(token: string): string
+
+export function cleanExpiredAccountSessions(): void
+
 /** @file utils.js - Types for database utility functions */
 
 import type { CommunicationType, CommunicationStatus, Guest } from "../types.js"

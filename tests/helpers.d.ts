@@ -210,6 +210,61 @@ export type AdminFetchFn = (
 ) => Promise<Response>
 export type CleanupTestDataFn = (db: DatabaseSync) => void
 
+export interface TestAccountOverrides {
+  guest_id?: number | bigint | null
+  name?: string
+  relation?: string | null
+  contact_email?: string | null
+  trusted?: 0 | 1
+}
+
+export interface TestAccount {
+  id: number | bigint
+  guest_id: number | bigint | null
+  name: string
+  name_normalized: string
+  relation: string | null
+  contact_email: string | null
+  trusted: 0 | 1
+}
+
+export interface AccountSessionAuth {
+  token: string
+  csrfToken: string | null
+  cookieHeader: string | null
+}
+
+/** Minimal auth shape accountFetch needs (register results & session factories both satisfy it). */
+export interface AccountFetchAuth {
+  csrfToken: string | null
+  cookieHeader: string | null
+}
+
+export interface AccountRegisterResult {
+  status: number
+  data: Record<string, unknown>
+  csrfToken: string | null
+  cookieHeader: string | null
+}
+
+export type CreateTestAccountFn = (
+  db: DatabaseSync,
+  overrides?: TestAccountOverrides
+) => TestAccount
+export type CreateTestAccountSessionFn = (
+  db: DatabaseSync,
+  accountId: number | bigint
+) => { token: string; csrfToken: string; cookieHeader: string }
+export type AccountRegisterFn = (
+  body: Record<string, unknown>,
+  options?: { ip?: string }
+) => Promise<AccountRegisterResult>
+export type AccountFetchFn = (
+  path: string,
+  options: AdminFetchOptions,
+  auth: AccountFetchAuth
+) => Promise<Response>
+
 export const startServer: StartServerFn
 export const stopServer: StopServerFn
 export const getTestDb: GetTestDbFn
@@ -222,3 +277,7 @@ export const removeFromBlocklist: RemoveFromBlocklistFn
 export const adminLogin: AdminLoginFn
 export const adminFetch: AdminFetchFn
 export const cleanupTestData: CleanupTestDataFn
+export const createTestAccount: CreateTestAccountFn
+export const createTestAccountSession: CreateTestAccountSessionFn
+export const accountRegister: AccountRegisterFn
+export const accountFetch: AccountFetchFn

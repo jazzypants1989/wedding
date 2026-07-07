@@ -50,6 +50,9 @@ export interface CreateGuestResult {
 
 export function getGuestByInviteCode(code: string): Guest | undefined
 
+/** Registration-only case-insensitive (COLLATE NOCASE) invite-code lookup. */
+export function getGuestByInviteCodeNoCase(code: string): Guest | undefined
+
 export function getGuestByEmail(
   email: string | null | undefined,
 ): Guest | undefined

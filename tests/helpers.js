@@ -1,7 +1,7 @@
 /**
  * @file Test utilities for integration testing
  */
-/** @import { StartServerFn, StopServerFn, GetTestDbFn, CreateTestGuestFn, DeleteTestGuestFn, CreateTestPetitionFn, DeleteTestPetitionFn, AddToBlocklistFn, RemoveFromBlocklistFn, AdminLoginFn, AdminFetchFn, CleanupTestDataFn } from './helpers.js' */
+/** @import { StartServerFn, StopServerFn, GetTestDbFn, CreateTestGuestFn, DeleteTestGuestFn, CreateTestPetitionFn, DeleteTestPetitionFn, AddToBlocklistFn, RemoveFromBlocklistFn, AdminLoginFn, AdminFetchFn, CleanupTestDataFn, CreateTestAccountFn, CreateTestAccountSessionFn, AccountRegisterFn, AccountFetchFn } from './helpers.js' */
 /** @import { ChildProcessWithoutNullStreams } from 'node:child_process' */
 
 import { spawn } from "node:child_process"
@@ -24,8 +24,11 @@ try {
 // Use a temporary database file for test isolation (never touch production DB)
 const TEST_DB_PATH = path.join(os.tmpdir(), `wedding-test-${process.pid}-${Date.now()}.db`)
 
-// Test configuration
-export const TEST_PORT = 3001
+// Test configuration. Port is overridable via TEST_SERVER_PORT so a second
+// integration file (which node --test may run concurrently with api.test.js)
+// can bind its own port instead of colliding on 3001. Set the env var before
+// importing this module — see tests/integration/accounts.test.js.
+export const TEST_PORT = Number(process.env.TEST_SERVER_PORT) || 3001
 export const BASE_URL = `http://localhost:${TEST_PORT}`
 
 /** @type {ChildProcessWithoutNullStreams | null} */
@@ -313,6 +316,114 @@ export async function adminFetch(path, options = {}, auth) {
   })
 }
 
+/**
+ * Local copy of db/utils.js normalizeName (helpers avoid importing db modules).
+ * @param {string} name
+ */
+function normalizeNameLocal(name) {
+  return String(name || "")
+    .toLowerCase()
+    .trim()
+    .split(" ")
+    .filter((w) => w !== "")
+    .join(" ")
+}
+
+/**
+ * Local copy of db/sessions.js hashToken (helpers avoid importing db modules).
+ * @param {string} token
+ */
+function hashTokenLocal(token) {
+  return crypto.createHash("sha256").update(token).digest("hex")
+}
+
+/** @type {CreateTestAccountFn} */
+export function createTestAccount(db, overrides = {}) {
+  const name = overrides.name ?? "Test Account"
+  const trusted = /** @type {0 | 1} */ (overrides.trusted ?? 0)
+  const account = {
+    guest_id: null,
+    relation: null,
+    contact_email: null,
+    ...overrides,
+    name,
+    trusted,
+  }
+  const nameNormalized = normalizeNameLocal(account.name)
+
+  const result = db
+    .prepare(
+      `INSERT INTO accounts (guest_id, name, name_normalized, relation, contact_email, trusted)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      account.guest_id,
+      account.name,
+      nameNormalized,
+      account.relation,
+      account.contact_email,
+      account.trusted,
+    )
+
+  return { ...account, id: result.lastInsertRowid, name_normalized: nameNormalized }
+}
+
+/** @type {CreateTestAccountSessionFn} */
+export function createTestAccountSession(db, accountId) {
+  const token = crypto.randomBytes(32).toString("hex")
+  const csrfToken = crypto.randomBytes(32).toString("hex")
+  const tokenHash = hashTokenLocal(token)
+  const expiresAt = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString()
+
+  db.prepare(
+    `INSERT INTO account_sessions (token, account_id, csrf_token, expires_at)
+     VALUES (?, ?, ?, ?)`,
+  ).run(tokenHash, accountId, csrfToken, expiresAt)
+
+  return {
+    token,
+    csrfToken,
+    cookieHeader: `guest_session=${token}; guest_csrf=${csrfToken}`,
+  }
+}
+
+/** @type {AccountRegisterFn} */
+export async function accountRegister(body, { ip } = {}) {
+  /** @type {Record<string, string>} */
+  const headers = { "Content-Type": "application/json" }
+  // Each caller passes a unique IP so the shared 10/h ACCOUNT_REGISTER limiter
+  // (per-IP) doesn't trip when a single test file registers many accounts.
+  if (ip) headers["X-Forwarded-For"] = ip
+
+  const res = await fetch(`${BASE_URL}/api/account/register`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  })
+  const data = /** @type {Record<string, unknown>} */ (await res.json())
+
+  const cookies = res.headers.getSetCookie()
+  const sessionCookie = cookies.find((c) => c.startsWith("guest_session="))
+  const csrfCookie = cookies.find((c) => c.startsWith("guest_csrf="))
+  const csrfToken = csrfCookie ? csrfCookie.split("=")[1].split(";")[0] : null
+  const cookieHeader =
+    sessionCookie && csrfCookie
+      ? `${sessionCookie.split(";")[0]}; ${csrfCookie.split(";")[0]}`
+      : null
+
+  return { status: res.status, data, csrfToken, cookieHeader }
+}
+
+/** @type {AccountFetchFn} */
+export async function accountFetch(path, options = {}, auth) {
+  /** @type {Record<string, string>} */
+  const headers = { ...options.headers }
+  if (auth.cookieHeader) headers["Cookie"] = auth.cookieHeader
+  if (auth.csrfToken) headers["X-CSRF-Token"] = auth.csrfToken
+
+  return fetch(`${BASE_URL}${path}`, { ...options, headers })
+}
+
 /** @type {CleanupTestDataFn} */
 export function cleanupTestData(db) {
   // Delete test guests (those with test- email prefix)
@@ -332,5 +443,15 @@ export function cleanupTestData(db) {
     db.prepare(`DELETE FROM rate_limits`).run()
   } catch (e) {
     // Table might not exist in old databases
+  }
+
+  // Clear guest accounts, their sessions, and app_state (wrapped like rate_limits
+  // above so older DBs without these tables don't break cleanup).
+  try {
+    db.prepare(`DELETE FROM account_sessions`).run()
+    db.prepare(`DELETE FROM accounts`).run()
+    db.prepare(`DELETE FROM app_state`).run()
+  } catch (e) {
+    // Tables might not exist in old databases
   }
 }

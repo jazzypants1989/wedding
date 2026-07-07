@@ -6,6 +6,7 @@ import http from "node:http"
 import { sendJson } from "./core/http.js"
 import { init, close } from "./db/connection.js"
 import { cleanExpiredSessions } from "./db/sessions.js"
+import { cleanExpiredAccountSessions } from "./db/account-sessions.js"
 import { cleanAllExpired as cleanExpiredRateLimits } from "./core/rate-limit.js"
 import { cleanOldLogs } from "./core/utils.js"
 
@@ -54,6 +55,7 @@ init()
 console.log("Database initialized")
 
 cleanExpiredSessions()
+cleanExpiredAccountSessions()
 cleanExpiredRateLimits()
 cleanOldLogs()
 console.log("Expired sessions, rate limits, and old audit logs cleaned")
@@ -61,6 +63,7 @@ console.log("Expired sessions, rate limits, and old audit logs cleaned")
 setInterval(
   () => {
     cleanExpiredSessions()
+    cleanExpiredAccountSessions()
     cleanExpiredRateLimits()
     cleanOldLogs()
   },

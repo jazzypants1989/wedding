@@ -37,6 +37,14 @@ export function getGuestByInviteCode(code) {
   return sql`SELECT * FROM guests WHERE invite_code = ${code} AND deleted_at IS NULL`.get()
 }
 
+// Account registration lookup only: codes are hand-typed on phones where the auth
+// sheet auto-capitalizes, so match case-insensitively. The RSVP flow's BINARY
+// getGuestByInviteCode stays exact — its codes arrive verbatim via links.
+/** @type {Types.getGuestByInviteCodeNoCase} */
+export function getGuestByInviteCodeNoCase(code) {
+  return sql`SELECT * FROM guests WHERE invite_code = ${code} COLLATE NOCASE AND deleted_at IS NULL`.get()
+}
+
 /** @type {Types.getGuestByEmail} */
 export function getGuestByEmail(email) {
   return sql`SELECT * FROM guests WHERE email = ${normalizeEmail(email)} AND deleted_at IS NULL`.get()

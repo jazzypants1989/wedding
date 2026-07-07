@@ -30,6 +30,13 @@ export const SESSION = Object.freeze({
   CSRF_ROTATION_MS: 60 * 60 * 1000, // 1 hour CSRF token rotation
 })
 
+export const GUEST_SESSION = Object.freeze({
+  DURATION_MS: 180 * 24 * 60 * 60 * 1000, // 180 days absolute
+  IDLE_TIMEOUT_MS: 60 * 24 * 60 * 60 * 1000, // 60 days idle
+  CSRF_ROTATION_MS: 24 * 60 * 60 * 1000, // 24h CSRF token rotation
+  MAX_SESSIONS_PER_ACCOUNT: 10, // oldest trimmed on new login
+})
+
 export const LIMITS = Object.freeze({
   PARTY_SIZE_MIN: 1,
   PARTY_SIZE_MAX: 20,
@@ -38,6 +45,7 @@ export const LIMITS = Object.freeze({
   NOTES_MAX_LENGTH: 1000,
   MESSAGE_MAX_LENGTH: 1000,
   RELATIONSHIP_MAX_LENGTH: 200,
+  ACCOUNT_NAME_MAX_LENGTH: 100,
 })
 
 export const GUEST_STATUS_VALUES = Object.values(GUEST_STATUS)
@@ -63,6 +71,7 @@ export const RATE_LIMITS = Object.freeze({
   LOOKUP: { windowMs: 60 * 1000, max: 3 }, // 3 per minute (strict)
   ADMIN_LOGIN: { windowMs: 60 * 1000, max: 3 }, // 3 per minute
   ADMIN_INVITE: { windowMs: 60 * 60 * 1000, max: 100 }, // 100 per hour
+  ACCOUNT_REGISTER: { windowMs: 60 * 60 * 1000, max: 10 }, // 10 per hour per IP (invite-code oracle guard)
 })
 
 export const REQUEST_LIMITS = Object.freeze({

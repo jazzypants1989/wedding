@@ -28,6 +28,13 @@ export const SESSION: {
   readonly CSRF_ROTATION_MS: number
 }
 
+export const GUEST_SESSION: {
+  readonly DURATION_MS: number
+  readonly IDLE_TIMEOUT_MS: number
+  readonly CSRF_ROTATION_MS: number
+  readonly MAX_SESSIONS_PER_ACCOUNT: number
+}
+
 export const LIMITS: {
   readonly PARTY_SIZE_MIN: number
   readonly PARTY_SIZE_MAX: number
@@ -36,6 +43,7 @@ export const LIMITS: {
   readonly NOTES_MAX_LENGTH: number
   readonly MESSAGE_MAX_LENGTH: number
   readonly RELATIONSHIP_MAX_LENGTH: number
+  readonly ACCOUNT_NAME_MAX_LENGTH: number
 }
 
 export const WEDDING: {
@@ -57,6 +65,7 @@ export const RATE_LIMITS: {
   readonly LOOKUP: { readonly windowMs: number; readonly max: number }
   readonly ADMIN_LOGIN: { readonly windowMs: number; readonly max: number }
   readonly ADMIN_INVITE: { readonly windowMs: number; readonly max: number }
+  readonly ACCOUNT_REGISTER: { readonly windowMs: number; readonly max: number }
 }
 
 export const REQUEST_LIMITS: {
@@ -138,6 +147,33 @@ export interface Session {
   expires_at: string
   last_activity_at: string | null
   csrf_rotated_at: string | null
+}
+
+export interface Account {
+  id: number
+  guest_id: number | null
+  name: string
+  name_normalized: string
+  relation: string | null
+  contact_email: string | null
+  trusted: 0 | 1
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+}
+
+/** account_sessions row joined with its account (name/trusted/guest_id). */
+export interface AccountSession {
+  token: string
+  account_id: number
+  csrf_token: string
+  created_at: string
+  expires_at: string
+  last_activity_at: string | null
+  csrf_rotated_at: string | null
+  name: string
+  trusted: 0 | 1
+  guest_id: number | null
 }
 
 export interface Petition {
