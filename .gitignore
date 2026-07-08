@@ -1,11 +1,11 @@
 # Environment variables (contains secrets)
 .env
 
-# Database
-data/*.db
-data/*.db-journal
-data/*.db-wal
-data/*.db-shm
+# Runtime data volume (SQLite DB, guest uploads, audit logs) — never committed.
+# All persistent data lives here (the wedding-data Docker volume); it is
+# machine-local runtime state, and uploads carry guests' EXIF/GPS + audit logs
+# carry IPs, so the whole tree stays out of git.
+data/
 
 # Node
 node_modules/
