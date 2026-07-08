@@ -100,3 +100,160 @@ export function initAuthSheet(): void
 
 /** Open the auth sheet, remembering `trigger` for focus return + success sparkle. */
 export function openAuthSheet(trigger?: HTMLElement | null): void
+
+/** @file media-processing.js - Client media processing contract (Phase 3 §5) */
+
+/** Upload-ready output of processMediaFile(). */
+export interface ProcessedMedia {
+  kind: "image" | "video"
+  /** Resized display variant (image only; absent when displayMissing). */
+  displayBlob?: Blob
+  /** Small thumbnail (image only; absent when displayMissing). */
+  thumbBlob?: Blob
+  /** Extracted poster frame (video only). */
+  posterBlob?: Blob
+  width: number
+  height: number
+  /** Video duration in seconds (video only). */
+  durationS?: number
+  /** True when a HEIC couldn't be decoded → original-only (no display/thumb). */
+  displayMissing?: true
+}
+
+/** Process one image or video File into derived variants for upload. */
+export function processMediaFile(file: File): Promise<ProcessedMedia>
+
+/** @file media-uploader.js - UI-agnostic upload queue engine (Phase 4 §6) */
+
+export type UploadState =
+  | "queued"
+  | "processing"
+  | "uploading"
+  | "done"
+  | "pending"
+  | "failed"
+  | "canceled"
+
+/** One file's lifecycle through the upload queue; the tray renders from this. */
+export interface UploadQueueItem {
+  /** Local id (not the server media id). */
+  id: string
+  name: string
+  kind: "image" | "video" | "unknown"
+  state: UploadState
+  /** 0..1 byte-weighted progress across a file's variant PUTs. */
+  progress: number
+  /** User-facing message when state === "failed". */
+  error: string | null
+  /** Failed for a retryable reason (network) vs terminal (bad format / too big). */
+  retryable: boolean
+  /** Object URL for the tray preview (revoked on removal). */
+  previewUrl: string | null
+  /** Server media id, set after POST /api/media. */
+  serverId: number | null
+  fileKey: string | null
+  width: number
+  height: number
+  durationS: number | null
+  displayMissing: boolean
+  /** Final content status from finalize ("approved" | "pending"). */
+  status: string | null
+}
+
+export interface UploadQueueCallbacks {
+  /** Fired on any state/progress change for an item. */
+  onChange?: (item: UploadQueueItem) => void
+  /** Fired once, the first time any item in this queue reaches done/pending. */
+  onFirstSuccess?: () => void
+}
+
+/** Transport overrides for non-guest callers (admin curated uploads). */
+export interface UploadQueueOptions {
+  /**
+   * CSRF cookie name whose token is sent on the XHR requests. Defaults to
+   * "guest_csrf"; admin uploads pass "csrf" so withAccountOrAdmin resolves as
+   * admin (reconciliation 5 + 7).
+   */
+  csrfCookie?: string
+  /** Section passed at session create — admin passes "official". */
+  section?: string
+}
+
+export interface UploadQueue {
+  /** Enqueue files; processing is serialized, uploads run up to 2 in parallel. */
+  add(files: FileList | File[]): void
+  /** Re-run a failed item from the start (blobs re-derived from the File). */
+  retry(id: string): void
+  /** Abort (if active) and drop an item; revokes its preview URL. */
+  remove(id: string): void
+  /** Abort + drop every item. */
+  cancelAll(): void
+  getItems(): UploadQueueItem[]
+  /** Count of items still queued/processing/uploading. */
+  activeCount(): number
+}
+
+/** Create an upload queue engine. Reused by the gallery tray and Phase 6 admin. */
+export function createUploadQueue(
+  callbacks?: UploadQueueCallbacks,
+  options?: UploadQueueOptions,
+): UploadQueue
+
+/** @file reaction-bar.js - Types for the shared emoji reaction bar (Phase 5) */
+
+// Import for local use in the signatures below, and re-export so page/component
+// modules can also reach these shared types as Types.* through this barrel.
+import type {
+  ReactionSummary,
+  ReactionToggleResponse,
+  CommentListItem,
+  TargetType,
+} from "../../types.js"
+export type {
+  ReactionSummary,
+  ReactionToggleResponse,
+  CommentListItem,
+  TargetType,
+}
+
+export type ReactionEmojiKey =
+  | "heart"
+  | "clap"
+  | "laugh"
+  | "heart_eyes"
+  | "cheers"
+  | "fire"
+
+/** Stable reaction key → display glyph. */
+export const REACTION_GLYPHS: Readonly<Record<ReactionEmojiKey, string>>
+
+/** Render a target's reaction bar as an HTML string (pills for all six emojis). */
+export function renderReactionBar(
+  targetType: TargetType,
+  targetId: number,
+  reactions?: ReactionSummary,
+): string
+
+/** Wire ONE delegated click listener for every reaction bar under root. */
+export function initReactionBars(root?: HTMLElement | Document): void
+
+/** @file comment-thread.js - Types for the shared comment thread (Phase 5) */
+
+export interface CommentListResponse {
+  comments: CommentListItem[]
+}
+
+export interface CommentPostResponse {
+  comment: CommentListItem
+  status: "approved" | "pending"
+}
+
+/** Render a collapsed comment thread ("N comments" toggle) as an HTML string. */
+export function renderCommentThread(
+  targetType: TargetType,
+  targetId: number,
+  count?: number,
+): string
+
+/** Wire ONE delegated click + submit listener for every thread under root. */
+export function initCommentThreads(root?: HTMLElement | Document): void

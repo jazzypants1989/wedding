@@ -19,8 +19,11 @@ import { createMirrorReflections } from "./mirror-reflections.js"
 import { getDefaultConfig } from "./config.js"
 import { getTypedElement } from "../pages/utils.js"
 
-/** @type {Types.EffectDefinition[]} */
-const EFFECT_DEFINITIONS = [
+/** Registry of every effect, mapping its ID to its factory. Exported so dev
+ *  tooling (the effect studio) can reuse the real registry instead of
+ *  duplicating it. Not part of the runtime start-up path.
+ *  @type {Types.EffectDefinition[]} */
+export const EFFECT_DEFINITIONS = [
   { id: "disco", create: createDiscoBall },
   { id: "cursor", create: createCursorTrail },
   { id: "shimmer", create: createMermaidShimmer },

@@ -23,10 +23,10 @@ echo "    Git commit: $(git log -1 --format='%h %s')"
 echo "    Container:  $(docker inspect --format='{{.State.Status}} ({{.State.Health.Status}})' wedding 2>/dev/null || echo 'not found')"
 
 echo ""
-echo "==> Backing up database..."
-echo "    Running: docker exec wedding cp /app/data/wedding.db /app/data/wedding.db.backup"
-if docker exec wedding cp /app/data/wedding.db /app/data/wedding.db.backup 2>/dev/null; then
-    echo "    Backup created at /app/data/wedding.db.backup"
+echo "==> Backing up database (WAL-safe VACUUM INTO)..."
+echo "    Running: docker exec wedding node scripts/backup-db.js"
+if docker exec wedding node scripts/backup-db.js; then
+    echo "    Backup complete"
 else
     echo "    Skipping backup (container not running or no database yet)"
 fi

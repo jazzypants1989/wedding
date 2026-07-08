@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <title>Effect Studio — Wedding</title>
+  <link rel="icon" type="image/png" href="/images/favicon.png">
+  <link rel="stylesheet" href="/styles/tokens.css">
+  <link rel="stylesheet" href="/styles/effects.css" media="all">
+  <link rel="stylesheet" href="/pages/studio/studio.css">
+  <script src="/components/theme-init.js"></script>
+</head>
+
+<body class="studio-body">
+  <div class="studio-stage" aria-hidden="true">
+    <h1>Jordana &amp; Jesse</h1>
+    <p>Effect Studio</p>
+  </div>
+
+  <aside class="studio-panel">
+    <header class="studio-head">
+      <h2>Effect Studio</h2>
+      <p>Tweak parameters and watch the effect replay live.</p>
+    </header>
+
+    <div class="studio-scroll">
+      <p class="section-label">Effect</p>
+      <div class="effect-list" id="effect-list"></div>
+
+      <div class="variant-row" id="variant-row" hidden>
+        <p class="section-label">Entrance variant</p>
+        <select class="select-field" id="variant-select"></select>
+        <p class="variant-note" id="variant-note"></p>
+      </div>
+
+      <p class="section-label">Parameters</p>
+      <div id="controls"></div>
+    </div>
+
+    <footer class="studio-foot">
+      <div class="foot-btns">
+        <button type="button" class="ctrl-btn primary" id="replay-btn">▶ Replay</button>
+        <button type="button" class="ctrl-btn" id="stop-btn">■ Stop</button>
+        <button type="button" class="ctrl-btn" id="reset-btn">↺ Reset</button>
+        <button type="button" class="ctrl-btn" id="copy-btn">⧉ Copy values</button>
+      </div>
+      <p class="flash" id="flash"></p>
+    </footer>
+  </aside>
+
+  <script type="module" src="/pages/studio/main.js"></script>
+</body>
+
+</html>

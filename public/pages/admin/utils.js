@@ -22,6 +22,17 @@ export function showError(message) {
   }, 8000)
 }
 
+/** @type {Types.showSuccess} */
+export function showSuccess(message) {
+  clearTimeout(dismissTimer)
+  banner.textContent = message
+  banner.className = "alert alert-success"
+  banner.hidden = false
+  dismissTimer = setTimeout(() => {
+    banner.hidden = true
+  }, 6000)
+}
+
 /** @type {Types.clearNotification} */
 export function clearNotification() {
   clearTimeout(dismissTimer)

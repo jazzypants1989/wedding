@@ -62,7 +62,10 @@ const CSS_LINK_TAGS = INLINE_CSS_PATHS.map(url => '<link rel="stylesheet" href="
 
 const CSP_DIRECTIVES = [
   "style-src 'self' 'sha256-" + INLINE_CSS_HASH + "'",
-  "img-src 'self' data:",
+  // blob: + media-src for upload-tray previews (URL.createObjectURL) and video
+  // poster extraction (Phase 3 media pipeline).
+  "img-src 'self' data: blob:",
+  "media-src 'self' blob:",
   "font-src 'self'",
   "connect-src 'self'",
   "frame-src https://www.honeyfund.com",

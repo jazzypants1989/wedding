@@ -279,6 +279,72 @@ export function moderationCountsHandler(
   res: ServerResponse,
 ): Promise<void>
 
+/** POST /api/admin/moderation/bulk — { action, items:[{type,id}] } in one txn. */
+export function moderationBulkHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** @file accounts.js - Types for admin account-management endpoints (Phase 6) */
+
+/** GET /api/admin/accounts?trusted=&limit=&offset= — accounts + counts + source. */
+export function accountsListHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void>
+
+/** POST /api/admin/accounts/:id/trust — trust (+ optional approve_pending backlog). */
+export function accountTrustHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** POST /api/admin/accounts/:id/untrust — untrust (future content held). */
+export function accountUntrustHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** DELETE /api/admin/accounts/:id — soft-delete + kill sessions + hide content. */
+export function accountDeleteHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** @file media.js (admin) - Types for curated-gallery management (Phase 6) */
+
+/** POST /api/admin/media/reorder — { ids:number[] } → sort_order = index. */
+export function mediaReorderHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** POST /api/admin/media/:id/promote — MOVE an approved guest item to official. */
+export function mediaPromoteHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** PATCH /api/admin/media/:id — { caption } inline caption edit. */
+export function mediaCaptionHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** DELETE /api/admin/media/:id — soft-delete any media + unlink files. */
+export function mediaDeleteHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
 /**
  * Input for creating a petition.
  * @example

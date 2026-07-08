@@ -65,7 +65,7 @@ Wiring: two tab buttons + panels in `admin/index.html`, `init*()` + lazy-load br
 
 Integration:
 - Queue returns all three types interleaved; type/status/account filters work; counts match.
-- Approve/reject/hide state machine: illegal transitions rejected (e.g. reject on approved → 400).
+- Approve/reject/hide state machine: illegal transitions rejected with **409 Conflict** (e.g. reject on approved → 409; the item is no longer in a valid state for the action).
 - Bulk approve 20 mixed items in one call → all approved, one audit entry per item (or one bulk entry — pick and document).
 - Trust with `approve_pending` → account trusted AND their pending items across all tables approved atomically.
 - Approve an untrusted author's item → item approved AND account now trusted; their next post auto-approves. Reject → trust untouched.

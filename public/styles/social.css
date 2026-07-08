@@ -375,3 +375,202 @@
   white-space: pre-line;
   line-height: 1.5;
 }
+
+/* ------------------------------------------------------------------ *
+ * Reactions + comments (Phase 5) — shared by guestbook cards + gallery
+ * lightbox panel. 44px touch targets; reduced-motion kills the bump.
+ * ------------------------------------------------------------------ */
+.reaction-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  align-items: center;
+}
+
+.reaction-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  min-height: 44px;
+  padding: 0 var(--spacing-sm);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: var(--color-card-bg);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--duration-fast), border-color var(--duration-fast);
+}
+
+.reaction-pill:hover {
+  border-color: var(--color-primary);
+}
+
+.reaction-pill.reaction-mine {
+  background: var(--color-primary-faint);
+  border-color: var(--color-primary);
+}
+
+.reaction-glyph {
+  font-size: 1.05em;
+}
+
+.reaction-count:empty {
+  display: none;
+}
+
+.reaction-count {
+  min-width: 1ch;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+}
+
+.reaction-mine .reaction-count {
+  color: var(--color-primary-dark);
+}
+
+@keyframes reaction-bump {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.4); }
+  100% { transform: scale(1); }
+}
+
+.reaction-bump {
+  animation: reaction-bump var(--duration-fast) ease-out;
+}
+
+/* ---- comment thread ---- */
+.comment-thread {
+  margin-top: var(--spacing-xs);
+}
+
+.comment-toggle {
+  border: none;
+  background: none;
+  padding: var(--spacing-2xs) 0;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.comment-toggle:hover {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+.comment-body {
+  margin-top: var(--spacing-sm);
+}
+
+.comment-list {
+  list-style: none;
+  margin: 0 0 var(--spacing-sm);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.comment {
+  padding: var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-faint);
+}
+
+.comment-pending {
+  opacity: 0.85;
+  border-left: 3px solid var(--color-status-pending-text);
+}
+
+.comment-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  align-items: baseline;
+}
+
+.comment-author {
+  font-weight: 600;
+  font-size: var(--text-sm);
+}
+
+.comment-time {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+.comment-message {
+  margin: var(--spacing-2xs) 0 0;
+  white-space: pre-line;
+  line-height: 1.5;
+  font-size: var(--text-sm);
+}
+
+.comment-pending-chip {
+  margin-top: var(--spacing-xs);
+}
+
+.comment-delete {
+  margin-top: var(--spacing-2xs);
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--color-danger);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.comment-delete:hover {
+  text-decoration: underline;
+}
+
+.comment-composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.comment-input {
+  width: 100%;
+  padding: var(--spacing-sm);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-card-bg);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
+  resize: vertical;
+}
+
+.comment-submit {
+  align-self: flex-end;
+}
+
+.comment-loading,
+.comment-error {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.comment-error {
+  color: var(--color-danger);
+}
+
+/* ---- lightbox panel social block (dark stage) ---- */
+.lightbox-social {
+  margin-top: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reaction-bump {
+    animation: none;
+  }
+}

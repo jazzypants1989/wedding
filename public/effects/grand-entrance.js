@@ -19,6 +19,18 @@ export function createGrandEntrance(config) {
   /** @type {AbortController | null} */
   let controller = null
 
+  // Reusable star-sparkle pool for curtain/shower waves. Nodes are created once
+  // (display:none → no layout cost while idle) and cycled: each wave repositions
+  // free nodes and restarts their fall animation. The free list is a hard cap on
+  // concurrent live sparkles — spawnSparkle() returns false when exhausted.
+  /** @type {HTMLDivElement[]} */
+  let freeSparkles = []
+  /** @type {Set<HTMLDivElement>} */
+  const pooledSet = new Set()
+
+  // Absolute ceiling on pooled sparkles, on top of the mobile 0.25 factor.
+  const SPARKLE_CAP = 100
+
   const entranceStyle = cfg.entranceStyle || "curtain"
   const sparkleIntensity =
     cfg.sparkleIntensity !== undefined ? cfg.sparkleIntensity : 69
@@ -34,8 +46,14 @@ export function createGrandEntrance(config) {
   const sparkleSizeRange = cfg.sparkleSizeRange || [3, 8]
   const waveCount = cfg.waveCount !== undefined ? cfg.waveCount : 5
 
+  // Total sparkle budget for the whole entrance (== pool size). Previously
+  // sparkleIntensity was a per-wave count (× waveCount ≈ 345 nodes); it now bounds
+  // the entire cascade, so far fewer render objects hit the first-load TBT window.
   function getSparkleCount() {
-    return isMobile() ? Math.round(sparkleIntensity * 0.25) : sparkleIntensity
+    const base = isMobile()
+      ? Math.round(sparkleIntensity * 0.25)
+      : sparkleIntensity
+    return Math.min(base, SPARKLE_CAP)
   }
 
   function getSpeedFactor() {
@@ -43,39 +61,68 @@ export function createGrandEntrance(config) {
   }
 
   /**
-   * Create a single wave element that uses box-shadow to render all sparkles
-   * as a single render object, avoiding per-element rendering overhead.
-   * @param {number} startY @param {number} waveWidth
+   * Pre-allocate the reusable star-sparkle pool. Nodes start display:none so
+   * they generate no render objects until spawned.
+   * @param {number} count
    */
-  function createSparkleWave(startY, waveWidth) {
+  function buildSparklePool(count) {
     if (!sparkleContainer) return
-    const count = getSparkleCount()
-    const w = window.innerWidth
-
-    // Build a box-shadow string with one shadow per sparkle.
-    // Each shadow is offset from (0,0) to the sparkle's position.
-    const shadows = []
     for (let i = 0; i < count; i++) {
-      const x = randomBetween(0, w)
-      const y = startY + randomBetween(-waveWidth, waveWidth)
-      const size = randomBetween(sparkleSizeRange[0], sparkleSizeRange[1])
-      const color = randomFrom(colors)
-      // box-shadow: offsetX offsetY blurRadius spreadRadius color
-      shadows.push(x + "px " + y + "px 0 " + Math.round(size / 2) + "px " + color)
+      const s = document.createElement("div")
+      s.className = "grand-entrance-sparkle"
+      s.style.display = "none"
+      sparkleContainer.appendChild(s)
+      freeSparkles.push(s)
+      pooledSet.add(s)
     }
-
-    const wave = document.createElement("div")
-    wave.className = "grand-entrance-wave"
-    wave.style.boxShadow = shadows.join(",")
-
-    const duration = randomBetween(0.8, 2)
-    wave.style.animationDuration = duration + "s"
-
-    sparkleContainer.appendChild(wave)
   }
 
   /**
-   * Set up the sparkle container with animationend cleanup.
+   * Reposition an idle pooled sparkle and start its fall with a per-sparkle
+   * random duration/delay (staggered twinkle). Returns false if the pool is
+   * exhausted — the natural hard cap on concurrent nodes.
+   * @param {number} x @param {number} y
+   * @returns {boolean}
+   */
+  function spawnSparkle(x, y) {
+    const s = freeSparkles.pop()
+    if (!s) return false
+    const size = randomBetween(sparkleSizeRange[0], sparkleSizeRange[1])
+    s.style.left = x + "px"
+    s.style.top = y + "px"
+    s.style.width = size + "px"
+    s.style.height = size + "px"
+    s.style.backgroundColor = randomFrom(colors)
+    s.style.display = "block"
+    const dur = randomBetween(0.8, 2)
+    const delay = randomBetween(0, 0.5)
+    // Idle nodes carry animation:none, so assigning a named animation restarts
+    // it cleanly — no forced-reflow hack needed. Timing is per-sparkle for a
+    // staggered shimmer instead of the box-shadow version's lockstep.
+    s.style.animation =
+      "grand-entrance-sparkle-fall " + dur + "s ease-out " + delay + "s forwards"
+    return true
+  }
+
+  /**
+   * Spawn one wave of `perWave` pooled sparkles scattered around `startY`.
+   * Stops early if the pool is exhausted.
+   * @param {number} startY @param {number} waveWidth @param {number} perWave
+   */
+  function createSparkleWave(startY, waveWidth, perWave) {
+    if (!sparkleContainer) return
+    const w = window.innerWidth
+    for (let i = 0; i < perWave; i++) {
+      const x = randomBetween(0, w)
+      const y = startY + randomBetween(-waveWidth, waveWidth)
+      if (!spawnSparkle(x, y)) break
+    }
+  }
+
+  /**
+   * Set up the sparkle container with animationend handling: pooled sparkles are
+   * returned to the free list for reuse; one-off sparkles (golden reveal) are
+   * removed.
    * @param {AbortSignal} signal
    */
   function initSparkleContainer(signal) {
@@ -85,10 +132,14 @@ export function createGrandEntrance(config) {
     sparkleContainer.addEventListener(
       "animationend",
       function (e) {
-        const target = /** @type {HTMLElement} */ (e.target)
-        if (
-          target.classList.contains("grand-entrance-sparkle") ||
-          target.classList.contains("grand-entrance-wave")
+        const target = /** @type {HTMLDivElement} */ (e.target)
+        if (pooledSet.has(target)) {
+          target.style.display = "none"
+          target.style.animation = "none"
+          freeSparkles.push(target)
+        } else if (
+          target.classList &&
+          target.classList.contains("grand-entrance-sparkle")
         ) {
           target.remove()
         }
@@ -111,15 +162,20 @@ export function createGrandEntrance(config) {
 
     // Stage 2: Sparkle cascade from top to bottom
     initSparkleContainer(signal)
+    buildSparklePool(getSparkleCount())
 
     const h = window.innerHeight
     const waveDelay = 300 * speedFactor
+    // Split the total budget across waves so the whole cascade ≈ pool size.
+    const perWave = Math.ceil(getSparkleCount() / waveCount)
 
+    // Initial delay also pushes the first render-costly spawn past the
+    // first-load Total-Blocking-Time window.
     await cancellableDelay(200 * speedFactor, signal)
     for (let w = 0; w < waveCount; w++) {
       if (w > 0) await cancellableDelay(waveDelay, signal)
       const y = (h * w) / waveCount
-      createSparkleWave(y, h / waveCount)
+      createSparkleWave(y, h / waveCount, perWave)
     }
 
     // Stage 3: Overlay fades out
@@ -146,13 +202,15 @@ export function createGrandEntrance(config) {
     const speedFactor = getSpeedFactor()
 
     initSparkleContainer(signal)
+    buildSparklePool(getSparkleCount())
 
     const showerWaveCount = Math.round(waveCount * 1.6)
     const waveDelay = 200 * speedFactor
+    const perWave = Math.ceil(getSparkleCount() / showerWaveCount)
 
     for (let w = 0; w < showerWaveCount; w++) {
       if (w > 0) await cancellableDelay(waveDelay, signal)
-      createSparkleWave(-20, 60)
+      createSparkleWave(-20, 60, perWave)
     }
 
     // Original cleanup: waveCount*waveDelay + 3000*sf from t=0
@@ -225,6 +283,8 @@ export function createGrandEntrance(config) {
       sparkleContainer.remove()
       sparkleContainer = null
     }
+    freeSparkles = []
+    pooledSet.clear()
     if (overlay) {
       overlay.remove()
       overlay = null

@@ -80,6 +80,39 @@ export type AccountHandler = (
 
 export function withAccount(handler: AccountHandler): WrappedHandler
 
+/**
+ * Normalized principal handed to a withAccountOrAdmin()-wrapped handler,
+ * papering over the fact that an admin caller has no accounts row. Guest
+ * uploads carry a real accountId; admin uploads carry accountId=null and are
+ * implicitly trusted. Ownership: `principal.isAdmin || row.account_id === principal.accountId`.
+ * See docs/post-wedding/03-media-pipeline.md §2.
+ */
+export interface Principal {
+  isAdmin: boolean
+  accountId: number | null
+  trusted: boolean
+  session: Session | AccountSession
+}
+
+export interface AccountOrAdminRouteInfo extends RouteInfo {
+  principal: Principal
+}
+
+export type AccountOrAdminHandler = (
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AccountOrAdminRouteInfo,
+) => void | Promise<void>
+
+/**
+ * Accepts EITHER a guest guest_session cookie OR an admin session cookie
+ * (guest checked first), applying the matching CSRF check and cookie rotation,
+ * and hands the handler a normalized {@link Principal}.
+ */
+export function withAccountOrAdmin(
+  handler: AccountOrAdminHandler,
+): WrappedHandler
+
 /** Guest cookies — SameSite=Lax (deliberate deviation from admin Strict), Max-Age 180d. */
 export function createAccountSessionCookies(
   session: { token: string; csrf_token: string },
@@ -96,6 +129,9 @@ export function clearAccountSessionCookies(): string[]
 export function getOptionalAccount(
   req: IncomingMessage,
 ): AccountSession | null
+
+/** Parse the admin session cookie and return the validated session, or null. */
+export function getOptionalAdmin(req: IncomingMessage): Session | null
 
 export interface CSVRow {
   _lineNumber: number
@@ -151,6 +187,14 @@ export class PayloadTooLargeError extends AppError {
   constructor(message?: string)
 }
 
+export class LengthRequiredError extends AppError {
+  constructor(message?: string)
+}
+
+export class UnsupportedMediaTypeError extends AppError {
+  constructor(message?: string)
+}
+
 export class RateLimitError extends AppError {
   constructor(message?: string)
 }
@@ -163,6 +207,8 @@ export type ConflictErrorParams = Params<typeof ConflictError>
 export type AuthenticationErrorParams = Params<typeof AuthenticationError>
 export type AuthorizationErrorParams = Params<typeof AuthorizationError>
 export type PayloadTooLargeErrorParams = Params<typeof PayloadTooLargeError>
+export type LengthRequiredErrorParams = Params<typeof LengthRequiredError>
+export type UnsupportedMediaTypeErrorParams = Params<typeof UnsupportedMediaTypeError>
 export type RateLimitErrorParams = Params<typeof RateLimitError>
 
 export interface ErrorBody {
@@ -288,6 +334,7 @@ export interface Limiters {
   accountRegister: RateLimiter
   guestbookPost: RateLimiter
   contentDelete: RateLimiter
+  mediaCreate: RateLimiter
   publicRead: RateLimiter
 }
 export const limiters: Limiters
@@ -319,7 +366,13 @@ export function escapeHtml(str: string): string
 
 /** @file Types for centralized validation utilities */
 
-import type { GuestStatus, CommunicationType, ValidationResult } from "../types.js"
+import type {
+  GuestStatus,
+  CommunicationType,
+  TargetType,
+  ReactionEmoji,
+  ValidationResult,
+} from "../types.js"
 
 export interface RequiredOptions {
   required?: boolean
@@ -344,6 +397,14 @@ export function validateGuestStatus(
 export function validateCommunicationType(
   value: unknown,
 ): ValidationResult<CommunicationType>
+
+export function validateTargetType(
+  value: unknown,
+): ValidationResult<TargetType>
+
+export function validateReactionEmoji(
+  value: unknown,
+): ValidationResult<ReactionEmoji>
 
 export function validateRequiredString(
   value: unknown,
@@ -395,6 +456,7 @@ export interface RouteContext {
 export interface RouteOptions {
   admin?: boolean
   account?: boolean
+  accountOrAdmin?: boolean
   errorHandling?: boolean
 }
 
@@ -431,6 +493,12 @@ export function route(
 export function route(
   method: string,
   pattern: string,
+  handler: AccountOrAdminHandler,
+  options: { accountOrAdmin: true },
+): void
+export function route(
+  method: string,
+  pattern: string,
   handler: RouteHandler,
   options?: { errorHandling?: boolean },
 ): void
@@ -439,7 +507,7 @@ export function route(
 export type routeImpl = (
   method: string,
   pattern: string,
-  handler: RouteHandler | AdminHandler | AccountHandler,
+  handler: RouteHandler | AdminHandler | AccountHandler | AccountOrAdminHandler,
   options?: RouteOptions,
 ) => void
 export function clearRoutes(): void
@@ -447,3 +515,132 @@ export function dispatch(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<boolean>
+
+// --- Media content sniffing (core/sniff.js) ---
+
+/** Result of magic-byte sniffing; "" means unrecognized/rejected. */
+export type SniffedType = "jpeg" | "png" | "webp" | "heic" | "mp4" | "mov" | ""
+
+/** Detect a media type from the leading bytes of a file (needs >= 12 bytes). */
+export function sniffMagic(buf: Buffer): SniffedType
+
+/** Storage extension for a sniff result (jpeg -> jpg, etc.); "" if unknown. */
+export function extForSniff(sniffed: string): string
+
+/** True if a declared Content-Type header agrees with the sniffed bytes. */
+export function contentTypeAgrees(
+  contentType: string | undefined,
+  sniffed: SniffedType,
+): boolean
+
+// --- Streaming upload write path (core/upload.js) ---
+
+export interface StreamToStagingOpts {
+  /** Hard byte cap for this variant (413 on exceed). */
+  maxBytes: number
+  /** Acceptable sniff results for this variant (415 on mismatch). */
+  expectedKinds: string[]
+  /** Directory for the {rand}.part staging file (same fs as final location). */
+  stagingDir: string
+}
+
+export interface StreamToStagingResult {
+  stagingPath: string
+  bytes: number
+  sniffed: SniffedType
+  sha256: string
+}
+
+/**
+ * Stream a raw request body to a staging file, guarding size (411/413),
+ * magic-byte type (415), and idle/absolute timeouts. Unlinks the partial file
+ * on any failure. Caller renames stagingPath into place on success.
+ */
+export function streamToStaging(
+  req: IncomingMessage,
+  opts: StreamToStagingOpts,
+): Promise<StreamToStagingResult>
+
+/** Reserve a concurrency slot (guests capped) + byte reservation. false = at cap. */
+export function reserveUploadSlot(accountId: number | null, bytes: number): boolean
+
+/** Release a previously-reserved slot; MUST be called in a finally. */
+export function releaseUploadSlot(accountId: number | null, bytes: number): void
+
+/** Current in-flight reserved bytes (for the disk guard). */
+export function getReservedBytes(): number
+
+// --- Video GPS blanking (core/mp4-meta.js) ---
+
+/** A byte range that was blanked (filled with spaces), for logging. */
+export interface BlankedRegion {
+  start: number
+  end: number
+  /** Which carrier: "©xyz" (legacy udta) or "mdta" (modern meta/keys/ilst). */
+  type: string
+}
+
+/**
+ * Blank both Apple GPS carriers in an MP4/QuickTime file IN PLACE (spaces over
+ * the values, offsets unchanged). Returns the blanked regions ([] for a
+ * GPS-free file, which is a byte-exact no-op). Never throws.
+ */
+export function blankVideoGps(filePath: string): BlankedRegion[]
+
+// --- Media storage layout (core/media-storage.js) ---
+
+/** Create tmp/quarantine/media upload directories at boot (mkdir -p). */
+export function ensureUploadDirs(): void
+
+/** Directory for one item: media/{key[0:2]}/{key}. */
+export function itemDir(fileKey: string): string
+
+/** Absolute path for a variant file: {itemDir}/{variant}.{ext}. */
+export function variantDiskPath(fileKey: string, variant: string, ext: string): string
+
+/** Content-Type for a storage extension (jpg -> image/jpeg, etc.). */
+export function contentTypeForExt(ext: string): string
+
+export interface ResolvedVariantFile {
+  path: string
+  ext: string
+  contentType: string
+}
+
+/** Find an existing display/thumb/poster file (ext unknown), or null. */
+export function resolveVariantFile(
+  fileKey: string,
+  variant: string,
+): ResolvedVariantFile | null
+
+/** True if a variant file exists on disk (original needs its DB ext). */
+export function variantExistsOnDisk(
+  fileKey: string,
+  variant: string,
+  originalExt: string | null,
+): boolean
+
+// --- Media serving (core/media-serve.js) ---
+
+/**
+ * Parse an HTTP Range header against a known size. Returns null (ignore, serve
+ * 200), "invalid" (416), or a resolved { start, end } (inclusive) for 206.
+ */
+export function parseRange(
+  header: string | null | undefined,
+  size: number,
+): { start: number; end: number } | null | "invalid"
+
+/** Serve GET/HEAD /media/:fileKey/:variant with Range support. */
+export function serveMedia(req: IncomingMessage, res: ServerResponse): void
+
+// --- Media housekeeping (core/media-sweep.js) ---
+
+/** Purge abandoned upload sessions + stale staging files. Returns counts. */
+export function cleanAbandonedUploads(): { rowsDeleted: number; tmpDeleted: number }
+
+/** Daily integrity pass: quarantine orphan files, log missing variants. */
+export function runMediaIntegrityPass(): { quarantined: number; missingVariants: number }
+
+/** Hourly maintenance entry point (runs the integrity pass every 24th tick). */
+export function runMediaMaintenance(): void

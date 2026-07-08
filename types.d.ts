@@ -29,6 +29,59 @@ export const CONTENT_STATUS: {
   readonly REJECTED: "rejected"
 }
 
+export const MEDIA_STATUS: {
+  readonly UPLOADING: "uploading"
+  readonly PENDING: "pending"
+  readonly APPROVED: "approved"
+  readonly HIDDEN: "hidden"
+  readonly REJECTED: "rejected"
+}
+
+export const MEDIA_KIND: {
+  readonly IMAGE: "image"
+  readonly VIDEO: "video"
+}
+
+export const MEDIA_SECTION: {
+  readonly OFFICIAL: "official"
+  readonly GUEST: "guest"
+}
+
+export const TARGET_TYPE: {
+  readonly GUESTBOOK: "guestbook"
+  readonly MEDIA: "media"
+}
+
+export const REACTION_EMOJI: {
+  readonly HEART: "heart"
+  readonly CLAP: "clap"
+  readonly LAUGH: "laugh"
+  readonly HEART_EYES: "heart_eyes"
+  readonly CHEERS: "cheers"
+  readonly FIRE: "fire"
+}
+
+export const MEDIA_LIMITS: {
+  readonly IMAGE_ORIGINAL_MAX: number
+  readonly VIDEO_ORIGINAL_MAX: number
+  readonly DISPLAY_MAX: number
+  readonly THUMB_MAX: number
+  readonly POSTER_MAX: number
+  readonly VIDEO_MAX_DURATION_S: number
+  readonly UPLOAD_IDLE_TIMEOUT_MS: number
+  readonly UPLOAD_ABSOLUTE_TIMEOUT_MS: number
+  readonly MAX_CONCURRENT_UPLOADS_PER_ACCOUNT: number
+  readonly HEAD_SNIFF_BYTES: number
+  readonly ABANDONED_UPLOAD_MAX_AGE_MS: number
+  readonly STAGING_PART_MAX_AGE_MS: number
+}
+
+export const MEDIA_STORAGE: {
+  readonly MIN_FREE_BYTES: number
+  readonly MAX_TOTAL_BYTES: number
+  readonly UNTRUSTED_QUOTA_BYTES: number
+}
+
 export const MODERATION_NOTIFY: {
   readonly DIGEST_INTERVAL_MS: number
 }
@@ -56,6 +109,7 @@ export const LIMITS: {
   readonly RELATIONSHIP_MAX_LENGTH: number
   readonly ACCOUNT_NAME_MAX_LENGTH: number
   readonly GUESTBOOK_MESSAGE_MAX_LENGTH: number
+  readonly COMMENT_MAX_LENGTH: number
 }
 
 export const WEDDING: {
@@ -78,9 +132,13 @@ export const RATE_LIMITS: {
   readonly ADMIN_LOGIN: { readonly windowMs: number; readonly max: number }
   readonly ADMIN_INVITE: { readonly windowMs: number; readonly max: number }
   readonly ACCOUNT_REGISTER: { readonly windowMs: number; readonly max: number }
+  readonly ACCOUNT_RECOVER: { readonly windowMs: number; readonly max: number }
   readonly GUESTBOOK_POST: { readonly windowMs: number; readonly max: number }
   readonly CONTENT_DELETE: { readonly windowMs: number; readonly max: number }
+  readonly MEDIA_CREATE: { readonly windowMs: number; readonly max: number }
   readonly PUBLIC_READ: { readonly windowMs: number; readonly max: number }
+  readonly COMMENT_POST: { readonly windowMs: number; readonly max: number }
+  readonly REACTION_TOGGLE: { readonly windowMs: number; readonly max: number }
 }
 
 export const REQUEST_LIMITS: {
@@ -108,17 +166,45 @@ export const GUEST_STATUS_VALUES: readonly ["pending", "invited", "responded"]
 export const PETITION_STATUS_VALUES: readonly ["pending", "approved", "denied"]
 export const COMMUNICATION_TYPE_VALUES: readonly ["email", "sms"]
 export const CONTENT_STATUS_VALUES: readonly ["pending", "approved", "hidden", "rejected"]
+export const MEDIA_STATUS_VALUES: readonly ["uploading", "pending", "approved", "hidden", "rejected"]
+export const MEDIA_KIND_VALUES: readonly ["image", "video"]
+export const MEDIA_SECTION_VALUES: readonly ["official", "guest"]
+export const TARGET_TYPE_VALUES: readonly ["guestbook", "media"]
+export const REACTION_EMOJI_VALUES: readonly [
+  "heart",
+  "clap",
+  "laugh",
+  "heart_eyes",
+  "cheers",
+  "fire",
+]
 
 export type GuestStatus = "pending" | "invited" | "responded"
 export type PetitionStatus = "pending" | "approved" | "denied"
 export type CommunicationType = "email" | "sms"
 export type CommunicationStatus = "sent" | "failed"
 export type ContentStatus = "pending" | "approved" | "hidden" | "rejected"
+export type MediaStatus = "uploading" | "pending" | "approved" | "hidden" | "rejected"
+export type MediaKind = "image" | "video"
+export type MediaSection = "official" | "guest"
+export type TargetType = "guestbook" | "media"
+export type ReactionEmoji =
+  | "heart"
+  | "clap"
+  | "laugh"
+  | "heart_eyes"
+  | "cheers"
+  | "fire"
 
 export function isGuestStatus(value: unknown): value is GuestStatus
 export function isPetitionStatus(value: unknown): value is PetitionStatus
 export function isCommunicationType(value: unknown): value is CommunicationType
 export function isContentStatus(value: unknown): value is ContentStatus
+export function isMediaStatus(value: unknown): value is MediaStatus
+export function isMediaKind(value: unknown): value is MediaKind
+export function isMediaSection(value: unknown): value is MediaSection
+export function isTargetType(value: unknown): value is TargetType
+export function isReactionEmoji(value: unknown): value is ReactionEmoji
 
 export interface Guest {
   id: number
@@ -219,6 +305,36 @@ export interface GuestbookEntry {
 }
 
 /**
+ * A media row. `file_key` (32 lowercase hex) drives storage paths and public
+ * URLs; filesystem paths are always derived server-side from file_key + variant
+ * + original_ext (never stored absolute). account_id is NULL for admin/official
+ * uploads. See docs/post-wedding/03-media-pipeline.md §1.
+ */
+export interface Media {
+  id: number
+  file_key: string
+  account_id: number | null
+  kind: MediaKind
+  section: MediaSection
+  status: MediaStatus
+  caption: string | null
+  original_ext: string | null
+  original_bytes: number | null
+  display_bytes: number | null
+  thumb_bytes: number | null
+  poster_bytes: number | null
+  width: number | null
+  height: number | null
+  duration_seconds: number | null
+  needs_display: 0 | 1
+  sort_order: number
+  created_at: string
+  updated_at: string
+  reviewed_at: string | null
+  deleted_at: string | null
+}
+
+/**
  * A guestbook_entries row joined with its author account, as returned by the
  * feed and admin-queue queries. `author_trusted` / `is_own` arrive as 0|1 from
  * SQLite; the API layer maps them to booleans before responding.
@@ -234,7 +350,8 @@ export interface GuestbookFeedRow {
   is_own: 0 | 1
 }
 
-/** Public /api/guestbook response entry (booleans, no account_id leaked). */
+/** Public /api/guestbook response entry (booleans, no account_id leaked).
+ *  `reactions`/`comment_count` are attached by Phase 5 feed enrichment. */
 export interface GuestbookFeedEntry {
   id: number
   message: string
@@ -243,6 +360,135 @@ export interface GuestbookFeedEntry {
   status: ContentStatus
   created_at: string
   is_own: boolean
+  reactions?: ReactionSummary
+  comment_count?: number
+}
+
+/**
+ * A media row joined with its author account, as returned by getMediaFeed.
+ * The join is a LEFT JOIN — admin/official uploads have account_id NULL, so
+ * `author_name` is nullable here (the API coalesces it to the couple's name).
+ * `is_own` arrives as 0|1 from SQLite; the API maps it to a boolean.
+ */
+export interface MediaFeedRow {
+  id: number
+  file_key: string
+  account_id: number | null
+  kind: MediaKind
+  section: MediaSection
+  status: MediaStatus
+  caption: string | null
+  width: number | null
+  height: number | null
+  duration_seconds: number | null
+  needs_display: 0 | 1
+  author_name: string | null
+  is_own: 0 | 1
+  created_at: string
+}
+
+/**
+ * Public gallery item (booleans, no account_id leaked; author_name resolved).
+ * URLs are built client-side as `/media/{file_key}/{variant}`.
+ */
+export interface MediaListItem {
+  id: number
+  file_key: string
+  kind: MediaKind
+  section: MediaSection
+  status: MediaStatus
+  caption: string | null
+  width: number | null
+  height: number | null
+  duration_seconds: number | null
+  needs_display: boolean
+  author_name: string
+  is_own: boolean
+  created_at: string
+  reactions?: ReactionSummary
+  comment_count?: number
+}
+
+/** Public GET /api/media response: a page of items + keyset cursor. */
+export interface MediaListResponse {
+  items: MediaListItem[]
+  nextCursor: number | null
+}
+
+// --- Comments & reactions (Phase 5) — polymorphic over guestbook + media ---
+
+export interface Comment {
+  id: number
+  account_id: number
+  target_type: TargetType
+  target_id: number
+  message: string
+  status: ContentStatus
+  created_at: string
+  updated_at: string
+  reviewed_at: string | null
+  deleted_at: string | null
+}
+
+export interface Reaction {
+  id: number
+  account_id: number
+  target_type: TargetType
+  target_id: number
+  emoji: ReactionEmoji
+  created_at: string
+}
+
+/** A comments row joined with its author, as returned by getCommentsForTarget.
+ *  `is_own` arrives as 0|1 from SQLite; the API maps it to a boolean. */
+export interface CommentFeedRow {
+  id: number
+  account_id: number
+  message: string
+  status: ContentStatus
+  created_at: string
+  author_name: string
+  is_own: 0 | 1
+}
+
+/** Public comment shape (booleans, no account_id leaked). */
+export interface CommentListItem {
+  id: number
+  message: string
+  author_name: string
+  status: ContentStatus
+  created_at: string
+  is_own: boolean
+}
+
+/** A pending comment row for the moderation queue (includes its target). */
+export interface CommentModerationRow {
+  id: number
+  account_id: number
+  target_type: TargetType
+  target_id: number
+  message: string
+  status: ContentStatus
+  created_at: string
+  author_name: string
+  author_trusted: 0 | 1
+  is_own: 0 | 1
+}
+
+/** One emoji's state on a target: total count + whether the caller reacted. */
+export interface ReactionState {
+  count: number
+  mine: boolean
+}
+
+/** Per-target reaction summary keyed by emoji (only emojis with ≥1 reaction). */
+export type ReactionSummary = { [emoji: string]: ReactionState }
+
+/** Response of POST /api/reactions/toggle. `counts` are bare per-emoji totals
+ *  (server speaks keys); the client reconciles `mine` from `active` locally. */
+export interface ReactionToggleResponse {
+  active: boolean
+  counts: { [emoji: string]: number }
 }
 
 /** Pending counts per moderatable content type for the digest + dashboard badge. */
@@ -251,6 +497,51 @@ export interface ModerationCounts {
   media: number
   comments: number
   total: number
+}
+
+/** The three moderatable content types (Phase 6 combined queue / :type allowlist). */
+export type ModerationContentType = "guestbook" | "media" | "comment"
+
+/**
+ * One row from the combined moderation queue (Phase 6). Every column is present
+ * for every type; type-specific columns are NULL where they don't apply (message
+ * for media; file_key/kind/caption/needs_display for text). `author_name` /
+ * `author_trusted` are nullable because media LEFT JOINs accounts (official
+ * uploads have account_id NULL). SQLite 0|1 flags; the API maps to booleans.
+ */
+export interface ModerationQueueRow {
+  content_type: ModerationContentType
+  id: number
+  account_id: number | null
+  author_name: string | null
+  relation: string | null
+  author_trusted: 0 | 1 | null
+  status: ContentStatus | MediaStatus
+  created_at: string
+  message: string | null
+  target_type: TargetType | null
+  target_id: number | null
+  file_key: string | null
+  kind: MediaKind | null
+  caption: string | null
+  needs_display: 0 | 1 | null
+}
+
+/**
+ * An account with per-account content counts + household source, for the admin
+ * Accounts view (Phase 6). `guest_name` is the joined household guest name (null
+ * for open registration). `post_count` sums live content across all three tables.
+ */
+export interface AccountSummary {
+  id: number
+  name: string
+  relation: string | null
+  trusted: 0 | 1
+  guest_id: number | null
+  contact_email: string | null
+  created_at: string
+  guest_name: string | null
+  post_count: number
 }
 
 export interface BlocklistEntry {

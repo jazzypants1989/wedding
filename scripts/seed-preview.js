@@ -8,10 +8,20 @@
 
 import { DatabaseSync } from "node:sqlite"
 import path from "node:path"
+import fs from "node:fs"
+import crypto from "node:crypto"
 import { createTables, runMigrations } from "../db/schema.js"
+import { ensureUploadDirs, itemDir, variantDiskPath } from "../core/media-storage.js"
+import { makeJpeg, makeMp4 } from "../tests/media-fixtures.js"
 
 const DB_PATH = path.join(import.meta.dirname, "..", "data", "wedding.db")
 const BASE_URL = "http://localhost:3000"
+
+// --gallery N seeds ~N media rows (+ tiny on-disk fixtures) for the grid perf
+// check. Default 2000 when the flag is present without a count.
+const galleryFlag = process.argv.indexOf("--gallery")
+const galleryCount =
+  galleryFlag === -1 ? 0 : Math.max(1, Number(process.argv[galleryFlag + 1]) || 2000)
 
 const db = new DatabaseSync(DB_PATH)
 db.exec("PRAGMA foreign_keys = ON")
@@ -103,7 +113,102 @@ insertRsvp.run(
   "Sorry we can not make it, congratulations!",
 )
 
+if (galleryCount > 0) seedGallery(db, galleryCount)
+
 db.close()
+
+/**
+ * Seed ~count media rows with tiny on-disk fixtures so /media serves 200s and
+ * the content-visibility grid can be perf-checked. Idempotent: clears prior
+ * preview media (by preview accounts + the official marker) first.
+ * @param {DatabaseSync} db @param {number} count
+ */
+function seedGallery(db, count) {
+  ensureUploadDirs()
+
+  // Clean previous gallery preview data (rows + their on-disk dirs).
+  const stale = /** @type {{ file_key: string }[]} */ (
+    db
+      .prepare(
+        `SELECT file_key FROM media
+         WHERE account_id IN (SELECT id FROM accounts WHERE name_normalized LIKE 'preview %')
+            OR caption = 'preview-official'`,
+      )
+      .all()
+  )
+  for (const r of stale) fs.rmSync(itemDir(r.file_key), { recursive: true, force: true })
+  db.prepare(
+    `DELETE FROM media
+     WHERE account_id IN (SELECT id FROM accounts WHERE name_normalized LIKE 'preview %')
+        OR caption = 'preview-official'`,
+  ).run()
+  db.prepare(`DELETE FROM accounts WHERE name_normalized LIKE 'preview %'`).run()
+
+  // Three preview authors (two trusted → approved, one untrusted → pending).
+  const insertAccount = db.prepare(
+    `INSERT INTO accounts (name, name_normalized, trusted) VALUES (?, ?, ?)`,
+  )
+  /** @param {string} name @param {0 | 1} trusted */
+  const account = (name, trusted) =>
+    Number(insertAccount.run(name, name.toLowerCase(), trusted).lastInsertRowid)
+  const alice = account("Preview Alice", 1)
+  const bob = account("Preview Bob", 1)
+  const cara = account("Preview Cara", 0)
+
+  const insertMedia = db.prepare(
+    `INSERT INTO media (file_key, account_id, kind, section, status, caption, original_ext,
+       original_bytes, display_bytes, thumb_bytes, poster_bytes, width, height,
+       duration_seconds, needs_display, sort_order)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  )
+
+  const jpgOriginal = makeJpeg(256)
+  const jpgDisplay = makeJpeg(200)
+  const jpgThumb = makeJpeg(120)
+  const mp4Original = makeMp4(256)
+
+  const OFFICIAL = 6 // a handful of curated items in the official section
+  let approved = 0
+  let pending = 0
+  let videos = 0
+
+  for (let i = 0; i < count; i++) {
+    const fileKey = crypto.randomBytes(16).toString("hex")
+    const isOfficial = i < OFFICIAL
+    const isVideo = !isOfficial && i % 7 === 0
+    const isPending = !isOfficial && !isVideo && i % 11 === 0
+
+    const section = isOfficial ? "official" : "guest"
+    const status = isPending ? "pending" : "approved"
+    const accountId = isOfficial ? null : isPending ? cara : i % 2 === 0 ? alice : bob
+    const caption = isOfficial ? "preview-official" : null
+
+    const dir = itemDir(fileKey)
+    fs.mkdirSync(dir, { recursive: true })
+    if (isVideo) {
+      fs.writeFileSync(variantDiskPath(fileKey, "original", "mp4"), mp4Original)
+      fs.writeFileSync(variantDiskPath(fileKey, "poster", "jpg"), jpgThumb)
+      insertMedia.run(fileKey, accountId, "video", section, status, caption, "mp4",
+        mp4Original.length, null, null, jpgThumb.length, 1280, 720, 12.5, 0, 0)
+      videos++
+    } else {
+      fs.writeFileSync(variantDiskPath(fileKey, "original", "jpg"), jpgOriginal)
+      fs.writeFileSync(variantDiskPath(fileKey, "display", "jpg"), jpgDisplay)
+      fs.writeFileSync(variantDiskPath(fileKey, "thumb", "jpg"), jpgThumb)
+      insertMedia.run(fileKey, accountId, "image", section, status, caption, "jpg",
+        jpgOriginal.length, jpgDisplay.length, jpgThumb.length, null, 1200, 800, null, 0,
+        isOfficial ? i : 0)
+      if (isPending) pending++
+      else approved++
+    }
+  }
+
+  console.log("")
+  console.log(
+    `Gallery: seeded ${count} media (${approved} approved, ${pending} pending, ` +
+      `${videos} video, ${OFFICIAL} official) → ${BASE_URL}/gallery`,
+  )
+}
 
 // Print preview URLs
 console.log("")

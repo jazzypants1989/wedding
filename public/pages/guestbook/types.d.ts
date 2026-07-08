@@ -1,8 +1,11 @@
 /** @file Types for the guestbook page (feed + composer) */
 
+import type { ReactionSummary } from "../../../types.js"
+
 export type ContentStatus = "pending" | "approved" | "hidden" | "rejected"
 
-/** One entry as returned by GET /api/guestbook / POST /api/guestbook. */
+/** One entry as returned by GET /api/guestbook / POST /api/guestbook.
+ *  `reactions`/`comment_count` are attached by Phase 5 feed enrichment. */
 export interface GuestbookFeedEntry {
   id: number
   message: string
@@ -11,6 +14,8 @@ export interface GuestbookFeedEntry {
   status: ContentStatus
   created_at: string
   is_own: boolean
+  reactions?: ReactionSummary
+  comment_count?: number
 }
 
 export interface GuestbookFeedResponse {

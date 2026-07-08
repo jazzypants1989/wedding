@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gallery - Jordana & Jesse</title>
+  <meta name="description" content="Photos and videos from Jordana and Jesse's wedding.">
+  <meta name="theme-color" content="#eee6dc">
+  <link rel="icon" type="image/png" href="/images/favicon.png">
+  <link rel="preload" as="font" type="font/woff2" href="/fonts/dm-serif-display-latin.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="/fonts/jost-latin.woff2" crossorigin>
+  <link rel="preload" as="image" imagesrcset="/images/top-mobile-414w.webp 414w, /images/top-mobile.webp 828w" imagesizes="100vw" media="(max-width: 767px)">
+  <link rel="preload" as="image" imagesrcset="/images/top-desktop-768w.webp 768w, /images/top-desktop-1440w.webp 1440w, /images/top-desktop-2400w.webp 2400w, /images/top-desktop.webp 2880w" imagesizes="100vw" media="(min-width: 768px)">
+  <link rel="stylesheet" href="/styles/tokens.css">
+  <link rel="stylesheet" href="/styles/layout.css">
+  <link rel="stylesheet" href="/styles/components.css">
+  <link rel="stylesheet" href="/styles/social.css">
+  <link rel="stylesheet" href="/pages/gallery/gallery.css">
+  <script src="/components/theme-init.js"></script>
+</head>
+
+<body>
+  <a href="#main-content" class="skip-link">Skip to content</a>
+
+  <div class="hero hero-small">
+    <picture>
+      <source media="(min-width: 768px)" srcset="/images/top-desktop-768w.webp 768w, /images/top-desktop-1440w.webp 1440w, /images/top-desktop-2400w.webp 2400w, /images/top-desktop.webp 2880w" sizes="100vw">
+      <img src="/images/top-mobile.webp" srcset="/images/top-mobile-414w.webp 414w, /images/top-mobile.webp 828w" sizes="100vw" alt="" class="hero-image" loading="eager" fetchpriority="high" width="828" height="590">
+    </picture>
+  </div>
+
+  <header class="site-header text-center">
+    <h1 class="couple-names"><a href="/" class="home-link">Jordana & Jesse</a></h1>
+    <p class="wedding-info">April 26, 2026 &bull; Portland, OR</p>
+  </header>
+
+  <nav class="desktop-nav" aria-label="Main navigation">
+    <ul class="nav-list">
+      <li><a href="/#" class="nav-link">Home</a></li>
+      <li><a href="/#schedule" class="nav-link">Schedule</a></li>
+      <li><a href="/#dress-code" class="nav-link">Dress Code</a></li>
+      <li><a href="/#registry" class="nav-link">Registry</a></li>
+      <li><a href="/rsvp" class="nav-link">RSVP</a></li>
+    </ul>
+  </nav>
+
+  <button class="theme-toggle desktop-theme-toggle" type="button" aria-label="Switch to dark mode"><span
+      class="theme-icon-sun" aria-hidden="true"></span><span class="theme-icon-moon" aria-hidden="true"></span></button>
+
+  <div class="mobile-nav-wrapper" id="mobile-nav-wrapper">
+    <button class="hamburger-button flex-center" id="hamburger-button" aria-expanded="false"
+      aria-label="Open navigation menu">
+      <div class="hamburger-icon" id="hamburger-icon">
+        <span class="hamburger-line"></span>
+        <span class="hamburger-line"></span>
+        <span class="hamburger-line"></span>
+        <span class="hamburger-line"></span>
+      </div>
+      <span class="sr-only">Menu</span>
+    </button>
+
+    <nav class="mobile-nav" id="mobile-nav" aria-label="Mobile navigation">
+      <ul class="nav-list">
+        <li><a href="/#" class="nav-link">Home</a></li>
+        <li><a href="/#schedule" class="nav-link">Schedule</a></li>
+        <li><a href="/#dress-code" class="nav-link">Dress Code</a></li>
+        <li><a href="/#registry" class="nav-link">Registry</a></li>
+        <li><a href="/rsvp" class="nav-link">RSVP</a></li>
+        <li><button class="theme-toggle nav-link" type="button" aria-label="Switch to dark mode"><span
+              class="theme-icon-sun" aria-hidden="true"></span><span class="theme-icon-moon"
+              aria-hidden="true"></span></button></li>
+      </ul>
+    </nav>
+
+    <span class="mobile-logo">J&J</span>
+  </div>
+
+  <noscript>
+    <div style="max-width: 600px; margin: 2rem auto; padding: 1rem; text-align: center;">
+      <h2>JavaScript Required</h2>
+      <p>The gallery requires JavaScript to function. Please enable JavaScript in your browser and reload the page.</p>
+    </div>
+  </noscript>
+
+  <main id="main-content">
+    <section class="content-section gallery-section">
+      <h2 class="gallery-title">Gallery</h2>
+
+      <div class="gallery-switcher" role="tablist" aria-label="Gallery sections">
+        <button type="button" role="tab" class="gallery-tab" id="tab-official" aria-selected="false"
+          aria-controls="grid-official">Official</button>
+        <button type="button" role="tab" class="gallery-tab" id="tab-guest" aria-selected="true"
+          aria-controls="grid-guest">Guest Photos <span class="gallery-tab-count" id="count-guest"></span></button>
+      </div>
+
+      <div id="gallery-error" class="alert alert-error" role="alert" hidden></div>
+
+      <div class="gallery-guest-cta" id="guest-cta">
+        <button type="button" class="btn btn-primary" id="upload-open">Add photos &amp; videos</button>
+      </div>
+
+      <!-- Two persistent grids: hidden/shown, never re-rendered on switch. -->
+      <div id="grid-official" class="gallery-grid-container" role="tabpanel" aria-labelledby="tab-official" hidden></div>
+      <div id="grid-guest" class="gallery-grid-container" role="tabpanel" aria-labelledby="tab-guest"></div>
+
+      <div class="gallery-loadmore-wrap flex-center">
+        <button type="button" class="btn btn-secondary" id="gallery-loadmore" hidden>Load more</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- Mobile upload FAB (guest section only; appears after scrolling past header). -->
+  <button type="button" class="upload-fab" id="upload-fab" aria-label="Add photos and videos" hidden>+</button>
+
+  <!-- Upload tray (fixed bottom card; shown while a queue is active). -->
+  <aside class="upload-tray" id="upload-tray" aria-live="polite" hidden>
+    <div class="upload-tray-head">
+      <span id="upload-tray-summary">Uploading…</span>
+      <button type="button" class="upload-tray-cancel" id="upload-cancel-all">Cancel all</button>
+    </div>
+    <ul class="upload-tray-list" id="upload-tray-list"></ul>
+  </aside>
+
+  <!-- Lightbox dialog: native focus trap + Esc; dark stage for video controls. -->
+  <dialog id="lightbox" class="lightbox" aria-label="Media viewer">
+    <div class="lightbox-topbar">
+      <button type="button" class="lightbox-close" id="lightbox-close" aria-label="Close">&times;</button>
+      <span class="lightbox-counter" id="lightbox-counter" aria-live="polite"></span>
+      <div class="lightbox-meta">
+        <span class="lightbox-author" id="lightbox-author"></span>
+        <time class="lightbox-time" id="lightbox-time"></time>
+      </div>
+      <button type="button" class="lightbox-copy" id="lightbox-copy" aria-label="Copy link to this photo">Copy link</button>
+    </div>
+    <button type="button" class="lightbox-nav lightbox-prev" id="lightbox-prev" aria-label="Previous">&#8249;</button>
+    <div class="lightbox-stage" id="lightbox-stage"></div>
+    <button type="button" class="lightbox-nav lightbox-next" id="lightbox-next" aria-label="Next">&#8250;</button>
+    <div class="lightbox-panel" id="lightbox-panel">
+      <p class="lightbox-caption" id="lightbox-caption"></p>
+      <div class="lightbox-social" id="lightbox-social"></div>
+      <p class="lightbox-report"><a href="#" id="lightbox-report">Report this photo</a></p>
+    </div>
+  </dialog>
+
+  <nav class="footer-nav" aria-label="Footer navigation">
+    <ul class="nav-list">
+      <li><a href="/#" class="nav-link">Home</a></li>
+      <li><a href="/#schedule" class="nav-link">Schedule</a></li>
+      <li><a href="/#dress-code" class="nav-link">Dress Code</a></li>
+      <li><a href="/#registry" class="nav-link">Registry</a></li>
+      <li><a href="/rsvp" class="nav-link">RSVP</a></li>
+    </ul>
+  </nav>
+
+  <footer class="site-footer">
+    <picture>
+      <source media="(min-width: 768px)" srcset="/images/bottom-desktop-768w.webp 768w, /images/bottom-desktop-1440w.webp 1440w, /images/bottom-desktop.webp 2880w" sizes="100vw">
+      <img src="/images/bottom-mobile.webp" srcset="/images/bottom-mobile-414w.webp 414w, /images/bottom-mobile.webp 828w" sizes="100vw" alt="" loading="lazy" width="828" height="363">
+    </picture>
+  </footer>
+
+  <input type="file" id="upload-input" accept="image/*,video/*" multiple hidden>
+  <script type="module" src="/pages/gallery/main.js"></script>
+</body>
+
+</html>

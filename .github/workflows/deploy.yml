@@ -18,6 +18,11 @@ jobs:
         with:
           node-version: "22"
 
+      # typecheck needs the `typescript` devDependency; `npm test` is zero-dep
+      # but we install once so both steps run.
+      - name: Install dependencies
+        run: npm ci
+
       - name: Typecheck
         run: npm run typecheck
 
@@ -46,9 +51,8 @@ jobs:
             echo "    Container: $(docker inspect --format='{{.State.Health.Status}}' wedding 2>/dev/null || echo 'not running')"
 
             echo ""
-            echo "==> Backing up database..."
-            docker exec wedding cp /app/data/wedding.db /app/data/wedding.db.backup 2>/dev/null \
-              && echo "    Backup created" \
+            echo "==> Backing up database (WAL-safe VACUUM INTO)..."
+            docker exec wedding node scripts/backup-db.js \
               || echo "    Skipped (container not running)"
 
             echo ""

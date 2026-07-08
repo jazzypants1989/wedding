@@ -179,6 +179,75 @@ export function createTables(db) {
     CREATE INDEX IF NOT EXISTS idx_guestbook_feed
       ON guestbook_entries(status, id DESC) WHERE deleted_at IS NULL;
     CREATE INDEX IF NOT EXISTS idx_guestbook_account ON guestbook_entries(account_id);
+
+    -- Media items (photos + short videos). file_key is the public/storage id;
+    -- account_id NULL = admin/official upload. Rows stay 'uploading' until
+    -- finalize, so nothing partial is ever publicly visible.
+    CREATE TABLE IF NOT EXISTS media (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      file_key TEXT UNIQUE NOT NULL,                 -- 32 lowercase hex, crypto.randomBytes(16)
+      account_id INTEGER,                            -- NULL = admin/official upload
+      kind TEXT NOT NULL,                            -- image|video
+      section TEXT NOT NULL DEFAULT 'guest',         -- official|guest
+      status TEXT NOT NULL DEFAULT 'uploading',      -- uploading|pending|approved|hidden|rejected
+      caption TEXT,
+      original_ext TEXT,                             -- derived from sniff: jpg|png|webp|heic|mp4|mov
+      original_bytes INTEGER, display_bytes INTEGER, thumb_bytes INTEGER, poster_bytes INTEGER,
+      width INTEGER, height INTEGER,
+      duration_seconds REAL,                         -- video only
+      needs_display INTEGER NOT NULL DEFAULT 0,      -- HEIC-decode fallback: original-only (no display/thumb)
+      sort_order INTEGER NOT NULL DEFAULT 0,         -- official-section ordering (Phase 6)
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      reviewed_at TEXT,
+      deleted_at TEXT DEFAULT NULL,
+      FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE SET NULL
+    );
+
+    -- Serves admin/status-filtered lists; the public feed's OR-disjunction picks
+    -- the PK scan (fine for keyset id DESC at this scale) — same note as idx_guestbook_feed.
+    CREATE INDEX IF NOT EXISTS idx_media_guest_feed
+      ON media(section, status, id DESC) WHERE deleted_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_media_official_order
+      ON media(section, sort_order, id) WHERE deleted_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_media_account ON media(account_id);
+
+    -- Polymorphic comments on guestbook entries or media (target_type+target_id).
+    -- Reuses CONTENT_STATUS moderation (pending|approved|hidden|rejected). SQLite
+    -- can't do polymorphic FKs, so a BEFORE INSERT trigger (add_social_triggers)
+    -- enforces target existence; handlers pre-check visibility so the trigger is
+    -- a backstop only. See 00-overview reconciliation 2 + decision log.
+    CREATE TABLE IF NOT EXISTS comments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id INTEGER NOT NULL,
+      target_type TEXT NOT NULL,                     -- guestbook|media
+      target_id INTEGER NOT NULL,
+      message TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',        -- pending|approved|hidden|rejected
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      reviewed_at TEXT,
+      deleted_at TEXT DEFAULT NULL,
+      FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_comments_target
+      ON comments(target_type, target_id, status, id) WHERE deleted_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_comments_account ON comments(account_id);
+
+    -- Polymorphic emoji reactions. One per (account, target, emoji); toggle =
+    -- INSERT ON CONFLICT DO NOTHING else DELETE (atomic, no transaction). No
+    -- status/moderation and no updated_at — reactions are never held or edited.
+    CREATE TABLE IF NOT EXISTS reactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id INTEGER NOT NULL,
+      target_type TEXT NOT NULL,
+      target_id INTEGER NOT NULL,
+      emoji TEXT NOT NULL,               -- heart|clap|laugh|heart_eyes|cheers|fire
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(account_id, target_type, target_id, emoji),
+      FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_reactions_target ON reactions(target_type, target_id);
   `)
 
   // Data integrity triggers
@@ -340,5 +409,147 @@ export function runMigrations(db) {
       END
     `)
     record.run("add_guestbook_triggers")
+  }
+
+  // Media: status/kind/section enum CHECK triggers + updated_at auto-trigger.
+  if (!applied.get("add_media_triggers")) {
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS check_media_status_insert
+      BEFORE INSERT ON media
+      FOR EACH ROW
+      WHEN NEW.status NOT IN ('uploading', 'pending', 'approved', 'hidden', 'rejected')
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid media status. Must be: uploading, pending, approved, hidden, or rejected');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS check_media_status_update
+      BEFORE UPDATE ON media
+      FOR EACH ROW
+      WHEN NEW.status NOT IN ('uploading', 'pending', 'approved', 'hidden', 'rejected')
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid media status. Must be: uploading, pending, approved, hidden, or rejected');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS check_media_kind_insert
+      BEFORE INSERT ON media
+      FOR EACH ROW
+      WHEN NEW.kind NOT IN ('image', 'video')
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid media kind. Must be: image or video');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS check_media_kind_update
+      BEFORE UPDATE ON media
+      FOR EACH ROW
+      WHEN NEW.kind NOT IN ('image', 'video')
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid media kind. Must be: image or video');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS check_media_section_insert
+      BEFORE INSERT ON media
+      FOR EACH ROW
+      WHEN NEW.section NOT IN ('official', 'guest')
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid media section. Must be: official or guest');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS check_media_section_update
+      BEFORE UPDATE ON media
+      FOR EACH ROW
+      WHEN NEW.section NOT IN ('official', 'guest')
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid media section. Must be: official or guest');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS auto_updated_at_media
+      AFTER UPDATE ON media
+      FOR EACH ROW
+      WHEN NEW.updated_at = OLD.updated_at
+      BEGIN
+        UPDATE media SET updated_at = datetime('now') WHERE id = NEW.id;
+      END
+    `)
+    record.run("add_media_triggers")
+  }
+
+  // Social (comments + reactions): comment status-enum CHECK triggers, a
+  // polymorphic-FK substitute (BEFORE INSERT target-existence check) for both
+  // tables, and the comment updated_at auto-trigger. Reactions have no status
+  // or updated_at column, so they get only the existence trigger.
+  //
+  // Known quirk (accepted): `INSERT … ON CONFLICT DO NOTHING` still fires the
+  // BEFORE INSERT trigger, so un-reacting to a since-soft-deleted target aborts
+  // here — the reaction handler's visibility pre-check turns that into a 404
+  // anyway, and orphaned reaction rows on deleted targets are harmless at this
+  // scale (nothing cascades on target soft-delete; no cleanup machinery).
+  if (!applied.get("add_social_triggers")) {
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS check_comment_status_insert
+      BEFORE INSERT ON comments
+      FOR EACH ROW
+      WHEN NEW.status NOT IN ('pending', 'approved', 'hidden', 'rejected')
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid comment status. Must be: pending, approved, hidden, or rejected');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS check_comment_status_update
+      BEFORE UPDATE ON comments
+      FOR EACH ROW
+      WHEN NEW.status NOT IN ('pending', 'approved', 'hidden', 'rejected')
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid comment status. Must be: pending, approved, hidden, or rejected');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS check_comment_target_exists
+      BEFORE INSERT ON comments
+      FOR EACH ROW
+      WHEN (NEW.target_type = 'guestbook'
+              AND NOT EXISTS (SELECT 1 FROM guestbook_entries WHERE id = NEW.target_id AND deleted_at IS NULL))
+        OR (NEW.target_type = 'media'
+              AND NOT EXISTS (SELECT 1 FROM media WHERE id = NEW.target_id AND deleted_at IS NULL))
+      BEGIN
+        SELECT RAISE(ABORT, 'Comment target does not exist');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS check_reaction_target_exists
+      BEFORE INSERT ON reactions
+      FOR EACH ROW
+      WHEN (NEW.target_type = 'guestbook'
+              AND NOT EXISTS (SELECT 1 FROM guestbook_entries WHERE id = NEW.target_id AND deleted_at IS NULL))
+        OR (NEW.target_type = 'media'
+              AND NOT EXISTS (SELECT 1 FROM media WHERE id = NEW.target_id AND deleted_at IS NULL))
+      BEGIN
+        SELECT RAISE(ABORT, 'Reaction target does not exist');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS auto_updated_at_comments
+      AFTER UPDATE ON comments
+      FOR EACH ROW
+      WHEN NEW.updated_at = OLD.updated_at
+      BEGIN
+        UPDATE comments SET updated_at = datetime('now') WHERE id = NEW.id;
+      END
+    `)
+    record.run("add_social_triggers")
+  }
+
+  // Account recovery (Phase 6): single-use, time-limited magic-link tokens for
+  // untrusted accounts that supplied a contact_email. Only the SHA-256 hash is
+  // stored (hashToken pattern); the plaintext lives only in the emailed link.
+  // used_at marks a spent token (single-use); expiry is checked at consume time.
+  if (!applied.get("add_account_recovery")) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS account_recovery_tokens (
+        token_hash TEXT PRIMARY KEY,
+        account_id INTEGER NOT NULL,
+        expires_at TEXT NOT NULL,
+        used_at TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_account_recovery_account ON account_recovery_tokens(account_id);
+    `)
+    record.run("add_account_recovery")
   }
 }

@@ -62,15 +62,21 @@ export const MEDIA_SECTION = Object.freeze({ OFFICIAL: "official", GUEST: "guest
 
 All under `/api/media/*` (normal router dispatch; mutations wrapped with **`withAccountOrAdmin()`** — a new wrapper this phase adds to `core/auth.js` that accepts a guest `guest_session` OR an admin `session` cookie, applying the matching CSRF check; binding reconciliation 7. It reads only headers, so it composes with streaming bodies. This is what lets Phase 6's admin upload reuse these exact routes with `adminFetch` and `account_id: NULL` rows).
 
+**Normalized principal (implemented):** an admin caller has no `accounts` row, so the wrapper hands the handler a `routeInfo.principal = { isAdmin, accountId: number|null, trusted, session }` rather than the raw session — admin → `{ isAdmin: true, accountId: null, trusted: true }`, guest → `{ isAdmin: false, accountId: account.account_id, trusted: !!account.trusted }`. Ownership is `principal.isAdmin || row.account_id === principal.accountId`; finalize status is `principal.isAdmin || principal.trusted ? 'approved' : 'pending'`. **Precedence: check `guest_session` first, fall back to admin `session`** — so a couple browsing with both cookies uploads as their guest account, while Phase 6's `adminFetch` (no guest cookie) resolves as admin. (Note: the overview's reconciliation 7 / adjudication B3 shorthand `account_id = account.id` refers to this `accountId` field — the session object exposes `account_id`, never `.id`.)
+
 ```
 POST /api/media                    JSON via existing parseBody:
                                    { kind, originalName?, width?, height?, durationS?, originalBytes }
                                    (admin caller may add section:'official')
                                    → disk-guard + quota check (§6) → 201 { id, fileKey }, row status='uploading'
-PUT  /api/media/:id/original       raw body; Content-Type in allowlist; Content-Length REQUIRED (411 if absent)
-PUT  /api/media/:id/display        images only (canvas JPEG/WebP)
-PUT  /api/media/:id/thumb          images only
-PUT  /api/media/:id/poster         videos only
+PUT  /api/media/:id/:variant       ONE parameterized route (implemented as such — not four separate
+                                   routes); a per-kind VARIANT_SPEC map gates which :variant is legal
+                                   for the row's kind, so an invalid pairing (e.g. poster on an image)
+                                   → 400 before any body is read. The four valid variant/kind pairings:
+                                     :variant=original  raw body; Content-Type in allowlist; Content-Length REQUIRED (411 if absent)
+                                     :variant=display   images only (canvas JPEG/WebP)
+                                     :variant=thumb     images only
+                                     :variant=poster    videos only
                                    REQUIRES row status='uploading' → 409 otherwise (binding reconciliation 8:
                                    re-PUT idempotency spans ONLY the upload window; once finalized, variants
                                    are immutable — without this gate an owner could silently replace
@@ -80,7 +86,9 @@ PUT  /api/media/:id/poster         videos only
 POST /api/media/:id/finalize       JSON { width, height, durationS?, displayMissing? }
                                    REQUIRES status='uploading'; verifies required variants on disk
                                    (image: original+display+thumb; video: original+poster;
-                                   displayMissing→needs_display=1);
+                                   displayMissing→ requires ONLY original + sets needs_display=1 —
+                                   a HEIC that desktop Chrome couldn't decode has NEITHER display
+                                   NOR thumb, since both come from the one canvas decode);
                                    video: runs blankVideoGps() on the original IN PLACE (§7.5) — the
                                    original then doubles as the public `video` variant;
                                    flips status = admin-created ? 'approved'
@@ -93,9 +101,9 @@ DELETE /api/media/:id              own (or admin) — ANY status, matching guest
                                    who regrets a photo must not need to contact the couple.
 ```
 
-Ownership: every `:id` route verifies `account_id = account.account_id` OR the caller is admin. Rows stay `uploading` until finalize; nothing partial is ever publicly visible. (No notification call on pending — the Phase 2 digest service discovers pending items on its own schedule; this is what makes this phase genuinely parallel with Phase 2.)
+Ownership: every `:id` route verifies `row.account_id = principal.accountId` OR the caller is admin. Rows stay `uploading` until finalize; nothing partial is ever publicly visible. (No notification call on pending — the Phase 2 digest service discovers pending items on its own schedule; this is what makes this phase genuinely parallel with Phase 2. This phase's only touch to the digest is wiring a real `countPendingMedia()` into `getModerationCounts()` — added in `db/media.js`, imported by `db/guestbook-entries.js` — so the hourly digest picks up pending media automatically.)
 
-**Orphan cleanup** (hook the existing hourly `setInterval` in `server.js`): `cleanAbandonedUploads()` — delete `status='uploading'` rows older than 6h + their directories; unlink `data/uploads/tmp/*.part` older than 1h; log counts. Full integrity pass daily (hourly counter modulo 24): files-without-rows → move to `data/uploads/quarantine/` (never auto-hard-delete); finalized rows with missing variant files → log loudly + flag for admin.
+**Orphan cleanup** (hook the existing hourly `setInterval` in `server.js`): `cleanAbandonedUploads()` — delete `status='uploading'` rows older than 6h + their directories; unlink `data/uploads/tmp/*.part` older than 1h; log counts. Full integrity pass daily (hourly counter modulo 24): files-without-rows → move to `data/uploads/quarantine/` (never auto-hard-delete); finalized rows with missing variant files → log loudly + flag for admin. The "missing variant" check computes each row's **expected** variants (video → original+poster; image → original+display+thumb, but a `needs_display=1` image expects only original) so HEIC fallbacks don't false-alarm.
 
 ## 3. Streaming write path — new `core/upload.js`
 
@@ -108,8 +116,10 @@ Pattern: `stream.pipeline(req, guardTransform, fs.createWriteStream(stagingPath,
 export async function streamToStaging(req, opts) {
   const declared = Number(req.headers["content-length"])
   if (!Number.isInteger(declared) || declared <= 0) throw new LengthRequiredError() // → 411
-  // LengthRequiredError is a new AppError subclass (411, "LENGTH_REQUIRED") added to
-  // core/validation.js this phase — ValidationError maps to 400 and would fail §9's 411 test.
+  // This phase adds THREE AppError subclasses to core/validation.js, each mapping to
+  // the right status: LengthRequiredError (411, "LENGTH_REQUIRED"), PayloadTooLargeError
+  // (413, "PAYLOAD_TOO_LARGE"), UnsupportedMediaTypeError (415, "UNSUPPORTED_MEDIA_TYPE").
+  // Plain ValidationError maps to 400 and would fail §9's 411/413/415 tests.
   if (declared > opts.maxBytes) throw new PayloadTooLargeError()
   const stagingPath = path.join(opts.stagingDir, crypto.randomBytes(16).toString("hex") + ".part")
   let bytes = 0, sniffed = "", headBuf = Buffer.alloc(0)
@@ -124,7 +134,7 @@ export async function streamToStaging(req, opts) {
         headBuf = Buffer.concat([headBuf, chunk]).subarray(0, 32)
         if (headBuf.length >= 12 && !sniffed) {
           sniffed = sniffMagic(headBuf)
-          if (!opts.expectedKinds.includes(sniffed)) return cb(new ValidationError("Unsupported file type")) // fail fast → 415
+          if (!opts.expectedKinds.includes(sniffed)) return cb(new UnsupportedMediaTypeError("Unsupported file type")) // fail fast → 415
         }
       }
       hash.update(chunk)
@@ -135,7 +145,7 @@ export async function streamToStaging(req, opts) {
   try {
     await pipeline(req, guard, ws)
     if (bytes !== declared) throw new ValidationError("Body shorter than Content-Length")
-    if (!sniffed || !opts.expectedKinds.includes(sniffed)) throw new ValidationError("Unsupported file type")
+    if (!sniffed || !opts.expectedKinds.includes(sniffed)) throw new UnsupportedMediaTypeError("Unsupported file type")
     return { stagingPath, bytes, sniffed, sha256: hash.digest("hex") }
   } catch (err) {
     fs.promises.unlink(stagingPath).catch(() => {}) // hourly sweep is the backstop
@@ -214,7 +224,7 @@ data/uploads/
 - 256 prefix buckets; dir-per-item (delete = one recursive rm; variants co-located for rsync).
 - Dirs created at boot (`mkdirSync recursive` beside DB init; volume is owned by `wedding:1001`, no Dockerfile change).
 - Capacity estimate: 2,000 photos × 8MB + display/thumbs (~1.3GB) + 200 videos × 60MB + posters ≈ **~30GB; provision ≥50GB**.
-- Disk guard at `POST /api/media` and before each original PUT: `fs.statfsSync(uploadsDir)` → `free = bavail * bsize`; refuse 507 when `free - declaredBytes - reservedInFlight < MEDIA_MIN_FREE_BYTES` (env, default 5GB) or `SELECT SUM(original_bytes)` > `MEDIA_MAX_TOTAL_BYTES` (env, default 45GB).
+- Disk guard at `POST /api/media` and before each original PUT: `fs.statfsSync(TMP_DIR)` (a child of `uploadsDir`, same filesystem — the free-bytes number is identical; `/api/health` reports the same figure via `statfsSync(UPLOADS_DIR)`) → `free = bavail * bsize`; refuse 507 when `free - declaredBytes - reservedInFlight < MEDIA_MIN_FREE_BYTES` (env, default 5GB) or `SELECT SUM(original_bytes)` > `MEDIA_MAX_TOTAL_BYTES` (env, default 45GB).
 - **Untrusted-account quota** (abuse guard — open registration is instant, so a stranger with the URL must not be able to fill the disk): at `POST /api/media`, if the account is untrusted, refuse 507 when `SELECT SUM(original_bytes) WHERE account_id = ?` (plus this upload's declared bytes) exceeds `MEDIA_UNTRUSTED_QUOTA_BYTES` (env, default 250MB). Trusted accounts are unlimited (the global caps still apply). Auto-trust on first approval (Phase 6) lifts the cap for legitimate guests quickly.
 - **File deletion on terminal states**: reject and self-delete unlink the item's variant files (keep the DB row for audit); hide keeps files (it's reversible). Without this, rejected 100MB videos occupy disk forever with no admin recourse.
 

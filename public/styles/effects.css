@@ -572,20 +572,6 @@
   will-change: transform, opacity;
 }
 
-/* Wave element: single element with box-shadow for all sparkles in a wave.
-   Renders as 1 DOM element instead of ~69, dramatically reducing render cost. */
-.grand-entrance-wave {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 0;
-  height: 0;
-  border-radius: 50%;
-  animation: grand-entrance-sparkle-fall 1.5s ease-out forwards;
-  will-change: transform, opacity;
-  contain: layout style paint;
-}
-
 .grand-entrance-sparkle::before {
   top: -3px;
   left: 50%;

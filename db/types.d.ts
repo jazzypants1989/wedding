@@ -187,7 +187,7 @@ export function cleanExpiredSessions(): void
 
 /** @file accounts.js - Types for guest account database operations */
 
-import type { Account, AccountSession } from "../types.js"
+import type { Account, AccountSession, AccountSummary } from "../types.js"
 
 export interface CreateAccountInput {
   guestId: number | null
@@ -215,6 +215,27 @@ export function findAccountByGuestAndName(
 
 export function getAccountById(id: number): Account | undefined
 
+/** Most-recent non-deleted account with this recovery contact_email, or undefined. */
+export function findAccountByContactEmail(
+  email: string | null | undefined,
+): Account | undefined
+
+/** Admin Accounts view: accounts + per-account content counts + household source. */
+export function listAccounts(options: {
+  trusted?: boolean | null
+  limit: number
+  offset: number
+}): AccountSummary[]
+
+/** Total non-deleted accounts (optionally filtered by trusted) for pagination. */
+export function countAccounts(options: { trusted?: boolean | null }): number
+
+/** Set an account's trusted flag. Returns true if a row changed. */
+export function setAccountTrusted(id: number, trusted: boolean): boolean
+
+/** Soft-delete an account. Returns true if a row changed. */
+export function softDeleteAccount(id: number): boolean
+
 /** @file account-sessions.js - Types for guest session database operations */
 
 /**
@@ -232,6 +253,9 @@ export function getAccountSession(token: string): AccountSession | null
 export function updateAccountSessionActivity(token: string): void
 
 export function deleteAccountSession(token: string): void
+
+/** Delete every session for an account (admin account-delete). */
+export function deleteAccountSessionsForAccount(accountId: number): void
 
 export function rotateAccountCsrfToken(token: string): string
 
@@ -419,6 +443,15 @@ export function createGuestbookEntry(
 export function getGuestbookEntryById(id: number): GuestbookEntry | undefined
 
 /**
+ * Minimal visibility probe (id, account_id, status, is_own) for the comment
+ * parent gate. Excludes soft-deleted rows; the caller gates on status.
+ */
+export function getGuestbookEntryForCaller(
+  id: number,
+  callerId?: number | null,
+): TargetVisibilityRow | undefined
+
+/**
  * The public feed: approved entries plus the caller's own pending ones,
  * newest-first (id DESC), keyset-paginated.
  */
@@ -459,3 +492,299 @@ export function getModerationCounts(): ModerationCounts
 
 /** ISO timestamp of the oldest pending guestbook entry, or null if none. */
 export function getOldestPendingGuestbookAt(): string | null
+
+/** @file media.js - Types for media item database operations */
+
+import type {
+  Media,
+  MediaKind,
+  MediaSection,
+  MediaStatus,
+  MediaFeedRow,
+} from "../types.js"
+
+/** Result from a SUM(...) query. */
+export interface SumResult {
+  total: number
+}
+
+export interface MediaFeedOptions {
+  /** The signed-in caller's account id, or null for anonymous requests. */
+  callerId?: number | null
+  /** Which gallery section to page through. */
+  section: MediaSection
+  /** Keyset cursor (guest section only): rows with id < before. Null = first page. */
+  before?: number | null
+  limit: number
+}
+
+/**
+ * The public gallery feed for one section. Guest: approved + the caller's own
+ * pending, newest-first (id DESC), keyset-paginated. Official: sort_order, id,
+ * single page. LEFT JOIN accounts, so author_name is null for official uploads.
+ */
+export function getMediaFeed(options: MediaFeedOptions): MediaFeedRow[]
+
+/**
+ * Single-item feed row (LEFT JOIN accounts + is_own) for ?item= deep links.
+ * Excludes soft-deleted rows; the API applies the status visibility gate.
+ */
+export function getMediaFeedRowById(
+  id: number,
+  callerId?: number | null,
+): MediaFeedRow | undefined
+
+export interface CreateMediaRowInput {
+  fileKey: string
+  /** NULL for admin/official uploads. */
+  accountId: number | null
+  kind: MediaKind
+  section: MediaSection
+  /** Client-declared original size; persisted so in-flight rows press the quota. */
+  originalBytes: number
+}
+
+/** Insert an 'uploading' media row and return the full row. */
+export function createMediaRow(input: CreateMediaRowInput): Media
+export function getMediaById(id: number): Media | undefined
+export function getMediaByFileKey(fileKey: string): Media | undefined
+
+/** Set a variant's byte size (variant resolved through a fixed column map;
+ *  throws on an unknown variant). */
+export function setMediaVariantBytes(id: number, variant: string, bytes: number): void
+
+/** Record the sniff-derived storage extension on the original. */
+export function setMediaOriginalExt(id: number, ext: string): void
+
+export interface FinalizeMediaInput {
+  width: number | null
+  height: number | null
+  durationS?: number | null
+  needsDisplay: boolean
+  status: MediaStatus
+}
+
+/** Apply finalize metadata + flip status (only while still 'uploading'). */
+export function finalizeMedia(id: number, input: FinalizeMediaInput): Media
+
+/**
+ * Transition a media row's status if its current status is in fromStatuses (and
+ * it isn't soft-deleted); stamps reviewed_at. Returns true if a row changed.
+ */
+export function setMediaStatus(
+  id: number,
+  fromStatuses: MediaStatus[],
+  toStatus: MediaStatus,
+): boolean
+
+/** All official, non-deleted media ids in display order (reorder validation). */
+export function getOfficialMediaIds(): number[]
+
+/** Rewrite official items' sort_order to the given id order (array index).
+ *  Caller wraps in withTransaction; only official non-deleted rows are touched. */
+export function setMediaSortOrders(ids: number[]): void
+
+/** MOVE an approved guest item into the official section, appended at the end.
+ *  Returns true if a row changed (false if not an approved guest item). */
+export function promoteMediaToOfficial(id: number): boolean
+
+/** Set a media item's caption. Returns true if a row changed. */
+export function updateMediaCaption(id: number, caption: string | null): boolean
+
+/** Soft-delete (owner/admin gate is enforced in the API). Returns true if changed. */
+export function softDeleteMedia(id: number): boolean
+
+/** Hard-delete an abandoned 'uploading' row (sweep only). */
+export function hardDeleteMedia(id: number): void
+
+/** Pending media count for the moderation digest/badge. */
+export function countPendingMedia(): number
+
+/** Sum of original_bytes across live rows (global disk guard). */
+export function sumOriginalBytes(): number
+
+/** Sum of original_bytes for one account (untrusted quota). */
+export function sumOriginalBytesForAccount(accountId: number): number
+
+export interface AbandonedUploadRow {
+  id: number
+  file_key: string
+  original_ext: string | null
+}
+
+/** 'uploading' rows older than the given SQLite datetime modifier (e.g.
+ *  '-6 hours') — swept as abandoned. */
+export function getAbandonedUploads(modifier: string): AbandonedUploadRow[]
+
+export interface FileKeyRow {
+  file_key: string
+}
+
+/** Every file_key in the table (for orphan-file detection). */
+export function getAllMediaFileKeys(): FileKeyRow[]
+
+export interface IntegrityRow {
+  id: number
+  file_key: string
+  kind: MediaKind
+  original_ext: string | null
+  needs_display: 0 | 1
+  poster_bytes: number | null
+}
+
+/** Finalized, non-deleted rows whose variant files should exist on disk. */
+export function getFinalizedMediaForIntegrity(): IntegrityRow[]
+
+/** @file comments.js - Types for comment database operations (Phase 5) */
+
+// (ContentStatus is already imported by the guestbook-entries section above.)
+import type {
+  Comment,
+  CommentFeedRow,
+  CommentModerationRow,
+  TargetType,
+} from "../types.js"
+
+export interface CreateCommentInput {
+  accountId: number
+  targetType: TargetType
+  targetId: number
+  message: string
+  status: ContentStatus
+}
+
+/** Insert a comment and return the full row. */
+export function createComment(input: CreateCommentInput): Comment
+
+export function getCommentById(id: number): Comment | undefined
+
+/**
+ * A target's thread: approved comments plus the caller's own pending ones,
+ * oldest-first (id ASC). No keyset — comment volumes are small.
+ */
+export function getCommentsForTarget(options: {
+  targetType: TargetType
+  targetId: number
+  callerId?: number | null
+}): CommentFeedRow[]
+
+/** Soft-delete a comment only if it belongs to accountId. Returns true if changed. */
+export function softDeleteComment(id: number, accountId: number): boolean
+
+/** Transition a comment's status if its current status is in fromStatuses. */
+export function setCommentStatus(
+  id: number,
+  fromStatuses: ContentStatus[],
+  toStatus: ContentStatus,
+): boolean
+
+/** Admin queue: pending comments oldest-first, offset-paginated (Phase 6 UI). */
+export function getCommentModerationQueue(options: {
+  limit: number
+  offset: number
+}): CommentModerationRow[]
+
+/** Count non-deleted pending comments. */
+export function countPendingComments(): number
+
+/** Approved comment count per target id (feed enrichment). Empty ids → empty map. */
+export function getCommentCounts(
+  targetType: TargetType,
+  ids: number[],
+): Map<number, number>
+
+/** @file reactions.js - Types for reaction database operations (Phase 5) */
+
+import type { ReactionSummary } from "../types.js"
+
+export interface ToggleReactionInput {
+  accountId: number
+  targetType: TargetType
+  targetId: number
+  emoji: string
+}
+
+/** Per-emoji totals for a single target (only emojis with ≥1 reaction). */
+export function getReactionCounts(
+  targetType: TargetType,
+  targetId: number,
+): { [emoji: string]: number }
+
+/**
+ * Toggle one emoji for one account/target: insert if absent (active=true), else
+ * delete (active=false). Returns the new state + fresh counts for the target.
+ */
+export function toggleReaction(input: ToggleReactionInput): {
+  active: boolean
+  counts: { [emoji: string]: number }
+}
+
+/**
+ * Per-target reaction summaries (count + caller's `mine`) for a page of ids
+ * (feed enrichment). Empty ids → empty map.
+ */
+export function getReactionSummary(
+  targetType: TargetType,
+  ids: number[],
+  callerId?: number | null,
+): Map<number, ReactionSummary>
+
+/** @file targets.js - Cross-target visibility gate for comments/reactions (Phase 5) */
+
+/** Minimal row shape both target lookups return for the visibility check. */
+export interface TargetVisibilityRow {
+  id: number
+  account_id: number | null
+  status: ContentStatus
+  is_own: 0 | 1
+}
+
+/**
+ * Is a comment/reaction target visible to this caller? Approved is public; a
+ * pending item only to its owner. False for missing/hidden/rejected/deleted.
+ */
+export function isTargetVisible(
+  targetType: TargetType,
+  targetId: number,
+  callerId?: number | null,
+): boolean
+
+/** @file moderation.js - Cross-type moderation queries (Phase 6) */
+
+import type { ModerationQueueRow, ModerationContentType } from "../types.js"
+
+/**
+ * Combined moderation queue across guestbook_entries, media, and comments.
+ * `type` (optional) narrows to one table; `status` defaults to "pending".
+ * `accountId` (optional) filters to one author. Offset-paginated, newest-first.
+ */
+export function getModerationQueue(options: {
+  type?: ModerationContentType | null
+  status?: string
+  accountId?: number | null
+  limit: number
+  offset: number
+}): ModerationQueueRow[]
+
+/** Approve all of an account's pending items across the three tables (in a
+ *  caller-supplied transaction). Returns the total number of rows released. */
+export function approvePendingForAccount(accountId: number): number
+
+/** Hide all of an account's approved content across the three tables (account
+ *  soft-delete; reversible). Returns the total number of rows hidden. */
+export function hideApprovedContentForAccount(accountId: number): number
+
+/** @file account-recovery.js - Account recovery tokens (Phase 6) */
+
+/** Store a single-use recovery token (hash only) with an expiry timestamp. */
+export function createRecoveryToken(
+  accountId: number,
+  tokenHash: string,
+  expiresAt: string,
+): void
+
+/**
+ * Atomically redeem a recovery token: returns its account_id and marks it used,
+ * or null if the token is unknown, already used, or expired.
+ */
+export function consumeRecoveryToken(tokenHash: string): number | null

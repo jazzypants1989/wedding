@@ -2,7 +2,7 @@
 /** @import * as Types from './types.js' */
 
 import { sendJson } from "./http.js"
-import { withErrorHandling, withAdmin, withAccount } from "./auth.js"
+import { withErrorHandling, withAdmin, withAccount, withAccountOrAdmin } from "./auth.js"
 import * as health from "../api/health.js"
 import * as config from "../api/config.js"
 import * as rsvp from "../api/rsvp.js"
@@ -25,7 +25,12 @@ import * as blocklist from "../api/admin/blocklist.js"
 import * as manualSms from "../api/admin/manual-sms.js"
 import * as account from "../api/account.js"
 import * as guestbook from "../api/guestbook.js"
+import * as media from "../api/media.js"
+import * as comments from "../api/comments.js"
+import * as reactions from "../api/reactions.js"
 import * as moderation from "../api/admin/moderation.js"
+import * as adminAccounts from "../api/admin/accounts.js"
+import * as adminMedia from "../api/admin/media.js"
 
 /** @type {Types.Route[]} */
 const routes = []
@@ -80,6 +85,8 @@ export function route(method, pattern, handler, options = {}) {
     wrappedHandler = withAdmin(/** @type {Types.AdminHandler} */ (handler))
   } else if (options.account) {
     wrappedHandler = withAccount(/** @type {Types.AccountHandler} */ (handler))
+  } else if (options.accountOrAdmin) {
+    wrappedHandler = withAccountOrAdmin(/** @type {Types.AccountOrAdminHandler} */ (handler))
   } else if (options.errorHandling) {
     wrappedHandler = withErrorHandling(/** @type {Types.RouteHandler} */ (handler))
   } else {
@@ -144,12 +151,40 @@ route("POST", "/api/petition", lookup.petition, { errorHandling: true })
 route("POST", "/api/account/register", account.register, { errorHandling: true })
 route("POST", "/api/account/logout", account.logout, { errorHandling: true })
 route("GET", "/api/account/me", account.me, { errorHandling: true })
+// Magic-link recovery (public, rate-limited; POST is an always-200 non-oracle,
+// GET redeems the one-time token and redirects into /guestbook).
+route("POST", "/api/account/recover", account.recover, { errorHandling: true })
+route("GET", "/api/account/recover/:token", account.recoverConsume, { errorHandling: true })
 
 // Public guestbook routes. GET is public (with getOptionalAccount inside for
 // own-pending interleave); POST/DELETE require a guest account.
 route("GET", "/api/guestbook", guestbook.list, { errorHandling: true })
 route("POST", "/api/guestbook", guestbook.create, { account: true })
 route("DELETE", "/api/guestbook/:id", guestbook.remove, { account: true })
+
+// Public gallery read routes. GET is public (getOptionalAccount inside for the
+// own-pending interleave / single-item visibility gate).
+route("GET", "/api/media", media.list, { errorHandling: true })
+route("GET", "/api/media/:id", media.getOne, { errorHandling: true })
+
+// Media upload-session routes. withAccountOrAdmin accepts a guest OR an admin
+// principal (Phase 6's admin upload reuses these exact routes via adminFetch).
+route("POST", "/api/media", media.createSession, { accountOrAdmin: true })
+route("PUT", "/api/media/:id/:variant", media.putVariant, { accountOrAdmin: true })
+route("POST", "/api/media/:id/finalize", media.finalize, { accountOrAdmin: true })
+route("DELETE", "/api/media/:id", media.remove, { accountOrAdmin: true })
+
+// Polymorphic comments. GET is public (getOptionalAccount inside for the
+// own-pending interleave); POST requires a guest account. The literal 4th
+// segment `comments` distinguishes these from PUT :variant / POST finalize.
+route("GET", "/api/guestbook/:id/comments", comments.listGuestbook, { errorHandling: true })
+route("POST", "/api/guestbook/:id/comments", comments.createGuestbook, { account: true })
+route("GET", "/api/media/:id/comments", comments.listMedia, { errorHandling: true })
+route("POST", "/api/media/:id/comments", comments.createMedia, { account: true })
+route("DELETE", "/api/comments/:id", comments.remove, { account: true })
+
+// Reactions: a single toggle endpoint (target in the body). Account required.
+route("POST", "/api/reactions/toggle", reactions.toggle, { account: true })
 
 // Admin auth routes (error handling only, no session required)
 route("POST", "/api/admin/login", sessions.login, { errorHandling: true })
@@ -183,9 +218,23 @@ route("POST", "/api/admin/petitions/:id/deny", petitions.deny, { admin: true })
 // a fixed allowlist in the handler — never interpolated into SQL)
 route("GET", "/api/admin/moderation/queue", moderation.queue, { admin: true })
 route("GET", "/api/admin/moderation/counts", moderation.counts, { admin: true })
+route("POST", "/api/admin/moderation/bulk", moderation.bulk, { admin: true })
 route("POST", "/api/admin/moderation/:type/:id/approve", moderation.approve, { admin: true })
 route("POST", "/api/admin/moderation/:type/:id/reject", moderation.reject, { admin: true })
 route("POST", "/api/admin/moderation/:type/:id/hide", moderation.hide, { admin: true })
+
+// Admin account-management routes (Phase 6)
+route("GET", "/api/admin/accounts", adminAccounts.list, { admin: true })
+route("POST", "/api/admin/accounts/:id/trust", adminAccounts.trust, { admin: true })
+route("POST", "/api/admin/accounts/:id/untrust", adminAccounts.untrust, { admin: true })
+route("DELETE", "/api/admin/accounts/:id", adminAccounts.remove, { admin: true })
+
+// Admin curated-gallery routes (Phase 6). The literal `reorder` segment and the
+// `:id/promote` shape disambiguate from the bare `/:id` PATCH/DELETE.
+route("POST", "/api/admin/media/reorder", adminMedia.reorder, { admin: true })
+route("POST", "/api/admin/media/:id/promote", adminMedia.promote, { admin: true })
+route("PATCH", "/api/admin/media/:id", adminMedia.caption, { admin: true })
+route("DELETE", "/api/admin/media/:id", adminMedia.remove, { admin: true })
 
 // Admin blocklist routes
 route("GET", "/api/admin/blocklist", blocklist.list, { admin: true })

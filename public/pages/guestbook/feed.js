@@ -13,6 +13,8 @@ import {
 import { requireAccount } from "../../components/guest-session.js"
 import { fireConfetti, miniSparkle, setButtonLoading } from "../../components/celebrate.js"
 import { upgradeTimes } from "../../components/relative-time.js"
+import { renderReactionBar } from "../../components/reaction-bar.js"
+import { renderCommentThread } from "../../components/comment-thread.js"
 
 const PAGE_SIZE = 20
 const MAX_AUTO_FETCHES = 5
@@ -44,7 +46,10 @@ function renderEntry(entry) {
             Awaiting approval — only you can see this
           </p>`
         : ""}
-      <footer class="gb-entry-foot" data-reactions></footer>
+      <footer class="gb-entry-foot">
+        ${renderReactionBar("guestbook", entry.id, entry.reactions)}
+        ${renderCommentThread("guestbook", entry.id, entry.comment_count)}
+      </footer>
     </article>
   `
 }

@@ -6,10 +6,17 @@ import {
   GUEST_STATUS_VALUES,
   COMMUNICATION_TYPE_VALUES,
   COMMUNICATION_TYPE,
+  TARGET_TYPE_VALUES,
+  REACTION_EMOJI_VALUES,
 } from "../types.js"
 import { isValidEmail, sanitize } from "./http.js"
 import { normalizePhone } from "../db/utils.js"
-import { isGuestStatus, isCommunicationType } from "../types.js"
+import {
+  isGuestStatus,
+  isCommunicationType,
+  isTargetType,
+  isReactionEmoji,
+} from "../types.js"
 import * as twilioService from "../services/twilio.js"
 import * as emailService from "../services/email.js"
 
@@ -62,6 +69,20 @@ export class PayloadTooLargeError extends AppError {
   /** @param {Types.PayloadTooLargeErrorParams} _ */
   constructor(...[message = "Payload too large"]) {
     super(message, 413, "PAYLOAD_TOO_LARGE")
+  }
+}
+
+export class LengthRequiredError extends AppError {
+  /** @param {Types.LengthRequiredErrorParams} _ */
+  constructor(...[message = "Content-Length required"]) {
+    super(message, 411, "LENGTH_REQUIRED")
+  }
+}
+
+export class UnsupportedMediaTypeError extends AppError {
+  /** @param {Types.UnsupportedMediaTypeErrorParams} _ */
+  constructor(...[message = "Unsupported media type"]) {
+    super(message, 415, "UNSUPPORTED_MEDIA_TYPE")
   }
 }
 
@@ -134,6 +155,28 @@ export function validateCommunicationType(value) {
     return {
       valid: false,
       error: `type must be "${COMMUNICATION_TYPE_VALUES.join('" or "')}"`,
+    }
+  }
+  return { valid: true, value }
+}
+
+/** @type {Types.validateTargetType} */
+export function validateTargetType(value) {
+  if (!isTargetType(value)) {
+    return {
+      valid: false,
+      error: `Invalid target type. Must be: ${TARGET_TYPE_VALUES.join(", ")}`,
+    }
+  }
+  return { valid: true, value }
+}
+
+/** @type {Types.validateReactionEmoji} */
+export function validateReactionEmoji(value) {
+  if (!isReactionEmoji(value)) {
+    return {
+      valid: false,
+      error: `Invalid reaction. Must be: ${REACTION_EMOJI_VALUES.join(", ")}`,
     }
   }
   return { valid: true, value }

@@ -21,8 +21,38 @@ try {
   // .env file is optional
 }
 
-// Use a temporary database file for test isolation (never touch production DB)
-const TEST_DB_PATH = path.join(os.tmpdir(), `wedding-test-${process.pid}-${Date.now()}.db`)
+// Use a temporary database file for test isolation (never touch production DB).
+// Exported so tests can derive the server's uploads dir (media-storage.js builds
+// it from dirname(DATABASE_PATH)) to assert on-disk file cleanup.
+export const TEST_DB_PATH = path.join(os.tmpdir(), `wedding-test-${process.pid}-${Date.now()}.db`)
+
+// Where the spawned server writes its JSONL audit log. Exported so tests can
+// assert that state-changing endpoints logged the expected action.
+export const TEST_AUDIT_DIR = path.join(os.tmpdir(), `wedding-test-audit-${process.pid}`)
+
+/**
+ * Read every audit-log entry the test server has written so far, oldest first.
+ * The server appends asynchronously, so callers that need an entry immediately
+ * after an action should poll (record the length before, then re-read).
+ * @returns {Array<Record<string, any>>}
+ */
+export function readAuditLog() {
+  /** @type {Array<Record<string, any>>} */
+  const entries = []
+  let files = []
+  try {
+    files = fs.readdirSync(TEST_AUDIT_DIR).filter((f) => f.endsWith(".jsonl")).sort()
+  } catch {
+    return entries // dir not created yet
+  }
+  for (const file of files) {
+    const text = fs.readFileSync(path.join(TEST_AUDIT_DIR, file), "utf8")
+    for (const line of text.split("\n")) {
+      if (line.trim()) entries.push(JSON.parse(line))
+    }
+  }
+  return entries
+}
 
 // Test configuration. Port is overridable via TEST_SERVER_PORT so a second
 // integration file (which node --test may run concurrently with api.test.js)
@@ -43,7 +73,7 @@ export async function startServer() {
         PORT: TEST_PORT.toString(),
         NODE_ENV: "test",
         DATABASE_PATH: TEST_DB_PATH,
-        AUDIT_LOG_DIR: path.join(os.tmpdir(), `wedding-test-audit-${process.pid}`),
+        AUDIT_LOG_DIR: TEST_AUDIT_DIR,
         // Trust localhost for X-Forwarded-For headers in tests
         TRUSTED_PROXIES: "127.0.0.1,::1,::ffff:127.0.0.1",
       }
@@ -451,7 +481,11 @@ export function cleanupTestData(db) {
   // DatabaseSync connection doesn't enable foreign_keys, so the accounts →
   // guestbook_entries ON DELETE CASCADE would not fire here.
   try {
+    db.prepare(`DELETE FROM reactions`).run()
+    db.prepare(`DELETE FROM comments`).run()
+    db.prepare(`DELETE FROM media`).run()
     db.prepare(`DELETE FROM guestbook_entries`).run()
+    db.prepare(`DELETE FROM account_recovery_tokens`).run()
     db.prepare(`DELETE FROM account_sessions`).run()
     db.prepare(`DELETE FROM accounts`).run()
     db.prepare(`DELETE FROM app_state`).run()

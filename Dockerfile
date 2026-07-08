@@ -1,4 +1,6 @@
-FROM node:22-alpine
+# Pinned by digest for reproducible rebuilds (multi-arch index for node:22-alpine,
+# resolved 2026-07-02). Bump the tag+digest together to update.
+FROM node:22-alpine@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2
 
 WORKDIR /app
 

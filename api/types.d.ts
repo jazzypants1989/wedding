@@ -122,6 +122,16 @@ export function logout(req: IncomingMessage, res: ServerResponse): Promise<void>
 /** GET /api/account/me — cheap whoami; { account } or { account: null }, never 401. */
 export function me(req: IncomingMessage, res: ServerResponse): Promise<void>
 
+/** POST /api/account/recover — magic-link request; always 200 (no existence oracle). */
+export function recover(req: IncomingMessage, res: ServerResponse): Promise<void>
+
+/** GET /api/account/recover/:token — redeem a one-time link → session + 302 /guestbook. */
+export function recoverConsume(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: RouteInfo,
+): Promise<void>
+
 /** @file guestbook.js - Types for public guestbook endpoints */
 
 /** GET /api/guestbook — public keyset feed; interleaves the caller's own pending entries. */
@@ -142,4 +152,93 @@ export function guestbookRemove(
   req: IncomingMessage,
   res: ServerResponse,
   routeInfo: AccountRouteInfo,
+): Promise<void>
+
+/** @file comments.js - Types for public comment endpoints (Phase 5). The list/
+ *  create handlers are thin per-target wrappers binding the target type. */
+
+/** GET /api/guestbook/:id/comments — public thread (getOptionalAccount inside). */
+export function commentListGuestbook(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: RouteInfo,
+): Promise<void>
+
+/** GET /api/media/:id/comments — public thread (getOptionalAccount inside). */
+export function commentListMedia(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: RouteInfo,
+): Promise<void>
+
+/** POST /api/guestbook/:id/comments — post a comment (withAccount); hybrid moderation. */
+export function commentCreateGuestbook(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AccountRouteInfo,
+): Promise<void>
+
+/** POST /api/media/:id/comments — post a comment (withAccount); hybrid moderation. */
+export function commentCreateMedia(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AccountRouteInfo,
+): Promise<void>
+
+/** DELETE /api/comments/:id — soft-delete own comment (withAccount). */
+export function commentRemove(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AccountRouteInfo,
+): Promise<void>
+
+/** @file reactions.js - Types for the reaction toggle endpoint (Phase 5) */
+
+/** POST /api/reactions/toggle — toggle one emoji on a target (withAccount). */
+export function reactionToggle(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AccountRouteInfo,
+): Promise<void>
+
+/** @file media.js - Types for media upload-session + gallery read endpoints */
+
+import type { AccountOrAdminRouteInfo, RouteInfo } from "../core/types.js"
+
+/** GET /api/media — public gallery feed for a section (getOptionalAccount inside). */
+export function list(req: IncomingMessage, res: ServerResponse): Promise<void>
+
+/** GET /api/media/:id — public single item; same visibility gate as the list → 404. */
+export function getOne(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: RouteInfo,
+): Promise<void>
+
+/** POST /api/media — open an upload session (guest or admin principal). */
+export function createSession(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AccountOrAdminRouteInfo,
+): Promise<void>
+
+/** PUT /api/media/:id/:variant — stream a raw variant body into staging. */
+export function putVariant(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AccountOrAdminRouteInfo,
+): Promise<void>
+
+/** POST /api/media/:id/finalize — verify variants, blank video GPS, flip status. */
+export function finalize(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AccountOrAdminRouteInfo,
+): Promise<void>
+
+/** DELETE /api/media/:id — soft-delete own/admin item + unlink files. */
+export function remove(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AccountOrAdminRouteInfo,
 ): Promise<void>

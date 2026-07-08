@@ -3,6 +3,8 @@
 
 import { sql } from "./sql.js"
 import { now } from "./utils.js"
+import { countPendingMedia } from "./media.js"
+import { countPendingComments } from "./comments.js"
 
 /** @type {Types.createGuestbookEntry} */
 export function createGuestbookEntry({ accountId, message, status }) {
@@ -16,6 +18,17 @@ export function createGuestbookEntry({ accountId, message, status }) {
 /** @type {Types.getGuestbookEntryById} */
 export function getGuestbookEntryById(id) {
   return sql`SELECT * FROM guestbook_entries WHERE id = ${id}`.get()
+}
+
+/** @type {Types.getGuestbookEntryForCaller} */
+export function getGuestbookEntryForCaller(id, callerId = null) {
+  // Minimal visibility probe for the comments parent gate (media's analog is
+  // getMediaFeedRowById). Excludes soft-deleted rows → undefined; the caller
+  // gates on status (approved, or own-pending via is_own).
+  const isOwn = callerId !== null ? sql`(e.account_id = ${callerId})` : sql`0`
+  return sql`SELECT e.id, e.account_id, e.status, ${isOwn} AS is_own
+    FROM guestbook_entries e
+    WHERE e.id = ${id} AND e.deleted_at IS NULL`.get()
 }
 
 /** @type {Types.getGuestbookFeed} */
@@ -81,11 +94,13 @@ export function setGuestbookStatus(id, fromStatuses, toStatus) {
 
 /** @type {Types.getModerationCounts} */
 export function getModerationCounts() {
-  // This phase counts only tables that exist. media (Phase 3) and comments
-  // (Phase 5) contribute 0 until those specs ship their own pending counts
-  // here — counting only existing tables is what keeps the digest crash-free.
+  // All three content types now contribute (media in Phase 3, comments in Phase
+  // 5). The digest reads this on the hourly tick — content endpoints never call
+  // it, so the notify service stays decoupled.
   const guestbook = countPendingGuestbook()
-  return { guestbook, media: 0, comments: 0, total: guestbook }
+  const media = countPendingMedia()
+  const comments = countPendingComments()
+  return { guestbook, media, comments, total: guestbook + media + comments }
 }
 
 /** @type {Types.getOldestPendingGuestbookAt} */

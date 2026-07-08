@@ -107,6 +107,12 @@ const limiters = {
     max: RATE_LIMITS.ACCOUNT_REGISTER.max,
   }),
 
+  accountRecover: createLimiter({
+    name: "accountRecover",
+    windowMs: RATE_LIMITS.ACCOUNT_RECOVER.windowMs,
+    max: RATE_LIMITS.ACCOUNT_RECOVER.max,
+  }),
+
   guestbookPost: createLimiter({
     name: "guestbookPost",
     windowMs: RATE_LIMITS.GUESTBOOK_POST.windowMs,
@@ -119,10 +125,28 @@ const limiters = {
     max: RATE_LIMITS.CONTENT_DELETE.max,
   }),
 
+  mediaCreate: createLimiter({
+    name: "mediaCreate",
+    windowMs: RATE_LIMITS.MEDIA_CREATE.windowMs,
+    max: RATE_LIMITS.MEDIA_CREATE.max,
+  }),
+
   publicRead: createLimiter({
     name: "publicRead",
     windowMs: RATE_LIMITS.PUBLIC_READ.windowMs,
     max: RATE_LIMITS.PUBLIC_READ.max,
+  }),
+
+  commentPost: createLimiter({
+    name: "commentPost",
+    windowMs: RATE_LIMITS.COMMENT_POST.windowMs,
+    max: RATE_LIMITS.COMMENT_POST.max,
+  }),
+
+  reactionToggle: createLimiter({
+    name: "reactionToggle",
+    windowMs: RATE_LIMITS.REACTION_TOGGLE.windowMs,
+    max: RATE_LIMITS.REACTION_TOGGLE.max,
   }),
 }
 

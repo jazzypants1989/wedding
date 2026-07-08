@@ -5,6 +5,11 @@
 **Prerequisites**: Phases 1, 3 (+ auth sheet/guest-session/celebrate from Phase 2). **Read first**: `00-overview.md`, `03-media-pipeline.md` §5 (processing contract + transport spec),
 `public/pages/guestbook/` (page conventions established in Phase 2), `public/pages/utils.js`, `public/components/` (Phase 2 components), `public/styles/tokens.css`, `scripts/seed-preview.js` (to extend).
 
+> **Status (implemented):** the list API (§2), `public/components/media-uploader.js`, and the gallery
+> page scaffolding (`public/pages/gallery/`: `main.js`, `grid.js`, `lightbox.js`, `upload.js`) are
+> built. This spec now documents shipped behavior; sections still describe the intended design, not
+> pending work. (The reactions/comments panel space in §5 is filled by Phase 5.)
+
 ## 1. Files
 
 ```
@@ -18,16 +23,67 @@ public/pages/gallery/
   gallery.css
   types.d.ts      MediaItem view types, GridState, LightboxState, UploadQueueItem
 public/components/
-  media-uploader.js   UI-agnostic queue engine (XHR, concurrency, retry) — admin reuses it in Phase 6
+  media-uploader.js   NET-NEW this phase (implemented — exports `createUploadQueue()`). UI-agnostic
+                      queue engine (XHR, concurrency, retry) — admin reuses it in Phase 6. Consumes the EXISTING
+                      components/media-processing.js (`processMediaFile()`, shipped in Phase 3) for
+                      client resize/poster; this module owns only transport (session flow + XHR).
 ```
 
-## 2. List API (new handlers in `api/media.js`, public)
+## 2. List API — handlers in `api/media.js` (public; implemented as specified below)
 
-`GET /api/media?section=official|guest&before=&limit=` (+ `getOptionalAccount`):
-- `guest`: keyset `id DESC`, approved + caller's own pending (flagged `is_own`/`status`), default limit 100 (clamp ≤100 — grid pages are bigger than feed pages).
-- `official`: ordered `sort_order, id` (offset-free — return all, or keyset on `(sort_order,id)`; official stays small enough to return in one page, cap 500).
-- Item shape: `{ id, file_key, kind, section, status, caption, width, height, duration_seconds, needs_display, author_name, is_own, created_at }`. URLs are constructed client-side as `/media/{file_key}/{variant}`.
-- `GET /api/media/:id` single item (for `?item=` deep links before the grid loads). **Same visibility gate as the list query**: approved, or the caller's own pending item; anything else (pending/hidden/rejected/deleted, or nonexistent) → 404. Without this gate, iterating small integer ids leaks captions, author names, dimensions, and `file_key`s of unmoderated content.
+Beyond Phase 3's 4 upload-session routes (`POST /api/media`, `PUT /api/media/:id/:variant`,
+`POST /api/media/:id/finalize`, `DELETE /api/media/:id`), this phase's **two public read routes are
+implemented**: `GET /api/media` → `media.list` and `GET /api/media/:id` → `media.getOne`, registered
+in `core/router.js` with `errorHandling: true` (they call `getOptionalAccount` internally, exactly
+like `guestbook.list`). Segment counts disambiguate them from the existing routes: `/api/media`
+(2 segs, shares path with `POST`), `/api/media/:id` (3 segs, shares path with `DELETE`).
+
+**Query — `getMediaFeed({ callerId, section, before, limit })` in `db/media.js`** (implemented), modeled on
+`getGuestbookFeed` (`db/guestbook-entries.js:22`), with one structural difference that the guestbook
+does NOT have:
+
+> **`account_id` is NULL for admin/official uploads**, so the accounts join MUST be a `LEFT JOIN`
+> and `author_name` comes back NULL for those rows. Coalesce it server-side to the couple's display
+> name (`WEDDING.COUPLE_NAMES` in `types.js`, "Jesse & Jordana"). A plain `JOIN` (as guestbook uses)
+> would silently drop every official item from the feed.
+
+```sql
+SELECT m.id, m.file_key, m.account_id, m.kind, m.section, m.status, m.caption,
+       m.width, m.height, m.duration_seconds, m.needs_display, m.created_at,
+       a.name AS author_name, <is_own> AS is_own
+FROM media m
+LEFT JOIN accounts a ON a.id = m.account_id
+WHERE m.deleted_at IS NULL AND m.section = ${section}
+  AND (m.status = 'approved' <ownPending>)     -- ownPending: OR (m.status='pending' AND m.account_id=callerId)
+  <beforeFilter>                                -- guest only: AND m.id < ${before}
+ORDER BY <ordering>                             -- guest: m.id DESC   |  official: m.sort_order, m.id
+LIMIT ${limit}
+```
+
+- **`guest`**: keyset `id DESC`, approved + caller's own pending (flagged `is_own` + `status`),
+  default limit 100, clamp ≤100 (grid pages are bigger than the 20-row guestbook feed).
+- **`official`**: ordered `sort_order, id`, offset-free single page, cap 500 (official stays small);
+  `nextCursor` is always `null`. Own-pending is irrelevant here (admin-only section) but harmless.
+- Reuse the guestbook handler's `parseCursor` / `clampLimit` helpers' logic; validate `section`
+  against `MEDIA_SECTION` (default `guest`). Rate-limit with the shared `publicRead` limiter.
+
+**Response** (mirrors guestbook's `{ entries, nextCursor }`): `{ items, nextCursor }`. `nextCursor` =
+last row's `id` when a full page came back, else `null` (guest); always `null` for official.
+Item shape: `{ id, file_key, kind, section, status, caption, width, height, duration_seconds,
+needs_display, author_name, is_own, created_at }` (SQLite `0|1` flags mapped to booleans, `author_name`
+coalesced). URLs are built client-side as `/media/{file_key}/{variant}`.
+
+- **`GET /api/media/:id`** single item (for `?item=` deep links before the grid loads). Implemented
+  as `media.getOne` using `getMediaFeedRowById` + the **same visibility gate as the list** (`isVisible`):
+  return the item only if `approved`, OR the caller owns it AND it is `pending`; anything else
+  (hidden/rejected/deleted/nonexistent, or someone else's pending) → **404**. Without this gate,
+  iterating small integer ids leaks captions,
+  author names, dimensions, and `file_key`s of unmoderated content (adjudication R8). Returns the same
+  item shape (single object, not wrapped).
+
+**Types**: add `MediaFeedRow` (raw, `0|1` flags, nullable `author_name`) and `MediaListItem` +
+`MediaListResponse` to root `types.d.ts`; feed-fn signature to `db/types.d.ts`; handler signatures to
+`api/types.d.ts`.
 
 ## 3. Section switcher
 
@@ -66,7 +122,7 @@ One fullscreen `<dialog id="lightbox">` (native focus trap + Esc).
 - **Stage**: `display` variant image, or `<video src="/media/{key}/video" controls playsinline preload="none" poster="/media/{key}/poster">` (the `video` variant is the GPS-blanked original, served as `video/mp4` — 03 §7). Stage background always near-black (`--color-lightbox-stage: #0b0810`, deliberately not `light-dark()`); `color-scheme: dark` on the dialog so native video controls match.
 - **Top bar**: close ×, counter "34 / 512" (`aria-live="polite"`), author + relative time, copy-link button (`navigator.clipboard.writeText`).
 - **Footer**: a small "Report" `mailto:` link (prefilled subject with the item's `file_key`) — the zero-backend path for photo *subjects* (not uploaders) to ask the couple to take a photo down; admin hide is the action.
-- **Panel** (caption now; reactions/comments in Phase 5): desktop ≥1024px right sidebar 360px; mobile swipe-up drawer collapsed to a handle.
+- **Panel** (caption now; reactions/comments in Phase 5): desktop ≥1024px right sidebar 360px; mobile swipe-up drawer collapsed to a handle. **Caption is display-only in Phase 4** — the Phase 3 `finalize` endpoint accepts no caption and the upload tray (§6) has no caption field, so guest-uploaded items carry `caption = NULL`. The panel and the alt-text fallback (§4: `"Photo by {author_name}"`) must degrade gracefully when null; a non-null caption appears only on admin-set official items (capture UI is a later phase).
 - **Nav**: ←/→ keys; 44px chevron buttons (fade in on pointer move on desktop); **swipe** via Pointer Events (~60 lines: translate stage with finger, commit past 25% width or 0.3 px/ms velocity). Preload ±1 `display` images via `new Image()` on settle.
 - **Video**: pause on navigate; never autoplay.
 - **Deep link**: open → `history.pushState(…, "?section=…&item=" + id)`; `popstate` closes/reopens; page load with `?item=` → fetch `GET /api/media/:id`, open immediately, grid backfills behind.

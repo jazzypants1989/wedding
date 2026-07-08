@@ -7,7 +7,7 @@
  */
 /** @import * as Types from "./types.js" */
 
-import { html, raw, getDialogElement, getInputElement, getButtonElement, getElement } from "../pages/utils.js"
+import { html, raw, api, getDialogElement, getInputElement, getButtonElement, getElement } from "../pages/utils.js"
 import { setButtonLoading, miniSparkle } from "./celebrate.js"
 import { setAccount, replayPendingAction } from "./guest-session.js"
 
@@ -48,6 +48,29 @@ const SHEET_MARKUP = html`
     <button type="button" class="auth-link" id="auth-no-code">
       I don't have a code
     </button>
+    <button type="button" class="auth-link" id="auth-recover-link">
+      Lost access? Recover by email
+    </button>
+  </div>
+
+  <div id="auth-panel-recover" class="auth-panel" hidden>
+    <h2>Recover your access</h2>
+    <p class="auth-help">
+      Enter the email you signed up with and we'll send a one-time sign-in link.
+    </p>
+    <div id="auth-alert-recover" class="alert alert-error" role="alert" hidden></div>
+    <div id="auth-recover-done" class="alert alert-success" role="status" hidden></div>
+    <form id="auth-recover-form" novalidate>
+      <div class="form-group">
+        <label for="auth-recover-email">Email</label>
+        <input id="auth-recover-email" name="email" type="email" autocomplete="email"
+          maxlength="254" required />
+      </div>
+      <button type="submit" class="btn btn-primary btn-large" id="auth-recover-submit">
+        Send link
+      </button>
+    </form>
+    <button type="button" class="auth-link" id="auth-recover-back">Back</button>
   </div>
 
   <div id="auth-panel-open" class="auth-panel" hidden>
@@ -103,10 +126,11 @@ function shake(input) {
   )
 }
 
-/** @param {"code" | "open" | "welcome"} which */
+/** @param {"code" | "open" | "recover" | "welcome"} which */
 function showPanel(which) {
   getElement("auth-panel-code").hidden = which !== "code"
   getElement("auth-panel-open").hidden = which !== "open"
+  getElement("auth-panel-recover").hidden = which !== "recover"
   getElement("auth-welcome").hidden = which !== "welcome"
 }
 
@@ -121,6 +145,12 @@ function resetSheet() {
   getInputElement("auth-code").removeAttribute("aria-invalid")
   hideAlert(getElement("auth-alert-code"))
   hideAlert(getElement("auth-alert-open"))
+  hideAlert(getElement("auth-alert-recover"))
+  getInputElement("auth-recover-email").value = ""
+  getElement("auth-recover-done").hidden = true
+  getElement("auth-recover-form").hidden = false
+  getButtonElement("auth-recover-submit").disabled = false
+  getButtonElement("auth-recover-submit").textContent = "Send link"
   getButtonElement("auth-code-submit").disabled = false
   getButtonElement("auth-code-submit").textContent = "Continue"
   showPanel("code")
@@ -277,6 +307,42 @@ async function handleOpenSubmit(/** @type {Event} */ e) {
   })
 }
 
+async function handleRecoverSubmit(/** @type {Event} */ e) {
+  e.preventDefault()
+  const emailInput = getInputElement("auth-recover-email")
+  const email = emailInput.value.trim()
+  if (!email) {
+    emailInput.focus()
+    return
+  }
+  const submitBtn = getButtonElement("auth-recover-submit")
+  const alertEl = getElement("auth-alert-recover")
+  hideAlert(alertEl)
+  setButtonLoading(submitBtn, true)
+
+  try {
+    // Always-200 non-oracle: the server responds identically whether or not the
+    // address maps to an account, so we just show its confirmation copy.
+    const data = /** @type {{ message?: string }} */ (
+      await api("/api/account/recover", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      })
+    )
+    const done = getElement("auth-recover-done")
+    done.textContent =
+      typeof data.message === "string"
+        ? data.message
+        : "If that email is on file, a sign-in link is on its way."
+    done.hidden = false
+    getElement("auth-recover-form").hidden = true
+  } catch {
+    showAlert(alertEl, "Network error — please check your connection and try again.")
+  } finally {
+    setButtonLoading(submitBtn, false)
+  }
+}
+
 /** @type {Types.initAuthSheet} */
 export function initAuthSheet() {
   if (injected) return
@@ -303,8 +369,21 @@ export function initAuthSheet() {
     getInputElement("auth-code").focus()
   })
 
+  getElement("auth-recover-link").addEventListener("click", () => {
+    hideAlert(getElement("auth-alert-recover"))
+    getElement("auth-recover-done").hidden = true
+    getElement("auth-recover-form").hidden = false
+    showPanel("recover")
+    getInputElement("auth-recover-email").focus()
+  })
+  getElement("auth-recover-back").addEventListener("click", () => {
+    showPanel("code")
+    getInputElement("auth-code").focus()
+  })
+
   getElement("auth-code-form").addEventListener("submit", handleCodeSubmit)
   getElement("auth-open-form").addEventListener("submit", handleOpenSubmit)
+  getElement("auth-recover-form").addEventListener("submit", handleRecoverSubmit)
 
   // Backdrop click closes (native dialog handles Escape).
   dialog.addEventListener("click", (e) => {

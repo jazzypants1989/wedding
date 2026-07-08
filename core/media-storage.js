@@ -1,0 +1,80 @@
+/** @file Filesystem layout + path derivation for media storage. All paths are
+ *  built server-side from a validated file_key + variant + ext — never stored
+ *  absolute, never derived from a client filename. Lives under the same data
+ *  volume as the DB so staging→final renames are atomic (same filesystem).
+ *  See docs/post-wedding/03-media-pipeline.md §6. */
+/** @import * as Types from './types.js' */
+
+import fs from "node:fs"
+import path from "node:path"
+
+const DB_PATH =
+  process.env.DATABASE_PATH ||
+  path.join(import.meta.dirname, "..", "data", "wedding.db")
+const DATA_DIR = path.dirname(DB_PATH)
+
+export const UPLOADS_DIR = path.join(DATA_DIR, "uploads")
+export const TMP_DIR = path.join(UPLOADS_DIR, "tmp") // {rand16hex}.part staging
+export const QUARANTINE_DIR = path.join(UPLOADS_DIR, "quarantine") // orphans
+export const MEDIA_DIR = path.join(UPLOADS_DIR, "media") // {key[0:2]}/{key}/
+
+// Public variants and the on-disk extensions each may carry, most-preferred
+// first (display/thumb may be webp or jpeg; poster is jpeg). Used to resolve a
+// variant file whose ext isn't in the DB.
+/** @type {Record<string, string[]>} */
+const PUBLIC_VARIANT_EXTS = {
+  display: ["webp", "jpg"],
+  thumb: ["webp", "jpg"],
+  poster: ["jpg", "webp"],
+}
+
+/** @type {Record<string, string>} */
+const CONTENT_TYPE_BY_EXT = {
+  jpg: "image/jpeg",
+  webp: "image/webp",
+  png: "image/png",
+  heic: "image/heic",
+  mp4: "video/mp4",
+  mov: "video/quicktime",
+}
+
+/** @type {Types.ensureUploadDirs} */
+export function ensureUploadDirs() {
+  for (const dir of [TMP_DIR, QUARANTINE_DIR, MEDIA_DIR]) {
+    fs.mkdirSync(dir, { recursive: true })
+  }
+}
+
+/** @type {Types.itemDir} */
+export function itemDir(fileKey) {
+  return path.join(MEDIA_DIR, fileKey.slice(0, 2), fileKey)
+}
+
+/** @type {Types.variantDiskPath} */
+export function variantDiskPath(fileKey, variant, ext) {
+  return path.join(itemDir(fileKey), variant + "." + ext)
+}
+
+/** @type {Types.contentTypeForExt} */
+export function contentTypeForExt(ext) {
+  return CONTENT_TYPE_BY_EXT[ext] ?? "application/octet-stream"
+}
+
+/** @type {Types.resolveVariantFile} */
+export function resolveVariantFile(fileKey, variant) {
+  const exts = PUBLIC_VARIANT_EXTS[variant]
+  if (!exts) return null
+  for (const ext of exts) {
+    const p = variantDiskPath(fileKey, variant, ext)
+    if (fs.existsSync(p)) return { path: p, ext, contentType: contentTypeForExt(ext) }
+  }
+  return null
+}
+
+/** @type {Types.variantExistsOnDisk} */
+export function variantExistsOnDisk(fileKey, variant, originalExt) {
+  if (variant === "original") {
+    return !!originalExt && fs.existsSync(variantDiskPath(fileKey, "original", originalExt))
+  }
+  return resolveVariantFile(fileKey, variant) !== null
+}

@@ -94,6 +94,8 @@
           Moderation
           <span id="moderation-badge" class="tab-badge" hidden aria-label="items awaiting review">0</span>
         </button>
+        <button class="tab-btn" data-tab="gallery" role="tab" id="tab-btn-gallery" aria-selected="false"
+          aria-controls="tab-gallery" tabindex="-1">Gallery</button>
         <button class="tab-btn" data-tab="blocklist" role="tab" id="tab-btn-blocklist" aria-selected="false"
           aria-controls="tab-blocklist" tabindex="-1">Blocklist</button>
       </div>
@@ -212,17 +214,57 @@
 
       <!-- Moderation Tab -->
       <div id="tab-moderation" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-moderation" hidden>
-        <div class="card">
+        <div class="sub-toggle" role="tablist" aria-label="Moderation views">
+          <button type="button" id="mod-sub-queue" class="sub-toggle-pill active" role="tab"
+            aria-selected="true">Queue</button>
+          <button type="button" id="mod-sub-accounts" class="sub-toggle-pill" role="tab"
+            aria-selected="false">Accounts</button>
+        </div>
+
+        <!-- Queue sub-view -->
+        <div id="mod-view-queue" class="card">
           <div class="card-header flex-between">
             <h2>Awaiting Review</h2>
+          </div>
+
+          <div class="filters">
+            <label for="mod-type-filter" class="sr-only">Filter by type</label>
+            <select id="mod-type-filter" class="filter-select">
+              <option value="">All types</option>
+              <option value="guestbook">Messages</option>
+              <option value="media">Photos &amp; videos</option>
+              <option value="comment">Comments</option>
+            </select>
+            <label for="mod-status-filter" class="sr-only">Filter by status</label>
+            <select id="mod-status-filter" class="filter-select">
+              <option value="pending" selected>Pending</option>
+              <option value="approved">Approved</option>
+              <option value="hidden">Hidden</option>
+              <option value="rejected">Rejected</option>
+            </select>
+          </div>
+
+          <div id="mod-account-filter-note" class="mod-account-filter" hidden>
+            Showing one account's items.
+            <button type="button" id="mod-clear-account" class="btn btn-secondary btn-sm">Clear filter</button>
+          </div>
+
+          <div id="mod-bulk-bar" class="mod-bulk-bar" hidden>
+            <span id="mod-bulk-count" class="mod-bulk-count">0 selected</span>
+            <button type="button" id="mod-bulk-approve" class="btn btn-primary btn-sm">Approve selected</button>
+            <button type="button" id="mod-bulk-reject" class="btn btn-danger btn-sm">Reject selected</button>
           </div>
 
           <div class="table-container">
             <table id="moderation-table">
               <thead>
                 <tr>
+                  <th scope="col" class="mod-check-col">
+                    <input type="checkbox" id="mod-select-all" aria-label="Select all">
+                  </th>
+                  <th scope="col">Preview</th>
+                  <th scope="col" class="hide-mobile">Type</th>
                   <th scope="col">Author</th>
-                  <th scope="col">Message</th>
                   <th scope="col" class="hide-mobile">Submitted</th>
                   <th scope="col">Actions</th>
                 </tr>
@@ -231,6 +273,56 @@
                 <!-- Populated by JS -->
               </tbody>
             </table>
+          </div>
+        </div>
+
+        <!-- Accounts sub-view -->
+        <div id="mod-view-accounts" class="card" hidden>
+          <div class="card-header flex-between">
+            <h2>Guest Accounts</h2>
+            <div class="header-buttons">
+              <select id="mod-account-trusted-filter" class="filter-select">
+                <option value="">All accounts</option>
+                <option value="1">Trusted</option>
+                <option value="0">Untrusted</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table id="accounts-table">
+              <thead>
+                <tr>
+                  <th scope="col">Name</th>
+                  <th scope="col" class="hide-mobile">Source</th>
+                  <th scope="col">Trusted</th>
+                  <th scope="col" class="hide-mobile">Posts</th>
+                  <th scope="col" class="hide-mobile">Created</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="accounts-tbody">
+                <!-- Populated by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Gallery Tab -->
+      <div id="tab-gallery" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-gallery" hidden>
+        <div class="card">
+          <div class="card-header flex-between">
+            <h2>Official Gallery</h2>
+            <button id="gallery-add-btn" class="btn btn-primary btn-sm">Add official photos</button>
+          </div>
+          <p class="text-muted card-text">
+            These appear in the gallery's Official section, in the order below. Use the arrows to reorder;
+            captions save as you type.
+          </p>
+          <div id="gallery-error" class="alert alert-error" role="alert" hidden></div>
+          <div id="curated-grid" class="curated-grid">
+            <!-- Populated by JS -->
           </div>
         </div>
       </div>
@@ -502,17 +594,71 @@
     </div>
   </dialog>
 
-  <dialog id="moderation-modal" aria-labelledby="moderation-modal-title">
+  <!-- Moderation detail modal: full content + author + all applicable actions -->
+  <dialog id="moderation-modal" class="modal-lg" aria-labelledby="moderation-modal-title">
     <div class="modal-header flex-between">
-      <h2 id="moderation-modal-title">Review Message</h2>
+      <h2 id="moderation-modal-title">Review Item</h2>
       <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
     </div>
-    <p id="moderation-modal-desc"></p>
-    <blockquote id="moderation-modal-message" class="moderation-quote"></blockquote>
+    <div id="moderation-detail-body">
+      <!-- Populated by JS: preview (text / image / video) + author info -->
+    </div>
     <div id="moderation-error" class="alert alert-error" role="alert" hidden></div>
+    <div id="moderation-detail-actions" class="modal-actions modal-actions-wrap">
+      <!-- Populated by JS: the actions available for this item's status -->
+    </div>
+  </dialog>
+
+  <!-- Generic moderation confirm dialog (approve / reject / hide / trust / etc.) -->
+  <dialog id="mod-confirm-modal" aria-labelledby="mod-confirm-title">
+    <div class="modal-header flex-between">
+      <h2 id="mod-confirm-title">Confirm</h2>
+      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
+    </div>
+    <p id="mod-confirm-desc"></p>
+    <label id="mod-confirm-release-row" class="checkbox-label" hidden>
+      <input type="checkbox" id="mod-confirm-release">
+      <span>Also approve this author's other pending items</span>
+    </label>
+    <div id="mod-confirm-error" class="alert alert-error" role="alert" hidden></div>
     <div class="modal-actions">
       <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
-      <button type="button" class="btn btn-primary" id="moderation-confirm-btn">Approve</button>
+      <button type="button" class="btn btn-primary" id="mod-confirm-btn">Confirm</button>
+    </div>
+  </dialog>
+
+  <!-- Add official photos: reuses the shared media-uploader tray -->
+  <dialog id="gallery-upload-modal" class="modal-lg" aria-labelledby="gallery-upload-title">
+    <div class="modal-header flex-between">
+      <h2 id="gallery-upload-title">Add official photos</h2>
+      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
+    </div>
+    <p class="text-muted">
+      Photos and videos added here publish to the Official section immediately. On desktop Chrome, HEIC
+      files from an iPhone may fail to process — export as JPEG first if that happens.
+    </p>
+    <input type="file" id="gallery-upload-input" accept="image/*,video/*" multiple hidden>
+    <div class="gallery-upload-controls">
+      <button type="button" id="gallery-upload-pick" class="btn btn-primary btn-sm">Choose files</button>
+      <button type="button" id="gallery-upload-cancel-all" class="btn btn-secondary btn-sm">Cancel all</button>
+    </div>
+    <div id="gallery-upload-summary" class="upload-tray-summary"></div>
+    <ul id="gallery-upload-list" class="upload-tray-list"></ul>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" data-close-modal>Done</button>
+    </div>
+  </dialog>
+
+  <dialog id="gallery-remove-modal" aria-labelledby="gallery-remove-title">
+    <div class="modal-header flex-between">
+      <h2 id="gallery-remove-title">Remove photo</h2>
+      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
+    </div>
+    <p>Remove this photo from the site? Its files are deleted.</p>
+    <div id="gallery-remove-error" class="alert alert-error" role="alert" hidden></div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
+      <button type="button" class="btn btn-danger" id="gallery-remove-btn">Remove</button>
     </div>
   </dialog>
 

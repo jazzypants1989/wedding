@@ -16,8 +16,9 @@ import {
   ValidationError,
   NotFoundError,
 } from "../core/validation.js"
-import { LIMITS, CONTENT_STATUS } from "../types.js"
+import { LIMITS, CONTENT_STATUS, TARGET_TYPE } from "../types.js"
 import { log, AUDIT_ACTIONS } from "../core/utils.js"
+import { enrichSocial } from "./enrich.js"
 
 const DEFAULT_LIMIT = 20
 const MAX_LIMIT = 50
@@ -78,6 +79,9 @@ export async function list(req, res) {
 
   const rows = getGuestbookFeed({ callerId, before, limit })
   const entries = rows.map(toFeedEntry)
+  // Attach reaction summaries + comment counts (Phase 5). Guarded internally
+  // against an empty page (sql.list throws on []).
+  enrichSocial(entries, TARGET_TYPE.GUESTBOOK, callerId)
   // A short page means we've reached the end → no cursor. Otherwise the last
   // row's id is the exclusive cursor for the next page.
   const nextCursor = rows.length === limit ? rows[rows.length - 1].id : null

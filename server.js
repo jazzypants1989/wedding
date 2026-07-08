@@ -13,6 +13,9 @@ import { maybeSendModerationDigest } from "./services/moderation-notify.js"
 
 import * as router from "./core/router.js"
 import { serveStatic } from "./core/static.js"
+import { serveMedia } from "./core/media-serve.js"
+import { ensureUploadDirs } from "./core/media-storage.js"
+import { runMediaMaintenance } from "./core/media-sweep.js"
 import { SERVER } from "./types.js"
 
 export const server = http.createServer(async (req, res) => {
@@ -37,6 +40,13 @@ export const server = http.createServer(async (req, res) => {
       return
     }
 
+    // Dynamic media file server (Range support) — must run BEFORE serveStatic,
+    // which serves from public/ and knows nothing about the data-volume uploads.
+    if (urlPath.startsWith("/media/")) {
+      serveMedia(req, res)
+      return
+    }
+
     const served = await serveStatic(req, res)
     if (!served) {
       res.writeHead(404, { "Content-Type": "text/plain" })
@@ -54,6 +64,8 @@ export const server = http.createServer(async (req, res) => {
 
 init()
 console.log("Database initialized")
+
+ensureUploadDirs()
 
 cleanExpiredSessions()
 cleanExpiredAccountSessions()
@@ -73,11 +85,22 @@ setInterval(
     maybeSendModerationDigest().catch((err) => {
       console.error("Moderation digest error:", err)
     })
+    // Media housekeeping: purge abandoned uploads + stale staging hourly;
+    // full integrity pass every 24th tick.
+    try {
+      runMediaMaintenance()
+    } catch (err) {
+      console.error("Media maintenance error:", err)
+    }
   },
   60 * 60 * 1000,
 ).unref()
 
-server.requestTimeout = 30_000
+// A 100MB video on a slow uplink takes minutes to receive, and Node has no
+// per-route requestTimeout override. Raising the global limit is safe ONLY
+// because uploads add their own idle(30s)+absolute(10min) timers in
+// core/upload.js, and every non-upload body path keeps parseBody's 30s/1MB caps.
+server.requestTimeout = 600_000
 server.headersTimeout = 35_000
 
 server.listen(SERVER.port, () => {

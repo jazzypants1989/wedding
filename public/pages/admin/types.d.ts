@@ -6,6 +6,7 @@ import type {
   GuestWithInviteCount,
   Stats,
   Petition,
+  MediaListItem,
 } from "../../../types.js"
 
 /** @file utils.js - Types for admin utilities */
@@ -86,27 +87,60 @@ export interface AdminState {
   currentPetitions: Petition[]
   currentBlocklist: BlocklistEntry[]
   currentModeration: ModerationItem[]
+  currentAccounts: AccountRow[]
+  currentCurated: MediaListItem[]
   onAuthRequired: () => void
   getGuestById: (id: number) => Guest | null
   getBlockedEntryById: (id: number) => BlocklistEntry | null
   getPetitionById: (id: number) => Petition | null
-  getModerationById: (id: number) => ModerationItem | null
+  getAccountById: (id: number) => AccountRow | null
+  getCuratedById: (id: number) => MediaListItem | null
 }
 
-/** @file moderation.js - Types for the admin Moderation tab (Phase 2: guestbook-only) */
+/** @file moderation.js - Types for the admin Moderation tab (Phase 6: full queue) */
 
+export type ModerationContentType = "guestbook" | "media" | "comment"
+
+/**
+ * One row of the combined moderation queue. Text types (guestbook, comment) carry
+ * a `message`; media carries `file_key`/`kind`/`caption`/`needs_display` instead.
+ * `author_name`/`author_trusted` are null for admin/official rows (account_id null).
+ */
 export interface ModerationItem {
+  content_type: ModerationContentType
   id: number
-  message: string
-  author_name: string
-  author_trusted: boolean
+  account_id: number | null
+  author_name: string | null
+  author_relation: string | null
+  author_trusted: boolean | null
   status: string
   created_at: string
+  message: string | null
+  target_type: string | null
+  target_id: number | null
+  file_key: string | null
+  kind: string | null
+  caption: string | null
+  needs_display: boolean | null
 }
 
 export interface ModerationQueueResponse {
   items: ModerationItem[]
-  type: string
+  type: string | null
+  status: string
+  hasMore: boolean
+}
+
+export interface ModerationActionResponse {
+  success: boolean
+  autoTrusted: boolean
+  released: number
+}
+
+export interface ModerationBulkResponse {
+  success: boolean
+  changed: number
+  total: number
 }
 
 export interface ModerationCountsResponse {
@@ -116,7 +150,25 @@ export interface ModerationCountsResponse {
   total: number
 }
 
-/** Load the pending guestbook queue into the Moderation table. */
+/** One account row as projected by GET /api/admin/accounts (booleans, source). */
+export interface AccountRow {
+  id: number
+  name: string
+  relation: string | null
+  trusted: boolean
+  source: string
+  guest_id: number | null
+  contact_email: string | null
+  post_count: number
+  created_at: string
+}
+
+export interface AccountsResponse {
+  accounts: AccountRow[]
+  total: number
+}
+
+/** Load the combined queue (current filters) into the Moderation table. */
 export function loadModeration(): Promise<void>
 
 /** Refresh the Moderation tab badge from the counts endpoint. */
@@ -125,8 +177,16 @@ export function loadModerationCount(): Promise<void>
 /** Set the Moderation tab badge value/visibility. */
 export function updateModerationBadge(count: number): void
 
-/** Wire up the Moderation table + confirm modal. */
+/** Wire up the Moderation tab (sub-toggle, queue table, accounts table, modals). */
 export function initModeration(): void
+
+/** @file gallery-admin.js - Types for the admin curated-gallery manager (Phase 6) */
+
+/** Load the official section into the curated grid. */
+export function loadGalleryAdmin(): Promise<void>
+
+/** Wire up the curated grid, reorder buttons, caption inputs, and upload modal. */
+export function initGalleryAdmin(): void
 
 /** @file blocklist.js - Types for blocklist management module */
 
@@ -635,6 +695,12 @@ export function initInvites(): void
  * showError('An error occurred');
  */
 export function showError(message: string): void
+
+/** Show a success notification in the banner.
+ * @example
+ * showSuccess('Trusted Dana Smith · released 3 items');
+ */
+export function showSuccess(message: string): void
 
 /** Clear any existing notification from the banner.
  * @example

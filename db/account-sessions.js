@@ -85,6 +85,14 @@ export function rotateAccountCsrfToken(token) {
   return newCsrfToken
 }
 
+/** @type {Types.deleteAccountSessionsForAccount} */
+export function deleteAccountSessionsForAccount(accountId) {
+  // Admin account-delete: drop every live session for this account immediately.
+  // (getAccountSession also invalidates via the soft-delete join, but this makes
+  // the kill explicit and reclaims the rows.)
+  sql`DELETE FROM account_sessions WHERE account_id = ${accountId}`.run()
+}
+
 /** @type {Types.cleanExpiredAccountSessions} */
 export function cleanExpiredAccountSessions() {
   const currentTime = now()

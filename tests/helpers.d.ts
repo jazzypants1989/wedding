@@ -108,6 +108,12 @@ export interface ManualSmsBatchResponse {
 
 export const TEST_PORT: number
 export const BASE_URL: string
+/** Path to the per-run temp DB; dirname() is the server's data/uploads root. */
+export const TEST_DB_PATH: string
+/** Directory the spawned server writes its JSONL audit log to. */
+export const TEST_AUDIT_DIR: string
+/** Read every audit-log entry written so far, oldest first. */
+export function readAuditLog(): Array<Record<string, any>>
 
 export type StartServerFn = () => Promise<void>
 export type StopServerFn = () => Promise<void>

@@ -41,6 +41,16 @@ CREATE INDEX IF NOT EXISTS idx_reactions_target ON reactions(target_type, target
 Triggers (INSERT+UPDATE enum pairs, plus polymorphic-FK substitute — INSERT only):
 
 ```sql
+-- Status enum pair (comments only — reactions have no status). Both INSERT and
+-- UPDATE, matching the guestbook_entries pattern; these are what the prose above
+-- requires and what schema.js actually ships (check_comment_status_insert/_update).
+CREATE TRIGGER IF NOT EXISTS check_comment_status_insert
+BEFORE INSERT ON comments FOR EACH ROW
+WHEN NEW.status NOT IN ('pending','approved','hidden','rejected')
+BEGIN SELECT RAISE(ABORT, 'Invalid comment status'); END;
+-- identical BEFORE UPDATE trigger check_comment_status_update
+
+-- Polymorphic-FK existence substitute (both comments + reactions, INSERT only):
 CREATE TRIGGER IF NOT EXISTS check_comment_target_exists
 BEFORE INSERT ON comments FOR EACH ROW
 WHEN (NEW.target_type = 'guestbook'
@@ -48,7 +58,7 @@ WHEN (NEW.target_type = 'guestbook'
   OR (NEW.target_type = 'media'
         AND NOT EXISTS (SELECT 1 FROM media WHERE id = NEW.target_id AND deleted_at IS NULL))
 BEGIN SELECT RAISE(ABORT, 'Comment target does not exist'); END;
--- identical trigger for reactions
+-- identical existence trigger for reactions
 ```
 
 **Handlers must pre-check target existence with a SELECT** (visible + approved-or-own) so triggers stay defense-in-depth — `RAISE(ABORT)` otherwise surfaces as a generic 500 through `withErrorHandling`.
@@ -69,10 +79,10 @@ Constants: `TARGET_TYPE`, `REACTION_EMOJI` frozen objects + `_VALUES` + guards i
 | GET | `/api/media/:id/comments` | public + optional account |
 | POST | `/api/guestbook/:id/comments` | account, COMMENT_POST |
 | POST | `/api/media/:id/comments` | account, COMMENT_POST |
-| DELETE | `/api/comments/:id` | account (own only) |
+| DELETE | `/api/comments/:id` | account (own only), CONTENT_DELETE |
 | POST | `/api/reactions/toggle` | account, REACTION_TOGGLE |
 
-Comments GET: all at once ascending (volumes are small; client caps display at 200 with "show all"); approved + caller's own pending flagged. Comment moderation matches guestbook: `status = trusted ? approved : pending` (no notification call — the digest service discovers pending items; 02 §3). Comments on hidden/deleted parents vanish naturally because reads join parent visibility (the GET handler resolves the parent first; 404 if not visible to the caller).
+Comments GET: all at once ascending (volumes are small — the client renders the full list, no display cap); approved + caller's own pending flagged. Comment moderation matches guestbook: `status = trusted ? approved : pending` (no notification call — the digest service discovers pending items; 02 §3). Comments on hidden/deleted parents vanish naturally because reads join parent visibility (the GET handler resolves the parent first; 404 if not visible to the caller).
 
 Reactions toggle body `{ target_type, target_id, emoji }` (all validated; target must be visible to caller):
 
@@ -100,7 +110,7 @@ Key→glyph map: `{ heart:"❤️", clap:"👏", laugh:"😂", heart_eyes:"😍"
 ## 4. `public/components/comment-thread.js`
 
 - Collapsed by default everywhere: "N comments" toggle button (count from feed enrichment). First expand → GET, render ascending; composer at bottom gated by `requireAccount`.
-- Own pending comments inline with the `status-pending` chip. Optimistic append on POST; rollback + inline error on failure. Delete button on own comments (confirm).
+- Own pending comments inline with the `status-pending` chip. Append is **synchronous**: the composer awaits the POST, then appends the returned server row; on failure it appends nothing and shows an inline error (contrast the reaction bar in §3, which is genuinely optimistic). Delete button on own comments (confirm).
 - Renders via `html`` ` (escaped), relative timestamps via `relative-time.js`.
 
 ## 5. Integration

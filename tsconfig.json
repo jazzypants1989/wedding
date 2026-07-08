@@ -13,5 +13,13 @@
     "lib": ["esnext"],
     "types": ["node"]
   },
-  "exclude": ["node_modules", "data", "js", "public", "scripts/build-demo.js", "scripts/demo-server.js"]
+  "exclude": [
+    "node_modules",
+    "data",
+    "js",
+    "public",
+    "scripts/build-demo.js",
+    "scripts/demo-server.js",
+    "tests/unit/reaction-glyphs.test.js"
+  ]
 }

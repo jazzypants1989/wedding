@@ -31,7 +31,7 @@
 
 .header {
   background: var(--color-card-bg);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: var(--border-width) solid var(--color-border);
   padding: var(--spacing-md) var(--spacing-lg);
   display: flex;
   flex-direction: column;
@@ -97,7 +97,7 @@
   display: flex;
   gap: var(--spacing-xs);
   margin-bottom: var(--spacing-lg);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: var(--border-width) solid var(--color-border);
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -106,8 +106,8 @@
   padding: var(--spacing-md) var(--spacing-lg);
   font-size: var(--text-base);
   color: var(--color-text-muted);
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
+  border-bottom: var(--border-width-thick) solid transparent;
+  margin-bottom: calc(-1 * var(--border-width));
   transition:
     color var(--duration-fast),
     border-color var(--duration-fast);
@@ -123,8 +123,8 @@
 }
 
 .tab-btn:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: -2px;
+  outline: var(--border-width-thick) solid var(--color-primary);
+  outline-offset: calc(-1 * var(--border-width-thick));
 }
 
 .tab-content {
@@ -172,7 +172,7 @@ th,
 td {
   text-align: left;
   padding: var(--spacing-xs) var(--spacing-sm);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: var(--border-width) solid var(--color-border);
 }
 
 th {
@@ -254,8 +254,8 @@ tr:hover td {
   display: inline-block;
   width: var(--spacing-sm);
   height: var(--spacing-sm);
-  border-right: 2px solid var(--color-primary);
-  border-bottom: 2px solid var(--color-primary);
+  border-right: var(--border-width-thick) solid var(--color-primary);
+  border-bottom: var(--border-width-thick) solid var(--color-primary);
   transform: rotate(45deg);
   transition: transform var(--duration-normal) ease;
   opacity: 0.8;
@@ -266,7 +266,9 @@ tr:hover td {
 }
 
 .rsvp-toggle[aria-expanded="true"]::after {
-  transform: scale(1.5) rotate(225deg);
+  /* Pure rotation — scaling a border-drawn glyph also scales its stroke width,
+     visibly fattening the chevron on expand. */
+  transform: rotate(225deg);
   opacity: 1;
 }
 
@@ -364,7 +366,7 @@ tr:hover td {
 .file-input-label {
   display: block;
   padding: var(--spacing-lg);
-  border: 2px dashed var(--color-border);
+  border: var(--border-width-thick) dashed var(--color-border);
   border-radius: var(--radius-md);
   cursor: pointer;
   transition:
@@ -462,7 +464,7 @@ tr:hover td {
 
 .import-list li {
   padding: var(--spacing-xs) 0;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: var(--border-width) solid var(--color-border);
   font-size: var(--text-sm);
 }
 
@@ -512,7 +514,7 @@ tr:hover td {
 
 .preview-item {
   padding: var(--spacing-md);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: var(--border-width) solid var(--color-border);
 }
 
 .preview-message {
@@ -528,7 +530,7 @@ tr:hover td {
   background: var(--color-danger);
   color: var(--color-on-primary);
   font-size: var(--text-xs);
-  padding: 2px 6px;
+  padding: var(--spacing-2xs) 6px;
   border-radius: var(--radius-full);
   margin-left: var(--spacing-xs);
   vertical-align: middle;
@@ -565,7 +567,7 @@ tr:hover td {
 /* Detail Rows for Modals */
 .detail-row {
   padding: var(--spacing-sm) 0;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: var(--border-width) solid var(--color-border);
 }
 
 .card-text {
@@ -586,7 +588,7 @@ tr:hover td {
 /* Manual SMS */
 .msms-template-section {
   margin-bottom: var(--spacing-md);
-  border: 1px solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-sm);
 }
 
@@ -616,9 +618,9 @@ tr:hover td {
 
 .msms-placeholder-tag {
   background: var(--color-background);
-  border: 1px solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-sm);
-  padding: 2px var(--spacing-sm);
+  padding: var(--spacing-2xs) var(--spacing-sm);
   font-family: monospace;
   font-size: var(--text-sm);
   color: var(--color-text);
@@ -631,7 +633,7 @@ tr:hover td {
 
 .msms-message-box {
   background: var(--color-background);
-  border: 1px solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-sm);
   padding: var(--spacing-md);
   font-size: var(--text-sm);
@@ -649,7 +651,7 @@ tr:hover td {
   gap: var(--spacing-sm);
   margin-bottom: var(--spacing-md);
   padding-bottom: var(--spacing-md);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: var(--border-width) solid var(--color-border);
 }
 
 .msms-mode-toggle .btn.active {
@@ -666,7 +668,7 @@ tr:hover td {
 }
 
 .msms-guest-card {
-  border: 1px solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-md);
   padding: var(--spacing-lg);
   margin-bottom: var(--spacing-md);
@@ -687,7 +689,7 @@ tr:hover td {
   font-size: var(--text-sm);
   color: var(--color-text-muted);
   background: var(--color-background);
-  padding: 2px var(--spacing-sm);
+  padding: var(--spacing-2xs) var(--spacing-sm);
   border-radius: var(--radius-sm);
 }
 
@@ -701,7 +703,7 @@ tr:hover td {
   display: inline-block;
   background: var(--color-status-responded-bg);
   color: var(--color-status-responded-text);
-  padding: 2px var(--spacing-sm);
+  padding: var(--spacing-2xs) var(--spacing-sm);
   border-radius: var(--radius-sm);
   font-size: var(--text-sm);
   font-weight: 500;
@@ -781,4 +783,330 @@ tr:hover td {
     display: none;
   }
 
+}
+
+/* ============ Phase 6: Moderation & Curation ============ */
+
+/* Sub-toggle pills (Queue | Accounts) */
+.sub-toggle {
+  display: inline-flex;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-md);
+  padding: var(--spacing-2xs);
+  background: var(--color-text-3);
+  border-radius: var(--radius-full);
+}
+
+.sub-toggle-pill {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--text-sm);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+}
+
+.sub-toggle-pill.active {
+  background: var(--color-card-bg);
+  color: var(--color-text);
+  font-weight: 500;
+  box-shadow: var(--shadow-sm);
+}
+
+.sub-toggle-pill:focus-visible {
+  outline: var(--border-width-thick) solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Account-filtered queue note */
+.mod-account-filter {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-primary-faint);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+}
+
+/* The display:flex classes below must yield to the `hidden` attribute (the UA
+   rule [hidden]{display:none} loses to a class-level display). */
+.mod-account-filter[hidden],
+.mod-bulk-bar[hidden] {
+  display: none;
+}
+
+/* Bulk action bar */
+.mod-bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-card-bg-alt, var(--color-primary-faint));
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.mod-bulk-count {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  margin-right: auto;
+}
+
+.mod-check-col {
+  width: 1%;
+  white-space: nowrap;
+}
+
+/* Preview cell — 56px media thumb or truncated text */
+.mod-thumb {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-faint);
+  display: block;
+}
+
+.mod-thumb-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.mod-preview-text {
+  display: block;
+  max-width: 40ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.mod-preview-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+/* Trusted / untrusted author badge */
+.trust-badge {
+  display: inline-block;
+  margin-left: var(--spacing-xs);
+  padding: 0 var(--spacing-xs);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  background: var(--color-status-pending-bg);
+  color: var(--color-status-pending-text);
+}
+
+.trust-badge.is-trusted {
+  background: var(--color-status-responded-bg);
+  color: var(--color-status-responded-text);
+}
+
+/* Detail modal media + author block */
+.modal-actions-wrap {
+  flex-wrap: wrap;
+}
+
+.mod-detail-media {
+  max-width: 100%;
+  max-height: 50vh;
+  border-radius: var(--radius-sm);
+  display: block;
+  margin: 0 auto var(--spacing-md);
+}
+
+.mod-detail-author {
+  margin-top: var(--spacing-md);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.mod-detail-author strong {
+  color: var(--color-text);
+}
+
+.mod-detail-missing {
+  padding: var(--spacing-md);
+  background: var(--color-primary-faint);
+  border-radius: var(--radius-sm);
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+/* Curated gallery grid */
+.curated-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: var(--spacing-md);
+}
+
+.curated-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-xs);
+  background: var(--color-card-bg);
+}
+
+.curated-thumb-wrap {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-faint);
+}
+
+.curated-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.curated-pos {
+  position: absolute;
+  top: var(--spacing-2xs);
+  left: var(--spacing-2xs);
+  min-width: 1.5em;
+  padding: 0 var(--spacing-2xs);
+  text-align: center;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+}
+
+.curated-caption {
+  width: 100%;
+  font-size: var(--text-xs);
+  padding: var(--spacing-2xs) var(--spacing-xs);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-input-bg, var(--color-card-bg));
+  color: var(--color-text);
+}
+
+.curated-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2xs);
+}
+
+.curated-actions button {
+  flex: 1;
+  min-width: 2rem;
+}
+
+.curated-empty {
+  grid-column: 1 / -1;
+  padding: var(--spacing-lg);
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+/* Gallery upload modal controls */
+.gallery-upload-controls {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
+.upload-tray-summary {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  margin-bottom: var(--spacing-xs);
+}
+
+/* Upload tray rows (mirrors gallery.css — that sheet isn't loaded on admin) */
+.upload-tray-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.upload-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.upload-thumb {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  background: var(--color-primary-faint);
+}
+
+.upload-row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.upload-name {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.85rem;
+}
+
+.upload-row-state {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+.upload-row-state.is-error {
+  color: var(--color-danger);
+}
+
+.upload-bar {
+  height: 4px;
+  margin-top: 3px;
+  background: var(--color-primary-faint);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.upload-bar-fill {
+  height: 100%;
+  background: var(--color-primary);
+  transition: width 0.2s ease;
+}
+
+.upload-action {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--color-primary);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .upload-bar-fill {
+    transition: none;
+  }
 }

@@ -11,6 +11,7 @@ import { initPetitions, loadPetitions, loadPetitionCount } from "./petitions.js"
 import { initBlocklist, loadBlocklist } from "./blocklist.js"
 import { initManualSms } from "./manual-sms.js"
 import { initModeration, loadModeration, loadModerationCount } from "./moderation.js"
+import { initGalleryAdmin, loadGalleryAdmin } from "./gallery-admin.js"
 import { initThemeToggle } from "../../components/theme-toggle.js"
 
 /** @type {Types.onLoginSuccess} */
@@ -46,6 +47,8 @@ function switchTab(tabId) {
     loadBlocklist()
   } else if (tabId === "moderation") {
     loadModeration()
+  } else if (tabId === "gallery") {
+    loadGalleryAdmin()
   }
 }
 
@@ -100,6 +103,7 @@ function init() {
   initBlocklist()
   initManualSms()
   initModeration()
+  initGalleryAdmin()
   initThemeToggle()
 
   checkSession()

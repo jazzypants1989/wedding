@@ -1,0 +1,442 @@
+/* Gallery page — grid, lightbox, upload tray. Shared card/badge/button styles
+   live in social.css / components.css; this file is page-specific layout only.
+   See docs/post-wedding/04-gallery.md. */
+
+.gallery-section {
+  max-width: var(--container-max);
+  margin: 0 auto;
+  padding: var(--spacing-lg) var(--spacing-md) var(--spacing-xl);
+}
+
+.gallery-title {
+  text-align: center;
+  margin-bottom: var(--spacing-md);
+}
+
+/* --- Section switcher (tablist) --- */
+
+.gallery-switcher {
+  display: flex;
+  gap: var(--spacing-xs);
+  justify-content: center;
+  margin-bottom: var(--spacing-lg);
+}
+
+.gallery-tab {
+  appearance: none;
+  border: 1px solid var(--color-border);
+  background: var(--color-card-bg);
+  color: var(--color-text);
+  font: inherit;
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+}
+
+.gallery-tab[aria-selected="true"] {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  border-color: var(--color-primary);
+}
+
+.gallery-tab-count {
+  opacity: 0.8;
+  font-size: 0.9em;
+}
+
+.gallery-guest-cta {
+  display: flex;
+  justify-content: center;
+  margin-bottom: var(--spacing-lg);
+}
+
+/* --- Grid --- */
+
+.media-grid {
+  list-style: none;
+  margin: 0 0 2px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 2px;
+}
+
+@media (min-width: 768px) {
+  .media-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+}
+
+/* The virtualization mechanism: offscreen batches cost ~0 layout/paint.
+   --batch-est is set per batch in grid.js from measured columns × row height. */
+.media-page {
+  content-visibility: auto;
+  contain-intrinsic-size: auto var(--batch-est, 900px);
+}
+
+.media-cell {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  border: none;
+  background: var(--color-primary-faint);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.media-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.media-placeholder {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-primary-faint);
+}
+
+.media-placeholder::before {
+  content: "📷";
+  font-size: 1.6rem;
+  opacity: 0.5;
+}
+
+.media-chip {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.media-chip.status-pending {
+  top: 4px;
+  left: 4px;
+  bottom: auto;
+  right: auto;
+  background: var(--color-status-pending-bg);
+  color: var(--color-status-pending-text);
+}
+
+.media-play {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 12px 0 12px 20px;
+  border-color: transparent transparent transparent rgba(255, 255, 255, 0.9);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
+  pointer-events: none;
+}
+
+.grid-sentinel {
+  width: 100%;
+  height: 1px;
+}
+
+.gallery-loadmore-wrap {
+  margin-top: var(--spacing-lg);
+}
+
+.gallery-grid-container.drag-over {
+  outline: 3px dashed var(--color-primary);
+  outline-offset: 4px;
+}
+
+/* --- Lightbox --- */
+
+.lightbox {
+  --color-lightbox-stage: #0b0810;
+  color-scheme: dark;
+  width: 100vw;
+  height: 100vh;
+  max-width: 100vw;
+  max-height: 100vh;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: var(--color-lightbox-stage);
+  color: #f0eaf0;
+  overflow: hidden;
+}
+
+.lightbox::backdrop {
+  background: rgba(0, 0, 0, 0.9);
+}
+
+.lightbox-topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: linear-gradient(rgba(0, 0, 0, 0.55), transparent);
+  z-index: 2;
+}
+
+.lightbox-close,
+.lightbox-copy {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.lightbox-close {
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
+.lightbox-counter {
+  font-variant-numeric: tabular-nums;
+}
+
+.lightbox-meta {
+  margin-left: auto;
+  text-align: right;
+  font-size: 0.85rem;
+  line-height: 1.2;
+  display: flex;
+  flex-direction: column;
+}
+
+.lightbox-time {
+  opacity: 0.7;
+}
+
+.lightbox-copy {
+  text-decoration: underline;
+}
+
+.lightbox-stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: pan-y;
+}
+
+.lightbox-media {
+  max-width: 100vw;
+  max-height: 100vh;
+  object-fit: contain;
+}
+
+.lightbox-missing {
+  padding: var(--spacing-lg);
+  text-align: center;
+  opacity: 0.8;
+}
+
+.lightbox-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: rgba(0, 0, 0, 0.4);
+  color: #fff;
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.lightbox-prev {
+  left: var(--spacing-sm);
+}
+.lightbox-next {
+  right: var(--spacing-sm);
+}
+
+.lightbox-panel {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: var(--spacing-md);
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.6));
+  z-index: 2;
+}
+
+.lightbox-caption {
+  margin: 0 0 var(--spacing-xs);
+}
+
+.lightbox-report a {
+  color: #cdbfe0;
+  font-size: 0.8rem;
+}
+
+@media (min-width: 1024px) {
+  .lightbox-panel {
+    top: 0;
+    left: auto;
+    width: 360px;
+    background: rgba(0, 0, 0, 0.35);
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+  }
+  .lightbox-stage {
+    right: 360px;
+  }
+}
+
+/* --- Upload FAB + tray --- */
+
+.upload-fab {
+  position: fixed;
+  right: var(--spacing-md);
+  bottom: calc(var(--spacing-md) + 56px);
+  z-index: calc(var(--z-mobile-nav) - 1);
+  width: 56px;
+  height: 56px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-size: 2rem;
+  line-height: 1;
+  box-shadow: var(--shadow-lg);
+  cursor: pointer;
+}
+
+@media (min-width: 768px) {
+  .upload-fab {
+    display: none;
+  }
+}
+
+.upload-tray {
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  z-index: var(--z-mobile-nav);
+  width: min(560px, 100%);
+  max-height: 45vh;
+  overflow-y: auto;
+  background: var(--color-card-bg);
+  border: 1px solid var(--color-border);
+  border-bottom: none;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  box-shadow: var(--shadow-lg);
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+
+.upload-tray-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  padding-bottom: var(--spacing-xs);
+}
+
+.upload-tray-cancel {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--color-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.upload-tray-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.upload-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.upload-thumb {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  background: var(--color-primary-faint);
+}
+
+.upload-row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.upload-name {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.85rem;
+}
+
+.upload-row-state {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+.upload-row-state.is-error {
+  color: var(--color-danger);
+}
+
+.upload-bar {
+  height: 4px;
+  margin-top: 3px;
+  background: var(--color-primary-faint);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.upload-bar-fill {
+  height: 100%;
+  background: var(--color-primary);
+  transition: width 0.2s ease;
+}
+
+.upload-action {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--color-primary);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .upload-bar-fill {
+    transition: none;
+  }
+  .lightbox-stage {
+    transition: none !important;
+  }
+}

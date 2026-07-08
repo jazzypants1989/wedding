@@ -257,10 +257,104 @@ export function withAccount(handler) {
   })
 }
 
+/** @type {Types.withAccountOrAdmin} */
+export function withAccountOrAdmin(handler) {
+  return withErrorHandling(async (req, res, routeInfo) => {
+    const cookies = parseCookies(req.headers.cookie)
+    const isMutation =
+      !!req.method && ["POST", "PUT", "DELETE", "PATCH"].includes(req.method)
+    const secureFlag = SERVER.baseUrl.startsWith("https") ? "; Secure" : ""
+
+    // Guest principal is checked FIRST: a browser holding both cookies (the
+    // couple browsing their own gallery) gets uploads attributed to their guest
+    // account; Phase 6's adminFetch sends no guest cookie and falls through to
+    // the admin branch below. A stale/invalid guest cookie also falls through.
+    const guestToken = cookies.guest_session
+    const guestSession = guestToken ? getAccountSession(guestToken) : null
+    if (guestSession) {
+      updateAccountSessionActivity(guestToken)
+      if (isMutation && !validateCsrf(req, guestSession)) {
+        log({
+          action: AUDIT_ACTIONS.CSRF_FAILURE,
+          ip: getClientIp(req),
+          details: { method: req.method, url: req.url, kind: "guest" },
+        })
+        return sendJson(res, 403, { error: "Invalid CSRF token" })
+      }
+      let updated = guestSession
+      if (guestSession.csrf_rotated_at) {
+        const csrfAge = Date.now() - new Date(guestSession.csrf_rotated_at).getTime()
+        if (csrfAge > GUEST_SESSION.CSRF_ROTATION_MS) {
+          const newCsrfToken = rotateAccountCsrfToken(guestToken)
+          res.setHeader(
+            "Set-Cookie",
+            `guest_csrf=${newCsrfToken}; Path=/; SameSite=Lax; Max-Age=${GUEST_COOKIE_MAX_AGE}${secureFlag}`,
+          )
+          updated = { ...guestSession, csrf_token: newCsrfToken }
+        }
+      }
+      /** @type {Types.Principal} */
+      const principal = {
+        isAdmin: false,
+        accountId: updated.account_id,
+        trusted: !!updated.trusted,
+        session: updated,
+      }
+      return await handler(req, res, { ...routeInfo, principal })
+    }
+
+    // Admin principal: no accounts row exists, so it carries accountId=null and
+    // is implicitly trusted (admin uploads auto-approve and store account_id NULL).
+    const adminToken = cookies.session
+    const adminSession = adminToken ? getSession(adminToken) : null
+    if (adminSession) {
+      updateSessionActivity(adminToken)
+      if (isMutation && !validateCsrf(req, adminSession)) {
+        log({
+          action: AUDIT_ACTIONS.CSRF_FAILURE,
+          ip: getClientIp(req),
+          details: { method: req.method, url: req.url },
+        })
+        return sendJson(res, 403, { error: "Invalid CSRF token" })
+      }
+      let updated = adminSession
+      if (adminSession.csrf_rotated_at) {
+        const csrfAge = Date.now() - new Date(adminSession.csrf_rotated_at).getTime()
+        if (csrfAge > SESSION.CSRF_ROTATION_MS) {
+          const newCsrfToken = rotateCsrfToken(adminToken)
+          res.setHeader(
+            "Set-Cookie",
+            `csrf=${newCsrfToken}; Path=/; SameSite=Strict; Max-Age=86400${secureFlag}`,
+          )
+          updated = { ...adminSession, csrf_token: newCsrfToken }
+        }
+      }
+      /** @type {Types.Principal} */
+      const principal = {
+        isAdmin: true,
+        accountId: null,
+        trusted: true,
+        session: updated,
+      }
+      return await handler(req, res, { ...routeInfo, principal })
+    }
+
+    return sendJson(res, 401, { error: "Sign in to participate" })
+  })
+}
+
 /** @type {Types.getOptionalAccount} */
 export function getOptionalAccount(req) {
   const cookies = parseCookies(req.headers.cookie)
   const sessionToken = cookies.guest_session
   if (!sessionToken) return null
   return getAccountSession(sessionToken)
+}
+
+/** @type {Types.getOptionalAdmin} */
+export function getOptionalAdmin(req) {
+  const cookies = parseCookies(req.headers.cookie)
+  const sessionToken = cookies.session
+  if (!sessionToken) return null
+  return getSession(sessionToken)
 }

@@ -1,0 +1,284 @@
+/** @file Effect studio chrome. Uses site tokens so it tracks the theme. */
+
+.studio-body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--color-background);
+  color: var(--color-text);
+  font-family: "Jost", system-ui, sans-serif;
+}
+
+/* Stage — where effects play. Effects append fixed full-screen layers to
+   <body>; this centered hero just gives you something to watch behind them. */
+.studio-stage {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.studio-stage h1 {
+  font-family: "DM Serif Display", Georgia, serif;
+  font-size: clamp(2.5rem, 7vw, 5rem);
+  margin: 0;
+  color: var(--color-primary);
+}
+
+.studio-stage p {
+  color: var(--color-text-muted);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+}
+
+/* Control panel — sits above every effect layer. */
+.studio-panel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 340px;
+  max-width: 90vw;
+  z-index: 2147483000;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-card-bg);
+  border-right: 1px solid var(--color-border);
+  box-shadow: 2px 0 20px rgba(0, 0, 0, 0.25);
+}
+
+.studio-head {
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.studio-head h2 {
+  margin: 0;
+  font-family: "DM Serif Display", Georgia, serif;
+  font-size: 1.4rem;
+  color: var(--color-primary);
+}
+
+.studio-head p {
+  margin: 4px 0 0;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.studio-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 18px;
+}
+
+.section-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-text-muted);
+  margin: 4px 0 8px;
+}
+
+.effect-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.effect-btn {
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.effect-btn:hover {
+  border-color: var(--color-primary);
+}
+
+.effect-btn.active {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  border-color: var(--color-primary);
+}
+
+.variant-row {
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--color-primary-faint, rgba(221, 115, 100, 0.08));
+  border: 1px solid var(--color-border);
+}
+
+.variant-note {
+  margin: 8px 0 0;
+  font-size: 0.76rem;
+  line-height: 1.4;
+  color: var(--color-text-muted);
+}
+
+.control {
+  margin-bottom: 14px;
+}
+
+.control-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.control label {
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
+.readout {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
+  color: var(--color-primary);
+}
+
+.control-inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.control-inputs input[type="range"] {
+  flex: 1;
+  accent-color: var(--color-primary);
+}
+
+.num-field,
+.text-field,
+.select-field,
+.color-field {
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 3px 6px;
+  border-radius: 5px;
+  border: 1px solid var(--color-border);
+  background: var(--color-white);
+  color: var(--color-text);
+}
+
+.num-field {
+  width: 68px;
+}
+
+.text-field,
+.select-field {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.range-inputs {
+  flex-wrap: wrap;
+}
+
+.range-tag {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+.color-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 5px;
+}
+
+.color-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.color-field {
+  flex: 1;
+}
+
+.control-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.studio-foot {
+  padding: 12px 18px;
+  border-top: 1px solid var(--color-border);
+}
+
+.foot-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ctrl-btn {
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.ctrl-btn:hover {
+  border-color: var(--color-primary);
+}
+
+.ctrl-btn.primary {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  border-color: var(--color-primary);
+}
+
+.flash {
+  margin: 10px 0 0;
+  font-size: 0.76rem;
+  min-height: 1.1em;
+}
+
+.flash-ok {
+  color: var(--color-success, green);
+}
+
+.flash-err {
+  color: var(--color-danger, red);
+}
+
+/* Box-shadow variant needs .grand-entrance-wave, which the working tree
+   removed from effects.css. Salvaged here (studio-only) for comparison. */
+.grand-entrance-wave {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  animation: grand-entrance-sparkle-fall 1.5s ease-out forwards;
+  will-change: transform, opacity;
+  contain: layout style paint;
+}
