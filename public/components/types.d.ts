@@ -257,3 +257,15 @@ export function renderCommentThread(
 
 /** Wire ONE delegated click + submit listener for every thread under root. */
 export function initCommentThreads(root?: HTMLElement | Document): void
+
+/** @file toast.js - Types for the transient cross-surface toast */
+
+export interface ToastOptions {
+  /** Auto-dismiss delay in ms (default 3200). */
+  duration?: number
+  /** "error" tints the toast for failures; omit for neutral info. */
+  variant?: "error" | "info"
+}
+
+/** Show a transient, auto-dismissing message (paints above the modal lightbox). */
+export function showToast(message: string, opts?: ToastOptions): void

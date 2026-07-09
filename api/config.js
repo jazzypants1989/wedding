@@ -2,7 +2,7 @@
 /** @import * as Types from './types.js' */
 
 import { sendJson } from "../core/http.js"
-import { FEATURES } from "../types.js"
+import { FEATURES, SERVER } from "../types.js"
 
 /** @type {Types.getConfig} */
 export function get(req, res) {
@@ -11,5 +11,8 @@ export function get(req, res) {
       enableNameLookup: FEATURES.ENABLE_NAME_LOOKUP,
       enableEmailLookup: FEATURES.ENABLE_EMAIL_LOOKUP,
     },
+    // Reply-to / contact address the frontend uses for the gallery "Report this
+    // photo" mailto. Always present (SERVER.contactEmail has a default).
+    contactEmail: SERVER.contactEmail,
   })
 }

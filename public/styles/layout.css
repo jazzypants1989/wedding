@@ -154,6 +154,7 @@ button {
   bottom: 0;
   background-color: var(--color-background);
   height: calc(100vh - var(--mobile-header-height));
+  height: calc(100dvh - var(--mobile-header-height));
   overflow: hidden;
   clip-path: inset(0 0 100% 0);
   transition: clip-path var(--duration-moderate) ease;
@@ -229,6 +230,15 @@ button {
 .countdown.wedding-day {
   font-weight: 500;
   animation: pulse 2s ease-in-out infinite;
+}
+
+/* Permanent post-wedding message; deliberately motion-free (reduced-motion safe). */
+.countdown.married {
+  font-weight: 500;
+}
+
+.countdown.married .exact-time {
+  display: block;
 }
 
 .couple-photo {

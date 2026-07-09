@@ -13,6 +13,8 @@ export interface PublicConfig {
     enableNameLookup: boolean
     enableEmailLookup: boolean
   }
+  /** Reply-to / contact address surfaced to guests (gallery report mailto). */
+  contactEmail: string
 }
 
 export function getConfig(req: IncomingMessage, res: ServerResponse): void

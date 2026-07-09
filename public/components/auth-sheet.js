@@ -136,7 +136,15 @@ function showPanel(which) {
 
 function resetSheet() {
   clearInterval(countdownTimer)
-  getInputElement("auth-code").value = ""
+  // Prefill the invite code from a prior RSVP visit (rsvp-form.js stashes it) so
+  // a household guest lands on the trusted path without re-typing their code.
+  let savedCode = ""
+  try {
+    savedCode = localStorage.getItem("rsvpCode") || ""
+  } catch {
+    // localStorage unavailable — leave the field blank.
+  }
+  getInputElement("auth-code").value = savedCode
   getInputElement("auth-name").value = ""
   getInputElement("auth-open-name").value = ""
   getInputElement("auth-open-relation").value = ""
@@ -276,16 +284,29 @@ async function handleCodeSubmit(/** @type {Event} */ e) {
     return
   }
   const code = codeInput.value.trim()
-  /** @type {{ code?: string, name: string }} */
-  const body = { name }
-  if (code) body.code = code
-  await submitRegister(body, {
-    submitBtn: getButtonElement("auth-code-submit"),
-    alertEl: getElement("auth-alert-code"),
-    defaultLabel: "Continue",
-    codeInput,
-    codeErrorEl: getElement("auth-code-error"),
-  })
+  // An empty code on THIS panel would register an untrusted (moderated) account
+  // without the guest realizing it — they came here to use their household code.
+  // Require it; the "I don't have a code" button is the explicit untrusted path.
+  const codeErrorEl = getElement("auth-code-error")
+  if (!code) {
+    codeErrorEl.textContent =
+      "Enter your invite code, or tap “I don’t have a code” below."
+    codeErrorEl.hidden = false
+    codeInput.setAttribute("aria-invalid", "true")
+    shake(codeInput)
+    codeInput.focus()
+    return
+  }
+  await submitRegister(
+    { name, code },
+    {
+      submitBtn: getButtonElement("auth-code-submit"),
+      alertEl: getElement("auth-alert-code"),
+      defaultLabel: "Continue",
+      codeInput,
+      codeErrorEl,
+    },
+  )
 }
 
 async function handleOpenSubmit(/** @type {Event} */ e) {
@@ -400,7 +421,16 @@ export function initAuthSheet() {
 /** @type {Types.openAuthSheet} */
 export function openAuthSheet(trigger) {
   initAuthSheet()
-  triggerEl = trigger instanceof HTMLElement ? trigger : null
+  // Capture the return-focus target BEFORE showModal() moves focus into the
+  // dialog. The write-gate path (requireAccount) opens the sheet with no explicit
+  // trigger, so fall back to whatever the guest just activated (the composer
+  // submit, a reaction pill, a comment button) so focus returns there on close.
+  triggerEl =
+    trigger instanceof HTMLElement
+      ? trigger
+      : document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null
   resetSheet()
   const dialog = getDialogElement("auth-sheet")
   dialog.showModal()

@@ -10,6 +10,7 @@
 import { html, api, getErrorMessage } from "../pages/utils.js"
 import { requireAccount } from "./guest-session.js"
 import { miniSparkle } from "./celebrate.js"
+import { showToast } from "./toast.js"
 
 /** Stable reaction key → display glyph. Must stay in sync with REACTION_EMOJI. */
 export const REACTION_GLYPHS = Object.freeze({
@@ -97,6 +98,7 @@ async function toggle(btn, bar, targetType, targetId, emoji) {
     // Roll back to the pre-toggle state; the server is the source of truth.
     setPill(btn, wasPressed, wasCount)
     console.warn("Reaction toggle failed:", getErrorMessage(err))
+    showToast("Couldn't save your reaction — please try again.", { variant: "error" })
   }
 }
 

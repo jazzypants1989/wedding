@@ -2,7 +2,7 @@
  *  copy-link, report, and deep-link URL sync. See docs/post-wedding/04-gallery.md §5. */
 /** @import * as Types from "./types.js" */
 
-import { html, getElement, getDialogElement } from "../utils.js"
+import { html, api, getElement, getDialogElement } from "../utils.js"
 import { formatRelative } from "../../components/relative-time.js"
 import { renderReactionBar } from "../../components/reaction-bar.js"
 import { renderCommentThread } from "../../components/comment-thread.js"
@@ -15,10 +15,23 @@ let source
 /** @type {Types.MediaSection} */
 let section = "guest"
 let index = -1
+/** Reply-to address for the "Report this photo" mailto; loaded from /api/config. */
+let contactEmail = ""
+
+/** Fetch the couple's contact address once so Report has a real recipient. */
+async function loadContactEmail() {
+  try {
+    const cfg = /** @type {{ contactEmail?: string }} */ (await api("/api/config"))
+    if (cfg && typeof cfg.contactEmail === "string") contactEmail = cfg.contactEmail
+  } catch {
+    // Leave blank; render() falls back to a no-address mailto rather than break.
+  }
+}
 
 /** @type {Types.initLightbox} */
 export function initLightbox(src) {
   source = src
+  void loadContactEmail()
   const dialog = getDialogElement("lightbox")
 
   getElement("lightbox-close").addEventListener("click", () => close())
@@ -133,9 +146,8 @@ function render() {
     ${renderCommentThread("media", item.id, item.comment_count)}`
 
   const report = /** @type {HTMLAnchorElement} */ (getElement("lightbox-report"))
-  report.href =
-    "mailto:?subject=" +
-    encodeURIComponent(`Please remove a wedding photo (${item.file_key})`)
+  const subject = encodeURIComponent(`Please remove a wedding photo (${item.file_key})`)
+  report.href = `mailto:${contactEmail}?subject=${subject}`
 
   preloadNeighbors()
 }
@@ -156,18 +168,48 @@ function pauseVideo() {
   if (video instanceof HTMLVideoElement) video.pause()
 }
 
-function copyLink() {
+async function copyLink() {
   const items = source.getItems(section)
   const item = items[index]
   if (!item) return
   const url = `${location.origin}/gallery?section=${section}&item=${item.id}`
-  void navigator.clipboard?.writeText(url)
   const btn = getElement("lightbox-copy")
   const prev = btn.textContent
-  btn.textContent = "Copied!"
+  // Only claim success once the copy actually lands. Clipboard API needs a
+  // secure context; fall back to a hidden-textarea execCommand, then to
+  // surfacing the URL so the guest can copy it by hand.
+  const ok = await copyToClipboard(url)
+  btn.textContent = ok ? "Copied!" : "Press ⌘/Ctrl+C"
+  if (!ok) window.prompt("Copy this link:", url)
   setTimeout(() => {
     btn.textContent = prev
   }, 1500)
+}
+
+/** @param {string} text @returns {Promise<boolean>} */
+async function copyToClipboard(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {
+    // Fall through to the legacy path below.
+  }
+  try {
+    const ta = document.createElement("textarea")
+    ta.value = text
+    ta.setAttribute("readonly", "")
+    ta.style.position = "fixed"
+    ta.style.opacity = "0"
+    document.body.appendChild(ta)
+    ta.select()
+    const ok = document.execCommand("copy")
+    document.body.removeChild(ta)
+    return ok
+  } catch {
+    return false
+  }
 }
 
 /**

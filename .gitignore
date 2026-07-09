@@ -11,7 +11,8 @@ data/
 node_modules/
 
 # Lockfiles
-package-lock.json
+# package-lock.json is intentionally tracked so CI's `npm ci` (deploy.yml) works
+# and the two devDependencies (typescript, @types/node) pin reproducibly.
 yarn.lock
 pnpm-lock.yaml
 
