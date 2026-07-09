@@ -9,7 +9,8 @@
 
 import { html, raw, api, getDialogElement, getInputElement, getButtonElement, getElement } from "../pages/utils.js"
 import { setButtonLoading, miniSparkle } from "./celebrate.js"
-import { setAccount, replayPendingAction } from "./guest-session.js"
+import { session, setAccount, replayPendingAction, cancelPendingAction } from "./guest-session.js"
+import { showToast } from "./toast.js"
 
 let injected = false
 /** @type {HTMLElement | null} */
@@ -405,6 +406,18 @@ export function initAuthSheet() {
   getElement("auth-code-form").addEventListener("submit", handleCodeSubmit)
   getElement("auth-open-form").addEventListener("submit", handleOpenSubmit)
   getElement("auth-recover-form").addEventListener("submit", handleRecoverSubmit)
+
+  // Dismissed before signing in (X / backdrop / Escape)? A successful auth sets
+  // the account and clears the stash before this fires, so a still-null account
+  // with a waiting action means the guest closed mid-write. Discard the stashed
+  // action (else it would replay on a later, unrelated sign-in) and tell them
+  // their tap didn't go through — otherwise it evaporates silently.
+  dialog.addEventListener("close", () => {
+    clearInterval(countdownTimer)
+    if (!session.account && cancelPendingAction()) {
+      showToast("You'll need to sign in to do that.")
+    }
+  })
 
   // Backdrop click closes (native dialog handles Escape).
   dialog.addEventListener("click", (e) => {

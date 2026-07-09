@@ -115,6 +115,9 @@ export async function loadMore(section) {
   if (s.loading || s.reachedEnd) return 0
   s.loading = true
   hideError()
+  // First paint for this section → show shimmer skeleton until data resolves.
+  const firstPaint = s.items.length === 0
+  if (firstPaint) showSkeleton(s)
   try {
     const isOfficial = section === "official"
     const limit = isOfficial ? OFFICIAL_LIMIT : GUEST_LIMIT
@@ -135,7 +138,32 @@ export async function loadMore(section) {
     return 0
   } finally {
     s.loading = false
+    if (firstPaint) clearSkeleton(s)
   }
+}
+
+/**
+ * Inject 12 shimmer skeleton cells while the first page loads. They share the
+ * media-grid so they occupy the footprint the real cells will (04 §4).
+ * @param {Section} s
+ */
+function showSkeleton(s) {
+  if (s.container.querySelector(".gallery-skeleton")) return
+  const ul = document.createElement("ul")
+  ul.className = "media-grid gallery-skeleton"
+  ul.setAttribute("aria-hidden", "true")
+  for (let i = 0; i < 12; i += 1) {
+    const li = document.createElement("li")
+    li.className = "media-skeleton"
+    ul.appendChild(li)
+  }
+  s.container.insertBefore(ul, s.sentinel)
+}
+
+/** @param {Section} s */
+function clearSkeleton(s) {
+  const el = s.container.querySelector(".gallery-skeleton")
+  if (el) el.remove()
 }
 
 /** @param {Section} s */

@@ -93,6 +93,7 @@
       <p class="gb-intro">Leave us a note — we read every one 💗</p>
 
       <div class="card gb-composer">
+        <div id="guest-identity" class="guest-identity" hidden></div>
         <form id="gb-composer-form">
           <label for="gb-message" class="sr-only">Your message</label>
           <textarea id="gb-message" class="gb-textarea" rows="3" maxlength="2000"
@@ -105,6 +106,10 @@
       </div>
 
       <div id="gb-error" class="alert alert-error" role="alert" hidden></div>
+
+      <div id="gb-loading" class="loading" hidden>
+        <span class="spinner" aria-hidden="true"></span>Loading messages…
+      </div>
 
       <div id="gb-feed" class="gb-feed" aria-live="polite"></div>
 

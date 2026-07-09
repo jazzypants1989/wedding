@@ -84,8 +84,21 @@ export function requireAccount(action: () => void): void
 /** Replay and clear the stashed action after a successful sign-in. */
 export function replayPendingAction(): void
 
+/** Discard the stashed action (auth sheet dismissed without signing in).
+ *  Returns true if an action was actually waiting. */
+export function cancelPendingAction(): boolean
+
 /** Set the current account (called by the auth sheet after register). */
 export function setAccount(account: GuestAccount | null): void
+
+/** Sign out: clear the server session + local account, notifying subscribers. */
+export function logout(): Promise<void>
+
+/** Subscribe to `session.account` changes; returns an unsubscribe function. */
+export function onSessionChange(listener: () => void): () => void
+
+/** Wire the "Posting as {name} · Not you?" bar into `#{containerId}` (default "guest-identity"). */
+export function initGuestIdentity(containerId?: string): void
 
 /** @file auth-sheet.js - Types for the shared auth sheet */
 

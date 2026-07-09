@@ -17,10 +17,24 @@
   <link rel="stylesheet" href="/styles/components.css">
   <link rel="stylesheet" href="/styles/effects.css" media="print" id="effects-css">
   <script src="/components/theme-init.js"></script>
+  <noscript>
+    <style>
+      /* Without JS the countdown never resolves — hide its stuck "Loading…"
+         (the date just above already conveys the day). */
+      #countdown { display: none; }
+    </style>
+  </noscript>
 </head>
 
 <body>
   <a href="#main-content" class="skip-link">Skip to content</a>
+
+  <noscript>
+    <div style="max-width: 600px; margin: 1rem auto; padding: 0.75rem 1rem; text-align: center;">
+      A few extras (the live countdown and the embedded registry) need JavaScript, but the rest of
+      the page — schedule, dress code, and the registry link — works without it.
+    </div>
+  </noscript>
 
   <div class="mobile-nav-wrapper" id="mobile-nav-wrapper">
     <button class="hamburger-button flex-center" id="hamburger-button" aria-expanded="false"
@@ -168,7 +182,7 @@
       <div class="registry-frame-wrapper" id="registry-wrapper">
         <p>We didn't want to deal with payment processing, so we're using Honeyfund for the honeymoon registry. The
           HoneyFund website will load in a frame below, but you can click on the link if that's too cramped.</p>
-        <p class="registry-link" id="registry-link" hidden>
+        <p class="registry-link" id="registry-link">
           <a href="https://www.honeyfund.com/site/north-pence-04-26-2026" target="_blank" rel="noopener noreferrer">Open
             registry in a new window</a>
         </p>

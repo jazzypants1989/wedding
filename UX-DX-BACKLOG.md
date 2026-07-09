@@ -17,7 +17,24 @@ reference material** for this and future agent sessions. It won't all be done in
 > focus to the activating control), §1.7 (`100dvh` for lightbox + mobile nav), §4.1 (lockfile
 > un-ignored so `npm ci` works — still needs a commit of `package-lock.json`). Verified: `npm run
 > typecheck` clean (both configs), `npm test` 965/965 pass, pages render.
-> STILL OPEN in §1: **§1.6** (auth sheet closed mid-write gives no feedback). Everything in §2–§6 remains. It was
+> **Progress (session 2):** DONE — **§1.6** (dismissing the auth sheet mid-write now clears the stashed
+> action so it can't stale-replay, and toasts "You'll need to sign in to do that."; typed composer text is
+> left intact — new `cancelPendingAction()` in `guest-session.js` + `close` listener in `auth-sheet.js`).
+> **§2.1** (guestbook first-paint spinner — `#gb-loading`, shown only on the empty first fetch).
+> **§2.2** (gallery 12-cell shimmer skeleton per section first paint; `showSkeleton`/`clearSkeleton` in
+> `grid.js`, `.media-skeleton` CSS, static under reduced-motion). **§2.3** (signed-in identity: new
+> reusable `components/guest-identity.js` renders "Posting as {name} · Not you?" on guestbook + gallery;
+> new `logout()` + `onSessionChange()` pub-sub in `guest-session.js`; "Not you?" logs out + reopens the
+> auth sheet for account-switch). **§2.4** (focus rings extended to `.gallery-tab`, `.reaction-pill`,
+> comment/lightbox/upload controls, `.auth-link`, `.gb-note-dismiss`, and the two out-of-`.form-group`
+> textareas). **§2.8** (landing `<noscript>`: countdown "Loading…" hidden with JS off, registry fallback
+> link now visible by default with the iframe progressively enhancing on scroll). Verified end-to-end via
+> headless-Chrome (write-gate toast + text preservation, 12 skeleton cells asserted, identity bar renders
+> + sign-out clears the server session + reopens the sheet, focus-visible rules present in CSSOM, registry
+> link visible + iframe lazy-loads, noscript blocks in served HTML) + `npm run typecheck` clean + `npm test`
+> 965/965. Test accounts created during verification were cleaned from the seeded DB.
+>
+> STILL OPEN: §1 is fully DONE. Remaining §2 polish (2.5–2.7, 2.9–2.17) and all of §3–§6. It was
 assembled from: (a) full-page screenshots of `/`, `/rsvp`, `/guestbook`, `/gallery`, `/admin` at
 desktop + mobile widths against the existing seeded DB, and (b) three parallel code audits of the
 guest frontend, the admin dashboard + DX surface, and the specs-vs-implementation delta.

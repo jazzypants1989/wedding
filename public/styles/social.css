@@ -237,6 +237,27 @@
   color: var(--color-primary);
 }
 
+/* "Posting as {name} · Not you?" — signed-in identity + account switch. */
+.guest-identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-sm);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.guest-identity-label strong {
+  color: var(--color-text);
+}
+
+.guest-identity-switch {
+  min-height: 32px;
+  padding: 2px var(--spacing-xs);
+  font-size: var(--text-sm);
+}
+
 /* Mobile: dock the sheet to the bottom edge. */
 @media (max-width: 767px) {
   .auth-sheet {
@@ -265,6 +286,15 @@
   font-family: var(--font-body);
   font-size: 1rem;
   resize: vertical;
+}
+
+/* These textareas live outside .form-group, so they miss the shared input
+   focus treatment — give them the same ring for consistency. */
+.gb-textarea:focus,
+.comment-input:focus {
+  outline: 2px solid transparent;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
 }
 
 .gb-composer-actions {

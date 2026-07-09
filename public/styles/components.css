@@ -336,6 +336,21 @@ code {
 .home-link:focus-visible,
 .modal-close:focus-visible,
 .msms-placeholder-tag:focus-visible,
+/* Custom guest-surface controls that set appearance:none and so get no
+   default ring — keyboard users need these to be visibly focusable too. */
+.gallery-tab:focus-visible,
+.reaction-pill:focus-visible,
+.comment-toggle:focus-visible,
+.comment-delete:focus-visible,
+.comment-submit:focus-visible,
+.lightbox-close:focus-visible,
+.lightbox-nav:focus-visible,
+.lightbox-copy:focus-visible,
+.lightbox-report:focus-visible,
+.upload-action:focus-visible,
+.upload-tray-cancel:focus-visible,
+.auth-link:focus-visible,
+.gb-note-dismiss:focus-visible,
 .file-input-label:focus-within,
 .checkbox-label:focus-within {
   outline: 2px solid var(--color-primary);

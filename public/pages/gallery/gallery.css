@@ -108,6 +108,31 @@
   opacity: 0.5;
 }
 
+/* First-paint skeleton: 12 shimmer cells while the first page loads (04 §4).
+   Shares the grid so it reserves the same footprint the real cells will. */
+.gallery-skeleton {
+  pointer-events: none;
+}
+
+.media-skeleton {
+  aspect-ratio: 1;
+  background: var(--color-primary-faint);
+  background-image: linear-gradient(
+    100deg,
+    transparent 30%,
+    color-mix(in srgb, var(--color-primary) 8%, transparent) 50%,
+    transparent 70%
+  );
+  background-size: 200% 100%;
+  animation: media-skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes media-skeleton-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
 .media-chip {
   position: absolute;
   bottom: 4px;
@@ -441,5 +466,10 @@
   }
   .lightbox-stage {
     transition: none !important;
+  }
+  /* Static placeholder cells — no shimmer sweep. */
+  .media-skeleton {
+    animation: none;
+    background-image: none;
   }
 }

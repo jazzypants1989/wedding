@@ -95,6 +95,10 @@ async function loadPage(isAuto) {
   if (loading || reachedEnd) return
   loading = true
   const btn = getButtonElement("gb-loadmore")
+  // Spinner only on the empty first paint; later pages have the Load-more button.
+  const firstPaint = getElement("gb-feed").childElementCount === 0
+  const loadingEl = getElement("gb-loading")
+  if (firstPaint) loadingEl.hidden = false
   try {
     const query =
       nextCursor !== null
@@ -116,6 +120,7 @@ async function loadPage(isAuto) {
     showError(getErrorMessage(err))
   } finally {
     loading = false
+    if (firstPaint) loadingEl.hidden = true
   }
 }
 

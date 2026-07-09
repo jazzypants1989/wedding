@@ -6,6 +6,7 @@ import { initMobileNav } from "../../components/mobile-nav.js"
 import { initThemeToggle } from "../../components/theme-toggle.js"
 import { initAuthSheet } from "../../components/auth-sheet.js"
 import { loadSession } from "../../components/guest-session.js"
+import { initGuestIdentity } from "../../components/guest-identity.js"
 import { initReactionBars } from "../../components/reaction-bar.js"
 import { initCommentThreads } from "../../components/comment-thread.js"
 import { api, getElement, getButtonElement } from "../utils.js"
@@ -38,6 +39,8 @@ async function boot() {
   initThemeToggle()
   initAuthSheet()
   await loadSession()
+  // Show "Posting as {name} · Not you?" once we know who's signed in.
+  initGuestIdentity()
 
   initGrid({ onOpen: openFromCell })
   initLightbox({
