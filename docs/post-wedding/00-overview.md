@@ -76,6 +76,9 @@ These resolve conflicts between the three original design slices. **Do not devia
 | Moderation notifications | Digest-only | Owner decision: the couple checks the site daily; one email path, one `app_state` key, no cooldown corners. |
 | Trust lifecycle | Auto-trust on first approval; magic-link recovery via optional `contact_email` | Queue sees each stranger once instead of every-item-forever; recovery fixes cleared-cookie orphaning with ~30 lines on the existing hashToken + Resend patterns. |
 | Register response codes | 201 on account creation (both paths), 200 on re-login (`returning: true`) | Unambiguous for clients and tests. |
+| Sunset archive export (Phase 7) | `scripts/export-archive.js` writes each entity (guestbook, comments, reactions, accounts, media) as both JSON and CSV, plus the whole `data/uploads/media/` tree hardlinked (copy fallback across filesystems) alongside `index.json` mapping `file_key → caption/author/date/variants`. Exports **all** statuses incl. soft-deleted (each row carries `status`/`deleted_at`). | One command turns eventual domain-renewal into a folder the couple keeps; an archive must never silently drop the owner's data, and hardlinks keep it near-free on the data volume. |
+
+**Implementation notes (Phase 7).** Nav links + the landing "Memories" section + the RSVP→auth-sheet code prefill (`localStorage.rsvpCode`) + the post-wedding countdown state shipped as specified; no binding cross-slice reconciliation above was reversed during implementation. The countdown gained a genuine post-wedding branch ("We're married! 💍" / "Relive the day below") — the earlier build only had a wedding-*day* state that permanently overwrote `#exact-time`.
 
 ## Glossary
 

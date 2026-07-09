@@ -194,6 +194,14 @@ export async function initRsvpForm() {
   try {
     const data = await fetchRsvpData(state.inviteCode)
     state.guestData = data
+    // Remember a valid invite code so the guest auth sheet on /guestbook and
+    // /gallery can prefill it — a household code means a trusted account is one
+    // tap away instead of a re-typed string.
+    try {
+      localStorage.setItem("rsvpCode", state.inviteCode)
+    } catch {
+      // localStorage unavailable (private mode / disabled) — prefill is a nicety.
+    }
     showForm(data)
   } catch (err) {
     showError(getErrorMessage(err))
