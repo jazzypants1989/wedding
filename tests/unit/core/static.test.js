@@ -64,14 +64,18 @@ describe("serveStatic", () => {
     assert.strictEqual(res.state.statusCode, 200)
   })
 
-  it("serves CSS files with immutable cache control", async () => {
+  it("serves CSS files with revalidating cache control + validators", async () => {
     const req = mockReq({ url: "/styles/tokens.css" })
     const res = mockRes()
     const handled = await serveStatic(/** @type {import('node:http').IncomingMessage} */ (/** @type {unknown} */ (req)), /** @type {import('node:http').ServerResponse} */ (/** @type {unknown} */ (res)))
     assert.strictEqual(handled, true)
     assert.strictEqual(res.state.statusCode, 200)
     assert.ok(res.state.headers["Content-Type"]?.toString().includes("text/css"))
-    assert.ok(res.state.headers["Cache-Control"]?.toString().includes("immutable"))
+    const cacheControl = res.state.headers["Cache-Control"]?.toString() || ""
+    assert.ok(cacheControl.includes("must-revalidate"), "should revalidate")
+    assert.ok(!cacheControl.includes("immutable"), "should not be immutable")
+    assert.ok(res.state.headers["ETag"], "should send an ETag validator")
+    assert.ok(res.state.headers["Last-Modified"], "should send a Last-Modified validator")
   })
 
   it("serves JS files with correct content type", async () => {
@@ -134,6 +138,24 @@ describe("serveStatic", () => {
     const req2 = mockReq({
       url: "/styles/tokens.css",
       headers: { "if-none-match": etag },
+    })
+    const res2 = mockRes()
+    await serveStatic(/** @type {import('node:http').IncomingMessage} */ (/** @type {unknown} */ (req2)), /** @type {import('node:http').ServerResponse} */ (/** @type {unknown} */ (res2)))
+    assert.strictEqual(res2.state.statusCode, 304)
+  })
+
+  it("returns 304 for conditional requests with If-Modified-Since", async () => {
+    // First request to get the Last-Modified date
+    const req1 = mockReq({ url: "/styles/tokens.css" })
+    const res1 = mockRes()
+    await serveStatic(/** @type {import('node:http').IncomingMessage} */ (/** @type {unknown} */ (req1)), /** @type {import('node:http').ServerResponse} */ (/** @type {unknown} */ (res1)))
+    const lastModified = String(res1.state.headers["Last-Modified"])
+    assert.ok(lastModified, "First response should have a Last-Modified header")
+
+    // Second request with If-Modified-Since equal to the file's mtime → not modified
+    const req2 = mockReq({
+      url: "/styles/tokens.css",
+      headers: { "if-modified-since": lastModified },
     })
     const res2 = mockRes()
     await serveStatic(/** @type {import('node:http').IncomingMessage} */ (/** @type {unknown} */ (req2)), /** @type {import('node:http').ServerResponse} */ (/** @type {unknown} */ (res2)))

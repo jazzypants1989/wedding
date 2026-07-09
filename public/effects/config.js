@@ -67,23 +67,6 @@ export const EFFECT_CONFIGS = {
     },
   },
 
-  burst: {
-    defaults: {
-      particleCount: 60,
-      colors: [
-        EFFECT_PALETTE.white,
-        EFFECT_PALETTE.gold,
-        EFFECT_PALETTE.blush,
-        EFFECT_PALETTE.brand,
-        EFFECT_PALETTE.sky,
-        EFFECT_PALETTE.purple,
-      ],
-      durationRange: [1.5, 3],
-      driftRange: [-40, 40],
-      scaleRange: [0.5, 1.5],
-    },
-  },
-
   dividers: {
     defaults: {
       dotDensity: 19,

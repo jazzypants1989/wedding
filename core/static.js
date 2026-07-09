@@ -27,22 +27,30 @@ const MIME_TYPES = {
   ".txt": "text/plain; charset=utf-8",
 }
 
+// Assets are versioned by the `?v=<mtime>` cache-busters injected into HTML
+// (see addCacheBusters) and validated by ETag/Last-Modified, so we deliberately
+// avoid `immutable` — it would pin a stale asset for the full max-age even after
+// a deploy. `max-age=0, must-revalidate` makes every load a cheap conditional
+// (304 when unchanged); bump max-age (e.g. 300) to trade a little staleness for
+// fewer revalidation round-trips.
+const ASSET_CACHE_CONTROL = "public, max-age=0, must-revalidate"
+
 /** @type {Types.CacheControl} */
 const CACHE_CONTROL = {
   ".html": "no-cache", // Always validate HTML
-  ".css": "public, max-age=31536000, immutable",
-  ".js": "public, max-age=31536000, immutable",
-  ".mjs": "public, max-age=31536000, immutable",
-  ".png": "public, max-age=31536000, immutable",
-  ".jpg": "public, max-age=31536000, immutable",
-  ".jpeg": "public, max-age=31536000, immutable",
-  ".gif": "public, max-age=31536000, immutable",
-  ".webp": "public, max-age=31536000, immutable",
-  ".svg": "public, max-age=31536000, immutable",
-  ".ico": "public, max-age=31536000, immutable",
-  ".woff": "public, max-age=31536000, immutable",
-  ".woff2": "public, max-age=31536000, immutable",
-  ".ttf": "public, max-age=31536000, immutable",
+  ".css": ASSET_CACHE_CONTROL,
+  ".js": ASSET_CACHE_CONTROL,
+  ".mjs": ASSET_CACHE_CONTROL,
+  ".png": ASSET_CACHE_CONTROL,
+  ".jpg": ASSET_CACHE_CONTROL,
+  ".jpeg": ASSET_CACHE_CONTROL,
+  ".gif": ASSET_CACHE_CONTROL,
+  ".webp": ASSET_CACHE_CONTROL,
+  ".svg": ASSET_CACHE_CONTROL,
+  ".ico": ASSET_CACHE_CONTROL,
+  ".woff": ASSET_CACHE_CONTROL,
+  ".woff2": ASSET_CACHE_CONTROL,
+  ".ttf": ASSET_CACHE_CONTROL,
 }
 
 const THEME_INIT_TAG = '<script src="/components/theme-init.js"></script>'
@@ -97,6 +105,9 @@ const versionMap = new Map()
 /** @type {Map<string, string>} fullPath → ETag, for conditional requests */
 const etagCache = new Map()
 
+/** @type {Map<string, string>} fullPath → Last-Modified (HTTP date), for conditional requests */
+const lastModifiedCache = new Map()
+
 /** @type {Map<string, Buffer>} fullPath → gzipped content, for pre-compressed static files */
 const gzipCache = new Map()
 
@@ -112,9 +123,10 @@ for (const file of fs.readdirSync(publicDir, { recursive: true })) {
     if (bustExts.includes(ext)) {
       versionMap.set(urlPath, Math.floor(stat.mtimeMs))
     }
-    // Pre-compute ETags for non-HTML files (based on mtime + size)
+    // Pre-compute ETags + Last-Modified for non-HTML files (based on mtime + size)
     if (ext !== ".html") {
       etagCache.set(fullPath, '"' + stat.mtimeMs.toString(36) + "-" + stat.size.toString(36) + '"')
+      lastModifiedCache.set(fullPath, new Date(stat.mtimeMs).toUTCString())
     }
     // Pre-compress text-based static files (skip HTML — it gets cache busters injected)
     if (ext !== ".html" && COMPRESSIBLE_EXTS.has(ext) && stat.size > 1024) {
@@ -267,6 +279,23 @@ export async function serveStatic(req, res) {
           res.writeHead(304, headers)
           res.end()
           return true
+        }
+      }
+      // Last-Modified validator (non-HTML assets only — HTML is transformed per
+      // request, so its mtime doesn't describe the served body).
+      const lastModified = lastModifiedCache.get(normalizedPath)
+      if (lastModified) {
+        headers["Last-Modified"] = lastModified
+        const ims = req.headers["if-modified-since"]
+        if (typeof ims === "string") {
+          const imsMs = Date.parse(ims)
+          const lmMs = Date.parse(lastModified)
+          // HTTP dates have second precision; a not-older client copy is fresh.
+          if (!Number.isNaN(imsMs) && !Number.isNaN(lmMs) && imsMs >= lmMs) {
+            res.writeHead(304, headers)
+            res.end()
+            return true
+          }
         }
       }
     }

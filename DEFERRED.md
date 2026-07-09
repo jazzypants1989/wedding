@@ -21,7 +21,7 @@ Rate limiting only trusts `X-Forwarded-For` when `req.socket.remoteAddress` is i
 `scripts/backup-db.js` now writes a WAL-consistent `VACUUM INTO` snapshot, timestamped, pruned to the **last 5** — all inside the `wedding-data` volume (`docker-compose.yml`). That's a real point-in-time backup but **not disaster recovery**: lose the volume and you lose every copy. Still deferred:
 - Copy a snapshot **off the VPS** (e.g. `scp`/object storage) as part of deploy, or a separate cron.
 - Decide real retention (daily/weekly) beyond the rolling 5.
-- **Media tree off-host copy (Phase 3):** uploads under `data/uploads/media/` are write-once, so a nightly `rsync -a --ignore-existing .../uploads/media/ backuphost:...` (plus the newest DB `*.backup` in the same cron) is the ideal backup. `--ignore-existing` makes VPS-side deletes non-propagating, which is correct for a backup.
+- **Media tree off-host copy (Phase 3):** uploads under `data/uploads/media/` are write-once, so a nightly `rsync -a --ignore-existing .../uploads/media/ backuphost:...` (plus the newest DB `*.backup` in the same cron) is the ideal backup. `--ignore-existing` makes VPS-side deletes non-propagating, which is correct for a backup. **Status at Phase 7 launch: still deferred** — this is a deploy-time cron on the VPS, no repo code required; install and verify it by hand (Phase 7 §6 item 4) as part of go-live. `scripts/export-archive.js` (added Phase 7) is the complementary *whole-archive* export for eventual site sunset, not the incremental nightly backup.
 
 ---
 
@@ -33,6 +33,12 @@ Shipped in Phase 3 (media upload + `/media` serving). Items requiring a producti
 - **No buffering middleware** on the media router (would spool 100MB to proxy disk). Confirmed none in the current `docker-compose.yml` labels; re-check if middleware is added.
 - **VPS free disk ≥ 50GB** (estimate ~30GB at full scale). Set in the VPS `.env`: `MEDIA_MIN_FREE_BYTES` (default 5GB), `MEDIA_MAX_TOTAL_BYTES` (default 45GB), `MEDIA_UNTRUSTED_QUOTA_BYTES` (default 250MB).
 - **Health check** now reports `uploadsFreeBytes` (`GET /api/health`) — wire it into whatever monitors the box.
+
+---
+
+## 8. Quarantine directory needs periodic manual emptying 🟢
+
+The daily media sweep (`core/media-sweep.js`) reconciles the DB against the disk and **moves DB-orphaned files** (a `file_key` with no live row — e.g. an abandoned upload whose row was pruned, or a hard-removed item's leftover bytes) into `data/uploads/quarantine/` (`QUARANTINE_DIR`, defined in `core/media-storage.js`). By design it **never auto-hard-deletes** — quarantine is a safety net, not a trash can that self-empties. Consequence: the directory grows unboundedly and someone must empty it periodically (inspect, then `rm -rf data/uploads/quarantine/*`) once satisfied nothing there is wanted. No code change needed; this is an ops reminder. Not urgent at wedding scale, but note it so quarantine doesn't silently consume the disk headroom that `MEDIA_MIN_FREE_BYTES` is guarding.
 
 ---
 
@@ -48,22 +54,67 @@ Compose uses `env_file: .env` on the VPS. The local `.env` leaves `TWILIO_PHONE_
 
 ---
 
-## 7. Static asset caching — rework immutable + no cache-busting 🟡
-
-`core/static.js` serves `.css`/`.js`/images with `Cache-Control: public, max-age=31536000, immutable`, but asset URLs are **not** content-hashed or versioned (`/pages/admin/admin.css`, not `/pages/admin/admin.<hash>.css`). Consequence: after a deploy, a returning browser keeps serving the **stale** cached CSS/JS for up to a year (or until a hard refresh) — a new bundle silently doesn't reach existing visitors. This has bitten us more than once, including in dev (headless Chrome cached `admin.css` across screenshot runs and showed pre-edit styling until a fresh origin was used). Only `.html` is `no-cache`, so HTML updates land but the assets they reference may not.
-
-Options to rework (pick one, ideally at build/deploy time to stay zero-runtime-dep):
-- **Content-hashed asset names** (`admin.<sha>.css`) rewritten into the HTML at deploy — the gold standard; `immutable` becomes correct because the URL changes when the bytes change.
-- **Version query string** tied to the git SHA / deploy id (`admin.css?v=<sha>`) injected into the HTML `<link>`/`<script>` tags — simpler, still busts caches per deploy.
-- **Drop `immutable`, shorten `max-age`, add `ETag`/`Last-Modified` revalidation** for HTML-referenced assets so browsers at least re-validate cheaply.
-
-Not urgent for the wedding's traffic, but any of the above prevents "I deployed a fix and users still see the old page." Note the client-facing analogue already documented for media: the 24h guest-media cache caveat (`03 §7`) — different layer (public media vs app shell), same family of problem.
-
----
-
 ## 5. `__Host-` cookie prefix on guest cookies 🟢
 
 The 2026-07-06 design review of `docs/post-wedding/` suggested `__Host-guest_session` to pin
 `Path=/` + `Secure` at the browser level. Deferred: the prefix requires the `Secure` attribute,
 which complicates plain-HTTP localhost development in some browsers, and production is already
 HTTPS-only behind Traefik with `Path=/` set explicitly. Revisit only if the cookie surface grows.
+
+---
+
+## 9. Effects system — generalize into reusable themes 🟢
+
+The visual effects (`public/effects/`) are a clean registry (`EFFECT_DEFINITIONS` + the
+`EffectInstance` factory contract), but they're hardcoded to this wedding's "disco-mermaid"
+identity — not reusable as-is for a portfolio where others won't want that specific look. Future
+work: refactor into ~3 shippable **themes**, each bundling an appropriate effect set, with
+mermaid-disco as one selectable theme rather than the baked-in default. De-personalize the
+hardcoded touchpoints along the way: the `Jordana & Jesse` / "— Wedding" copy in
+`public/pages/studio/index.html`; the `.couple-names` selector in `public/effects/name-shimmer.js`;
+`EFFECT_PALETTE.brand` in `public/effects/config.js`; the "Mermaid"/"Disco" labels in
+`public/pages/studio/controls.js`.
+
+---
+
+## 10. Effect studio → live page wiring 🟡
+
+The studio (`/studio`) tunes an in-memory config and only offers a "Copy values" button that dumps
+a `defaults` literal to the clipboard for manual paste into `public/effects/config.js`. Wanted, in
+both directions:
+- **Live preview:** the studio writes tuned config to `localStorage`; the effect manager
+  (`startEffects` in `public/effects/main.js`) merges those overrides over `getDefaultConfig(id)` so
+  the tuner's own browser shows tuned values on the real page — no rebuild, per-browser.
+- **Promote to defaults:** a path to persist a liked tuning as the shipped default every visitor
+  sees — an improved copy-into-`config.js` flow, or a dev-only (non-production-gated) save endpoint
+  that rewrites `config.js`.
+
+---
+
+## 11. `/studio` and `/demo` are publicly routable in production 🟡
+
+`core/static.js` maps any extensionless path to `public/pages/<path>/index.html`, so `/studio` and
+`/demo` serve in **every** environment with no gate — only a `robots: noindex` meta and a docs
+convention mark them dev-only. Gate them behind `NODE_ENV` (or a `FEATURES` flag) in `serveStatic`,
+or remove them, before/at launch. No `FEATURES` hook exists for this today (`api/config.js` exposes
+only the guest-lookup flags).
+
+---
+
+## 12. Retire the change-review demo; consider an onboarding walkthrough 🟢
+
+All 22 decisions in `change-review-decisions.json` are resolved (commit `fdb44d1`), so the
+change-review demo machinery can be removed: `public/pages/demo/` (tracked, ships to prod),
+`scripts/build-demo.js`, `scripts/demo-server.js`, `change-review-decisions.json`, the `demo:*` npm
+scripts, and the stale local `public/_demo/` build (gitignored, but boot-scanned by `core/static.js`
+and URL-reachable locally). Ambitious replacement worth considering: a **new-user
+onboarding/walkthrough demo** that teaches how the app works — good portfolio value, and it would
+surface behavior that currently only lives in the maintainer's head (see §13).
+
+---
+
+## 13. Documentation / self-explanatory-app debt 🟢
+
+Several non-obvious app behaviors are undocumented and only known to the maintainer. Triage each:
+fix some in the app itself (clearer UX) and document the rest, aiming for portfolio-grade clarity so
+a newcomer can understand and run the project.

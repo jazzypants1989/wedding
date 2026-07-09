@@ -8,7 +8,6 @@
 import { createDiscoBall } from "./disco-ball.js"
 import { createCursorTrail } from "./cursor-trail.js"
 import { createMermaidShimmer } from "./mermaid-shimmer.js"
-import { createSparkleBurst } from "./sparkle-burst.js"
 import { createSparkleDividers } from "./sparkle-dividers.js"
 import { createNameShimmer } from "./name-shimmer.js"
 import { createTextSparkle } from "./text-sparkle.js"
@@ -27,7 +26,6 @@ export const EFFECT_DEFINITIONS = [
   { id: "disco", create: createDiscoBall },
   { id: "cursor", create: createCursorTrail },
   { id: "shimmer", create: createMermaidShimmer },
-  { id: "burst", create: createSparkleBurst },
   { id: "dividers", create: createSparkleDividers },
   { id: "namespark", create: createNameShimmer },
   { id: "textglow", create: createTextSparkle },

@@ -159,19 +159,6 @@ export interface MermaidShimmerConfig {
 }
 
 /**
- * Default config for sparkle burst effect.
- * @example
- * const cfg: SparkleBurstConfig = { particleCount: 50 };
- */
-export interface SparkleBurstConfig {
-  particleCount?: number
-  colors?: string[]
-  durationRange?: [number, number]
-  driftRange?: [number, number]
-  scaleRange?: [number, number]
-}
-
-/**
  * Default config for sparkle dividers effect.
  * @example
  * const cfg: SparkleDividersConfig = { dotDensity: 50, color: 50 };
@@ -365,17 +352,6 @@ export function createCursorTrail(config?: CursorTrailConfig): EffectInstance
 export function createMermaidShimmer(
   config?: MermaidShimmerConfig,
 ): EffectInstance
-
-/** @file sparkle-burst.js - Types for page load sparkle burst effect */
-
-/**
- * Create a cascading sparkle burst on page load.
- * Container auto-removes after all particles finish.
- * @example
- * const burst = createSparkleBurst({ particleCount: 70 });
- * burst.start();
- */
-export function createSparkleBurst(config?: SparkleBurstConfig): EffectInstance
 
 /** @file sparkle-dividers.js - Types for animated divider lines effect */
 

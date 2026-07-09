@@ -19,14 +19,3 @@ export interface NumericBounds {
 export type EffectFactory = (
   config?: Record<string, unknown>,
 ) => EffectInstance
-
-export type EntranceVariantId = "original" | "boxshadow" | "pooled"
-
-/** One of the three grand-entrance implementations under comparison. */
-export interface EntranceVariant {
-  id: EntranceVariantId
-  label: string
-  note: string
-  create: EffectFactory
-  defaults: Record<string, unknown>
-}

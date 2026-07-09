@@ -3,79 +3,22 @@
  *  Generic across every effect in the registry: it reads each effect's
  *  `defaults` from config.js and renders a control per parameter (slider,
  *  range pair, color list, enum select, or checkbox), replaying the effect
- *  live as values change. Grand entrance additionally exposes a variant
- *  switcher to A/B the three implementations (original / box-shadow / pooled).
+ *  live as values change.
  */
 /** @import * as Types from "./types.js" */
 /** @import * as EffectTypes from "../../effects/types.js" */
 
 import { EFFECT_DEFINITIONS } from "../../effects/main.js"
-import { EFFECT_CONFIGS, getDefaultConfig } from "../../effects/config.js"
-import { createGrandEntrance } from "../../effects/grand-entrance.js"
-import { createGrandEntranceOriginal } from "./variants/entrance-original.js"
-import { createGrandEntranceBoxShadow } from "./variants/entrance-boxshadow.js"
+import { getDefaultConfig } from "../../effects/config.js"
 import {
   getElement,
   getButtonElement,
-  getSelectElement,
 } from "../utils.js"
 import { LABELS, getHint, numericBounds, serializeConfig } from "./controls.js"
-
-// ---- Entrance variants (the three-way comparison surface) ------------------
-
-/** @returns {Record<string, unknown>} */
-function pooledDefaults() {
-  return structuredClone(EFFECT_CONFIGS.entrance.defaults)
-}
-
-/** @returns {Record<string, unknown>} */
-function originalDefaults() {
-  // The original effect only reads these four fields, and treats
-  // sparkleIntensity/speed as 0–100 slider values.
-  return {
-    entranceStyle: "curtain",
-    sparkleIntensity: 50,
-    speed: 50,
-    colors: structuredClone(EFFECT_CONFIGS.entrance.defaults.colors),
-  }
-}
-
-/** @type {Types.EntranceVariant[]} */
-const ENTRANCE_VARIANTS = [
-  {
-    id: "pooled",
-    label: "Pooled stars (working tree)",
-    note: "Real 4-point stars, reused from a capped pool (≤100). Star look + bounded node count.",
-    create: createGrandEntrance,
-    defaults: pooledDefaults(),
-  },
-  {
-    id: "boxshadow",
-    label: "Box-shadow (HEAD)",
-    note: "One element per wave via box-shadow. Cheapest render, but round dots and lockstep fall.",
-    create: createGrandEntranceBoxShadow,
-    defaults: pooledDefaults(),
-  },
-  {
-    id: "original",
-    label: "Original stars (HEAD~1)",
-    note: "Fresh DOM star per sparkle, up to ~300 nodes at once. Best look, worst load cost.",
-    create: createGrandEntranceOriginal,
-    defaults: originalDefaults(),
-  },
-]
-
-/** @param {string} id @returns {Types.EntranceVariant} */
-function getVariant(id) {
-  for (const v of ENTRANCE_VARIANTS) if (v.id === id) return v
-  return ENTRANCE_VARIANTS[0]
-}
 
 // ---- State -----------------------------------------------------------------
 
 let currentEffectId = "entrance"
-/** @type {string} */
-let currentVariantId = "pooled"
 /** @type {Record<string, unknown>} */
 let config = {}
 /** @type {EffectTypes.EffectInstance | null} */
@@ -133,7 +76,6 @@ function stopInstance() {
 
 /** @returns {Types.EffectFactory | null} */
 function currentCreate() {
-  if (currentEffectId === "entrance") return getVariant(currentVariantId).create
   for (const def of EFFECT_DEFINITIONS) {
     if (def.id === currentEffectId) return def.create
   }
@@ -397,7 +339,7 @@ function boolControl(key, value) {
 /** Build the control for one config entry, dispatching on its value type. */
 /** @param {string} key @param {unknown} value @returns {HTMLElement} */
 function buildControl(key, value) {
-  const hint = getHint(currentEffectId, key, currentVariantId)
+  const hint = getHint(currentEffectId, key)
   if (isNumberArray(value)) {
     return rangeControl(key, value, numericBounds(value[0], hint))
   }
@@ -438,15 +380,6 @@ function renderControls() {
   }
 }
 
-function renderVariantRow() {
-  const row = getElement("variant-row")
-  const isEntrance = currentEffectId === "entrance"
-  row.hidden = !isEntrance
-  if (!isEntrance) return
-  const note = getElement("variant-note")
-  note.textContent = getVariant(currentVariantId).note
-}
-
 function renderEffectList() {
   const list = getElement("effect-list")
   list.textContent = ""
@@ -464,11 +397,7 @@ function renderEffectList() {
 
 /** @param {string} id */
 function loadConfigFor(id) {
-  if (id === "entrance") {
-    config = structuredClone(getVariant(currentVariantId).defaults)
-  } else {
-    config = structuredClone(getDefaultConfig(id) || {})
-  }
+  config = structuredClone(getDefaultConfig(id) || {})
 }
 
 /** @param {string} id */
@@ -482,16 +411,6 @@ function selectEffect(id) {
       child instanceof HTMLElement && child.dataset.id === id,
     )
   }
-  renderVariantRow()
-  renderControls()
-  replay()
-}
-
-/** @param {string} id */
-function selectVariant(id) {
-  currentVariantId = id
-  loadConfigFor("entrance")
-  renderVariantRow()
   renderControls()
   replay()
 }
@@ -510,16 +429,6 @@ function copyValues() {
 function init() {
   renderEffectList()
 
-  const variantSelect = getSelectElement("variant-select")
-  for (const v of ENTRANCE_VARIANTS) {
-    const o = document.createElement("option")
-    o.value = v.id
-    o.textContent = v.label
-    if (v.id === currentVariantId) o.selected = true
-    variantSelect.appendChild(o)
-  }
-  variantSelect.addEventListener("change", () => selectVariant(variantSelect.value))
-
   getButtonElement("replay-btn").addEventListener("click", replay)
   getButtonElement("stop-btn").addEventListener("click", stopInstance)
   getButtonElement("copy-btn").addEventListener("click", copyValues)
@@ -530,7 +439,6 @@ function init() {
   })
 
   loadConfigFor(currentEffectId)
-  renderVariantRow()
   renderControls()
   replay()
 }

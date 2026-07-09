@@ -112,21 +112,6 @@
   border-color: var(--color-primary);
 }
 
-.variant-row {
-  margin-bottom: 16px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: var(--color-primary-faint, rgba(221, 115, 100, 0.08));
-  border: 1px solid var(--color-border);
-}
-
-.variant-note {
-  margin: 8px 0 0;
-  font-size: 0.76rem;
-  line-height: 1.4;
-  color: var(--color-text-muted);
-}
-
 .control {
   margin-bottom: 14px;
 }
@@ -267,18 +252,4 @@
 
 .flash-err {
   color: var(--color-danger, red);
-}
-
-/* Box-shadow variant needs .grand-entrance-wave, which the working tree
-   removed from effects.css. Salvaged here (studio-only) for comparison. */
-.grand-entrance-wave {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 0;
-  height: 0;
-  border-radius: 50%;
-  animation: grand-entrance-sparkle-fall 1.5s ease-out forwards;
-  will-change: transform, opacity;
-  contain: layout style paint;
 }

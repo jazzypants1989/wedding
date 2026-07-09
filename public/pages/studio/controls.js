@@ -12,7 +12,6 @@ export const LABELS = {
   disco: "Disco Ball",
   cursor: "Cursor Trail",
   shimmer: "Mermaid Shimmer",
-  burst: "Sparkle Burst",
   dividers: "Sparkle Dividers",
   namespark: "Name Shimmer",
   textglow: "Text Sparkle",
@@ -54,12 +53,6 @@ const HINTS = {
     scaleSize: { min: 50, max: 500, step: 10 },
     gradientAngle: { min: 0, max: 360, step: 5 },
   },
-  burst: {
-    particleCount: { min: 0, max: 150, step: 1 },
-    durationRange: { min: 0, max: 6, step: 0.1 },
-    driftRange: { min: -120, max: 120, step: 5 },
-    scaleRange: { min: 0, max: 3, step: 0.1 },
-  },
   dividers: {
     dotDensity: { min: 1, max: 60, step: 1 },
     color: { min: 0, max: 1, step: 0.05 },
@@ -84,8 +77,6 @@ const HINTS = {
   },
   entrance: {
     entranceStyle: { options: ["curtain", "shower", "golden"] },
-    // Raw-value semantics (box-shadow / pooled variants). The original variant
-    // reinterprets these as 0–100 sliders — handled in getHint().
     sparkleIntensity: { min: 0, max: 150, step: 1 },
     speed: { min: 0.2, max: 2, step: 0.05 },
     sparkleSizeRange: { min: 1, max: 20, step: 1 },
@@ -108,20 +99,11 @@ const HINTS = {
 }
 
 /**
- * Resolve the control hint for an effect+param, accounting for the entrance
- * variant's slider semantics (the original variant maps 0–100, not raw).
+ * Resolve the control hint for an effect+param.
  * @param {string} effectId @param {string} param
- * @param {string} [variantId]
  * @returns {Types.ControlHint | undefined}
  */
-export function getHint(effectId, param, variantId) {
-  if (
-    effectId === "entrance" &&
-    variantId === "original" &&
-    (param === "sparkleIntensity" || param === "speed")
-  ) {
-    return { min: 0, max: 100, step: 1 }
-  }
+export function getHint(effectId, param) {
   const perEffect = HINTS[effectId]
   return perEffect ? perEffect[param] : undefined
 }
