@@ -20,6 +20,7 @@
     "public",
     "tests/unit/reaction-glyphs.test.js",
     "tests/unit/dresscode-descriptor.test.js",
-    "tests/unit/effect-themes.test.js"
+    "tests/unit/effect-themes.test.js",
+    "tests/unit/effect-config-schema.test.js"
   ]
 }

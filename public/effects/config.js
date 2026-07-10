@@ -354,6 +354,22 @@ function readLocalOverride() {
   }
 }
 
+/** Read the admin's site-wide override map, inlined by the server into
+ *  `<html data-effect-config>` (core/static.js) — the "promote studio values to
+ *  defaults" layer, shared by every visitor. Absent/empty/corrupt → null.
+ *  @returns {Record<string, unknown> | null} */
+function readAppStateOverride() {
+  try {
+    if (typeof document === "undefined") return null
+    const raw = document.documentElement.dataset.effectConfig
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return isPlainObject(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
 /** @type {Types.getEffectiveConfig} */
 export function getEffectiveConfig(id) {
   // Base is already a structuredClone (getDefaultConfig) — safe to mutate.
@@ -363,7 +379,12 @@ export function getEffectiveConfig(id) {
   const themeConfigs = getActiveTheme().configs
   const themeCfg = themeConfigs ? themeConfigs[id] : undefined
   if (isPlainObject(themeCfg)) mergeInto(base, themeCfg)
-  // Layer 2: the studio's per-browser override (wins over defaults + theme).
+  // Layer 2: the admin's site-wide app_state override (promoted studio values),
+  // inlined into the page — wins over defaults + theme, shared by all visitors.
+  const appState = readAppStateOverride()
+  const appCfg = appState ? appState[id] : undefined
+  if (isPlainObject(appCfg)) mergeInto(base, appCfg)
+  // Layer 3: the studio's per-browser override (wins over everything above).
   const local = readLocalOverride()
   const localCfg = local ? local[id] : undefined
   if (isPlainObject(localCfg)) mergeInto(base, localCfg)

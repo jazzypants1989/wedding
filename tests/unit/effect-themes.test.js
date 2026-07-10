@@ -79,6 +79,52 @@ test("localStorage override wins over theme + defaults; corrupt JSON is ignored"
   }
 })
 
+test("app_state override (data-effect-config) layers over theme, under localStorage", () => {
+  // The server inlines a site-wide override onto <html data-effect-config>; the
+  // client layers it defaults ⊕ theme ⊕ app_state ⊕ localStorage.
+  globalThis.document = {
+    documentElement: {
+      dataset: {
+        effectTheme: "elegant",
+        effectConfig: JSON.stringify({ parallaxsparkles: { density: 42, glowThreshold: 0.9 } }),
+      },
+    },
+  }
+  try {
+    const cfg = getEffectiveConfig("parallaxsparkles")
+    assert.ok(cfg)
+    assert.equal(cfg.density, 42) // app_state beats the theme's 10
+    assert.equal(cfg.glowThreshold, 0.9) // app_state sets a key the theme didn't
+    assert.equal(cfg.colorScheme, "gold") // theme layer still applies where app_state is silent
+
+    // localStorage still wins over the app_state layer.
+    globalThis.localStorage = {
+      getItem: () => JSON.stringify({ parallaxsparkles: { density: 7 } }),
+    }
+    const cfg2 = getEffectiveConfig("parallaxsparkles")
+    assert.ok(cfg2)
+    assert.equal(cfg2.density, 7) // localStorage beats app_state's 42
+    assert.equal(cfg2.glowThreshold, 0.9) // app_state key survives where localStorage is silent
+  } finally {
+    delete globalThis.localStorage
+    delete globalThis.document
+  }
+})
+
+test("corrupt data-effect-config is ignored (falls back to theme + defaults)", () => {
+  globalThis.document = {
+    documentElement: { dataset: { effectTheme: "elegant", effectConfig: "{ not json" } },
+  }
+  try {
+    const cfg = getEffectiveConfig("parallaxsparkles")
+    assert.ok(cfg)
+    assert.equal(cfg.density, 10) // corrupt app_state ignored → theme's 10 stands
+    assert.equal(cfg.colorScheme, "gold")
+  } finally {
+    delete globalThis.document
+  }
+})
+
 test("array-valued config keys replace wholesale (no element merge)", () => {
   // parallaxsparkles.sizeRange defaults to [2, 5]. A single-element override must
   // REPLACE the array, not index-merge into [7, 5].

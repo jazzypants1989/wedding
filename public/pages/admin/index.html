@@ -101,6 +101,8 @@
           aria-controls="tab-blocklist" tabindex="-1">Blocklist</button>
         <button class="tab-btn" data-tab="site-content" role="tab" id="tab-btn-site-content" aria-selected="false"
           aria-controls="tab-site-content" tabindex="-1">Site content</button>
+        <button class="tab-btn" data-tab="effects" role="tab" id="tab-btn-effects" aria-selected="false"
+          aria-controls="tab-effects" tabindex="-1">Effects</button>
       </div>
 
       <div id="tab-guests" class="tab-content active" role="tabpanel" aria-labelledby="tab-btn-guests">
@@ -530,6 +532,36 @@
             <p id="site-content-form-error" class="form-error" role="alert" hidden></p>
             <div class="form-actions">
               <button type="submit" id="site-content-save-btn" class="btn btn-primary">Save changes</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div id="tab-effects" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-effects" hidden>
+        <div class="card">
+          <div class="card-header flex-between">
+            <h2>Effects</h2>
+            <button type="button" id="effect-config-reset-btn" class="btn btn-secondary btn-sm">Reset to defaults</button>
+          </div>
+
+          <p class="text-muted card-text">
+            Promote tuned effect values to every visitor. Open <a href="/studio" target="_blank" rel="noopener">the
+            effect studio</a>, tune an effect, "Save to browser", then click "Import from this browser" below to pull
+            those values in and save them site-wide. The stored override is a sparse
+            <code>{ effectId: { key: value } }</code> map (only changed keys); saving an empty map clears the override.
+            Changes apply on the next page load — no redeploy.
+          </p>
+
+          <form id="effect-config-form">
+            <div class="form-group">
+              <label for="effect-config-json">Effect config override (JSON)</label>
+              <textarea id="effect-config-json" rows="16" spellcheck="false"
+                style="font-family: monospace; white-space: pre;" placeholder="{}"></textarea>
+            </div>
+            <p id="effect-config-form-error" class="form-error" role="alert" hidden></p>
+            <div class="form-actions">
+              <button type="button" id="effect-config-import-btn" class="btn btn-secondary">Import from this browser</button>
+              <button type="submit" id="effect-config-save-btn" class="btn btn-primary">Save changes</button>
             </div>
           </form>
         </div>

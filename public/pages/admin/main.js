@@ -13,6 +13,7 @@ import { initManualSms } from "./manual-sms.js"
 import { initModeration, loadModeration, loadModerationCount } from "./moderation.js"
 import { initGalleryAdmin, loadGalleryAdmin } from "./gallery-admin.js"
 import { initSiteContent, loadSiteContent } from "./site-content.js"
+import { initEffectConfig, loadEffectConfig } from "./effect-config.js"
 import { initThemeToggle } from "../../components/theme-toggle.js"
 
 /** @type {Types.onLoginSuccess} */
@@ -52,6 +53,8 @@ function switchTab(tabId) {
     loadGalleryAdmin()
   } else if (tabId === "site-content") {
     loadSiteContent()
+  } else if (tabId === "effects") {
+    loadEffectConfig()
   }
 }
 
@@ -108,6 +111,7 @@ function init() {
   initModeration()
   initGalleryAdmin()
   initSiteContent()
+  initEffectConfig()
   initThemeToggle()
 
   checkSession()

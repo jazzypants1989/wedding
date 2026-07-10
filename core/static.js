@@ -9,6 +9,7 @@ import { escapeHtml } from "./utils.js"
 import { SERVER } from "../types.js"
 import { formatWeddingDate } from "../content.js"
 import { getContent, getMode, resolveSiteContent } from "./site-content.js"
+import { resolveEffectConfig, getEffectConfigOverride } from "./effect-config.js"
 
 /** @type {Types.MimeTypes} */
 const MIME_TYPES = {
@@ -231,6 +232,11 @@ function rebuildContentTokens() {
     // server/browser layer boundary (can't import public/effects/themes.js);
     // must match DEFAULT_THEME_ID there.
     "effectTheme": content.theme || "mermaid-disco",
+    // Sparse effect-config override for <html data-effect-config>, read + layered
+    // by the client's getEffectiveConfig. "" when no override is stored (the
+    // client treats absent/empty as "no override"). Escaped like any token, so
+    // the JSON's quotes survive as &quot; inside the attribute.
+    "effectConfig": serializeEffectConfig(),
     "registry.url": content.registry.url,
     "registry.label": content.registry.label,
     "memories.title": content.memories.title,
@@ -243,6 +249,28 @@ function rebuildContentTokens() {
 }
 rebuildContentTokens()
 
+/** Serialize the sparse effect-config override for the page attribute, or "" when
+ *  none is stored (empty override → the client uses its own defaults). No regex.
+ *  @returns {string} */
+function serializeEffectConfig() {
+  const override = getEffectConfigOverride()
+  if (!override || Object.keys(override).length === 0) return ""
+  return JSON.stringify(override)
+}
+
+/** Rebuild the {{token}} map and evict every memoized templated-HTML entry so
+ *  the next serve re-templates. Shared by the site-content and effect-config
+ *  change hooks below.
+ *  @returns {void} */
+function rebuildAndEvict() {
+  rebuildContentTokens()
+  for (const p of templatedHtmlPaths) {
+    etagCache.delete(p)
+    gzipCache.delete(p)
+  }
+  templatedHtmlPaths.clear()
+}
+
 /**
  * Re-resolve the effective site content after an admin edit: pull the fresh
  * override, rebuild the {{token}} map, and evict every memoized templated-HTML
@@ -252,12 +280,18 @@ rebuildContentTokens()
  */
 export function onContentChanged() {
   resolveSiteContent()
-  rebuildContentTokens()
-  for (const p of templatedHtmlPaths) {
-    etagCache.delete(p)
-    gzipCache.delete(p)
-  }
-  templatedHtmlPaths.clear()
+  rebuildAndEvict()
+}
+
+/**
+ * Re-resolve the effect-config override after an admin edit (or at boot), then
+ * rebuild tokens + evict memoized HTML so the next serve carries the fresh
+ * data-effect-config attribute.
+ * @returns {void}
+ */
+export function onEffectConfigChanged() {
+  resolveEffectConfig()
+  rebuildAndEvict()
 }
 
 const THEME_TOGGLE_LI =

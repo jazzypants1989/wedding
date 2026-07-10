@@ -20,6 +20,12 @@ export interface SiteContentResponse {
   content: SiteContent
 }
 
+/** Response of GET/PUT/DELETE /api/admin/effect-config. The sparse override map
+ *  `{ [effectId]: Partial<config> }`. */
+export interface EffectConfigResponse {
+  override: Record<string, Record<string, unknown>>
+}
+
 /** @file utils.js - Types for admin utilities */
 
 /**

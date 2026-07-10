@@ -32,6 +32,7 @@ import * as moderation from "../api/admin/moderation.js"
 import * as adminAccounts from "../api/admin/accounts.js"
 import * as adminMedia from "../api/admin/media.js"
 import * as siteContent from "../api/admin/site-content.js"
+import * as effectConfig from "../api/admin/effect-config.js"
 
 /** @type {Types.Route[]} */
 const routes = []
@@ -246,6 +247,11 @@ route("DELETE", "/api/admin/blocklist/:id", blocklist.remove, { admin: true })
 route("GET", "/api/admin/site-content", siteContent.get, { admin: true })
 route("PUT", "/api/admin/site-content", siteContent.update, { admin: true })
 route("DELETE", "/api/admin/site-content", siteContent.reset, { admin: true })
+
+// Admin effect-config editor (site-wide runtime override of effect defaults)
+route("GET", "/api/admin/effect-config", effectConfig.get, { admin: true })
+route("PUT", "/api/admin/effect-config", effectConfig.update, { admin: true })
+route("DELETE", "/api/admin/effect-config", effectConfig.reset, { admin: true })
 
 // Admin manual SMS routes
 route("GET", "/api/admin/manual-sms/guests", manualSms.getEligibleGuests, { admin: true })

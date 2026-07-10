@@ -12,7 +12,7 @@ import { cleanOldLogs } from "./core/utils.js"
 import { maybeSendModerationDigest } from "./services/moderation-notify.js"
 
 import * as router from "./core/router.js"
-import { serveStatic, onContentChanged } from "./core/static.js"
+import { serveStatic, onContentChanged, onEffectConfigChanged } from "./core/static.js"
 import { serveMedia } from "./core/media-serve.js"
 import { ensureUploadDirs } from "./core/media-storage.js"
 import { runMediaMaintenance } from "./core/media-sweep.js"
@@ -65,9 +65,11 @@ export const server = http.createServer(async (req, res) => {
 init()
 console.log("Database initialized")
 
-// Resolve any stored site-content override now that the DB is up (defaults until
-// an admin saves one). No HTML is cached yet, so this just rebuilds the tokens.
+// Resolve any stored site-content + effect-config overrides now that the DB is
+// up (defaults until an admin saves one). No HTML is cached yet, so this just
+// rebuilds the tokens.
 onContentChanged()
+onEffectConfigChanged()
 
 ensureUploadDirs()
 

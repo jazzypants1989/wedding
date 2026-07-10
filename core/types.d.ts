@@ -644,3 +644,49 @@ export function runMediaIntegrityPass(): { quarantined: number; missingVariants:
 
 /** Hourly maintenance entry point (runs the integrity pass every 24th tick). */
 export function runMediaMaintenance(): void
+
+// --- Generic override store (core/override-store.js) ---
+
+/** True for a mergeable plain object (not array, not null). */
+export function isPlainObject(v: unknown): v is Record<string, unknown>
+
+/** Deep-merge a JSON override onto a clone of `base`: nested plain objects
+ *  recurse, arrays/scalars/null replace wholesale, `undefined` is ignored,
+ *  prototype keys are skipped. Returns a new object the same shape as `base`. */
+export function deepMerge<T>(base: T, override: Record<string, unknown>): T
+
+/** Sparse diff of `full` against `base` — only keys whose values differ are
+ *  kept (nested objects recurse; arrays compared/stored wholesale), so
+ *  unchanged keys still track future default edits. */
+export function diffFromDefaults<T>(full: T, base: T): Record<string, unknown>
+
+/** An app_state-backed override store: caches `defaults ⊕ stored override`,
+ *  re-resolved on demand. `getOverride()` returns the raw parsed override (the
+ *  sparse blob) for serving to the client; `get()` returns the merged value. */
+export interface OverrideStore<T> {
+  readonly key: string
+  readonly defaults: T
+  resolve(): T
+  get(): T
+  getOverride(): Record<string, unknown> | null
+}
+
+/** Build an OverrideStore over the given app_state `key` + shipped `defaults`.
+ *  `onChanged` (if given) fires with the freshly-resolved value on each
+ *  resolve() — used to rebuild derived caches. */
+export function createOverrideStore<T>(
+  key: string,
+  defaults: T,
+  onChanged?: (effective: T) => void,
+): OverrideStore<T>
+
+// --- Effect config store (core/effect-config.js) ---
+
+/** Re-resolve the effect-config override from app_state (`effect_config`).
+ *  Called at boot and after an admin save. Returns the sparse override map. */
+export function resolveEffectConfig(): Record<string, unknown>
+
+/** The raw sparse effect-config override map `{ [effectId]: Partial<config> }`,
+ *  or null when no override is stored. Serialized into the page for the client's
+ *  layered getEffectiveConfig. */
+export function getEffectConfigOverride(): Record<string, unknown> | null
