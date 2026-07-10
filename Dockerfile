@@ -2,9 +2,16 @@
 # resolved 2026-07-02). Bump the tag+digest together to update.
 FROM node:22-alpine@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2
 
+# Image metadata so a self-host build is identifiable (`docker inspect`). See
+# docs/self-host.md — a fresh container boots into the /setup wizard.
+LABEL org.opencontainers.image.title="Wedding RSVP + guestbook + gallery" \
+      org.opencontainers.image.description="Zero-dependency, self-hostable wedding site. First boot opens a no-code /setup wizard." \
+      org.opencontainers.image.source="https://github.com/jazzypants1989/wedding" \
+      org.opencontainers.image.licenses="MIT"
+
 WORKDIR /app
 
-COPY package.json server.js types.js ./
+COPY package.json server.js types.js content.js ./
 COPY core/ core/
 COPY db/ db/
 COPY api/ api/

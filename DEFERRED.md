@@ -75,6 +75,36 @@ wanted, so it doesn't silently eat the disk headroom `MEDIA_MIN_FREE_BYTES` guar
 
 ---
 
+## Reusable-product roadmap
+
+### De-personalize the shipped content defaults 🟡
+
+The no-code onboarding wizard (`/setup`), the effective-content wiring
+(`core/wedding-facts.js`), and the runnable container (`docs/self-host.md`) all
+landed, so a self-hoster can stand the site up without touching source. **But the
+checked-in defaults in `content.js` are still this couple's real copy** — the
+karaoke schedule, the "we wear pink" dress code + its `/images/*` assets, the
+Honeyfund registry, the welcome prose. The wizard overrides the essentials
+(names, date, location, theme, registry, welcome), and everything else is
+editable in `/admin`, but a fresh install still *starts* showing this wedding's
+schedule/dress-code until the owner edits them.
+
+Deliberately deferred (owner decision 2026-07-10): **do not swap the live site's
+real copy for generic sample content yet** — the production deployment reads these
+defaults, and a cut-over risks regressing the real wedding page during its live
+window. When ready to make the repo a clean template:
+
+- Replace `content.js` defaults with neutral sample copy (generic couple, placeholder
+  schedule/dress-code/registry, and sample `/images/*` that ship in the repo).
+- Move this wedding's real content into a seed the live deploy loads — e.g. a
+  committed `site_content` `app_state` seed (JSON) applied on that box, or a
+  `scripts/seed-content.js` run once against the production DB — so the live site
+  is byte-for-byte unchanged while the shipped defaults go generic.
+- Do the cut-over **after** the wedding's live window (or on a throwaway DB first),
+  and re-run the smoke test in `docs/self-host.md`.
+
+Everything else for the reusable product is done; this is the last, deliberate step.
+
 ## Configuration & hardening
 
 ### Production `.env` completeness + secret rotation 🟡
