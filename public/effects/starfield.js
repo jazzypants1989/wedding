@@ -1,7 +1,7 @@
 /** @file Starfield — a scatter of small stars twinkling in place (pure CSS). */
 /** @import * as Types from './types.js' */
 
-import { isMobile, randomFrom, randomBetween } from "./main.js"
+import { isMobile, randomFrom, randomBetween } from "./effect-utils.js"
 
 const DEFAULT_COLORS = ["#ffffff", "#dbe9ff", "#fff4d6", "#c9d8ff"]
 

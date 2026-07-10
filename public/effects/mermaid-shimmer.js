@@ -1,7 +1,7 @@
 /** @file Mermaid shimmer effect — iridescent holographic overlay */
 /** @import * as Types from './types.js' */
 
-import { isMobile } from "./main.js"
+import { isMobile } from "./effect-utils.js"
 
 const PALETTES = {
   iridescent:

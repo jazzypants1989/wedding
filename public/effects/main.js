@@ -5,60 +5,16 @@
  */
 /** @import * as Types from './types.js' */
 
-import { createDiscoBall } from "./disco-ball.js"
-import { createCursorTrail } from "./cursor-trail.js"
-import { createMermaidShimmer } from "./mermaid-shimmer.js"
-import { createSparkleDividers } from "./sparkle-dividers.js"
-import { createNameShimmer } from "./name-shimmer.js"
-import { createTextSparkle } from "./text-sparkle.js"
-import { createParallaxSparkles } from "./parallax-sparkles.js"
-import { createGrandEntrance } from "./grand-entrance.js"
-import { createDiscoSpotlight } from "./disco-spotlight.js"
-import { createMirrorReflections } from "./mirror-reflections.js"
-import { createRosePetals } from "./rose-petals.js"
-import { createFloatingHearts } from "./floating-hearts.js"
-import { createGoldenDust } from "./golden-dust.js"
-import { createStarfield } from "./starfield.js"
-import { createShootingStars } from "./shooting-stars.js"
-import { createAuroraWash } from "./aurora-wash.js"
-import { createFireflies } from "./fireflies.js"
-import { createFallingLeaves } from "./falling-leaves.js"
-import { createSnowfall } from "./snowfall.js"
-import { createFrostShimmer } from "./frost-shimmer.js"
-import { createBubblesRising } from "./bubbles-rising.js"
-import { createCaustics } from "./caustics.js"
+import { EFFECT_DEFINITIONS } from "./registry.js"
 import { getEffectiveConfig } from "./config.js"
 import { getActiveTheme } from "./themes.js"
 import { getTypedElement } from "../pages/utils.js"
+import { prefersReducedMotion } from "./effect-utils.js"
 
-/** Registry of every effect, mapping its ID to its factory. Exported so dev
- *  tooling (the effect studio) can reuse the real registry instead of
- *  duplicating it. Not part of the runtime start-up path.
- *  @type {Types.EffectDefinition[]} */
-export const EFFECT_DEFINITIONS = [
-  { id: "disco", create: createDiscoBall },
-  { id: "cursor", create: createCursorTrail },
-  { id: "shimmer", create: createMermaidShimmer },
-  { id: "dividers", create: createSparkleDividers },
-  { id: "namespark", create: createNameShimmer },
-  { id: "textglow", create: createTextSparkle },
-  { id: "parallaxsparkles", create: createParallaxSparkles },
-  { id: "entrance", create: createGrandEntrance },
-  { id: "spotlight", create: createDiscoSpotlight },
-  { id: "reflections", create: createMirrorReflections },
-  { id: "petals", create: createRosePetals },
-  { id: "hearts", create: createFloatingHearts },
-  { id: "dust", create: createGoldenDust },
-  { id: "starfield", create: createStarfield },
-  { id: "shootingstars", create: createShootingStars },
-  { id: "aurora", create: createAuroraWash },
-  { id: "fireflies", create: createFireflies },
-  { id: "leaves", create: createFallingLeaves },
-  { id: "snow", create: createSnowfall },
-  { id: "frost", create: createFrostShimmer },
-  { id: "bubbles", create: createBubblesRising },
-  { id: "caustics", create: createCaustics },
-]
+// Re-exported so existing importers (the studio, effect factories) keep resolving
+// these from main.js. The registry + helpers now live in DOM-free modules.
+export { EFFECT_DEFINITIONS }
+export { isMobile, prefersReducedMotion, randomFrom, randomBetween, cancellableDelay } from "./effect-utils.js"
 
 /** @type {Map<string, Types.EffectInstance>} */
 const activeEffects = new Map()
@@ -74,6 +30,12 @@ let managerActive = false
 let startGeneration = 0
 
 function startEffects() {
+  // Idempotent: if a previous chain's effects are still live — e.g. a
+  // visibilitychange→visible not preceded by a hidden teardown, which some
+  // browsers emit — tear them down first so def.create() can't overwrite the
+  // map and orphan the prior instances (each leaving a second DOM layer).
+  if (activeEffects.size > 0) stopAllEffects()
+
   const schedule =
     typeof requestIdleCallback === "function"
       ? requestIdleCallback
@@ -171,41 +133,3 @@ window.matchMedia("(prefers-reduced-motion: reduce)").addEventListener(
   { signal: moduleController.signal },
 )
 
-/** @type {Types.isMobile} */
-export function isMobile() {
-  return window.innerWidth < 768
-}
-
-/** @type {Types.prefersReducedMotion} */
-export function prefersReducedMotion() {
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches
-}
-
-/** @type {Types.randomFrom} */
-export function randomFrom(arr) {
-  return arr[Math.floor(Math.random() * arr.length)]
-}
-
-/** @type {Types.randomBetween} */
-export function randomBetween(min, max) {
-  return min + Math.random() * (max - min)
-}
-
-/** @type {Types.cancellableDelay} */
-export function cancellableDelay(ms, signal) {
-  return new Promise(function (resolve, reject) {
-    if (signal.aborted) {
-      reject(signal.reason)
-      return
-    }
-    const id = setTimeout(resolve, ms)
-    signal.addEventListener(
-      "abort",
-      function () {
-        clearTimeout(id)
-        reject(signal.reason)
-      },
-      { once: true },
-    )
-  })
-}

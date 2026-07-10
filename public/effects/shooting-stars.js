@@ -1,7 +1,7 @@
 /** @file Shooting stars — occasional diagonal streaks across the sky (pure CSS). */
 /** @import * as Types from './types.js' */
 
-import { isMobile, randomFrom, randomBetween } from "./main.js"
+import { isMobile, randomFrom, randomBetween } from "./effect-utils.js"
 
 const DEFAULT_COLORS = ["#ffffff", "#eaf2ff", "#fff4d6"]
 

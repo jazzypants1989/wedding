@@ -1,7 +1,7 @@
 /** @file Fireflies — small warm points that blink and drift on wandering paths. */
 /** @import * as Types from './types.js' */
 
-import { isMobile, randomFrom, randomBetween } from "./main.js"
+import { isMobile, randomFrom, randomBetween } from "./effect-utils.js"
 
 const DEFAULT_COLORS = ["#ffe98a", "#c9ff8a", "#fff3b0", "#a8e063"]
 

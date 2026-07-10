@@ -6,7 +6,7 @@ import {
   randomFrom,
   randomBetween,
   cancellableDelay,
-} from "./main.js"
+} from "./effect-utils.js"
 import { EFFECT_PALETTE } from "./config.js"
 
 /** @type {Types.createGrandEntrance} */

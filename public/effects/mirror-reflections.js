@@ -1,7 +1,7 @@
 /** @file Mirror reflections — small light squares bouncing around the viewport */
 /** @import * as Types from './types.js' */
 
-import { isMobile, randomFrom, randomBetween } from "./main.js"
+import { isMobile, randomFrom, randomBetween } from "./effect-utils.js"
 
 /** @type {Types.createMirrorReflections} */
 export function createMirrorReflections(config) {

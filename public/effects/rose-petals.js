@@ -1,7 +1,7 @@
 /** @file Rose petals — soft petals drifting down with lateral sway and spin. */
 /** @import * as Types from './types.js' */
 
-import { isMobile, randomFrom, randomBetween } from "./main.js"
+import { isMobile, randomFrom, randomBetween } from "./effect-utils.js"
 import { EFFECT_PALETTE } from "./config.js"
 
 const DEFAULT_COLORS = [

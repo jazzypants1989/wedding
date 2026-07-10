@@ -11,8 +11,10 @@ import {
   DEFAULT_THEME_ID,
   EFFECT_THEMES,
 } from "../../public/effects/themes.js"
-import { getEffectiveConfig, getDefaultConfig } from "../../public/effects/config.js"
+import { getEffectiveConfig, getDefaultConfig, EFFECT_CONFIGS } from "../../public/effects/config.js"
+import { EFFECT_DEFINITIONS } from "../../public/effects/registry.js"
 import { THEME_IDS } from "../../api/admin/site-content.js"
+import { CONTENT } from "../../content.js"
 
 test("resolveTheme returns the matching theme, else the default", () => {
   assert.equal(resolveTheme("elegant").id, "elegant")
@@ -120,4 +122,24 @@ test("server THEME_IDS allowlist stays in sync with EFFECT_THEMES", () => {
 
 test("getEffectiveConfig returns null for an unknown effect id", () => {
   assert.equal(getEffectiveConfig("does-not-exist"), null)
+})
+
+test("the effect registry and EFFECT_CONFIGS cover exactly the same ids", () => {
+  // A new effect added to one but not the other ships broken: a registered id
+  // with no config runs on {} defaults; a config with no factory is dead weight.
+  const registryIds = EFFECT_DEFINITIONS.map((d) => d.id).sort()
+  const configIds = Object.keys(EFFECT_CONFIGS).sort()
+  assert.deepEqual(registryIds, configIds)
+})
+
+test("the shipped default theme id agrees across every source of truth", () => {
+  // DEFAULT_THEME_ID (themes.js), the content.js CONTENT default, and the server
+  // allowlist must all name the same theme, or a fresh page could pick a theme the
+  // others reject / don't render.
+  assert.equal(CONTENT.theme, DEFAULT_THEME_ID)
+  assert.ok(THEME_IDS.has(DEFAULT_THEME_ID))
+  assert.ok(
+    EFFECT_THEMES.some((t) => t.id === DEFAULT_THEME_ID),
+    "DEFAULT_THEME_ID is a real theme",
+  )
 })

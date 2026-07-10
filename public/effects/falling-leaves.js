@@ -1,7 +1,7 @@
 /** @file Falling leaves — autumn leaves tumbling down with sway and spin (pure CSS). */
 /** @import * as Types from './types.js' */
 
-import { isMobile, randomFrom, randomBetween } from "./main.js"
+import { isMobile, randomFrom, randomBetween } from "./effect-utils.js"
 
 const DEFAULT_COLORS = ["#d98634", "#c25b28", "#e0a83c", "#8a9a3b", "#b7502a"]
 

@@ -1,7 +1,7 @@
 /** @file Golden dust — fine champagne motes drifting slowly upward with a glow. */
 /** @import * as Types from './types.js' */
 
-import { isMobile, randomFrom, randomBetween } from "./main.js"
+import { isMobile, randomFrom, randomBetween } from "./effect-utils.js"
 import { EFFECT_PALETTE } from "./config.js"
 
 const DEFAULT_COLORS = [EFFECT_PALETTE.gold, "#f0e0b0", "#fff8e7", "#e8c977"]

@@ -1,7 +1,7 @@
 /** @file Bubbles rising — translucent bubbles floating up with a lateral wobble. */
 /** @import * as Types from './types.js' */
 
-import { isMobile, randomBetween } from "./main.js"
+import { isMobile, randomBetween } from "./effect-utils.js"
 
 /** @type {Types.createBubblesRising} */
 export function createBubblesRising(config) {

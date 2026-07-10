@@ -1,7 +1,7 @@
 /** @file Disco spotlight — sweeping colored spotlight beams */
 /** @import * as Types from './types.js' */
 
-import { isMobile, randomFrom, randomBetween, cancellableDelay } from "./main.js"
+import { isMobile, randomFrom, randomBetween, cancellableDelay } from "./effect-utils.js"
 import { brandAlpha } from "./config.js"
 
 /** @type {Types.createDiscoSpotlight} */

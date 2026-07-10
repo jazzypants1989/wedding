@@ -4,7 +4,7 @@
  */
 /** @import * as Types from './types.js' */
 
-import { isMobile } from "./main.js"
+import { isMobile } from "./effect-utils.js"
 
 /** Named gradient stops. Cool aurora greens/teals/violets by default.
  *  @type {Record<string, string>} */

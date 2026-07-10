@@ -1,7 +1,7 @@
 /** @file Cursor trail effect — hearts and sparkles follow the mouse */
 /** @import * as Types from './types.js' */
 
-import { isMobile, randomFrom } from "./main.js"
+import { isMobile, randomFrom } from "./effect-utils.js"
 import { EFFECT_PALETTE } from "./config.js"
 
 const DEFAULT_COLORS = [
