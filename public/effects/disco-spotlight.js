@@ -2,6 +2,7 @@
 /** @import * as Types from './types.js' */
 
 import { isMobile, randomFrom, randomBetween, cancellableDelay } from "./main.js"
+import { brandAlpha } from "./config.js"
 
 /** @type {Types.createDiscoSpotlight} */
 export function createDiscoSpotlight(config) {
@@ -17,7 +18,7 @@ export function createDiscoSpotlight(config) {
   const sweepSpeed = cfg.sweepSpeed !== undefined ? cfg.sweepSpeed : 7.5
   const beamWidth = cfg.beamWidth !== undefined ? cfg.beamWidth : 38
   const colors = cfg.colors || [
-    "rgba(221, 115, 100, 0.15)",
+    brandAlpha(0.15),
     "rgba(255, 105, 180, 0.12)",
     "rgba(255, 215, 0, 0.1)",
     "rgba(135, 206, 235, 0.12)",

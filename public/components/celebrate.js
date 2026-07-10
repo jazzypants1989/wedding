@@ -16,12 +16,24 @@ export function setButtonLoading(btn, isLoading) {
   }
 }
 
+// Brand colors single-sourced from the --effect-brand[-dark] CSS tokens
+// (public/styles/tokens.css), same read as public/effects/config.js so the
+// wedding's brand isn't hardcoded in a second place. Guarded for non-DOM contexts.
+/** @param {string} token @param {string} fallback @returns {string} */
+function cssBrand(token, fallback) {
+  return (
+    (typeof getComputedStyle === "function" &&
+      getComputedStyle(document.documentElement).getPropertyValue(token).trim()) ||
+    fallback
+  )
+}
+
 const CONFETTI_COLORS = [
-  "rgb(221, 115, 100)",
+  cssBrand("--effect-brand", "rgb(221, 115, 100)"),
   "#ffd700",
   "#ffe4e1",
   "#f0c4b8",
-  "#c1330d",
+  cssBrand("--effect-brand-dark", "#c1330d"),
   "#87ceeb",
 ]
 

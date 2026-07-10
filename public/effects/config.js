@@ -5,9 +5,27 @@
  */
 /** @import * as Types from './types.js' */
 
+// Brand color — single source is the `--effect-brand` CSS token
+// (public/styles/tokens.css), read here so the palette isn't a second place to
+// edit the wedding's brand color. Guarded for non-DOM contexts (tests/SSR); the
+// fallback mirrors the token value.
+const brand =
+  (typeof getComputedStyle === "function" &&
+    getComputedStyle(document.documentElement).getPropertyValue("--effect-brand").trim()) ||
+  "rgb(221, 115, 100)"
+
+/** Compose an `rgba()` from the `rgb(r, g, b)` brand color (no regex). If the
+ *  token isn't in functional `rgb(` form (e.g. a hex re-skin), fall back to the
+ *  opaque brand color rather than emitting invalid CSS.
+ *  @param {number} alpha @returns {string} */
+export function brandAlpha(alpha) {
+  if (!brand.startsWith("rgb(")) return brand
+  return brand.replaceAll("rgb(", "rgba(").replaceAll(")", ", " + alpha + ")")
+}
+
 /** Shared color palette used across effects */
 export const EFFECT_PALETTE = {
-  brand: "rgb(221, 115, 100)",
+  brand,
   gold: "#ffd700",
   white: "#fff",
   blush: "#ffe4e1",
@@ -125,7 +143,7 @@ export const EFFECT_CONFIGS = {
       sweepSpeed: 7.5,
       beamWidth: 38,
       colors: [
-        "rgba(221, 115, 100, 0.15)",
+        brandAlpha(0.15),
         "rgba(255, 105, 180, 0.12)",
         "rgba(255, 215, 0, 0.1)",
         "rgba(135, 206, 235, 0.12)",

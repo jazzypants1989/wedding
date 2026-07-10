@@ -53,6 +53,13 @@
 
   /* Brand Colors */
   --color-primary: light-dark(rgb(221, 115, 100), rgb(245, 155, 140));
+  /* Flat (non light-dark) brand colors for canvas/JS effects — single source read
+     by public/effects/config.js + public/components/celebrate.js via getComputedStyle.
+     Mirror --color-primary's light slot; kept theme-independent so effect colors
+     don't shift in dark mode. --effect-brand must stay in `rgb(r, g, b)` functional
+     form — brandAlpha() (config.js) injects alpha by string substitution, not a parser. */
+  --effect-brand: rgb(221, 115, 100);
+  --effect-brand-dark: #c1330d;
   --color-primary-dark: light-dark(#a02a0b, #e09585);
   --color-background: light-dark(#eee6dc, #1a1525);
   --color-text: light-dark(#c1330d, #f0c0b0);

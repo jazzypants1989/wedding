@@ -454,7 +454,7 @@
     text-shadow: none;
   }
   30% {
-    text-shadow: 0 0 var(--glow-strength, 8px) rgba(221, 115, 100, 0.4);
+    text-shadow: 0 0 var(--glow-strength, 8px) color-mix(in srgb, var(--effect-brand, rgb(221, 115, 100)) 40%, transparent);
   }
   100% {
     text-shadow: none;
@@ -499,7 +499,7 @@
   background: radial-gradient(
     ellipse at center,
     rgba(255, 215, 0, 0.08) 0%,
-    rgba(221, 115, 100, 0.06) 40%,
+    color-mix(in srgb, var(--effect-brand, rgb(221, 115, 100)) 6%, transparent) 40%,
     rgba(0, 0, 0, 0.4) 100%
   );
   z-index: var(--z-grand-entrance);
