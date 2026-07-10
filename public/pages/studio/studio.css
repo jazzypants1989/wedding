@@ -240,6 +240,14 @@
   border-color: var(--color-primary);
 }
 
+.studio-note {
+  margin: 10px 0 0;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--color-text-muted, var(--color-text));
+  opacity: 0.8;
+}
+
 .flash {
   margin: 10px 0 0;
   font-size: 0.76rem;
