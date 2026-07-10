@@ -26,6 +26,17 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # Without a configured admin hash, adminLogin() can't authenticate and every
+      # admin integration suite silently skips (DEFERRED.md). Generate a scrypt hash
+      # for a known password via the zero-dep policy module and export it plus
+      # TEST_ADMIN_PASSWORD so the admin surface is actually exercised in CI.
+      - name: Configure admin auth for tests
+        run: |
+          PW='CiTestPassw0rd'
+          HASH=$(node -e "import('./core/password-policy.js').then(m => process.stdout.write(m.hashPassword('$PW')))")
+          echo "TEST_ADMIN_PASSWORD=$PW" >> "$GITHUB_ENV"
+          echo "ADMIN_PASSWORD_HASH=$HASH" >> "$GITHUB_ENV"
+
       - name: Run tests
         run: npm test
 

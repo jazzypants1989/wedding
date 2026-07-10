@@ -7,6 +7,7 @@ import { limiters, getClientIp } from "../../core/rate-limit.js"
 import { checkRateLimit } from "../../core/http.js"
 import {
   verifyPassword,
+  getAdminHash,
   parseCookies,
   createSessionCookies,
   clearSessionCookies,
@@ -19,7 +20,9 @@ export async function login(req, res) {
   const clientIp = getClientIp(req)
   if (checkRateLimit(res, limiters.adminLogin, clientIp)) return
 
-  if (!SERVER.adminPasswordHash) {
+  // Effective hash: setup-wizard value (app_state) wins over the boot-time env.
+  const adminHash = getAdminHash()
+  if (!adminHash) {
     return sendJson(res, 503, {
       error: "Admin not configured. Run: node scripts/setup-admin.js",
     })
@@ -32,7 +35,7 @@ export async function login(req, res) {
     return sendJson(res, 400, { error: "Password required" })
   }
 
-  if (!verifyPassword(password, SERVER.adminPasswordHash)) {
+  if (!verifyPassword(password, adminHash)) {
     log({
       action: AUDIT_ACTIONS.LOGIN_FAILED,
       ip: clientIp,

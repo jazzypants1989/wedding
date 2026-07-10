@@ -22,6 +22,8 @@ export function verifyPassword(
   stored: string | null | undefined,
 ): boolean
 
+export function getAdminHash(): string | undefined
+
 export function parseCookies(
   cookieHeader: string | null | undefined,
 ): Record<string, string>

@@ -17,12 +17,16 @@ import {
 import { SESSION, GUEST_SESSION, SERVER } from "../types.js"
 import { log, AUDIT_ACTIONS } from "./utils.js"
 import { getClientIp } from "./rate-limit.js"
+import { getAppState } from "../db/utils.js"
+import { hashPassword } from "./password-policy.js"
 
-/** @type {Types.hashPassword} */
-function hashPassword(password) {
-  const salt = crypto.randomBytes(16)
-  const hash = crypto.scryptSync(password, salt, 64)
-  return salt.toString("hex") + ":" + hash.toString("hex")
+/** Effective admin password hash, read at request time: an `admin_hash` set via
+ *  the setup wizard (stored in `app_state`) wins, falling back to the boot-time
+ *  `ADMIN_PASSWORD_HASH` env. Lets a no-code onboarding install set its password
+ *  without a redeploy while keeping the env path working for existing deploys.
+ *  @type {Types.getAdminHash} */
+function getAdminHash() {
+  return getAppState("admin_hash") ?? SERVER.adminPasswordHash
 }
 
 /** @type {Types.verifyPassword} */
@@ -121,6 +125,7 @@ function validateCsrf(req, session) {
 export {
   hashPassword,
   verifyPassword,
+  getAdminHash,
   parseCookies,
   createSessionCookies,
   clearSessionCookies,
