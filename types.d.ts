@@ -129,6 +129,7 @@ export const RATE_LIMITS: {
   readonly PUBLIC_READ: { readonly windowMs: number; readonly max: number }
   readonly COMMENT_POST: { readonly windowMs: number; readonly max: number }
   readonly REACTION_TOGGLE: { readonly windowMs: number; readonly max: number }
+  readonly SETUP: { readonly windowMs: number; readonly max: number }
 }
 
 export const REQUEST_LIMITS: {

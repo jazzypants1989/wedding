@@ -1,0 +1,199 @@
+/* First-run setup wizard. Leans on the shared tokens/components; only layout and
+   the stepper/theme-grid specifics live here. */
+
+.setup-wrap {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: clamp(1.5rem, 4vw, 3rem) 1.25rem 4rem;
+}
+
+.setup-header {
+  margin-bottom: 2rem;
+}
+
+.setup-title {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: clamp(1.75rem, 5vw, 2.5rem);
+  margin: 0 0 0.5rem;
+}
+
+.setup-sub {
+  color: var(--color-text-muted, #666);
+  margin: 0;
+}
+
+/* Stepper */
+.setup-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1.5rem;
+  counter-reset: step;
+}
+
+.setup-step {
+  flex: 1 1 auto;
+  min-width: max-content;
+  font-size: 0.8rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 999px;
+  text-align: center;
+  color: var(--color-text-muted, #666);
+  background: var(--color-surface-2, rgba(0, 0, 0, 0.05));
+  counter-increment: step;
+}
+
+.setup-step::before {
+  content: counter(step) ". ";
+  font-weight: 600;
+}
+
+.setup-step.is-active {
+  color: #fff;
+  background: var(--color-primary, #c1330d);
+}
+
+.setup-step.is-done {
+  background: var(--color-secondary, #355e3b);
+  color: #fff;
+}
+
+/* Panels */
+.setup-panel {
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+
+.setup-panel[hidden] {
+  display: none;
+}
+
+.setup-legend {
+  font-family: var(--font-display, Georgia, serif);
+  font-size: 1.4rem;
+  padding: 0;
+  margin: 0 0 0.5rem;
+}
+
+.setup-hint,
+.setup-help {
+  color: var(--color-text-muted, #666);
+  font-size: 0.85rem;
+}
+
+.setup-hint {
+  margin: 0 0 1rem;
+}
+
+.setup-field {
+  display: block;
+  margin-bottom: 1.1rem;
+}
+
+.setup-label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.3rem;
+}
+
+.setup-help {
+  display: block;
+  margin-top: 0.25rem;
+}
+
+.setup-field input,
+.setup-field textarea {
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--color-border, #ccc);
+  border-radius: 6px;
+  font: inherit;
+  background: var(--color-background, #fff);
+  color: inherit;
+}
+
+.setup-field input:focus,
+.setup-field textarea:focus {
+  outline: 2px solid var(--color-primary, #c1330d);
+  outline-offset: 1px;
+}
+
+/* Theme grid */
+.setup-themes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.6rem;
+}
+
+.setup-theme {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--color-border, #ccc);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.setup-theme:has(input:checked) {
+  border-color: var(--color-primary, #c1330d);
+  box-shadow: 0 0 0 1px var(--color-primary, #c1330d);
+}
+
+.setup-theme input {
+  margin: 0;
+}
+
+/* Review */
+.setup-review {
+  margin: 0;
+}
+
+.setup-review dt {
+  font-weight: 600;
+  margin-top: 0.75rem;
+}
+
+.setup-review dd {
+  margin: 0.15rem 0 0;
+  color: var(--color-text-muted, #666);
+  word-break: break-word;
+}
+
+/* Nav + alert */
+.setup-nav {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+/* Back hugs the left; Next/Finish hug the right (even when Back is hidden). */
+#setup-next,
+#setup-finish {
+  margin-left: auto;
+}
+
+/* The .btn rule sets `display`, which would otherwise override the [hidden]
+   attribute's UA `display:none`. Re-hide with matching-or-higher specificity. */
+.setup-nav .btn[hidden] {
+  display: none;
+}
+
+.setup-alert {
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  background: color-mix(in srgb, var(--color-primary, #c1330d) 12%, transparent);
+  border: 1px solid var(--color-primary, #c1330d);
+  color: var(--color-primary, #c1330d);
+}
+
+.setup-alert.is-success {
+  background: color-mix(in srgb, var(--color-secondary, #355e3b) 12%, transparent);
+  border-color: var(--color-secondary, #355e3b);
+  color: var(--color-secondary, #355e3b);
+}

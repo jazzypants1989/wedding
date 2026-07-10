@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Set up your wedding site</title>
+  <meta name="description" content="First-run setup for your self-hosted wedding site.">
+  <meta name="theme-color" content="#eee6dc">
+  <meta name="robots" content="noindex">
+  <link rel="icon" type="image/png" href="/images/favicon.png">
+  <link rel="stylesheet" href="/styles/tokens.css">
+  <link rel="stylesheet" href="/styles/layout.css">
+  <link rel="stylesheet" href="/styles/components.css">
+  <link rel="stylesheet" href="/pages/setup/setup.css">
+  <script src="/components/theme-init.js"></script>
+</head>
+
+<body>
+  <a href="#setup-main" class="skip-link">Skip to content</a>
+
+  <main id="setup-main" class="setup-wrap">
+    <header class="setup-header text-center">
+      <h1 class="setup-title">Set up your wedding site</h1>
+      <p class="setup-sub">A few details and you're live. You can change everything later in the admin dashboard.</p>
+    </header>
+
+    <ol class="setup-steps" id="setup-steps" aria-label="Setup progress">
+      <li data-step="0" class="setup-step is-active">Password</li>
+      <li data-step="1" class="setup-step">The couple</li>
+      <li data-step="2" class="setup-step">Theme</li>
+      <li data-step="3" class="setup-step">Registry &amp; welcome</li>
+      <li data-step="4" class="setup-step">Review</li>
+    </ol>
+
+    <div class="setup-alert" id="setup-alert" role="alert" hidden></div>
+
+    <form id="setup-form" novalidate>
+      <!-- Step 0: token + admin password -->
+      <fieldset class="setup-panel is-active" data-panel="0">
+        <legend class="setup-legend">Secure the admin</legend>
+        <p class="setup-hint">Paste the one-time setup token printed in your server logs on first boot.</p>
+        <label class="setup-field">
+          <span class="setup-label">Setup token</span>
+          <input type="text" id="f-token" name="token" autocomplete="off" spellcheck="false" required>
+        </label>
+        <label class="setup-field">
+          <span class="setup-label">Admin password</span>
+          <input type="password" id="f-password" name="password" autocomplete="new-password" required>
+          <span class="setup-help">At least 12 characters, with an uppercase letter, a lowercase letter, and a digit.</span>
+        </label>
+        <label class="setup-field">
+          <span class="setup-label">Confirm password</span>
+          <input type="password" id="f-password2" name="password2" autocomplete="new-password" required>
+        </label>
+      </fieldset>
+
+      <!-- Step 1: couple + date + location -->
+      <fieldset class="setup-panel" data-panel="1" hidden>
+        <legend class="setup-legend">The couple</legend>
+        <label class="setup-field">
+          <span class="setup-label">Display names</span>
+          <input type="text" id="f-display" name="display" maxlength="100" required>
+          <span class="setup-help">Shown in headings, e.g. &ldquo;Alex &amp; Sam&rdquo;.</span>
+        </label>
+        <label class="setup-field">
+          <span class="setup-label">First names (prose)</span>
+          <input type="text" id="f-first" name="first" maxlength="100" required>
+          <span class="setup-help">Used in sign-offs, e.g. &ldquo;Alex and Sam&rdquo;.</span>
+        </label>
+        <label class="setup-field">
+          <span class="setup-label">Monogram</span>
+          <input type="text" id="f-monogram" name="monogram" maxlength="20" required>
+          <span class="setup-help">Compact mobile logo, e.g. &ldquo;A&amp;S&rdquo;.</span>
+        </label>
+        <label class="setup-field">
+          <span class="setup-label">Full names</span>
+          <input type="text" id="f-fullnames" name="fullnames" maxlength="220">
+          <span class="setup-help">Comma-separated, e.g. &ldquo;Alex Rivera, Sam Lee&rdquo;.</span>
+        </label>
+        <label class="setup-field">
+          <span class="setup-label">Wedding date</span>
+          <input type="text" id="f-date" name="weddingDate" maxlength="40" required>
+          <span class="setup-help">ISO with time &amp; offset drives the countdown, e.g. 2026-08-15T16:00:00-07:00.</span>
+        </label>
+        <label class="setup-field">
+          <span class="setup-label">Location</span>
+          <input type="text" id="f-location" name="location" maxlength="200" required>
+        </label>
+      </fieldset>
+
+      <!-- Step 2: theme -->
+      <fieldset class="setup-panel" data-panel="2" hidden>
+        <legend class="setup-legend">Pick a theme</legend>
+        <p class="setup-hint">Sets the visual effect palette. Fine-tune it later in the admin Effects tab.</p>
+        <div class="setup-themes" id="f-themes" role="radiogroup" aria-label="Theme"></div>
+      </fieldset>
+
+      <!-- Step 3: registry + welcome copy -->
+      <fieldset class="setup-panel" data-panel="3" hidden>
+        <legend class="setup-legend">Registry &amp; welcome</legend>
+        <label class="setup-field">
+          <span class="setup-label">Welcome heading</span>
+          <input type="text" id="f-welcomeHeading" name="welcomeHeading" maxlength="200">
+        </label>
+        <label class="setup-field">
+          <span class="setup-label">Welcome message</span>
+          <textarea id="f-welcomeIntro" name="welcomeIntro" rows="4" maxlength="5000"></textarea>
+          <span class="setup-help">A short note on your landing page. Basic inline HTML like &lt;em&gt; is allowed.</span>
+        </label>
+        <label class="setup-field">
+          <span class="setup-label">Registry title</span>
+          <input type="text" id="f-regTitle" name="regTitle" maxlength="200">
+        </label>
+        <label class="setup-field">
+          <span class="setup-label">Registry URL</span>
+          <input type="url" id="f-regUrl" name="regUrl" maxlength="500">
+          <span class="setup-help">Must start with http:// or https://.</span>
+        </label>
+        <label class="setup-field">
+          <span class="setup-label">Registry link text</span>
+          <input type="text" id="f-regLabel" name="regLabel" maxlength="200">
+        </label>
+        <label class="setup-field">
+          <span class="setup-label">Registry description</span>
+          <textarea id="f-regBody" name="regBody" rows="3" maxlength="5000"></textarea>
+        </label>
+      </fieldset>
+
+      <!-- Step 4: review -->
+      <fieldset class="setup-panel" data-panel="4" hidden>
+        <legend class="setup-legend">Review &amp; finish</legend>
+        <p class="setup-hint">Confirm the essentials. Everything is editable later in the admin dashboard.</p>
+        <dl class="setup-review" id="f-review"></dl>
+      </fieldset>
+
+      <div class="setup-nav">
+        <button type="button" class="btn btn-secondary" id="setup-back" hidden>Back</button>
+        <button type="button" class="btn" id="setup-next">Next</button>
+        <button type="submit" class="btn" id="setup-finish" hidden>Finish setup</button>
+      </div>
+    </form>
+  </main>
+
+  <script type="module" src="/pages/setup/setup.js"></script>
+</body>
+
+</html>

@@ -345,7 +345,7 @@ function reqDressCode(value) {
  * @param {Record<string, unknown>} body
  * @returns {Root.SiteContent}
  */
-function buildOverride(body) {
+export function buildOverride(body) {
   const couple = obj(body.couple, "couple")
   const registry = obj(body.registry, "registry")
   const memories = obj(body.memories, "memories")

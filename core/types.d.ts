@@ -41,6 +41,11 @@ export interface EmailSubjects {
 export function getWeddingFacts(): WeddingFacts
 export function getEmailSubjects(): EmailSubjects
 
+export function isSetupComplete(): boolean
+export function initSetup(): void
+export function verifySetupToken(provided: unknown): boolean
+export function completeSetup(): void
+
 export function parseCookies(
   cookieHeader: string | null | undefined,
 ): Record<string, string>

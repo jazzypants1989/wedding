@@ -33,6 +33,7 @@ import * as adminAccounts from "../api/admin/accounts.js"
 import * as adminMedia from "../api/admin/media.js"
 import * as siteContent from "../api/admin/site-content.js"
 import * as effectConfig from "../api/admin/effect-config.js"
+import * as setup from "../api/setup.js"
 
 /** @type {Types.Route[]} */
 const routes = []
@@ -143,6 +144,11 @@ export async function dispatch(req, res) {
 
 route("GET", "/api/health", health.get)
 route("GET", "/api/config", config.get)
+
+// First-run setup (token-gated, not admin-gated — there is no admin yet). Both
+// no-op once an admin hash exists (isSetupComplete).
+route("GET", "/api/setup", setup.status, { errorHandling: true })
+route("POST", "/api/setup", setup.submit, { errorHandling: true })
 route("GET", "/api/rsvp/:code", rsvp.get, { errorHandling: true })
 route("POST", "/api/rsvp/:code", rsvp.post, { errorHandling: true })
 route("POST", "/api/lookup", lookup.lookup, { errorHandling: true })

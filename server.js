@@ -13,6 +13,7 @@ import { maybeSendModerationDigest } from "./services/moderation-notify.js"
 
 import * as router from "./core/router.js"
 import { serveStatic, onContentChanged, onEffectConfigChanged } from "./core/static.js"
+import { initSetup, isSetupComplete } from "./core/setup.js"
 import { serveMedia } from "./core/media-serve.js"
 import { ensureUploadDirs } from "./core/media-storage.js"
 import { runMediaMaintenance } from "./core/media-sweep.js"
@@ -47,6 +48,20 @@ export const server = http.createServer(async (req, res) => {
       return
     }
 
+    // First-run gating: while un-onboarded, send the landing page to the /setup
+    // wizard; once an admin exists, keep the finished wizard from re-serving.
+    if (!isSetupComplete()) {
+      if (urlPath === "/") {
+        res.writeHead(302, { Location: "/setup" })
+        res.end()
+        return
+      }
+    } else if (urlPath === "/setup") {
+      res.writeHead(302, { Location: "/admin" })
+      res.end()
+      return
+    }
+
     const served = await serveStatic(req, res)
     if (!served) {
       res.writeHead(404, { "Content-Type": "text/plain" })
@@ -70,6 +85,11 @@ console.log("Database initialized")
 // rebuilds the tokens.
 onContentChanged()
 onEffectConfigChanged()
+
+// First-run onboarding: if this install has no admin password yet, print a
+// one-time setup token to the logs and open the /setup wizard. No-op (silent)
+// on an env-configured deploy.
+initSetup()
 
 ensureUploadDirs()
 

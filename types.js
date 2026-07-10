@@ -134,6 +134,7 @@ export const RATE_LIMITS = Object.freeze({
   PUBLIC_READ: { windowMs: 60 * 1000, max: 120 }, // 120/min per IP, shared across public list GETs
   COMMENT_POST: { windowMs: 60 * 60 * 1000, max: 60 }, // 60 comments/hour, keyed per account
   REACTION_TOGGLE: { windowMs: 60 * 1000, max: 30 }, // 30 toggles/min, keyed per account
+  SETUP: { windowMs: 60 * 60 * 1000, max: 20 }, // 20 first-run setup attempts/hour per IP
 })
 
 export const REQUEST_LIMITS = Object.freeze({

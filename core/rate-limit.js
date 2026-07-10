@@ -179,6 +179,12 @@ const limiters = {
     windowMs: RATE_LIMITS.REACTION_TOGGLE.windowMs,
     max: RATE_LIMITS.REACTION_TOGGLE.max,
   }),
+
+  setup: createLimiter({
+    name: "setup",
+    windowMs: RATE_LIMITS.SETUP.windowMs,
+    max: RATE_LIMITS.SETUP.max,
+  }),
 }
 
 /** @type {Types.clearAllStores} */

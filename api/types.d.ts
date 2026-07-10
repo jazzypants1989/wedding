@@ -19,6 +19,11 @@ export interface PublicConfig {
 
 export function getConfig(req: IncomingMessage, res: ServerResponse): void
 
+/** @file setup.js - Types for first-run onboarding endpoints */
+
+export function status(req: IncomingMessage, res: ServerResponse): Promise<void>
+export function submit(req: IncomingMessage, res: ServerResponse): Promise<void>
+
 /** @file lookup.js - Types for guest lookup and petition endpoints */
 
 /**
