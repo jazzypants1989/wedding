@@ -1110,3 +1110,41 @@ tr:hover td {
     transition: none;
   }
 }
+
+/* Site content editor */
+#site-content-form .form-section {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+#site-content-form .form-section legend {
+  font-weight: 600;
+  padding: 0 0.5rem;
+  color: var(--color-text);
+}
+
+.nav-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.nav-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.nav-row .nav-href,
+.nav-row .nav-label {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.form-actions {
+  margin-top: 1rem;
+}

@@ -12,6 +12,7 @@ import { initBlocklist, loadBlocklist } from "./blocklist.js"
 import { initManualSms } from "./manual-sms.js"
 import { initModeration, loadModeration, loadModerationCount } from "./moderation.js"
 import { initGalleryAdmin, loadGalleryAdmin } from "./gallery-admin.js"
+import { initSiteContent, loadSiteContent } from "./site-content.js"
 import { initThemeToggle } from "../../components/theme-toggle.js"
 
 /** @type {Types.onLoginSuccess} */
@@ -49,6 +50,8 @@ function switchTab(tabId) {
     loadModeration()
   } else if (tabId === "gallery") {
     loadGalleryAdmin()
+  } else if (tabId === "site-content") {
+    loadSiteContent()
   }
 }
 
@@ -104,6 +107,7 @@ function init() {
   initManualSms()
   initModeration()
   initGalleryAdmin()
+  initSiteContent()
   initThemeToggle()
 
   checkSession()

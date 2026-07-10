@@ -3,6 +3,7 @@
 
 import { sendJson } from "../core/http.js"
 import { FEATURES, SERVER } from "../types.js"
+import { getContent, getMode } from "../core/site-content.js"
 
 /** @type {Types.getConfig} */
 export function get(req, res) {
@@ -14,5 +15,10 @@ export function get(req, res) {
     // Reply-to / contact address the frontend uses for the gallery "Report this
     // photo" mailto. Always present (SERVER.contactEmail has a default).
     contactEmail: SERVER.contactEmail,
+    // Timeline mode + couple name for client-side use. The static HTML is already
+    // templated server-side (core/static.js); these expose the client-needed
+    // scalars (content.js is the single source).
+    mode: getMode(),
+    coupleDisplay: getContent().couple.display,
   })
 }

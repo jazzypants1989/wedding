@@ -2,6 +2,7 @@
 /** @import * as Types from './types.js' */
 
 import path from "node:path"
+import { CONTENT, formatWeddingDate, formatWeddingDateShort } from "./content.js"
 export const GUEST_STATUS = Object.freeze({
   PENDING: "pending",
   INVITED: "invited",
@@ -114,12 +115,15 @@ export const MODERATION_NOTIFY = Object.freeze({
   DIGEST_INTERVAL_MS: 22 * 60 * 60 * 1000,
 })
 
+// Server-side wedding facts (email/SMS templates, media default author name).
+// Derived from content.js so there's one source of truth shared with the
+// guest-facing pages — this also fixes the historic reversed-name drift.
 export const WEDDING = Object.freeze({
-  COUPLE_NAMES: "Jesse & Jordana",
-  COUPLE_FIRST_NAMES: "Jesse and Jordana",
-  DATE: "April 26, 2026",
-  DATE_SHORT: "04/26/2026",
-  LOCATION: "Portland, OR",
+  COUPLE_NAMES: CONTENT.couple.display,
+  COUPLE_FIRST_NAMES: CONTENT.couple.first,
+  DATE: formatWeddingDate(),
+  DATE_SHORT: formatWeddingDateShort(),
+  LOCATION: CONTENT.location,
   VENUE: "", // Fill in when decided
 })
 

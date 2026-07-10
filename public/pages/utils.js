@@ -87,6 +87,17 @@ export function escapeHtml(str) {
 }
 
 /**
+ * The couple's display name, read from the server-templated `.couple-names`
+ * heading — the single source (content.js) already present in the DOM, so UI
+ * copy stays in sync without a config fetch. Falls back if the heading is absent.
+ * @returns {string}
+ */
+export function getCoupleName() {
+  const name = document.querySelector(".couple-names")?.textContent?.trim()
+  return name || "the hosts"
+}
+
+/**
  * Wrapper for pre-escaped HTML content.
  * Use html`` tagged template to create, or raw() for trusted strings.
  */

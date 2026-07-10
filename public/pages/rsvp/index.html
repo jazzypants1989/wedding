@@ -4,8 +4,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>RSVP - Jordana & Jesse</title>
-  <meta name="description" content="RSVP for Jordana and Jesse's wedding - April 26, 2026 in Portland, OR">
+  <title>RSVP - {{couple.display}}</title>
+  <meta name="description" content="RSVP for {{couple.first}}'s wedding - {{weddingDate}} in {{location}}">
   <meta name="theme-color" content="#eee6dc">
   <link rel="icon" type="image/png" href="/images/favicon.png">
   <link rel="preload" as="font" type="font/woff2" href="/fonts/dm-serif-display-latin.woff2" crossorigin>
@@ -20,7 +20,7 @@
   <script src="/components/theme-init.js"></script>
 </head>
 
-<body>
+<body data-mode="{{mode}}">
   <a href="#main-content" class="skip-link">Skip to content</a>
 
   <div class="hero hero-small">
@@ -31,20 +31,12 @@
   </div>
 
   <header class="site-header text-center">
-    <h1 class="couple-names"><a href="/" class="home-link">Jordana & Jesse</a></h1>
-    <p class="wedding-info">April 26, 2026 &bull; Portland, OR</p>
+    <h1 class="couple-names"><a href="/" class="home-link">{{couple.display}}</a></h1>
+    <p class="wedding-info">{{weddingDate}} &bull; {{location}}</p>
   </header>
 
   <nav class="desktop-nav" aria-label="Main navigation">
-    <ul class="nav-list">
-      <li><a href="/#" class="nav-link">Home</a></li>
-      <li><a href="/#schedule" class="nav-link">Schedule</a></li>
-      <li><a href="/#dress-code" class="nav-link">Dress Code</a></li>
-      <li><a href="/#registry" class="nav-link">Registry</a></li>
-      <li><a href="/guestbook" class="nav-link">Guestbook</a></li>
-      <li><a href="/gallery" class="nav-link">Gallery</a></li>
-      <li><a href="/rsvp" class="nav-link">RSVP</a></li>
-    </ul>
+    <ul class="nav-list">{{nav.desktop}}</ul>
   </nav>
 
   <button class="theme-toggle desktop-theme-toggle" type="button" aria-label="Switch to dark mode"><span
@@ -63,21 +55,10 @@
     </button>
 
     <nav class="mobile-nav" id="mobile-nav" aria-label="Mobile navigation">
-      <ul class="nav-list">
-        <li><a href="/#" class="nav-link">Home</a></li>
-        <li><a href="/#schedule" class="nav-link">Schedule</a></li>
-        <li><a href="/#dress-code" class="nav-link">Dress Code</a></li>
-        <li><a href="/#registry" class="nav-link">Registry</a></li>
-        <li><a href="/guestbook" class="nav-link">Guestbook</a></li>
-        <li><a href="/gallery" class="nav-link">Gallery</a></li>
-        <li><a href="/rsvp" class="nav-link">RSVP</a></li>
-        <li><button class="theme-toggle nav-link" type="button" aria-label="Switch to dark mode"><span
-              class="theme-icon-sun" aria-hidden="true"></span><span class="theme-icon-moon"
-              aria-hidden="true"></span></button></li>
-      </ul>
+      <ul class="nav-list">{{nav.mobile}}</ul>
     </nav>
 
-    <span class="mobile-logo">J&J</span>
+    <span class="mobile-logo">{{couple.monogram}}</span>
   </div>
 
   <noscript>
@@ -195,7 +176,7 @@
         </div>
 
         <div class="form-group">
-          <label for="message">Message for Jordana & Jesse (optional)</label>
+          <label for="message">Message for {{couple.display}} (optional)</label>
           <textarea id="message" name="message" rows="3" placeholder="We're so excited for you!"></textarea>
         </div>
 
@@ -214,20 +195,7 @@
   </main>
 
   <nav class="footer-nav" aria-label="Footer navigation">
-    <ul class="nav-list">
-      <li><a href="/#" class="nav-link">Home</a></li>
-      <li><a href="/#schedule" class="nav-link">Schedule</a></li>
-      <li><a href="/#dress-code" class="nav-link">Dress Code</a></li>
-      <li><a href="/#registry" class="nav-link">Registry</a></li>
-      <li><a href="/guestbook" class="nav-link">Guestbook</a></li>
-      <li><a href="/gallery" class="nav-link">Gallery</a></li>
-      <li><a href="/rsvp" class="nav-link">RSVP</a></li>
-      <li><a href="https://github.com/jazzypants1989/wedding" class="nav-link" target="_blank" rel="noopener noreferrer"
-          aria-label="GitHub"><svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-            <path
-              d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z" />
-          </svg></a></li>
-    </ul>
+    <ul class="nav-list">{{nav.footer}}</ul>
   </nav>
 
   <footer class="site-footer">

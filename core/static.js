@@ -5,7 +5,10 @@ import fs from "node:fs"
 import path from "node:path"
 import { gzipSync } from "node:zlib"
 import { addSecurityHeaders } from "./http.js"
+import { escapeHtml } from "./utils.js"
 import { SERVER } from "../types.js"
+import { formatWeddingDate } from "../content.js"
+import { getContent, getMode, resolveSiteContent } from "./site-content.js"
 
 /** @type {Types.MimeTypes} */
 const MIME_TYPES = {
@@ -99,6 +102,10 @@ function buildNonceCsp(nonce) {
 
 const COMPRESSIBLE_EXTS = new Set([".html", ".css", ".js", ".mjs", ".json", ".svg", ".txt"])
 
+// Dev-only page routes (first path segment) — 404'd in production so internal
+// tooling isn't publicly routable on the live site. They still serve in dev.
+const DEV_ONLY_PAGES = new Set(["studio"])
+
 /** @type {Map<string, number>} urlPath → mtime, for cache-busting query params */
 const versionMap = new Map()
 
@@ -110,6 +117,10 @@ const lastModifiedCache = new Map()
 
 /** @type {Map<string, Buffer>} fullPath → gzipped content, for pre-compressed static files */
 const gzipCache = new Map()
+
+/** @type {Set<string>} normalizedPaths of templated HTML memoized in etag/gzip caches.
+ *  Tracked so a content edit (onContentChanged) can evict exactly those entries. */
+const templatedHtmlPaths = new Set()
 
 const bustExts = Object.keys(CACHE_CONTROL).filter((ext) => ext !== ".html")
 for (const file of fs.readdirSync(publicDir, { recursive: true })) {
@@ -181,6 +192,121 @@ function addCacheBusters(html) {
   return result
 }
 
+// ─── Content templating ──────────────────────────────────────────────────
+// The static HTML carries {{tokens}} that we fill from the effective site
+// content at serve time (no-regex string replacement). Content + mode are
+// resolved into module state and rebuilt only at boot and on admin save
+// (onContentChanged), so templated HTML stays deterministic per path between
+// edits — the ETag/gzip memoization below stays valid. On save we rebuild the
+// tokens AND evict the memoized HTML so the next serve re-templates.
+/** @type {ReturnType<typeof getMode>} */
+let MODE = getMode()
+/** @type {Record<string, string>} token name → replacement (mode + effective content) */
+let CONTENT_TOKENS = {}
+
+// Tokens whose value is trusted inline HTML and injected raw (see content.js).
+// Everything else is escaped before substitution so a "/&/< in admin-edited
+// content (e.g. a registry URL with ?a=1&b=2) can't break an attribute or tag.
+const RAW_TOKENS = new Set(["copy.welcomeIntro"])
+
+function rebuildContentTokens() {
+  const content = getContent()
+  MODE = getMode()
+  const activeCopy = content.copy[MODE]
+  CONTENT_TOKENS = {
+    "couple.display": content.couple.display,
+    "couple.first": content.couple.first,
+    "couple.monogram": content.couple.monogram,
+    "couple.metaNames": content.couple.fullNames.join(" and "),
+    "weddingDate": formatWeddingDate(content.weddingDate),
+    "weddingDateISO": content.weddingDate,
+    "location": content.location,
+    "registry.url": content.registry.url,
+    "registry.label": content.registry.label,
+    "mode": MODE,
+    "copy.welcomeHeading": activeCopy.welcomeHeading,
+    "copy.welcomeIntro": activeCopy.welcomeIntro,
+  }
+}
+rebuildContentTokens()
+
+/**
+ * Re-resolve the effective site content after an admin edit: pull the fresh
+ * override, rebuild the {{token}} map, and evict every memoized templated-HTML
+ * entry so the next serve re-templates. Also called once at boot (server.js)
+ * to pick up a stored override before the first request.
+ * @returns {void}
+ */
+export function onContentChanged() {
+  resolveSiteContent()
+  rebuildContentTokens()
+  for (const p of templatedHtmlPaths) {
+    etagCache.delete(p)
+    gzipCache.delete(p)
+  }
+  templatedHtmlPaths.clear()
+}
+
+const THEME_TOGGLE_LI =
+  '<li><button class="theme-toggle nav-link" type="button" aria-label="Switch to dark mode">' +
+  '<span class="theme-icon-sun" aria-hidden="true"></span>' +
+  '<span class="theme-icon-moon" aria-hidden="true"></span></button></li>'
+
+const GITHUB_SVG_PATH =
+  "M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"
+
+/** @param {string} url @returns {string} */
+function githubLi(url) {
+  return (
+    '<li><a href="' + escapeHtml(url) + '" class="nav-link" target="_blank" rel="noopener noreferrer" aria-label="GitHub">' +
+    '<svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">' +
+    '<path d="' + GITHUB_SVG_PATH + '" /></svg></a></li>'
+  )
+}
+
+/**
+ * Render the `<li>` list for a nav variant from CONTENT.nav[MODE]. Anchor links
+ * are prefixed with "/" off the home page; the current page is marked active.
+ * @param {string} currentPath request path (e.g. "/", "/rsvp")
+ * @param {"desktop" | "mobile" | "footer"} variant
+ * @returns {string}
+ */
+function renderNav(currentPath, variant) {
+  const content = getContent()
+  const onHome = currentPath === "/"
+  let items = ""
+  for (const link of content.nav[MODE]) {
+    const isAnchor = link.href.startsWith("#")
+    const href = isAnchor && !onHome ? "/" + link.href : link.href
+    const isActive = (link.href === "#" && onHome) || (!isAnchor && currentPath === link.href)
+    const cls = isActive ? "nav-link nav-link-active" : "nav-link"
+    const current = isActive ? ' aria-current="page"' : ""
+    items += '<li><a href="' + escapeHtml(href) + '" class="' + cls + '"' + current + ">" + escapeHtml(link.label) + "</a></li>"
+  }
+  if (variant === "mobile") items += THEME_TOGGLE_LI
+  if (variant === "footer" && content.footer.githubUrl) items += githubLi(content.footer.githubUrl)
+  return items
+}
+
+/**
+ * Fill content tokens in an HTML page. Scalar tokens are constant per boot;
+ * nav tokens depend on the request path (active state + anchor prefixing).
+ * @param {string} html
+ * @param {string} currentPath
+ * @returns {string}
+ */
+function applyContent(html, currentPath) {
+  let result = html
+  for (const key in CONTENT_TOKENS) {
+    const value = RAW_TOKENS.has(key) ? CONTENT_TOKENS[key] : escapeHtml(CONTENT_TOKENS[key])
+    result = result.replaceAll("{{" + key + "}}", value)
+  }
+  result = result.replaceAll("{{nav.desktop}}", renderNav(currentPath, "desktop"))
+  result = result.replaceAll("{{nav.mobile}}", renderNav(currentPath, "mobile"))
+  result = result.replaceAll("{{nav.footer}}", renderNav(currentPath, "footer"))
+  return result
+}
+
 /** @type {Types.serveStatic} */
 export async function serveStatic(req, res) {
   let urlPath = (req.url ?? "/").split("?")[0]
@@ -188,6 +314,11 @@ export async function serveStatic(req, res) {
   // Strip trailing slash (except root)
   if (urlPath.length > 1 && urlPath.endsWith("/")) {
     urlPath = urlPath.slice(0, -1)
+  }
+
+  // Gate dev-only pages in production — 404 like any missing route.
+  if (process.env.NODE_ENV === "production" && DEV_ONLY_PAGES.has(urlPath.split("/")[1])) {
+    return false
   }
 
   let normalizedPath
@@ -248,6 +379,7 @@ export async function serveStatic(req, res) {
     let body
     if (ext === ".html") {
       let html = content.toString("utf-8")
+      html = applyContent(html, urlPath)
       if (SERVER.cspNonce) {
         html = html.replaceAll(THEME_INIT_TAG, '<script nonce="' + nonce + '">' + THEME_INIT_CODE + '</script>')
       } else {
@@ -265,6 +397,8 @@ export async function serveStatic(req, res) {
         if (Buffer.byteLength(html) > 1024) {
           gzipCache.set(normalizedPath, gzipSync(Buffer.from(html)))
         }
+        // Remember this templated-HTML entry so onContentChanged can evict it.
+        templatedHtmlPaths.add(normalizedPath)
       }
     } else {
       body = content

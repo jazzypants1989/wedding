@@ -4,8 +4,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Jordana & Jesse - April 26, 2026</title>
-  <meta name="description" content="Wedding website for Jordana North and Jesse Pence - April 26, 2026 in Portland, OR">
+  <title>{{couple.display}} - {{weddingDate}}</title>
+  <meta name="description" content="Wedding website for {{couple.metaNames}} - {{weddingDate}} in {{location}}">
   <meta name="theme-color" content="#eee6dc">
   <link rel="icon" type="image/png" href="/images/favicon.png">
   <link rel="preload" as="font" type="font/woff2" href="/fonts/dm-serif-display-latin.woff2" crossorigin>
@@ -26,7 +26,7 @@
   </noscript>
 </head>
 
-<body>
+<body data-mode="{{mode}}">
   <a href="#main-content" class="skip-link">Skip to content</a>
 
   <noscript>
@@ -49,21 +49,10 @@
     </button>
 
     <nav class="mobile-nav" id="mobile-nav" aria-label="Mobile navigation">
-      <ul class="nav-list">
-        <li><a href="#" class="nav-link">Home</a></li>
-        <li><a href="#schedule" class="nav-link">Schedule</a></li>
-        <li><a href="#dress-code" class="nav-link">Dress Code</a></li>
-        <li><a href="#registry" class="nav-link">Registry/Gifts</a></li>
-        <li><a href="/guestbook" class="nav-link">Guestbook</a></li>
-        <li><a href="/gallery" class="nav-link">Gallery</a></li>
-        <li><a href="/rsvp" class="nav-link">RSVP</a></li>
-        <li><button class="theme-toggle nav-link" type="button" aria-label="Switch to dark mode"><span
-              class="theme-icon-sun" aria-hidden="true"></span><span class="theme-icon-moon"
-              aria-hidden="true"></span></button></li>
-      </ul>
+      <ul class="nav-list">{{nav.mobile}}</ul>
     </nav>
 
-    <span class="mobile-logo">J&J</span>
+    <span class="mobile-logo">{{couple.monogram}}</span>
   </div>
 
   <div class="hero">
@@ -74,22 +63,14 @@
   </div>
 
   <header class="site-header text-center">
-    <h1 class="couple-names">Jordana & Jesse</h1>
-    <p class="wedding-info">April 26, 2026 &bull; Portland, OR</p>
-    <p class="countdown" id="countdown" aria-live="off">Loading... <span id="exact-time" class="exact-time"></span></p>
+    <h1 class="couple-names">{{couple.display}}</h1>
+    <p class="wedding-info">{{weddingDate}} &bull; {{location}}</p>
+    <p class="countdown" id="countdown" data-wedding-date="{{weddingDateISO}}" aria-live="off">Loading... <span id="exact-time" class="exact-time"></span></p>
     <img src="/images/us.webp" srcset="/images/us-240w.webp 240w, /images/us.webp 480w" sizes="(min-width: 768px) 240px, 180px" alt="Jordana and Jesse K-I-S-S-I-N-G" class="couple-photo" loading="eager" width="480" height="512">
   </header>
 
   <nav class="desktop-nav" aria-label="Main navigation">
-    <ul class="nav-list">
-      <li><a href="#" class="nav-link nav-link-active">Home</a></li>
-      <li><a href="#schedule" class="nav-link">Schedule</a></li>
-      <li><a href="#dress-code" class="nav-link">Dress Code</a></li>
-      <li><a href="#registry" class="nav-link">Registry/Gifts</a></li>
-      <li><a href="/guestbook" class="nav-link">Guestbook</a></li>
-      <li><a href="/gallery" class="nav-link">Gallery</a></li>
-      <li><a href="/rsvp" class="nav-link">RSVP</a></li>
-    </ul>
+    <ul class="nav-list">{{nav.desktop}}</ul>
   </nav>
 
   <button class="theme-toggle desktop-theme-toggle" type="button" aria-label="Switch to dark mode"><span
@@ -97,18 +78,9 @@
 
   <main id="main-content">
     <section id="home" class="content-section text-center">
-      <h2>Welcome</h2>
+      <h2>{{copy.welcomeHeading}}</h2>
 
-      <p>
-        Please join us for our (low-key and low-stress) wedding celebration!
-
-        We want to keep it simple and focus on enjoying time with our loved ones and not getting too hung up on the
-        details (our apologies in advance for any hiccups that may occur). Shameless karaoke singing (with or without
-        skill) is encouraged, but not required. <em>No one will be pressured into singing if they don't want to</em>.
-
-        If any guests have any accessibility or accommodation needs, please let us know and we will do our best to
-        accommodate you.
-      </p>
+      <p>{{copy.welcomeIntro}}</p>
     </section>
     <section id="schedule" class="content-section text-center">
       <h2>Schedule</h2>
@@ -183,11 +155,10 @@
         <p>We didn't want to deal with payment processing, so we're using Honeyfund for the honeymoon registry. The
           HoneyFund website will load in a frame below, but you can click on the link if that's too cramped.</p>
         <p class="registry-link" id="registry-link">
-          <a href="https://www.honeyfund.com/site/north-pence-04-26-2026" target="_blank" rel="noopener noreferrer">Open
-            registry in a new window</a>
+          <a href="{{registry.url}}" target="_blank" rel="noopener noreferrer">{{registry.label}}</a>
         </p>
-        <iframe data-src="https://www.honeyfund.com/site/north-pence-04-26-2026"
-          title="Honeyfund registry for Jordana and Jesse" class="registry-frame" id="registry-frame" hidden></iframe>
+        <iframe data-src="{{registry.url}}"
+          title="Honeyfund registry for {{couple.first}}" class="registry-frame" id="registry-frame" hidden></iframe>
 
       </div>
     </section>
@@ -203,25 +174,11 @@
 
     <section class="event-details text-center">
       <h3>Wedding Day</h3>
-      <p>April 26, 2026</p>
+      <p>{{weddingDate}}</p>
     </section>
 
     <nav class="footer-nav" aria-label="Footer navigation">
-      <ul class="nav-list">
-        <li><a href="#" class="nav-link">Home</a></li>
-        <li><a href="#schedule" class="nav-link">Schedule</a></li>
-        <li><a href="#dress-code" class="nav-link">Dress Code</a></li>
-        <li><a href="#registry" class="nav-link">Registry</a></li>
-        <li><a href="/guestbook" class="nav-link">Guestbook</a></li>
-        <li><a href="/gallery" class="nav-link">Gallery</a></li>
-        <li><a href="/rsvp" class="nav-link">RSVP</a></li>
-        <li><a href="https://github.com/jazzypants1989/wedding" class="nav-link" target="_blank"
-            rel="noopener noreferrer" aria-label="GitHub"><svg width="18" height="18" viewBox="0 0 16 16"
-              fill="currentColor" aria-hidden="true">
-              <path
-                d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z" />
-            </svg></a></li>
-      </ul>
+      <ul class="nav-list">{{nav.footer}}</ul>
     </nav>
   </main>
 

@@ -21,6 +21,7 @@ import {
   cleanupTestData,
   BASE_URL,
 } from "../helpers.js"
+import { CONTENT } from "../../content.js"
 
 /** @type {DatabaseSync} */
 let db
@@ -51,6 +52,23 @@ describe("API Integration Tests", async () => {
       const data = /** @type {ApiData<HealthResponse>} */ (await res.json())
       assert.strictEqual(data.status, "ok")
       assert.ok(data.timestamp)
+    })
+  })
+
+  // ==================== Public Config ====================
+
+  describe("Public Config", () => {
+    it("GET /api/config returns mode + coupleDisplay from content.js", async () => {
+      const res = await fetch(`${BASE_URL}/api/config`)
+      assert.strictEqual(res.status, 200)
+
+      const data = /** @type {{ mode: string; coupleDisplay: string; features: object; contactEmail: string }} */ (
+        await res.json()
+      )
+      assert.ok(data.mode === "pre" || data.mode === "post", "mode is a timeline mode")
+      assert.strictEqual(data.coupleDisplay, CONTENT.couple.display)
+      assert.ok(data.features, "features present")
+      assert.strictEqual(typeof data.contactEmail, "string")
     })
   })
 

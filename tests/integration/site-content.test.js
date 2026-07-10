@@ -1,0 +1,251 @@
+/**
+ * @file Integration tests for the admin site-content editor: GET/PUT/DELETE
+ * round-trips through the app_state override, propagation to /api/config and
+ * templated pages, validation, and reset-to-defaults.
+ */
+// MUST be first: sets TEST_SERVER_PORT before ../helpers.js reads it.
+import "./_site-content-port.js"
+
+import { describe, it, before, after } from "node:test"
+import assert from "node:assert"
+import { DatabaseSync } from "node:sqlite"
+import {
+  startServer,
+  stopServer,
+  adminLogin,
+  adminFetch,
+  BASE_URL,
+  TEST_DB_PATH,
+} from "../helpers.js"
+
+/** Read the raw stored site_content override straight from the server's DB
+ *  (committed after the PUT's 200), parsed — or null if the key is absent. */
+function readStoredOverride() {
+  const db = new DatabaseSync(TEST_DB_PATH, { readOnly: true })
+  try {
+    const row = /** @type {{ value: string } | undefined} */ (
+      db.prepare("SELECT value FROM app_state WHERE key = 'site_content'").get()
+    )
+    return row ? JSON.parse(row.value) : null
+  } finally {
+    db.close()
+  }
+}
+
+/** @typedef {{ content: { couple: { display: string }, contactEmail: string | null } }} ContentResp */
+/** @typedef {{ coupleDisplay: string, mode: string }} ConfigResp */
+
+/** @param {Response} res @returns {Promise<ContentResp>} */
+async function contentJson(res) {
+  return /** @type {ContentResp} */ (await res.json())
+}
+
+/** @returns {Promise<ConfigResp>} */
+async function configJson() {
+  return /** @type {ConfigResp} */ (await (await fetch(`${BASE_URL}/api/config`)).json())
+}
+
+const hasAdmin = Boolean(process.env.TEST_ADMIN_PASSWORD)
+
+/** A full, valid SiteContent body with distinctive values. */
+function sampleBody() {
+  return {
+    couple: {
+      display: "Testy & McTestface",
+      first: "Testy and McTestface",
+      monogram: "T&M",
+      fullNames: ["Testy Test", "Mc Testface"],
+    },
+    weddingDate: "2030-09-09T17:00:00-07:00",
+    location: "Testville, TS",
+    contactEmail: "",
+    registry: { url: "https://example.com/registry", label: "Our registry" },
+    footer: { githubUrl: "https://github.com/example/repo" },
+    copy: {
+      pre: { welcomeHeading: "Hello Pre", welcomeIntro: "Come <em>celebrate</em>." },
+      post: { welcomeHeading: "Thanks Post", welcomeIntro: "It was grand." },
+    },
+    nav: {
+      pre: [
+        { href: "#", label: "Home" },
+        { href: "/rsvp", label: "RSVP Now" },
+      ],
+      post: [{ href: "#", label: "Home" }],
+    },
+  }
+}
+
+describe("admin site-content editor", () => {
+  before(async () => {
+    await startServer()
+  })
+
+  after(async () => {
+    // Best-effort reset so a leftover override doesn't affect other runs.
+    if (hasAdmin) {
+      try {
+        const auth = await adminLogin()
+        await adminFetch("/api/admin/site-content", { method: "DELETE" }, auth)
+      } catch {
+        // ignore
+      }
+    }
+    await stopServer()
+  })
+
+  it("requires admin auth", async () => {
+    const res = await fetch(`${BASE_URL}/api/admin/site-content`)
+    assert.strictEqual(res.status, 401)
+  })
+
+  it("GET returns the shipped defaults before any override", { skip: !hasAdmin }, async () => {
+    const auth = await adminLogin()
+    const res = await adminFetch("/api/admin/site-content", {}, auth)
+    assert.strictEqual(res.status, 200)
+    const data = await contentJson(res)
+    assert.strictEqual(data.content.couple.display, "Jordana & Jesse")
+  })
+
+  it("PUT persists an override and propagates to /api/config", { skip: !hasAdmin }, async () => {
+    const auth = await adminLogin()
+    const put = await adminFetch(
+      "/api/admin/site-content",
+      { method: "PUT", body: JSON.stringify(sampleBody()) },
+      auth,
+    )
+    assert.strictEqual(put.status, 200)
+    const putData = await contentJson(put)
+    assert.strictEqual(putData.content.couple.display, "Testy & McTestface")
+    // contactEmail "" normalizes to null.
+    assert.strictEqual(putData.content.contactEmail, null)
+
+    // /api/config is public and reads the effective content.
+    const cfg = await configJson()
+    assert.strictEqual(cfg.coupleDisplay, "Testy & McTestface")
+    // 2030 date → still pre-wedding.
+    assert.strictEqual(cfg.mode, "pre")
+  })
+
+  it("propagates to templated HTML (cache evicted on save)", { skip: !hasAdmin }, async () => {
+    // Prime the page cache with the current value.
+    await fetch(`${BASE_URL}/`)
+
+    const auth = await adminLogin()
+    const body = sampleBody()
+    body.couple.display = "Fresh & Baked"
+    await adminFetch(
+      "/api/admin/site-content",
+      { method: "PUT", body: JSON.stringify(body) },
+      auth,
+    )
+
+    const homeHtml = await (await fetch(`${BASE_URL}/`)).text()
+    // The "&" is HTML-escaped in the templated output (renders as "&" in-browser).
+    assert.ok(
+      homeHtml.includes("Fresh &amp; Baked"),
+      "home page should reflect the freshly saved couple display (escaped)",
+    )
+  })
+
+  it("replaces nav wholesale and renders the new links", { skip: !hasAdmin }, async () => {
+    const auth = await adminLogin()
+    const body = sampleBody()
+    body.nav.pre = [{ href: "/rsvp", label: "Just RSVP" }]
+    await adminFetch(
+      "/api/admin/site-content",
+      { method: "PUT", body: JSON.stringify(body) },
+      auth,
+    )
+    const homeHtml = await (await fetch(`${BASE_URL}/`)).text()
+    assert.ok(homeHtml.includes("Just RSVP"), "new nav label should render")
+  })
+
+  it("rejects a missing required field", { skip: !hasAdmin }, async () => {
+    const auth = await adminLogin()
+    const body = sampleBody()
+    body.couple.display = ""
+    const res = await adminFetch(
+      "/api/admin/site-content",
+      { method: "PUT", body: JSON.stringify(body) },
+      auth,
+    )
+    assert.strictEqual(res.status, 400)
+  })
+
+  it("rejects a non-http registry URL", { skip: !hasAdmin }, async () => {
+    const auth = await adminLogin()
+    const body = sampleBody()
+    body.registry.url = "javascript:alert(1)"
+    const res = await adminFetch(
+      "/api/admin/site-content",
+      { method: "PUT", body: JSON.stringify(body) },
+      auth,
+    )
+    assert.strictEqual(res.status, 400)
+  })
+
+  it("escapes content tokens in templated HTML (no raw injection)", { skip: !hasAdmin }, async () => {
+    const auth = await adminLogin()
+    const body = sampleBody()
+    body.couple.display = 'Amp & <script>x=1</script> "q"'
+    await adminFetch(
+      "/api/admin/site-content",
+      { method: "PUT", body: JSON.stringify(body) },
+      auth,
+    )
+    const homeHtml = await (await fetch(`${BASE_URL}/`)).text()
+    // The raw payload must never appear; the escaped form must.
+    assert.ok(!homeHtml.includes("<script>x=1</script>"), "raw script tag must not be injected")
+    assert.ok(homeHtml.includes("&lt;script&gt;x=1&lt;/script&gt;"), "display should be HTML-escaped")
+  })
+
+  it("stores only the diff from defaults (sparse override)", { skip: !hasAdmin }, async () => {
+    const auth = await adminLogin()
+    // Start from defaults, then read the full effective content.
+    await adminFetch("/api/admin/site-content", { method: "DELETE" }, auth)
+    const defaults = /** @type {any} */ (
+      (await contentJson(await adminFetch("/api/admin/site-content", {}, auth))).content
+    )
+    // Submit the full body unchanged except one field.
+    const body = { ...defaults, location: "Sparse City, SP" }
+    await adminFetch(
+      "/api/admin/site-content",
+      { method: "PUT", body: JSON.stringify(body) },
+      auth,
+    )
+    // Only the changed field is persisted; unchanged fields keep tracking defaults.
+    assert.deepStrictEqual(readStoredOverride(), { location: "Sparse City, SP" })
+  })
+
+  it("clears the override when a submission equals the defaults", { skip: !hasAdmin }, async () => {
+    const auth = await adminLogin()
+    // Reset first so GET returns the true shipped defaults, not a prior override.
+    await adminFetch("/api/admin/site-content", { method: "DELETE" }, auth)
+    const defaults = /** @type {any} */ (
+      (await contentJson(await adminFetch("/api/admin/site-content", {}, auth))).content
+    )
+    await adminFetch(
+      "/api/admin/site-content",
+      { method: "PUT", body: JSON.stringify(defaults) },
+      auth,
+    )
+    assert.strictEqual(readStoredOverride(), null)
+  })
+
+  it("DELETE resets to content.js defaults", { skip: !hasAdmin }, async () => {
+    const auth = await adminLogin()
+    // Ensure an override exists first.
+    await adminFetch(
+      "/api/admin/site-content",
+      { method: "PUT", body: JSON.stringify(sampleBody()) },
+      auth,
+    )
+    const del = await adminFetch("/api/admin/site-content", { method: "DELETE" }, auth)
+    assert.strictEqual(del.status, 200)
+    const delData = await contentJson(del)
+    assert.strictEqual(delData.content.couple.display, "Jordana & Jesse")
+
+    const cfg = await configJson()
+    assert.strictEqual(cfg.coupleDisplay, "Jordana & Jesse")
+  })
+})

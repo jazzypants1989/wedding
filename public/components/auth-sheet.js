@@ -7,7 +7,7 @@
  */
 /** @import * as Types from "./types.js" */
 
-import { html, raw, api, getDialogElement, getInputElement, getButtonElement, getElement } from "../pages/utils.js"
+import { html, raw, api, getCoupleName, getDialogElement, getInputElement, getButtonElement, getElement } from "../pages/utils.js"
 import { setButtonLoading, miniSparkle } from "./celebrate.js"
 import { session, setAccount, replayPendingAction, cancelPendingAction } from "./guest-session.js"
 import { showToast } from "./toast.js"
@@ -78,7 +78,7 @@ const SHEET_MARKUP = html`
     <h2>Introduce yourself</h2>
     <div class="alert alert-warning" role="note">
       Since we can't match you to the guest list, your posts will appear after
-      Jordana &amp; Jesse approve them.
+      <span class="auth-couple-name">the hosts</span> approve them.
     </div>
     <div id="auth-alert-open" class="alert alert-error" role="alert" hidden></div>
     <form id="auth-open-form" novalidate>
@@ -375,6 +375,11 @@ export function initAuthSheet() {
   dialog.className = "auth-sheet"
   dialog.setAttribute("aria-labelledby", "auth-sheet-title")
   dialog.innerHTML = SHEET_MARKUP
+  // Fill the couple name from the single source (the templated .couple-names
+  // heading) now that we're in the DOM — SHEET_MARKUP is built at module load,
+  // before document exists.
+  const coupleNameEl = dialog.querySelector(".auth-couple-name")
+  if (coupleNameEl) coupleNameEl.textContent = getCoupleName()
   document.body.appendChild(dialog)
 
   dialog

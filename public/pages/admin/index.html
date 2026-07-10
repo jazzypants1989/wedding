@@ -99,6 +99,8 @@
           aria-controls="tab-gallery" tabindex="-1">Gallery</button>
         <button class="tab-btn" data-tab="blocklist" role="tab" id="tab-btn-blocklist" aria-selected="false"
           aria-controls="tab-blocklist" tabindex="-1">Blocklist</button>
+        <button class="tab-btn" data-tab="site-content" role="tab" id="tab-btn-site-content" aria-selected="false"
+          aria-controls="tab-site-content" tabindex="-1">Site content</button>
       </div>
 
       <div id="tab-guests" class="tab-content active" role="tabpanel" aria-labelledby="tab-btn-guests">
@@ -355,6 +357,115 @@
               </tbody>
             </table>
           </div>
+        </div>
+      </div>
+
+      <div id="tab-site-content" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-site-content" hidden>
+        <div class="card">
+          <div class="card-header flex-between">
+            <h2>Site content</h2>
+            <button type="button" id="site-content-reset-btn" class="btn btn-secondary btn-sm">Reset to defaults</button>
+          </div>
+
+          <p class="text-muted card-text">
+            Edit the site-wide copy that content.js ships as defaults. Saving updates every page and
+            <code>/api/config</code> immediately — no redeploy. "Reset to defaults" clears the override.
+          </p>
+
+          <form id="site-content-form">
+            <fieldset class="form-section">
+              <legend>Couple</legend>
+              <div class="form-group">
+                <label for="sc-couple-display">Display name (e.g. "First &amp; First")</label>
+                <input type="text" id="sc-couple-display" maxlength="100" required>
+              </div>
+              <div class="form-group">
+                <label for="sc-couple-first">First names (prose, e.g. "A and B")</label>
+                <input type="text" id="sc-couple-first" maxlength="100" required>
+              </div>
+              <div class="form-group">
+                <label for="sc-couple-monogram">Monogram</label>
+                <input type="text" id="sc-couple-monogram" maxlength="20" required>
+              </div>
+              <div class="form-group">
+                <label for="sc-couple-fullnames">Full names (comma-separated)</label>
+                <input type="text" id="sc-couple-fullnames" maxlength="500" required>
+              </div>
+            </fieldset>
+
+            <fieldset class="form-section">
+              <legend>Event</legend>
+              <div class="form-group">
+                <label for="sc-wedding-date">Wedding date (ISO 8601, e.g. 2026-04-26T11:00:00-07:00)</label>
+                <input type="text" id="sc-wedding-date" maxlength="40" required>
+              </div>
+              <div class="form-group">
+                <label for="sc-location">Location</label>
+                <input type="text" id="sc-location" maxlength="200" required>
+              </div>
+              <div class="form-group">
+                <label for="sc-contact-email">Contact email (optional — blank falls back to server default)</label>
+                <input type="email" id="sc-contact-email" maxlength="254">
+              </div>
+            </fieldset>
+
+            <fieldset class="form-section">
+              <legend>Registry &amp; footer</legend>
+              <div class="form-group">
+                <label for="sc-registry-url">Registry URL</label>
+                <input type="url" id="sc-registry-url" maxlength="500" required>
+              </div>
+              <div class="form-group">
+                <label for="sc-registry-label">Registry link label</label>
+                <input type="text" id="sc-registry-label" maxlength="200" required>
+              </div>
+              <div class="form-group">
+                <label for="sc-footer-github">Footer GitHub URL (optional)</label>
+                <input type="url" id="sc-footer-github" maxlength="500">
+              </div>
+            </fieldset>
+
+            <fieldset class="form-section">
+              <legend>Pre-wedding copy</legend>
+              <div class="form-group">
+                <label for="sc-copy-pre-heading">Welcome heading</label>
+                <input type="text" id="sc-copy-pre-heading" maxlength="200" required>
+              </div>
+              <div class="form-group">
+                <label for="sc-copy-pre-intro">Welcome intro (trusted inline HTML allowed)</label>
+                <textarea id="sc-copy-pre-intro" rows="5" maxlength="5000" required></textarea>
+              </div>
+            </fieldset>
+
+            <fieldset class="form-section">
+              <legend>Post-wedding copy</legend>
+              <div class="form-group">
+                <label for="sc-copy-post-heading">Welcome heading</label>
+                <input type="text" id="sc-copy-post-heading" maxlength="200" required>
+              </div>
+              <div class="form-group">
+                <label for="sc-copy-post-intro">Welcome intro (trusted inline HTML allowed)</label>
+                <textarea id="sc-copy-post-intro" rows="5" maxlength="5000" required></textarea>
+              </div>
+            </fieldset>
+
+            <fieldset class="form-section">
+              <legend>Pre-wedding nav links</legend>
+              <div id="sc-nav-pre-rows" class="nav-editor"></div>
+              <button type="button" id="sc-nav-pre-add" class="btn btn-secondary btn-sm">Add link</button>
+            </fieldset>
+
+            <fieldset class="form-section">
+              <legend>Post-wedding nav links</legend>
+              <div id="sc-nav-post-rows" class="nav-editor"></div>
+              <button type="button" id="sc-nav-post-add" class="btn btn-secondary btn-sm">Add link</button>
+            </fieldset>
+
+            <p id="site-content-form-error" class="form-error" role="alert" hidden></p>
+            <div class="form-actions">
+              <button type="submit" id="site-content-save-btn" class="btn btn-primary">Save changes</button>
+            </div>
+          </form>
         </div>
       </div>
     </main>

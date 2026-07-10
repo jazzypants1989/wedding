@@ -460,3 +460,15 @@ code {
     overflow: visible;
   }
 }
+
+/* Timeline-mode section visibility. `data-mode` is set on <body> from
+   content.js (core/static.js). Pre-wedding hides the retrospective Memories
+   block; post-wedding hides the now-past Schedule and Dress Code sections. */
+[data-mode="pre"] #memories {
+  display: none;
+}
+
+[data-mode="post"] #schedule,
+[data-mode="post"] #dress-code {
+  display: none;
+}

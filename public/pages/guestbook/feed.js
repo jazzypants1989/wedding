@@ -5,6 +5,7 @@ import {
   html,
   api,
   formatDate,
+  getCoupleName,
   getElement,
   getButtonElement,
   getTextAreaElement,
@@ -144,7 +145,7 @@ function showPendingNote() {
   localStorage.setItem("gbPendingNoteSeen", "1")
   const note = getElement("gb-pending-note")
   note.innerHTML = html`
-    <span>Thanks! Jordana &amp; Jesse approve messages from new folks — yours
+    <span>Thanks! ${getCoupleName()} approve messages from new folks — yours
       will appear for everyone soon.</span>
     <button type="button" class="gb-note-dismiss" id="gb-note-dismiss"
       aria-label="Dismiss">&times;</button>

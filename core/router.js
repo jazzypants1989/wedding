@@ -31,6 +31,7 @@ import * as reactions from "../api/reactions.js"
 import * as moderation from "../api/admin/moderation.js"
 import * as adminAccounts from "../api/admin/accounts.js"
 import * as adminMedia from "../api/admin/media.js"
+import * as siteContent from "../api/admin/site-content.js"
 
 /** @type {Types.Route[]} */
 const routes = []
@@ -240,6 +241,11 @@ route("DELETE", "/api/admin/media/:id", adminMedia.remove, { admin: true })
 route("GET", "/api/admin/blocklist", blocklist.list, { admin: true })
 route("POST", "/api/admin/blocklist", blocklist.create, { admin: true })
 route("DELETE", "/api/admin/blocklist/:id", blocklist.remove, { admin: true })
+
+// Admin site-content editor (runtime override of content.js defaults)
+route("GET", "/api/admin/site-content", siteContent.get, { admin: true })
+route("PUT", "/api/admin/site-content", siteContent.update, { admin: true })
+route("DELETE", "/api/admin/site-content", siteContent.reset, { admin: true })
 
 // Admin manual SMS routes
 route("GET", "/api/admin/manual-sms/guests", manualSms.getEligibleGuests, { admin: true })

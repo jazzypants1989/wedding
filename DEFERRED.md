@@ -1,20 +1,8 @@
 # Deferred Work
 
-Most of the follow-ups captured during the 2026-06-29 change-review cleanup were executed on 2026-07-02 (grand-entrance star restore, CSS tokenization + chevron fix, `SERVER` config object, CI install step, WAL-safe backup, `stop_grace_period`, pinned base image). What remains below is deferred deliberately — it needs a production/deploy decision, off-repo access, an owner copy/branding call, or a larger product effort, not a quick code edit.
-
-The 2026-07 UX/DX triage pass (guest-facing correctness, admin consistency, DX hygiene) is fully done; its remaining owner-decision / can't-code-fix items were folded into the sections below and its standalone backlog retired.
+What's below is deferred deliberately — each item needs a production/deploy decision, off-repo access, an owner copy/branding call, or a larger product effort, not a quick code edit.
 
 Severity tags: 🔴 high · 🟡 medium · 🟢 low.
-
----
-
-## 1. `TRUSTED_PROXIES` unset behind Traefik 🟡
-
-Rate limiting only trusts `X-Forwarded-For` when `req.socket.remoteAddress` is in `SERVER.trustedProxies` (`core/rate-limit.js:62-77`; `getClientIp`). Behind Traefik every request's `remoteAddress` is the Traefik container's IP, which is **dynamic** on a Docker network. With `TRUSTED_PROXIES` unset, all clients collapse into one global rate-limit bucket. `core/env.js:35-46` warns about this at boot under `NODE_ENV=production`. It is set nowhere (`docker-compose.yml` sets only `NODE_ENV`/`PORT`/`BASE_URL`; the VPS `.env` would need it).
-
-**Two ways to fix (pick at deploy time):**
-- **Compose static IP (no code):** give the `traefik-public` network a fixed subnet, pin Traefik (or the wedding container) to a static address, and set `TRUSTED_PROXIES` to that exact IP in the VPS `.env`. Lowest risk.
-- **CIDR in code:** extend `getClientIp` to trust a subnet range (no-regex, integer math on the octets) so the whole Docker network is trusted regardless of Traefik's assigned IP. Also revisit `TRUSTED_PROXY_DEPTH` (`rate-limit.js:71`, default 1).
 
 ---
 
@@ -52,10 +40,10 @@ The CI inline script (`.github/workflows/deploy.yml`) and `scripts/deploy.js` du
 
 ## 4. `.env` completeness + secret rotation 🟡
 
-Compose uses `env_file: .env` on the VPS. The local `.env` leaves `TWILIO_PHONE_NUMBER`/`RESEND_API_KEY`/`FROM_EMAIL` empty; SMS/email paths gate on these (`services/twilio.js:9-11`, `services/email.js:10-11`). Confirm the production `.env` has everything it needs (incl. `ADMIN_PASSWORD_HASH`, and `TRUSTED_PROXIES` once §1 is decided). Deploy-environment check, not a code change.
+Deploy-environment checks, not code changes — run `npm run doctor` for the current drift/gaps:
 
-- **Local `.env` drift:** the working `.env` is missing keys that `.env.example` documents and code reads — `CONTACT_EMAIL`, `TRUSTED_PROXIES`, `NODE_ENV`, and the three `MEDIA_*_BYTES` thresholds (`types.js`, `core/env.js`). So the template is more complete than the actual file; a dev copying from `.env` misses real config surface. Fill the missing keys in the working `.env`; keep `.env.example` as source of truth.
-- **Rotate secrets 🔴 (if live):** the working `.env` holds real-looking plaintext Twilio SID + auth token, an admin password hash, and `TEST_ADMIN_PASSWORD`. It's gitignored (never committed), but if the Twilio creds are real, rotate them.
+- **Fill the working/production `.env`:** it's missing keys `.env.example` documents and the code reads; SMS/email paths gate on the empty `TWILIO_PHONE_NUMBER`/`RESEND_API_KEY`/`FROM_EMAIL` (`services/twilio.js`, `services/email.js`). Keep `.env.example` as source of truth.
+- **Rotate secrets 🔴 (if live):** the working `.env` holds real-looking plaintext Twilio SID + auth token and an admin password hash. Gitignored (never committed), but rotate the Twilio creds if real.
 
 ---
 
@@ -82,6 +70,21 @@ hardcoded touchpoints along the way: the `Jordana & Jesse` / "— Wedding" copy 
 
 Re-confirmed in the 2026-07 UX/DX pass — the copy de-personalization is the cheap first step ahead of the full theme refactor, and it's a prerequisite for the reusable-product direction in §14.
 
+**First step done (2026-07):** the brand color is now single-sourced from the CSS token
+`--effect-brand` (`public/styles/tokens.css`), read by `public/effects/config.js` via
+`getComputedStyle` (a plain, non-`light-dark` token so canvas fills stay theme-independent and
+render identically); the `disco-spotlight.js` fallback derives its rgba from the same source. The
+studio's `Jordana & Jesse` / "— Wedding" copy now templates from `content.js` (`{{couple.display}}`).
+**Also done (2026-07):** the remaining hardcoded brand touchpoints now single-source from the
+tokens — `public/components/celebrate.js` confetti reads `--effect-brand`/`--effect-brand-dark`, and
+the two `public/styles/effects.css` literals use `color-mix(in srgb, var(--effect-brand) …)`.
+`brandAlpha` (`public/effects/config.js`) degrades to the opaque brand color if the token isn't in
+`rgb()` form (documented at the token). **Still open:** the full ~3-theme refactor; the
+`var(--color-primary, rgb(221,115,100))` shimmer fallback in `effects.css:347-351` (deliberate — it
+tracks the `light-dark` primary and duplicates the literal only as a fallback); `name-shimmer.js`
+still binds `.couple-names` (fine — the element is content-templated); the dev-only `Mermaid`/`Disco`
+labels in `controls.js` are effect *type* names, left as-is.
+
 ---
 
 ## 10. Effect studio → live page wiring 🟡
@@ -98,76 +101,48 @@ both directions:
 
 ---
 
-## 11. `/studio` and `/demo` are publicly routable in production 🟡
+## 11. `/studio` and `/demo` are publicly routable in production 🟡 ✅ DONE
 
-`core/static.js` maps any extensionless path to `public/pages/<path>/index.html`, so `/studio` and
-`/demo` serve in **every** environment with no gate — only a `robots: noindex` meta and a docs
-convention mark them dev-only. Gate them behind `NODE_ENV` (or a `FEATURES` flag) in `serveStatic`,
-or remove them, before/at launch. No `FEATURES` hook exists for this today (`api/config.js` exposes
-only the guest-lookup flags).
+**Resolved (2026-07).** `serveStatic` (`core/static.js`) now gates a `DEV_ONLY_PAGES` set
+(currently `{studio}`): when `NODE_ENV === "production"` the first path segment is checked and dev
+pages `return false` → 404 like any missing route. `/demo` was removed entirely (see §12). Verified
+by booting with and without the flag (`/studio` 200 in dev, 404 in prod; real pages stay 200).
 
 ---
 
-## 12. Retire the change-review demo; consider an onboarding walkthrough 🟢
+## 12. Retire the change-review demo; consider an onboarding walkthrough 🟢 ✅ DONE
 
-All 22 decisions in `change-review-decisions.json` are resolved (commit `fdb44d1`), so the
-change-review demo machinery can be removed: `public/pages/demo/` (tracked, ships to prod),
+**Resolved (2026-07).** All change-review demo machinery removed: `public/pages/demo/`,
 `scripts/build-demo.js`, `scripts/demo-server.js`, `change-review-decisions.json`, the `demo:*` npm
-scripts, and the stale local `public/_demo/` build (gitignored, but boot-scanned by `core/static.js`
-and URL-reachable locally). Ambitious replacement worth considering: a **new-user
-onboarding/walkthrough demo** that teaches how the app works — good portfolio value, and it would
-surface behavior that currently only lives in the maintainer's head (see §13).
-
----
-
-## 13. Documentation, architecture doc & license 🟢
-
-Several non-obvious app behaviors are undocumented and only known to the maintainer. Triage each:
-fix some in the app itself (clearer UX) and document the rest, aiming for portfolio-grade clarity so
-a newcomer can understand and run the project.
-
-- **Architecture doc:** `CLAUDE.md` is the richest architecture/constraints doc but is gitignored and
-  untracked. Distill it into a tracked `docs/architecture.md` (or a README section) — good portfolio
-  signal and it de-risks the maintainer-only knowledge above. (A heavy `CONTRIBUTING` doc isn't wanted
-  — "be nice" covers it; the architecture doc is the valuable piece.)
-- **License:** add an Apache 2.0 `LICENSE` (owner's usual choice). Also a prerequisite for the
-  reusable-product direction in §14.
+scripts, the README row, the `tsconfig`/`public/tsconfig` excludes, the stale `public/_demo/` build,
+and the `.gitignore` rules. Nothing in the production runtime imported any of it. The ambitious
+**new-user onboarding/walkthrough demo** replacement remains a possible future direction (unbuilt).
 
 ---
 
 ## 14. Pre-/post-wedding modes + no-code onboarding (reusable wedding-site product) 🟢
 
-The landing copy still reads pre-event (the Schedule, "Please join us… we want to keep it simple,"
-"Wearing pink is encouraged") even though `countdown.js` and the Memories section already flip to a
-post-wedding state. The minimal launch-time fix is a copy pass reconciling tense for a post-wedding
-visitor — but the owner's direction is bigger: make **timeline mode a first-class concept**. A
-**pre-wedding** mode (countdown, schedule, RSVP-forward, invite/registry copy) and a **post-wedding**
-mode (Memories/guestbook/gallery-forward, past-tense copy) that swap both the landing copy *and* the
-nav bar.
+The content-config MVP is in place: `content.js` (single source of truth) + timeline `mode`
+(`getTimelineMode` / `SITE_MODE`) + serve-time templating drive the landing copy and nav swap. The
+larger reusable-product direction remains:
 
-That's the seed of turning this repo into a **reusable, self-hostable wedding-site product for
-non-coders**:
-
-- **No-code onboarding flow** (extends the walkthrough idea in §12): forms that capture *all* site
-  copy — couple names, dates, schedule, dress code, registry link, RSVP/guestbook/gallery copy — so a
-  user never touches HTML/CSS/JS. The captured content drives both timeline modes.
-- **Ship a Docker container** so the self-hosting crowd (r/selfhosted and similar — an audience that's
-  grown a lot and is increasingly non-technical) can run it without a build step; finding a host
-  becomes the only prerequisite.
-- Ties directly into §9 (de-personalize + generalize effects into selectable themes) and §11 (gate
-  `/studio`/`/demo`), both prerequisites for a genuinely reusable build, plus §13's Apache 2.0 license.
+- **Phase B — runtime-editable content ✅ DONE (2026-07):** the full `SiteContent` (incl. nav arrays)
+  is now runtime-editable. `core/site-content.js` resolves effective content = `content.js` defaults ⊕
+  an `app_state` `site_content` override (deep-merge; arrays replaced wholesale), re-resolved at boot
+  and on save (`onContentChanged` in `core/static.js` rebuilds tokens + evicts memoized HTML). Admin
+  "Site content" tab (`api/admin/site-content.js` + `public/pages/admin/site-content.js`) edits it
+  behind `withAdmin`. The override is now stored **sparse** (only fields differing from `content.js`
+  defaults, via `diffFromDefaults`), so unchanged fields keep tracking future default edits and an
+  all-defaults save clears the override; templated scalars are HTML-escaped (trusted-HTML copy fields
+  excepted) and the resolver guards prototype keys. **Still open in Phase B:** the landing prose not yet in the `SiteContent` shape
+  (Schedule, Dress Code, per-page body copy) — migrate those to make them editable too. Documented
+  boundary: `types.js` `WEDDING`/`EMAIL_SUBJECTS` (email/SMS) stay boot-resolved from `content.js`
+  defaults — web-facing content is editable, email templates are not (lift later if wanted).
+- **Phase C — no-code onboarding:** a first-run wizard that captures *all* site copy into `app_state`,
+  plus a shipped Docker container, so a non-coder self-hoster fills forms and never touches source.
+  Ties into §9 (de-personalize/themeable effects) and §11 (gate `/studio`/`/demo`).
 
 Scope is large; captured as a product direction, not a launch task.
-
----
-
-## 15. Guest-page footer / public source-link consistency 🟢 (owner decision)
-
-The footer GitHub link (`https://github.com/jazzypants1989/wedding`) appears on `/` (`index.html:204`)
-and `/rsvp` (`rsvp/index.html:225`) but **not** on `/guestbook` or `/gallery` (their
-`<footer class="site-footer">` lacks it). So it's both inconsistent and advertises the public source +
-admin surface to wedding guests. Decide: for portfolio value, keep it and add to all four footers;
-otherwise remove it from the guest pages. Either way, make the four `.site-footer` blocks match.
 
 ---
 
@@ -177,3 +152,18 @@ On a real phone over cellular: register with a seeded code, post a guestbook ent
 **and one ~30MB video**, react, comment, approve from the admin queue, and play the video on iOS Safari
 via `/media/:key/video` (validates Range/206 + the GPS-blanked variant; spot-check that the served
 bytes carry no coordinates). Manual go-live verification, no repo code.
+
+---
+
+## 17. Admin-authenticated integration tests are skipped in CI 🟡
+
+Every admin integration suite (`accounts`, `media`, `guestbook`, `api`, `site-content`) gates its
+authenticated tests on `process.env.TEST_ADMIN_PASSWORD`, because `adminLogin()` needs the server
+booted with a matching `ADMIN_PASSWORD_HASH`. Locally that's set from `.env` (so they run and pass);
+in CI (`.github/workflows/deploy.yml` runs bare `npm test`) neither var is set, so **all** admin tests
+silently skip — CI can go green while the admin surface is unexercised. Fix (deploy/CI decision, not
+per-suite code): in the CI test step, generate an `ADMIN_PASSWORD_HASH` for a known password and export
+it plus `TEST_ADMIN_PASSWORD` before `npm test` (e.g. a small step calling `scripts/setup-admin.js`
+non-interactively, or a committed test-only hash env). Kept the per-suite gate consistent rather than
+un-gating one suite (which would then be the lone admin test to run in CI — and it would fail with no
+hash configured).

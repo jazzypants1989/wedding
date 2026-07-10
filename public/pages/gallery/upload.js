@@ -4,7 +4,7 @@
 /** @import * as Types from "./types.js" */
 /** @import * as Components from "../../components/types.js" */
 
-import { html, getElement, getInputElement } from "../utils.js"
+import { html, getCoupleName, getElement, getInputElement } from "../utils.js"
 import { requireAccount, session } from "../../components/guest-session.js"
 import { fireConfetti } from "../../components/celebrate.js"
 import { createUploadQueue } from "../../components/media-uploader.js"
@@ -173,7 +173,7 @@ function showPendingNote() {
   const summary = getElement("upload-tray-summary")
   summary.insertAdjacentText(
     "afterend",
-    " Jordana & Jesse approve photos from new folks — yours will appear for everyone soon.",
+    ` ${getCoupleName()} approve photos from new folks — yours will appear for everyone soon.`,
   )
 }
 

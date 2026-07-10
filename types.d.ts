@@ -605,6 +605,88 @@ export type ValidationResult<T> =
   | { valid: true; value: T }
   | { valid: false; error: string }
 
+/** Timeline mode — pre- or post-wedding (content.js getTimelineMode). */
+export type TimelineMode = "pre" | "post"
+
+export interface SiteContentNavLink {
+  readonly href: string
+  readonly label: string
+}
+
+export interface SiteContentCopyVariant {
+  readonly welcomeHeading: string
+  readonly welcomeIntro: string
+}
+
+/** Single source of truth for wedding copy (content.js CONTENT). */
+export interface SiteContent {
+  readonly couple: {
+    readonly display: string
+    readonly first: string
+    readonly monogram: string
+    readonly fullNames: readonly string[]
+  }
+  readonly weddingDate: string
+  readonly location: string
+  readonly registry: {
+    readonly url: string
+    readonly label: string
+  }
+  readonly contactEmail: string | null
+  readonly nav: {
+    readonly pre: readonly SiteContentNavLink[]
+    readonly post: readonly SiteContentNavLink[]
+  }
+  readonly footer: {
+    readonly githubUrl: string | null
+  }
+  readonly copy: {
+    readonly pre: SiteContentCopyVariant
+    readonly post: SiteContentCopyVariant
+  }
+}
+
+export function formatWeddingDate(iso?: string): string
+export function formatWeddingDateShort(iso?: string): string
+
+// core/site-content.js — runtime-editable content resolver
+export function deepMergeContent(
+  base: SiteContent,
+  override: SiteContentOverride,
+): SiteContent
+export function resolveSiteContent(): SiteContent
+/** Sparse diff of a full validated content object against the shipped defaults —
+ *  only fields that differ are kept, so unchanged fields still track future
+ *  `content.js` default edits. Arrays are compared/stored wholesale. */
+export function diffFromDefaults(full: SiteContent, base?: SiteContent): SiteContentOverride
+export function getContent(): SiteContent
+export function getMode(now?: number): TimelineMode
+export function getTimelineMode(now?: number, weddingDate?: string): TimelineMode
+
+/** Deep-partial of SiteContent — the shape stored as a runtime override in
+ *  app_state (`site_content`) and merged over CONTENT defaults. */
+export type SiteContentOverride = {
+  couple?: Partial<{
+    display: string
+    first: string
+    monogram: string
+    fullNames: string[]
+  }>
+  weddingDate?: string
+  location?: string
+  registry?: Partial<{ url: string; label: string }>
+  contactEmail?: string | null
+  nav?: Partial<{
+    pre: SiteContentNavLink[]
+    post: SiteContentNavLink[]
+  }>
+  footer?: Partial<{ githubUrl: string | null }>
+  copy?: Partial<{
+    pre: Partial<SiteContentCopyVariant>
+    post: Partial<SiteContentCopyVariant>
+  }>
+}
+
 export function handleFatalError(reason: unknown): void
 export function handleGracefulShutdown(signal: string): void
 export function setupShutdownHandlers(): void

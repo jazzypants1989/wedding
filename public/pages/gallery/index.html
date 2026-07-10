@@ -4,8 +4,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gallery - Jordana & Jesse</title>
-  <meta name="description" content="Photos and videos from Jordana and Jesse's wedding.">
+  <title>Gallery - {{couple.display}}</title>
+  <meta name="description" content="Photos and videos from {{couple.first}}'s wedding.">
   <meta name="theme-color" content="#eee6dc">
   <link rel="icon" type="image/png" href="/images/favicon.png">
   <link rel="preload" as="font" type="font/woff2" href="/fonts/dm-serif-display-latin.woff2" crossorigin>
@@ -20,7 +20,7 @@
   <script src="/components/theme-init.js"></script>
 </head>
 
-<body>
+<body data-mode="{{mode}}">
   <a href="#main-content" class="skip-link">Skip to content</a>
 
   <div class="hero hero-small">
@@ -31,20 +31,12 @@
   </div>
 
   <header class="site-header text-center">
-    <h1 class="couple-names"><a href="/" class="home-link">Jordana & Jesse</a></h1>
-    <p class="wedding-info">April 26, 2026 &bull; Portland, OR</p>
+    <h1 class="couple-names"><a href="/" class="home-link">{{couple.display}}</a></h1>
+    <p class="wedding-info">{{weddingDate}} &bull; {{location}}</p>
   </header>
 
   <nav class="desktop-nav" aria-label="Main navigation">
-    <ul class="nav-list">
-      <li><a href="/#" class="nav-link">Home</a></li>
-      <li><a href="/#schedule" class="nav-link">Schedule</a></li>
-      <li><a href="/#dress-code" class="nav-link">Dress Code</a></li>
-      <li><a href="/#registry" class="nav-link">Registry</a></li>
-      <li><a href="/guestbook" class="nav-link">Guestbook</a></li>
-      <li><a href="/gallery" class="nav-link nav-link-active">Gallery</a></li>
-      <li><a href="/rsvp" class="nav-link">RSVP</a></li>
-    </ul>
+    <ul class="nav-list">{{nav.desktop}}</ul>
   </nav>
 
   <button class="theme-toggle desktop-theme-toggle" type="button" aria-label="Switch to dark mode"><span
@@ -63,21 +55,10 @@
     </button>
 
     <nav class="mobile-nav" id="mobile-nav" aria-label="Mobile navigation">
-      <ul class="nav-list">
-        <li><a href="/#" class="nav-link">Home</a></li>
-        <li><a href="/#schedule" class="nav-link">Schedule</a></li>
-        <li><a href="/#dress-code" class="nav-link">Dress Code</a></li>
-        <li><a href="/#registry" class="nav-link">Registry</a></li>
-        <li><a href="/guestbook" class="nav-link">Guestbook</a></li>
-        <li><a href="/gallery" class="nav-link nav-link-active">Gallery</a></li>
-        <li><a href="/rsvp" class="nav-link">RSVP</a></li>
-        <li><button class="theme-toggle nav-link" type="button" aria-label="Switch to dark mode"><span
-              class="theme-icon-sun" aria-hidden="true"></span><span class="theme-icon-moon"
-              aria-hidden="true"></span></button></li>
-      </ul>
+      <ul class="nav-list">{{nav.mobile}}</ul>
     </nav>
 
-    <span class="mobile-logo">J&J</span>
+    <span class="mobile-logo">{{couple.monogram}}</span>
   </div>
 
   <noscript>
@@ -149,15 +130,7 @@
   </dialog>
 
   <nav class="footer-nav" aria-label="Footer navigation">
-    <ul class="nav-list">
-      <li><a href="/#" class="nav-link">Home</a></li>
-      <li><a href="/#schedule" class="nav-link">Schedule</a></li>
-      <li><a href="/#dress-code" class="nav-link">Dress Code</a></li>
-      <li><a href="/#registry" class="nav-link">Registry</a></li>
-      <li><a href="/guestbook" class="nav-link">Guestbook</a></li>
-      <li><a href="/gallery" class="nav-link nav-link-active">Gallery</a></li>
-      <li><a href="/rsvp" class="nav-link">RSVP</a></li>
-    </ul>
+    <ul class="nav-list">{{nav.footer}}</ul>
   </nav>
 
   <footer class="site-footer">

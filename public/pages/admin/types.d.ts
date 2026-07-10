@@ -7,7 +7,16 @@ import type {
   Stats,
   Petition,
   MediaListItem,
+  SiteContent,
+  SiteContentNavLink,
 } from "../../../types.js"
+
+export type { SiteContent, SiteContentNavLink }
+
+/** Response of GET/PUT/DELETE /api/admin/site-content. */
+export interface SiteContentResponse {
+  content: SiteContent
+}
 
 /** @file utils.js - Types for admin utilities */
 

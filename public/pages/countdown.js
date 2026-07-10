@@ -8,7 +8,8 @@ export function initCountdown() {
   const countdownEl = getElement("countdown")
   const exactTimeEl = getElement("exact-time")
 
-  const weddingDate = new Date("2026-04-26T11:00:00-07:00")
+  // ISO date is templated into data-wedding-date from content.js (core/static.js).
+  const weddingDate = new Date(countdownEl.dataset.weddingDate ?? "")
 
   /** @type {Types.pad} */
   const pad = (num) => String(num).padStart(2, "0")
