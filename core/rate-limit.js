@@ -59,11 +59,42 @@ function createLimiter({ name, windowMs, max }) {
   }
 }
 
+/**
+ * True for RFC-1918 private ranges + loopback. In the Docker/Traefik deployment
+ * the reverse proxy always connects from one of these, and its container IP is
+ * dynamic — so trusting the private ranges lets us honor X-Forwarded-For without
+ * pinning a static proxy IP (DEFERRED §1). Public clients stay untrusted.
+ * No regex: strip any IPv6-mapped prefix, then integer octet math.
+ * @param {string} addr
+ * @returns {boolean}
+ */
+function isPrivateAddress(addr) {
+  // Docker often reports IPv4 peers as IPv6-mapped ("::ffff:10.0.0.5").
+  const mapped = "::ffff:"
+  const ip = addr.startsWith(mapped) ? addr.slice(mapped.length) : addr
+  if (ip === "::1") return true // IPv6 loopback
+
+  const octets = ip.split(".")
+  if (octets.length !== 4) return false
+  const nums = octets.map(Number)
+  for (const n of nums) {
+    if (!Number.isInteger(n) || n < 0 || n > 255) return false
+  }
+  const [a, b] = nums
+  if (a === 10) return true // 10.0.0.0/8
+  if (a === 172 && b >= 16 && b <= 31) return true // 172.16.0.0/12
+  if (a === 192 && b === 168) return true // 192.168.0.0/16
+  if (a === 127) return true // 127.0.0.0/8 loopback
+  return false
+}
+
 /** @type {Types.getClientIp} */
 function getClientIp(req) {
   const remoteAddr = req.socket?.remoteAddress || "unknown"
 
-  if (SERVER.trustedProxies.length > 0 && SERVER.trustedProxies.includes(remoteAddr)) {
+  // Trust X-Forwarded-For from private/loopback peers (Docker network) or any IP
+  // explicitly listed in TRUSTED_PROXIES.
+  if (isPrivateAddress(remoteAddr) || SERVER.trustedProxies.includes(remoteAddr)) {
     const forwarded = req.headers["x-forwarded-for"]
     if (forwarded) {
       const forwardedStr = Array.isArray(forwarded) ? forwarded[0] : forwarded

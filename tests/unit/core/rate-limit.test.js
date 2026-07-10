@@ -48,39 +48,73 @@ describe("getClientIp", () => {
     assert.strictEqual(ip, "unknown")
   })
 
-  it("ignores X-Forwarded-For when not from trusted proxy", () => {
+  it("ignores X-Forwarded-For from an untrusted public peer", () => {
     const req = mockRequest({
-      socket: { remoteAddress: "192.168.1.100" },
+      socket: { remoteAddress: "203.0.113.7" }, // public → untrusted
       headers: { "x-forwarded-for": "10.0.0.1" },
     })
     const ip = getClientIp(req)
-    // Should return socket address, not forwarded
-    assert.strictEqual(ip, "192.168.1.100")
+    // Should return socket address, not the (spoofable) forwarded header
+    assert.strictEqual(ip, "203.0.113.7")
   })
 
-  it("returns first IP from X-Forwarded-For with multiple IPs", () => {
-    // This tests the split logic even though trusted proxies may not be configured in test
+  it("trusts X-Forwarded-For from an RFC-1918 private peer (Docker)", () => {
     const req = mockRequest({
-      socket: { remoteAddress: "127.0.0.1" }, // localhost is often trusted
-      headers: {
-        "x-forwarded-for": "203.0.113.50, 70.41.3.18, 150.172.238.178",
-      },
+      socket: { remoteAddress: "10.0.0.5" },
+      headers: { "x-forwarded-for": "198.51.100.23" },
     })
-    const ip = getClientIp(req)
-    // Result depends on TRUSTED_PROXIES config
-    // If 127.0.0.1 is trusted: should be '203.0.113.50'
-    // If not trusted: should be '127.0.0.1'
-    assert.ok(ip === "203.0.113.50" || ip === "127.0.0.1")
+    assert.strictEqual(getClientIp(req), "198.51.100.23")
+  })
+
+  it("trusts each private range (10/8, 172.16/12, 192.168/16)", () => {
+    for (const peer of ["10.9.9.9", "172.16.0.1", "172.31.255.254", "192.168.1.1"]) {
+      const req = mockRequest({
+        socket: { remoteAddress: peer },
+        headers: { "x-forwarded-for": "198.51.100.23" },
+      })
+      assert.strictEqual(getClientIp(req), "198.51.100.23", `peer ${peer} should be trusted`)
+    }
+  })
+
+  it("does NOT trust 172.32/x (just outside the 172.16/12 range)", () => {
+    const req = mockRequest({
+      socket: { remoteAddress: "172.32.0.1" }, // outside 172.16–172.31
+      headers: { "x-forwarded-for": "198.51.100.23" },
+    })
+    assert.strictEqual(getClientIp(req), "172.32.0.1")
+  })
+
+  it("trusts an IPv6-mapped private peer (::ffff:172.16.5.4)", () => {
+    const req = mockRequest({
+      socket: { remoteAddress: "::ffff:172.16.5.4" },
+      headers: { "x-forwarded-for": "198.51.100.23" },
+    })
+    assert.strictEqual(getClientIp(req), "198.51.100.23")
+  })
+
+  it("trusts IPv6 loopback ::1", () => {
+    const req = mockRequest({
+      socket: { remoteAddress: "::1" },
+      headers: { "x-forwarded-for": "198.51.100.23" },
+    })
+    assert.strictEqual(getClientIp(req), "198.51.100.23")
   })
 
   it("trims whitespace from X-Forwarded-For", () => {
     const req = mockRequest({
-      socket: { remoteAddress: "127.0.0.1" },
+      socket: { remoteAddress: "127.0.0.1" }, // loopback → trusted
       headers: { "x-forwarded-for": "  203.0.113.50  " },
     })
+    assert.strictEqual(getClientIp(req), "203.0.113.50")
+  })
+
+  it("reads a value out of a multi-hop X-Forwarded-For when trusted", () => {
+    const req = mockRequest({
+      socket: { remoteAddress: "10.0.0.1" },
+      headers: { "x-forwarded-for": "203.0.113.50, 70.41.3.18" },
+    })
     const ip = getClientIp(req)
-    // Should be trimmed if trusted, otherwise socket address
-    assert.ok(ip === "203.0.113.50" || ip === "127.0.0.1")
+    assert.ok(["203.0.113.50", "70.41.3.18"].includes(ip))
   })
 })
 
