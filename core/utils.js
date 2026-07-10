@@ -72,6 +72,9 @@ export function log({
   const entry = {
     timestamp: new Date().toISOString(),
     action,
+    // Store only an 8-char prefix of the session token: enough to correlate an
+    // admin's actions within the log without persisting a full, still-valid
+    // session token to disk (the audit log is retained 30 days).
     adminId: adminId ? adminId.slice(0, 8) : null,
     ip: ip || null,
     resourceType: resourceType || null,

@@ -96,11 +96,16 @@ This creates 4 test guests covering different scenarios (solo, group, already ac
 | Command | Description |
 |---------|-------------|
 | `npm start` | Start the server (port 3000) |
-| `npm test` | Run integration tests |
-| `npm run test:unit` | Run unit tests |
-| `npm run test:all` | Run all tests |
-| `npm run setup` | Set admin password |
-| `npm run seed` | Seed preview test data |
+| `npm test` | Run the full suite — unit **and** integration (integration spins a real server on port 3001 with a separate test DB) |
+| `npm run test:unit` | Run unit tests only |
+| `npm run test:integration` | Run integration tests only (real server + separate DB) |
+| `npm run typecheck` | Type-check both configs (server + `public/`) via TypeScript `checkJs` — no build step |
+| `npm run dev` | Run with `--watch` (auto-restart on source changes) |
+| `npm run setup` | Set admin password (interactive) |
+| `npm run seed` | Seed preview data (`--gallery N` also adds media rows) |
+| `npm run export` | Export a self-contained sunset archive (JSON + CSV + media tree) |
+| `npm run deploy` | Deploy to the configured host |
+| `npm run demo` | Build + serve the dev-only change-review demo |
 
 ## Architecture
 

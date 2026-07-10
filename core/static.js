@@ -134,7 +134,7 @@ for (const file of fs.readdirSync(publicDir, { recursive: true })) {
       gzipCache.set(fullPath, gzipSync(content))
     }
   } catch {
-    console.log(`Failed to stat file: ${relPath}`)
+    console.warn(`Failed to stat file: ${relPath}`)
   }
 }
 

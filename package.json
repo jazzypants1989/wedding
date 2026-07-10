@@ -9,9 +9,10 @@
   },
   "scripts": {
     "start": "node server.js",
-    "test": "node --import=./tests/test-env.js --test tests/unit/core/*.test.js tests/unit/services/*.test.js tests/unit/db/*.test.js tests/unit/api/*.test.js tests/unit/*.test.js tests/integration/*.test.js",
-    "test:unit": "node --import=./tests/test-env.js --test tests/unit/core/*.test.js tests/unit/services/*.test.js tests/unit/db/*.test.js tests/unit/api/*.test.js tests/unit/*.test.js",
-    "typecheck": "tsc && tsc -p public/tsconfig.json",
+    "test": "node --import=./tests/test-env.js --test tests/unit/*.test.js tests/unit/*/*.test.js tests/integration/*.test.js",
+    "test:unit": "node --import=./tests/test-env.js --test tests/unit/*.test.js tests/unit/*/*.test.js",
+    "test:integration": "node --import=./tests/test-env.js --test tests/integration/*.test.js",
+    "typecheck": "tsc; s=$?; tsc -p public/tsconfig.json; c=$?; exit $((s||c))",
     "typecheck:server": "tsc",
     "typecheck:client": "tsc -p public/tsconfig.json",
     "dev": "node --watch-path=server.js --watch-path=types.js --watch-path=core --watch-path=api --watch-path=db --watch-path=services --watch-path=public server.js",
