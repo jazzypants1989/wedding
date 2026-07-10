@@ -45,6 +45,9 @@ export function createUploadQueue(callbacks = {}, options = {}) {
   // session create (reconciliation 5 + 7). Both default to the guest path.
   const csrfCookie = options.csrfCookie || CSRF_COOKIE
   const section = options.section
+  // Content-section uploads pass a responsive width ladder; guest/official use
+  // the processing default (display+thumb) when this is undefined.
+  const imageVariants = options.imageVariants
   /** @type {InternalItem[]} */
   const items = []
   let processing = false
@@ -102,7 +105,7 @@ export function createUploadQueue(callbacks = {}, options = {}) {
       }
       item.kind = kind
 
-      const processed = await processMediaFile(item.file)
+      const processed = await processMediaFile(item.file, imageVariants)
       item.processed = processed
       item.kind = processed.kind
       item.width = processed.width
@@ -110,8 +113,8 @@ export function createUploadQueue(callbacks = {}, options = {}) {
       item.durationS = processed.durationS ?? null
       item.displayMissing = processed.displayMissing === true
 
-      // Tray preview from the derived thumb (image) or poster (video).
-      const previewBlob = processed.thumbBlob || processed.posterBlob
+      // Tray preview from the smallest derived image variant, or the video poster.
+      const previewBlob = processed.previewBlob || processed.posterBlob
       if (previewBlob) {
         item.previewUrl = URL.createObjectURL(previewBlob)
       }
@@ -146,8 +149,7 @@ export function createUploadQueue(callbacks = {}, options = {}) {
       if (item.kind === "video") {
         if (processed.posterBlob) small.push({ name: "poster", blob: processed.posterBlob })
       } else if (!item.displayMissing) {
-        if (processed.thumbBlob) small.push({ name: "thumb", blob: processed.thumbBlob })
-        if (processed.displayBlob) small.push({ name: "display", blob: processed.displayBlob })
+        for (const v of processed.variants || []) small.push({ name: v.name, blob: v.blob })
       }
       const originalType = item.file.type || FORMAT_MIME[await sniffFormat(item.file)] || ""
 

@@ -627,6 +627,7 @@ export interface IntegrityRow {
   id: number
   file_key: string
   kind: MediaKind
+  section: MediaSection
   original_ext: string | null
   needs_display: 0 | 1
   poster_bytes: number | null

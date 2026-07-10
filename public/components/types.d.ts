@@ -116,25 +116,42 @@ export function openAuthSheet(trigger?: HTMLElement | null): void
 
 /** @file media-processing.js - Client media processing contract (Phase 3 §5) */
 
+/** One requested image size: a variant name, a long-edge cap, and encode quality. */
+export interface ImageVariantSpec {
+  name: string
+  maxEdge: number
+  quality: number
+}
+
+/** One produced image variant: its name and the encoded blob. */
+export interface ProcessedVariant {
+  name: string
+  blob: Blob
+}
+
 /** Upload-ready output of processMediaFile(). */
 export interface ProcessedMedia {
   kind: "image" | "video"
-  /** Resized display variant (image only; absent when displayMissing). */
-  displayBlob?: Blob
-  /** Small thumbnail (image only; absent when displayMissing). */
-  thumbBlob?: Blob
+  /** Derived image variant blobs (image only; absent/empty when displayMissing). */
+  variants?: ProcessedVariant[]
+  /** Smallest derived image variant, for the tray preview (image only). */
+  previewBlob?: Blob
   /** Extracted poster frame (video only). */
   posterBlob?: Blob
   width: number
   height: number
   /** Video duration in seconds (video only). */
   durationS?: number
-  /** True when a HEIC couldn't be decoded → original-only (no display/thumb). */
+  /** True when a HEIC couldn't be decoded → original-only (no derived variants). */
   displayMissing?: true
 }
 
-/** Process one image or video File into derived variants for upload. */
-export function processMediaFile(file: File): Promise<ProcessedMedia>
+/** Process one image or video File into derived variants for upload. `imageVariants`
+ *  overrides the image sizes produced (defaults to display+thumb). */
+export function processMediaFile(
+  file: File,
+  imageVariants?: ImageVariantSpec[],
+): Promise<ProcessedMedia>
 
 /** @file media-uploader.js - UI-agnostic upload queue engine (Phase 4 §6) */
 
@@ -188,8 +205,10 @@ export interface UploadQueueOptions {
    * admin (reconciliation 5 + 7).
    */
   csrfCookie?: string
-  /** Section passed at session create — admin passes "official". */
+  /** Section passed at session create — admin passes "official" or "content". */
   section?: string
+  /** Overrides the image variant sizes produced (content uploads pass the ladder). */
+  imageVariants?: ImageVariantSpec[]
 }
 
 export interface UploadQueue {

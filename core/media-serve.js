@@ -20,8 +20,11 @@ import { MEDIA_KIND, MEDIA_SECTION, MEDIA_STATUS } from "../types.js"
 // Public variants anyone may fetch (subject to the approval gate); `original` is
 // admin-only (image originals still carry EXIF GPS; video originals serve as the
 // public `video` variant instead).
-const PUBLIC_VARIANTS = new Set(["display", "thumb", "poster", "video"])
-const ALL_VARIANTS = new Set(["display", "thumb", "poster", "video", "original"])
+// Content-section responsive width ladder (image-only); publicly servable like
+// display/thumb so the landing page can load dress-code figures by file_key.
+const LADDER_VARIANTS = new Set(["w400", "w800", "w1600"])
+const PUBLIC_VARIANTS = new Set(["display", "thumb", "poster", "video", ...LADDER_VARIANTS])
+const ALL_VARIANTS = new Set(["display", "thumb", "poster", "video", "original", ...LADDER_VARIANTS])
 
 /**
  * Parse a run of decimal digits. Rejects empty, non-digit, and > 15 digits
@@ -84,7 +87,8 @@ function isValidFileKey(key) {
 function variantValidForKind(variant, kind) {
   if (variant === "original") return true
   if (kind === MEDIA_KIND.VIDEO) return variant === "poster" || variant === "video"
-  return variant === "display" || variant === "thumb" // image
+  // image: display/thumb (gallery) or the content-section width ladder
+  return variant === "display" || variant === "thumb" || LADDER_VARIANTS.has(variant)
 }
 
 /**
@@ -182,7 +186,11 @@ export function serveMedia(req, res) {
   if (variant === "original") {
     headers["Cache-Control"] = "private, no-store"
     headers["Content-Disposition"] = "attachment"
-  } else if (row.section === MEDIA_SECTION.OFFICIAL) {
+  } else if (
+    row.section === MEDIA_SECTION.OFFICIAL ||
+    row.section === MEDIA_SECTION.CONTENT
+  ) {
+    // Curated/site-content variants are stable for the life of the file_key.
     headers["Cache-Control"] = "public, max-age=31536000, immutable"
   } else {
     // A hidden guest photo must actually disappear for prior viewers within ~a day.

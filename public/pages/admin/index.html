@@ -429,7 +429,14 @@
                 <label for="sc-dresscode-body">Body</label>
                 <textarea id="sc-dresscode-body" rows="2" maxlength="5000" required></textarea>
               </div>
-              <p class="text-muted card-text">Dress-code images are managed separately (kept as the shipped figures for now).</p>
+              <div class="form-group">
+                <label>Dress-code images</label>
+                <p class="text-muted card-text">Uploaded figures are stored responsively and shown on the landing page. They never appear in the guest gallery. Add alt text so the images are accessible.</p>
+                <div id="sc-dresscode-images" class="dc-image-editor"></div>
+                <div id="sc-dresscode-upload" class="dc-upload-tray" hidden></div>
+                <input type="file" id="sc-dresscode-file" accept="image/*" hidden>
+                <button type="button" id="sc-dresscode-add" class="btn btn-secondary btn-sm">Add image</button>
+              </div>
             </fieldset>
 
             <fieldset class="form-section">

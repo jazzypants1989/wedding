@@ -55,7 +55,7 @@ import {
   WEDDING,
   TARGET_TYPE,
   isMediaKind,
-  isMediaSection,
+  expectedVariants,
 } from "../types.js"
 import { log, AUDIT_ACTIONS } from "../core/utils.js"
 import { enrichSocial } from "./enrich.js"
@@ -71,6 +71,10 @@ const VARIANT_SPEC = {
   display: { image: { expectedKinds: ["jpeg", "webp"], maxBytes: MEDIA_LIMITS.DISPLAY_MAX } },
   thumb: { image: { expectedKinds: ["jpeg", "webp"], maxBytes: MEDIA_LIMITS.THUMB_MAX } },
   poster: { video: { expectedKinds: ["jpeg", "webp"], maxBytes: MEDIA_LIMITS.POSTER_MAX } },
+  // Content-section responsive width ladder (see expectedVariants / CONTENT_IMAGE_LADDER).
+  w400: { image: { expectedKinds: ["jpeg", "webp"], maxBytes: MEDIA_LIMITS.W400_MAX } },
+  w800: { image: { expectedKinds: ["jpeg", "webp"], maxBytes: MEDIA_LIMITS.W800_MAX } },
+  w1600: { image: { expectedKinds: ["jpeg", "webp"], maxBytes: MEDIA_LIMITS.W1600_MAX } },
 }
 
 /**
@@ -215,7 +219,13 @@ export async function list(req, res) {
 
   const urlObj = new URL(req.url ?? "/", `http://${req.headers.host}`)
   const sectionParam = urlObj.searchParams.get("section")
-  const section = isMediaSection(sectionParam) ? sectionParam : MEDIA_SECTION.GUEST
+  // Public gallery feed serves only the two gallery sections. 'content' passes
+  // isMediaSection() but is admin-only site-content (dress-code figures) and must
+  // never be listable here — clamp anything else to the guest feed.
+  const section =
+    sectionParam === MEDIA_SECTION.OFFICIAL || sectionParam === MEDIA_SECTION.GUEST
+      ? sectionParam
+      : MEDIA_SECTION.GUEST
   const isOfficial = section === MEDIA_SECTION.OFFICIAL
 
   // Official is a single sort_order page (no cursor); guest is a keyset feed.
@@ -285,11 +295,19 @@ export async function createSession(req, res, { principal }) {
     return sendJson(res, 413, { error: "File is too large", code: "PAYLOAD_TOO_LARGE" })
   }
 
-  // Only an admin may place an item in the curated 'official' section.
-  const section =
-    principal.isAdmin && body.section === MEDIA_SECTION.OFFICIAL
-      ? MEDIA_SECTION.OFFICIAL
-      : MEDIA_SECTION.GUEST
+  // Only an admin may place an item outside the guest feed: the curated
+  // 'official' gallery, or the 'content' section (site-content images such as
+  // dress-code figures, which are image-only and never appear in a gallery feed).
+  /** @type {GlobalTypes.MediaSection} */
+  let section = MEDIA_SECTION.GUEST
+  if (principal.isAdmin && body.section === MEDIA_SECTION.OFFICIAL) {
+    section = MEDIA_SECTION.OFFICIAL
+  } else if (principal.isAdmin && body.section === MEDIA_SECTION.CONTENT) {
+    if (kind !== MEDIA_KIND.IMAGE) {
+      throw new ValidationError("content section accepts images only")
+    }
+    section = MEDIA_SECTION.CONTENT
+  }
 
   if (!passesDiskGuard(res, originalBytes, principal)) return
 
@@ -381,21 +399,6 @@ export async function putVariant(req, res, { params, principal }) {
   }
 }
 
-/**
- * Which variant files must exist on disk before an item may be finalized.
- * A displayMissing image (HEIC that desktop Chrome couldn't decode) legitimately
- * has NEITHER display NOR thumb — they share one canvas decode — so it requires
- * only the original.
- * @param {GlobalTypes.MediaKind} kind
- * @param {boolean} displayMissing
- * @returns {string[]}
- */
-function requiredVariants(kind, displayMissing) {
-  if (kind === MEDIA_KIND.VIDEO) return ["original", "poster"]
-  return displayMissing ? ["original"] : ["original", "display", "thumb"]
-}
-
-
 /** @type {Types.finalize} */
 export async function finalize(req, res, { params, principal }) {
   const id = Number(params.id)
@@ -414,8 +417,10 @@ export async function finalize(req, res, { params, principal }) {
   const height = toIntOrNull(body.height)
   const durationS = row.kind === MEDIA_KIND.VIDEO ? toFloatOrNull(body.durationS) : null
 
-  // Verify every required variant landed on disk.
-  for (const variant of requiredVariants(row.kind, displayMissing)) {
+  // Verify every required variant landed on disk. Content-section images require
+  // the full responsive ladder; a displayMissing (undecodable) content upload
+  // therefore fails here — admins must upload a decodable image.
+  for (const variant of expectedVariants(row.kind, row.section, displayMissing)) {
     if (!variantExistsOnDisk(row.file_key, variant, row.original_ext)) {
       throw new ConflictError(`Missing required variant: ${variant}`)
     }

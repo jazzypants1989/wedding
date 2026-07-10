@@ -188,11 +188,12 @@ export function createTables(db) {
       file_key TEXT UNIQUE NOT NULL,                 -- 32 lowercase hex, crypto.randomBytes(16)
       account_id INTEGER,                            -- NULL = admin/official upload
       kind TEXT NOT NULL,                            -- image|video
-      section TEXT NOT NULL DEFAULT 'guest',         -- official|guest
+      section TEXT NOT NULL DEFAULT 'guest',         -- official|guest|content
       status TEXT NOT NULL DEFAULT 'uploading',      -- uploading|pending|approved|hidden|rejected
       caption TEXT,
       original_ext TEXT,                             -- derived from sniff: jpg|png|webp|heic|mp4|mov
       original_bytes INTEGER, display_bytes INTEGER, thumb_bytes INTEGER, poster_bytes INTEGER,
+      w400_bytes INTEGER, w800_bytes INTEGER, w1600_bytes INTEGER, -- content-section responsive ladder (add_content_ladder migration back-fills existing DBs)
       width INTEGER, height INTEGER,
       duration_seconds REAL,                         -- video only
       needs_display INTEGER NOT NULL DEFAULT 0,      -- HEIC-decode fallback: original-only (no display/thumb)
@@ -551,5 +552,45 @@ export function runMigrations(db) {
       CREATE INDEX IF NOT EXISTS idx_account_recovery_account ON account_recovery_tokens(account_id);
     `)
     record.run("add_account_recovery")
+  }
+
+  // Content-section responsive image ladder (Track 1b): the per-variant byte
+  // columns for w400/w800/w1600, and the widened section-enum CHECK triggers that
+  // admit the new 'content' section (site-content images, e.g. dress-code figures,
+  // that are servable by file_key but excluded from every gallery feed).
+  if (!applied.get("add_content_ladder")) {
+    // Columns are declared in the base CREATE TABLE for fresh installs; ALTER
+    // them into pre-existing DBs. Guard each add so a fresh DB (already has them)
+    // doesn't raise "duplicate column name". Names are constant literals.
+    const have = new Set(
+      /** @type {Array<{ name: string }>} */ (
+        db.prepare("PRAGMA table_info(media)").all()
+      ).map((c) => c.name),
+    )
+    for (const col of ["w400_bytes", "w800_bytes", "w1600_bytes"]) {
+      if (!have.has(col)) db.exec(`ALTER TABLE media ADD COLUMN ${col} INTEGER`)
+    }
+
+    db.exec(`
+      DROP TRIGGER IF EXISTS check_media_section_insert;
+      DROP TRIGGER IF EXISTS check_media_section_update;
+
+      CREATE TRIGGER check_media_section_insert
+      BEFORE INSERT ON media
+      FOR EACH ROW
+      WHEN NEW.section NOT IN ('official', 'guest', 'content')
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid media section. Must be: official, guest, or content');
+      END;
+
+      CREATE TRIGGER check_media_section_update
+      BEFORE UPDATE ON media
+      FOR EACH ROW
+      WHEN NEW.section NOT IN ('official', 'guest', 'content')
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid media section. Must be: official, guest, or content');
+      END;
+    `)
+    record.run("add_content_ladder")
   }
 }

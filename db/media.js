@@ -13,6 +13,9 @@ const BYTES_COLUMN = {
   display: "display_bytes",
   thumb: "thumb_bytes",
   poster: "poster_bytes",
+  w400: "w400_bytes",
+  w800: "w800_bytes",
+  w1600: "w1600_bytes",
 }
 
 /** @type {Types.createMediaRow} */
@@ -74,14 +77,17 @@ export function getMediaFeed({ callerId = null, section, before = null, limit })
 export function getMediaFeedRowById(id, callerId = null) {
   // Single-item form of getMediaFeed for ?item= deep links: same LEFT JOIN +
   // is_own shape so the API applies an identical visibility gate. Excludes
-  // soft-deleted rows (→ undefined → 404); the caller gates on status.
+  // soft-deleted rows (→ undefined → 404); the caller gates on status. Also
+  // excludes the 'content' section so admin site-content images (dress-code
+  // figures) are never publicly deep-linked, nor targetable by comments/
+  // reactions (this same query backs db/targets.js's visibility gate).
   const isOwn = callerId !== null ? sql`(m.account_id = ${callerId})` : sql`0`
   return sql`SELECT m.id, m.file_key, m.account_id, m.kind, m.section, m.status,
       m.caption, m.width, m.height, m.duration_seconds, m.needs_display,
       m.created_at, a.name AS author_name, ${isOwn} AS is_own
     FROM media m
     LEFT JOIN accounts a ON a.id = m.account_id
-    WHERE m.id = ${id} AND m.deleted_at IS NULL`.get()
+    WHERE m.id = ${id} AND m.deleted_at IS NULL AND m.section != 'content'`.get()
 }
 
 /** @type {Types.setMediaVariantBytes} */
@@ -216,7 +222,7 @@ export function getFinalizedMediaForIntegrity() {
   // Rows whose variant files must exist on disk: finalized (not 'uploading'),
   // not soft-deleted, not rejected. The integrity pass computes each row's
   // expected variants (needs_display rows legitimately lack display/thumb).
-  return sql`SELECT id, file_key, kind, original_ext, needs_display, poster_bytes
+  return sql`SELECT id, file_key, kind, section, original_ext, needs_display, poster_bytes
     FROM media
     WHERE status IN ('pending', 'approved', 'hidden') AND deleted_at IS NULL`.all()
 }
