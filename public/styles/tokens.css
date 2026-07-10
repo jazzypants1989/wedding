@@ -202,6 +202,25 @@
   color-scheme: light;
 }
 
+/* Per-effect-theme brand override. `data-effect-theme` is server-rendered onto
+   <html> from SiteContent.theme (see public/effects/themes.js) and is a
+   SEPARATE axis from the light/dark `data-theme` above. The default
+   "mermaid-disco" keeps the :root values (no block here). Values stay in
+   `rgb(r, g, b)` functional form so config.js `brandAlpha()` (string swap) works,
+   and stay flat (no light-dark()) so effect colors don't shift in dark mode. */
+:root[data-effect-theme="romantic"] {
+  --effect-brand: rgb(198, 120, 128);
+  --effect-brand-dark: #8a3a44;
+}
+:root[data-effect-theme="elegant"] {
+  --effect-brand: rgb(198, 160, 110);
+  --effect-brand-dark: #8a6a2e;
+}
+:root[data-effect-theme="classic"] {
+  --effect-brand: rgb(150, 140, 150);
+  --effect-brand-dark: #5a5560;
+}
+
 /* ============ Utilities ============ */
 
 .text-muted {
