@@ -24,10 +24,22 @@ is rendered onto all four pages' `<html>`.
 
 ## Shipped themes
 
-- **mermaid-disco** (default) — the original full look (all 10 effects).
+- **mermaid-disco** (default) — the original full look (all 10 disco-era effects).
 - **romantic** — `petals`, `hearts`, `namespark`(pink), `shimmer`(sunset), `dividers`, `entrance`; rose brand.
 - **elegant** — `dust`, `namespark`(gold), `dividers`, `parallaxsparkles`(gold, sparse); champagne brand.
 - **classic** — `namespark`(white) + faint `dividers`; near-quiet baseline; neutral brand.
+- **celestial** — `starfield`, `shootingstars`, `aurora`, `namespark`(white), `dividers`; indigo brand.
+- **garden** — `fireflies`, `leaves`, `petals`(blossom recolor), `namespark`(gold), `dividers`; green brand.
+- **winter** — `snow`, `frost`, `namespark`(white), `dividers`; icy-blue brand.
+- **coastal** — `bubbles`, `caustics`, `shimmer`(ocean), `namespark`(white), `dividers`; teal brand.
+
+### Known limitation — light page background
+
+The page background is a fixed light cream (not theme-driven — see *Palette depth*
+below). So the pale, cool effects (`starfield`, `snow`, `bubbles`) read as soft
+glimmers rather than bright marks against a night/ocean backdrop; the warm,
+saturated themes (romantic, garden, elegant, mermaid-disco) pop hardest. Making
+the page background theme-driven is the deferred palette-depth work.
 
 ## Adding an effect
 
@@ -53,18 +65,23 @@ animated by `effects.css`, using the shared helpers (`isMobile`, `randomFrom`,
 
 ## Hand-off catalog (future agents)
 
-### Effects to author (grouped by the theme they unlock)
+### Effects now built (ids in parens)
 
-- **Romantic / Garden:** `warm-bokeh` (soft candlelight orbs), `fireflies` (blinking drifting points), `falling-leaves`, `dandelion-seeds`.
-- **Celestial / Night:** `starfield` (twinkling stars), `shooting-stars` (occasional streaks), `aurora-wash` (slow gradient — generalize the `mermaid-shimmer` engine with a new palette), `constellation-lines`.
-- **Winter:** `snowfall`, `frost-shimmer` (frosted vignette edges).
-- **Coastal (mermaid siblings):** `bubbles-rising`, `water-caustics` (a `caustics` effect is already typed in `types.d.ts` but not built).
+`starfield` (starfield), `shooting-stars` (shootingstars), `aurora-wash` (aurora),
+`fireflies` (fireflies), `falling-leaves` (leaves), `snowfall` (snow),
+`frost-shimmer` (frost), `bubbles-rising` (bubbles), `water-caustics` (caustics —
+its CSS/type pre-existed; the factory is now built). All four catalog themes
+(garden, celestial, winter, coastal) ship.
+
+### Effects still to author
+
+- **Romantic / Garden:** `warm-bokeh` (soft candlelight orbs), `dandelion-seeds`.
+- **Celestial / Night:** `constellation-lines` (faint lines linking nearby stars).
 - **Elegant extras:** `corner-flourish` (animated gold filigree in page corners, pure CSS), `soft-vignette-glow` (gentle breathing radial glow).
 
-### Themes to add (need the effects above first)
-
-`garden` (fireflies + leaves + petals), `celestial` (starfield + shooting-stars
-+ aurora), `winter` (snowfall + frost), `coastal` (bubbles + caustics).
+`aurora-wash` carries `polar` and `dusk` palettes beyond the default `aurora` —
+reuse it for a future dusk/twilight theme instead of authoring a new gradient
+effect.
 
 ### Palette depth (deferred)
 

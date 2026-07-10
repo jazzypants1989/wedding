@@ -220,6 +220,22 @@
   --effect-brand: rgb(150, 140, 150);
   --effect-brand-dark: #5a5560;
 }
+:root[data-effect-theme="celestial"] {
+  --effect-brand: rgb(124, 108, 214);
+  --effect-brand-dark: #4a3f8f;
+}
+:root[data-effect-theme="garden"] {
+  --effect-brand: rgb(122, 160, 96);
+  --effect-brand-dark: #4c6b34;
+}
+:root[data-effect-theme="winter"] {
+  --effect-brand: rgb(120, 160, 196);
+  --effect-brand-dark: #3d5f7d;
+}
+:root[data-effect-theme="coastal"] {
+  --effect-brand: rgb(74, 170, 168);
+  --effect-brand-dark: #2c6f6d;
+}
 
 /* ============ Utilities ============ */
 

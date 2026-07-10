@@ -43,7 +43,16 @@ const MAX_NAV = 20
 // EFFECT_THEMES because the server can't import that browser-only module; keep
 // in sync when adding a theme. Exported so a unit test can assert parity with
 // EFFECT_THEMES (tests/unit/effect-themes.test.js) and catch drift.
-export const THEME_IDS = new Set(["mermaid-disco", "romantic", "elegant", "classic"])
+export const THEME_IDS = new Set([
+  "mermaid-disco",
+  "romantic",
+  "elegant",
+  "classic",
+  "celestial",
+  "garden",
+  "winter",
+  "coastal",
+])
 
 /**
  * @param {unknown} v

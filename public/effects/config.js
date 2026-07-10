@@ -205,6 +205,96 @@ export const EFFECT_CONFIGS = {
       colors: [EFFECT_PALETTE.gold, "#f0e0b0", "#fff8e7", "#e8c977"],
     },
   },
+
+  starfield: {
+    defaults: {
+      starCount: 70,
+      sizeRange: [1, 3],
+      twinkleDurationRange: [2, 6],
+      delayRange: [0, 6],
+      colors: ["#ffffff", "#dbe9ff", "#fff4d6", "#c9d8ff"],
+    },
+  },
+
+  shootingstars: {
+    defaults: {
+      streakCount: 5,
+      cycleDurationRange: [5, 11],
+      delayRange: [0, 12],
+      lengthRange: [120, 220],
+      colors: ["#ffffff", "#eaf2ff", "#fff4d6"],
+    },
+  },
+
+  aurora: {
+    defaults: {
+      opacity: 0.16,
+      speed: 24,
+      palette: "aurora",
+      height: 55,
+      angle: 105,
+    },
+  },
+
+  fireflies: {
+    defaults: {
+      flyCount: 22,
+      sizeRange: [2, 5],
+      blinkDurationRange: [2, 5],
+      driftDurationRange: [8, 16],
+      driftRange: [20, 70],
+      colors: ["#ffe98a", "#c9ff8a", "#fff3b0", "#a8e063"],
+    },
+  },
+
+  leaves: {
+    defaults: {
+      leafCount: 16,
+      fallDurationRange: [7, 14],
+      delayRange: [0, 9],
+      sizeRange: [10, 20],
+      swayRange: [30, 80],
+      colors: ["#d98634", "#c25b28", "#e0a83c", "#8a9a3b", "#b7502a"],
+    },
+  },
+
+  snow: {
+    defaults: {
+      flakeCount: 40,
+      fallDurationRange: [6, 13],
+      delayRange: [0, 10],
+      sizeRange: [3, 8],
+      swayRange: [15, 55],
+      colors: ["#ffffff", "#eaf4ff", "#dcefff"],
+    },
+  },
+
+  frost: {
+    defaults: {
+      opacity: 0.5,
+      breatheSpeed: 9,
+      color: "#dceeff",
+      clearRadius: 42,
+    },
+  },
+
+  bubbles: {
+    defaults: {
+      bubbleCount: 20,
+      riseDurationRange: [8, 16],
+      delayRange: [0, 10],
+      sizeRange: [6, 22],
+      wobbleRange: [15, 50],
+    },
+  },
+
+  caustics: {
+    defaults: {
+      intensity: 55,
+      speed: 50,
+      layerCount: 3,
+    },
+  },
 }
 
 /** @type {Types.getDefaultConfig} */

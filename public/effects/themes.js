@@ -75,6 +75,55 @@ export const EFFECT_THEMES = [
       dividers: { dotDensity: 8, color: 0.1 },
     },
   },
+  {
+    id: "celestial",
+    label: "Celestial",
+    // Night sky: twinkling stars, rare shooting streaks, a slow aurora band.
+    effectIds: ["starfield", "shootingstars", "aurora", "namespark", "dividers"],
+    configs: {
+      namespark: { shimmerColor: "white" },
+      dividers: { dotDensity: 10, color: 0.4 },
+      aurora: { palette: "aurora", opacity: 0.14 },
+    },
+  },
+  {
+    id: "garden",
+    label: "Garden",
+    // Warm daylight garden: blinking fireflies, tumbling leaves, drifting blossoms.
+    effectIds: ["fireflies", "leaves", "petals", "namespark", "dividers"],
+    configs: {
+      namespark: { shimmerColor: "gold" },
+      dividers: { dotDensity: 12, color: 0.6 },
+      petals: {
+        // Recolor petals as soft spring blossoms so they sit with the greens.
+        colors: ["#f4c2d0", "#ffd9e2", "#ffffff", "#f6b8a8"],
+        petalCount: 14,
+      },
+    },
+  },
+  {
+    id: "winter",
+    label: "Winter",
+    // Cool and still: falling snow under a breathing frosted vignette.
+    effectIds: ["snow", "frost", "namespark", "dividers"],
+    configs: {
+      namespark: { shimmerColor: "white" },
+      dividers: { dotDensity: 10, color: 0.3 },
+      frost: { opacity: 0.45 },
+    },
+  },
+  {
+    id: "coastal",
+    label: "Coastal",
+    // Underwater calm: rising bubbles over shifting light caustics + an ocean sheen.
+    effectIds: ["bubbles", "caustics", "shimmer", "namespark", "dividers"],
+    configs: {
+      namespark: { shimmerColor: "white" },
+      dividers: { dotDensity: 12, color: 0.5 },
+      shimmer: { colorPalette: "ocean", opacity: 0.13 },
+      caustics: { intensity: 45 },
+    },
+  },
 ]
 
 /** @type {Types.resolveTheme} */

@@ -632,3 +632,110 @@ export function createFloatingHearts(
  * dust.start();
  */
 export function createGoldenDust(config?: GoldenDustConfig): EffectInstance
+
+/** Default config for the starfield effect. */
+export interface StarfieldConfig {
+  starCount?: number
+  sizeRange?: [number, number]
+  twinkleDurationRange?: [number, number]
+  delayRange?: [number, number]
+  colors?: string[]
+}
+
+/** Default config for the shooting-stars effect. */
+export interface ShootingStarsConfig {
+  streakCount?: number
+  cycleDurationRange?: [number, number]
+  delayRange?: [number, number]
+  lengthRange?: [number, number]
+  colors?: string[]
+}
+
+/** Default config for the aurora-wash effect. */
+export interface AuroraWashConfig {
+  opacity?: number
+  speed?: number
+  /** Named gradient palette: "aurora" | "polar" | "dusk". */
+  palette?: string
+  height?: number
+  angle?: number
+}
+
+/** Default config for the fireflies effect. */
+export interface FirefliesConfig {
+  flyCount?: number
+  sizeRange?: [number, number]
+  blinkDurationRange?: [number, number]
+  driftDurationRange?: [number, number]
+  driftRange?: [number, number]
+  colors?: string[]
+}
+
+/** Default config for the falling-leaves effect. */
+export interface FallingLeavesConfig {
+  leafCount?: number
+  fallDurationRange?: [number, number]
+  delayRange?: [number, number]
+  sizeRange?: [number, number]
+  swayRange?: [number, number]
+  colors?: string[]
+}
+
+/** Default config for the snowfall effect. */
+export interface SnowfallConfig {
+  flakeCount?: number
+  fallDurationRange?: [number, number]
+  delayRange?: [number, number]
+  sizeRange?: [number, number]
+  swayRange?: [number, number]
+  colors?: string[]
+}
+
+/** Default config for the frost-shimmer effect. */
+export interface FrostShimmerConfig {
+  opacity?: number
+  breatheSpeed?: number
+  color?: string
+  clearRadius?: number
+}
+
+/** Default config for the bubbles-rising effect. */
+export interface BubblesRisingConfig {
+  bubbleCount?: number
+  riseDurationRange?: [number, number]
+  delayRange?: [number, number]
+  sizeRange?: [number, number]
+  wobbleRange?: [number, number]
+}
+
+/** @file starfield.js - Types for the twinkling starfield effect */
+/** Create a scatter of stars twinkling in place. */
+export function createStarfield(config?: StarfieldConfig): EffectInstance
+
+/** @file shooting-stars.js - Types for occasional diagonal streaks */
+/** Create occasional shooting-star streaks across the upper sky. */
+export function createShootingStars(config?: ShootingStarsConfig): EffectInstance
+
+/** @file aurora-wash.js - Types for the drifting aurora gradient band */
+/** Create a slow, soft aurora gradient band across the top of the page. */
+export function createAuroraWash(config?: AuroraWashConfig): EffectInstance
+
+/** @file fireflies.js - Types for blinking, drifting fireflies */
+/** Create warm points that blink and wander slowly. */
+export function createFireflies(config?: FirefliesConfig): EffectInstance
+
+/** @file falling-leaves.js - Types for tumbling autumn leaves */
+/** Create autumn leaves tumbling down with sway and spin. */
+export function createFallingLeaves(config?: FallingLeavesConfig): EffectInstance
+
+/** @file snowfall.js - Types for drifting snow */
+/** Create soft snowflakes drifting down with lateral sway. */
+export function createSnowfall(config?: SnowfallConfig): EffectInstance
+
+/** @file frost-shimmer.js - Types for the breathing frost vignette */
+/** Create a frosted vignette at the page edges that gently breathes. */
+export function createFrostShimmer(config?: FrostShimmerConfig): EffectInstance
+
+/** @file bubbles-rising.js - Types for rising underwater bubbles */
+/** Create translucent bubbles floating up with a lateral wobble. */
+export function createBubblesRising(config?: BubblesRisingConfig): EffectInstance
