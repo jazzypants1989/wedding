@@ -101,11 +101,11 @@ This creates 4 test guests covering different scenarios (solo, group, already ac
 | `npm run test:integration` | Run integration tests only (real server + separate DB) |
 | `npm run typecheck` | Type-check both configs (server + `public/`) via TypeScript `checkJs` — no build step |
 | `npm run dev` | Run with `--watch` (auto-restart on source changes) |
+| `npm run doctor` | Preflight config check — `.env` drift, prod-required vars, disk headroom (exits non-zero on failure) |
 | `npm run setup` | Set admin password (interactive) |
 | `npm run seed` | Seed preview data (`--gallery N` also adds media rows) |
 | `npm run export` | Export a self-contained sunset archive (JSON + CSV + media tree) |
 | `npm run deploy` | Deploy to the configured host |
-| `npm run demo` | Build + serve the dev-only change-review demo |
 
 ## Architecture
 
@@ -115,3 +115,11 @@ This creates 4 test guests covering different scenarios (solo, group, already ac
 - **ESM only** -- no CommonJS, all imports use `.js` extensions
 - **Declarative routing** -- all API routes registered in a single route table
 - **Soft deletes** -- guest records use `deleted_at` instead of hard delete
+
+For a fuller tour — request lifecycle, the media pipeline, auth, and how full type
+safety is achieved without a TypeScript build step — see
+[docs/architecture.md](docs/architecture.md).
+
+## License
+
+Licensed under the [Apache License 2.0](LICENSE).

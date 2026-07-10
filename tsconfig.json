@@ -18,8 +18,6 @@
     "data",
     "js",
     "public",
-    "scripts/build-demo.js",
-    "scripts/demo-server.js",
     "tests/unit/reaction-glyphs.test.js"
   ]
 }
