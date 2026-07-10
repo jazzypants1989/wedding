@@ -2,7 +2,7 @@
 /** @import * as Types from './types.js' */
 
 import https from "node:https"
-import { WEDDING } from "../types.js"
+import { getWeddingFacts } from "../core/wedding-facts.js"
 import { withRetry, isRetryableError } from "./retry.js"
 import { makeServiceRequest } from "./http-client.js"
 
@@ -76,7 +76,7 @@ const defaultService = createSMSService()
 
 /** @type {Types.getDefaultInviteMessage} */
 function getDefaultInviteMessage(guestName, inviteUrl) {
-  return `Hi ${guestName}! You're invited to ${WEDDING.COUPLE_NAMES}'s wedding! Please RSVP at: ${inviteUrl}`
+  return `Hi ${guestName}! You're invited to ${getWeddingFacts().coupleNames}'s wedding! Please RSVP at: ${inviteUrl}`
 }
 
 const { isConfigured, sendSMS } = defaultService

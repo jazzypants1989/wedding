@@ -21,7 +21,7 @@ import {
   BASE_URL,
 } from "../helpers.js"
 import { makeJpeg, makeMp4 } from "../media-fixtures.js"
-import { WEDDING } from "../../types.js"
+import { getWeddingFacts } from "../../core/wedding-facts.js"
 
 /** @type {DatabaseSync} */
 let db
@@ -419,7 +419,7 @@ describe("gallery list + single-item API", () => {
     const body = await json(await fetch(`${BASE_URL}/api/media?section=official`))
     const item = body.items.find((/** @type {any} */ i) => i.id === data.id)
     assert.ok(item, "official item listed")
-    assert.strictEqual(item.author_name, WEDDING.COUPLE_NAMES)
+    assert.strictEqual(item.author_name, getWeddingFacts().coupleNames)
     assert.strictEqual(item.section, "official")
     assert.strictEqual(body.nextCursor, null, "official section is a single page")
   })

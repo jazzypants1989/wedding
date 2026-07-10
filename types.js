@@ -2,7 +2,6 @@
 /** @import * as Types from './types.js' */
 
 import path from "node:path"
-import { CONTENT, formatWeddingDate, formatWeddingDateShort } from "./content.js"
 export const GUEST_STATUS = Object.freeze({
   PENDING: "pending",
   INVITED: "invited",
@@ -116,22 +115,11 @@ export const MODERATION_NOTIFY = Object.freeze({
   DIGEST_INTERVAL_MS: 22 * 60 * 60 * 1000,
 })
 
-// Server-side wedding facts (email/SMS templates, media default author name).
-// Derived from content.js so there's one source of truth shared with the
-// guest-facing pages — this also fixes the historic reversed-name drift.
-export const WEDDING = Object.freeze({
-  COUPLE_NAMES: CONTENT.couple.display,
-  COUPLE_FIRST_NAMES: CONTENT.couple.first,
-  DATE: formatWeddingDate(),
-  DATE_SHORT: formatWeddingDateShort(),
-  LOCATION: CONTENT.location,
-  VENUE: "", // Fill in when decided
-})
-
-export const EMAIL_SUBJECTS = Object.freeze({
-  INVITE: `You're Invited! ${WEDDING.COUPLE_NAMES}'s Wedding`,
-  REMINDER: `Reminder: RSVP for ${WEDDING.COUPLE_NAMES}'s Wedding`,
-})
+// Server-side wedding facts (email/SMS templates, media default author name) and
+// email subjects now live in core/wedding-facts.js, which reads the *effective*
+// site content (defaults ⊕ runtime override) at call time — so an onboarded
+// self-hoster's invites carry their couple's name, not the sample defaults. Kept
+// out of this low-level constants module to avoid pulling the DB in here.
 
 export const RATE_LIMITS = Object.freeze({
   RSVP: { windowMs: 60 * 1000, max: 10 }, // 10 per minute

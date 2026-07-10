@@ -3,7 +3,8 @@
 
 import https from "node:https"
 import { escapeHtml } from "../core/utils.js"
-import { WEDDING, EMAIL_SUBJECTS, BRAND, SERVER } from "../types.js"
+import { BRAND, SERVER } from "../types.js"
+import { getWeddingFacts, getEmailSubjects } from "../core/wedding-facts.js"
 import { withRetry, isRetryableError } from "./retry.js"
 import { makeServiceRequest } from "./http-client.js"
 
@@ -76,18 +77,19 @@ const defaultService = createEmailService()
 
 /** @type {Types.getDefaultInviteEmail} */
 function getDefaultInviteEmail(guestName, inviteUrl) {
-  const subject = EMAIL_SUBJECTS.INVITE
+  const { coupleNames, coupleFirstNames } = getWeddingFacts()
+  const subject = getEmailSubjects().invite
 
   const text = `Hi ${guestName}!
 
-You're invited to ${WEDDING.COUPLE_NAMES}'s wedding!
+You're invited to ${coupleNames}'s wedding!
 
 Please RSVP by visiting: ${inviteUrl}
 
 We can't wait to celebrate with you!
 
 Love,
-${WEDDING.COUPLE_FIRST_NAMES}`
+${coupleFirstNames}`
 
   const html = `
 <!DOCTYPE html>
@@ -109,11 +111,11 @@ ${WEDDING.COUPLE_FIRST_NAMES}`
 <body>
   <h1>You're Invited!</h1>
   <p>Hi ${escapeHtml(guestName)},</p>
-  <p>You're invited to ${escapeHtml(WEDDING.COUPLE_NAMES)}'s wedding!</p>
+  <p>You're invited to ${escapeHtml(coupleNames)}'s wedding!</p>
   <p><a href="${escapeHtml(inviteUrl)}" class="btn">RSVP Now</a></p>
   <p>Or copy this link: ${escapeHtml(inviteUrl)}</p>
   <p>We can't wait to celebrate with you!</p>
-  <p class="footer">Love,<br>${escapeHtml(WEDDING.COUPLE_FIRST_NAMES)}</p>
+  <p class="footer">Love,<br>${escapeHtml(coupleFirstNames)}</p>
 </body>
 </html>`
 
@@ -148,7 +150,9 @@ function getModerationDigestEmail({ counts, oldestCreatedAt }) {
   if (counts.media > 0) rows.push(`Photos & videos: ${counts.media}`)
   if (counts.comments > 0) rows.push(`Comments: ${counts.comments}`)
 
-  const text = `Hi ${WEDDING.COUPLE_FIRST_NAMES},
+  const { coupleFirstNames } = getWeddingFacts()
+
+  const text = `Hi ${coupleFirstNames},
 
 You have ${counts.total} ${noun} awaiting review on your wedding site.
 
@@ -178,7 +182,7 @@ Review them here: ${adminUrl}`
 </head>
 <body>
   <h1>${escapeHtml(String(counts.total))} ${noun} awaiting review</h1>
-  <p>Hi ${escapeHtml(WEDDING.COUPLE_FIRST_NAMES)},</p>
+  <p>Hi ${escapeHtml(coupleFirstNames)},</p>
   <ul>
       ${listHtml}
   </ul>

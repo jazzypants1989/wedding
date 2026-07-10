@@ -34,7 +34,8 @@ import {
   validateEmail,
   validateInviteCode,
 } from "../core/validation.js"
-import { LIMITS, SERVER, WEDDING } from "../types.js"
+import { LIMITS, SERVER } from "../types.js"
+import { getWeddingFacts } from "../core/wedding-facts.js"
 import { log, AUDIT_ACTIONS, escapeHtml } from "../core/utils.js"
 import { sendEmail } from "../services/email.js"
 
@@ -211,10 +212,11 @@ export async function me(req, res) {
  * @param {string} link @returns {{ subject: string, text: string, html: string }}
  */
 function recoveryEmail(link) {
-  const subject = `Your ${WEDDING.COUPLE_NAMES} wedding site sign-in link`
+  const coupleNames = getWeddingFacts().coupleNames
+  const subject = `Your ${coupleNames} wedding site sign-in link`
   const text = `Hello!
 
-Use this link to sign back in to the ${WEDDING.COUPLE_NAMES} wedding site:
+Use this link to sign back in to the ${coupleNames} wedding site:
 
 ${link}
 
@@ -222,7 +224,7 @@ This link works once and expires in one hour. If you didn't request it, you can 
   const html = `<!DOCTYPE html>
 <html><body style="font-family: Georgia, serif; max-width: 600px; margin: 0 auto; padding: 20px;">
   <p>Hello!</p>
-  <p>Use this link to sign back in to the ${escapeHtml(WEDDING.COUPLE_NAMES)} wedding site:</p>
+  <p>Use this link to sign back in to the ${escapeHtml(coupleNames)} wedding site:</p>
   <p><a href="${escapeHtml(link)}">Sign back in</a></p>
   <p>This link works once and expires in one hour. If you didn't request it, you can ignore this email.</p>
 </body></html>`

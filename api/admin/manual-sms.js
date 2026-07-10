@@ -13,15 +13,15 @@ import { log, AUDIT_ACTIONS } from "../../core/utils.js"
 import { getClientIp } from "../../core/rate-limit.js"
 import {
   SERVER,
-  WEDDING,
   COMMUNICATION_TYPE,
   COMMUNICATION_STATUS,
 } from "../../types.js"
+import { getWeddingFacts } from "../../core/wedding-facts.js"
 import { sql } from "../../db/sql.js"
 
 const DEFAULT_TEMPLATE =
   "Hi {name}! You're invited to " +
-  WEDDING.COUPLE_NAMES +
+  "{coupleNames}" +
   "'s wedding on {date} in {location}. Please RSVP here: {url}"
 
 /** @type {Types.AuthedHandler} */
@@ -34,13 +34,18 @@ export async function getEligibleGuests(req, res) {
        AND status IN ('pending', 'invited')
      ORDER BY name`.all()
 
+  const { coupleNames, date, location } = getWeddingFacts()
+  // The default template is filled client-side; interpolate the couple name here
+  // so a fresh, unedited template still shows the effective couple, not a token.
+  const defaultTemplate = DEFAULT_TEMPLATE.replaceAll("{coupleNames}", coupleNames)
+
   return sendJson(res, 200, {
     guests,
-    defaultTemplate: DEFAULT_TEMPLATE,
+    defaultTemplate,
     wedding: {
-      date: WEDDING.DATE,
-      location: WEDDING.LOCATION,
-      coupleNames: WEDDING.COUPLE_NAMES,
+      date,
+      location,
+      coupleNames,
       baseUrl: SERVER.baseUrl,
     },
   })

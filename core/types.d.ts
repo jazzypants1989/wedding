@@ -24,6 +24,23 @@ export function verifyPassword(
 
 export function getAdminHash(): string | undefined
 
+export interface WeddingFacts {
+  coupleNames: string
+  coupleFirstNames: string
+  date: string
+  dateShort: string
+  location: string
+  venue: string
+}
+
+export interface EmailSubjects {
+  invite: string
+  reminder: string
+}
+
+export function getWeddingFacts(): WeddingFacts
+export function getEmailSubjects(): EmailSubjects
+
 export function parseCookies(
   cookieHeader: string | null | undefined,
 ): Record<string, string>

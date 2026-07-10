@@ -52,11 +52,11 @@ import {
   MEDIA_STATUS,
   MEDIA_SECTION,
   MEDIA_STORAGE,
-  WEDDING,
   TARGET_TYPE,
   isMediaKind,
   expectedVariants,
 } from "../types.js"
+import { getWeddingFacts } from "../core/wedding-facts.js"
 import { log, AUDIT_ACTIONS } from "../core/utils.js"
 import { enrichSocial } from "./enrich.js"
 
@@ -194,7 +194,7 @@ function toListItem(row) {
     height: row.height,
     duration_seconds: row.duration_seconds,
     needs_display: !!row.needs_display,
-    author_name: row.author_name ?? WEDDING.COUPLE_NAMES,
+    author_name: row.author_name ?? getWeddingFacts().coupleNames,
     is_own: !!row.is_own,
     created_at: row.created_at,
   }

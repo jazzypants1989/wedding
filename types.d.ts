@@ -116,20 +116,6 @@ export const LIMITS: {
   readonly COMMENT_MAX_LENGTH: number
 }
 
-export const WEDDING: {
-  readonly COUPLE_NAMES: string
-  readonly COUPLE_FIRST_NAMES: string
-  readonly DATE: string
-  readonly DATE_SHORT: string
-  readonly LOCATION: string
-  readonly VENUE: string
-}
-
-export const EMAIL_SUBJECTS: {
-  readonly INVITE: string
-  readonly REMINDER: string
-}
-
 export const RATE_LIMITS: {
   readonly RSVP: { readonly windowMs: number; readonly max: number }
   readonly LOOKUP: { readonly windowMs: number; readonly max: number }

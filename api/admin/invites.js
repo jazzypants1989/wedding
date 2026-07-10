@@ -5,7 +5,8 @@ import { getGuestById, updateGuestInvitedAt } from "../guests/data.js"
 import { logCommunication } from "../../db/utils.js"
 import { sendJson, parseBody, checkRateLimit } from "../../core/http.js"
 import { limiters, getClientIp } from "../../core/rate-limit.js"
-import { SERVER, EMAIL_SUBJECTS } from "../../types.js"
+import { SERVER } from "../../types.js"
+import { getEmailSubjects } from "../../core/wedding-facts.js"
 import {
   ValidationError,
   validateIdArray,
@@ -184,7 +185,7 @@ export async function send(req, res, { session }) {
 
       const emailData = template
         ? {
-            subject: EMAIL_SUBJECTS.INVITE,
+            subject: getEmailSubjects().invite,
             text: formatTemplate(template, {
               name: guest.name,
               url: inviteUrl,
