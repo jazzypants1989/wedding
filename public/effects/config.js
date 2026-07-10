@@ -5,6 +5,8 @@
  */
 /** @import * as Types from './types.js' */
 
+import { getActiveTheme } from "./themes.js"
+
 // Brand color — single source is the `--effect-brand` CSS token
 // (public/styles/tokens.css), read here so the palette isn't a second place to
 // edit the wedding's brand color. Guarded for non-DOM contexts (tests/SSR); the
@@ -177,4 +179,62 @@ export function getDefaultConfig(id) {
   const entry = EFFECT_CONFIGS[id]
   if (!entry) return null
   return structuredClone(entry.defaults)
+}
+
+/** Browser localStorage key holding per-browser effect config overrides written
+ *  by the effect studio (Track 3). Shape: `{ [effectId]: Partial<config> }`. */
+export const OVERRIDE_STORAGE_KEY = "effect-config-override"
+
+/** @param {unknown} v @returns {v is Record<string, unknown>} */
+function isPlainObject(v) {
+  return typeof v === "object" && v !== null && !Array.isArray(v)
+}
+
+/** In-place deep merge mirroring core/site-content.js `applyOverride`: plain
+ *  objects recurse (merge key-by-key), arrays/scalars/null replace wholesale,
+ *  `undefined` is ignored. Skips prototype-pollution keys. No regex.
+ *  @param {Record<string, unknown>} target
+ *  @param {Record<string, unknown>} override */
+function mergeInto(target, override) {
+  for (const key of Object.keys(override)) {
+    if (key === "__proto__" || key === "constructor" || key === "prototype") continue
+    const val = override[key]
+    const cur = target[key]
+    if (isPlainObject(val) && isPlainObject(cur)) {
+      mergeInto(cur, val)
+    } else if (val !== undefined) {
+      target[key] = val
+    }
+  }
+}
+
+/** Read the studio's per-browser override map, guarding corrupt/absent JSON by
+ *  returning null (mirrors resolveSiteContent's fall-back discipline).
+ *  @returns {Record<string, unknown> | null} */
+function readLocalOverride() {
+  try {
+    if (typeof localStorage === "undefined") return null
+    const raw = localStorage.getItem(OVERRIDE_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return isPlainObject(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+/** @type {Types.getEffectiveConfig} */
+export function getEffectiveConfig(id) {
+  // Base is already a structuredClone (getDefaultConfig) — safe to mutate.
+  const base = getDefaultConfig(id)
+  if (!base) return null
+  // Layer 1: the active theme's per-effect override.
+  const themeConfigs = getActiveTheme().configs
+  const themeCfg = themeConfigs ? themeConfigs[id] : undefined
+  if (isPlainObject(themeCfg)) mergeInto(base, themeCfg)
+  // Layer 2: the studio's per-browser override (wins over defaults + theme).
+  const local = readLocalOverride()
+  const localCfg = local ? local[id] : undefined
+  if (isPlainObject(localCfg)) mergeInto(base, localCfg)
+  return base
 }

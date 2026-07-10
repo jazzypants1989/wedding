@@ -307,6 +307,62 @@ export const EFFECT_PALETTE: Record<string, string>
  */
 export function getDefaultConfig(id: string): Record<string, unknown> | null
 
+/** localStorage key holding the studio's per-browser override map. */
+export const OVERRIDE_STORAGE_KEY: string
+
+/**
+ * Get the effective config for an effect ID: the default config deep-merged with
+ * the active theme's per-effect override, then with the studio's per-browser
+ * localStorage override (which wins). Returns null for an unknown ID.
+ * @example
+ * const cfg = getEffectiveConfig('parallaxsparkles');
+ */
+export function getEffectiveConfig(id: string): Record<string, unknown> | null
+
+/** @file themes.js - Types for the effect theme registry */
+
+/**
+ * A theme: a subset of the effect registry to run, plus optional per-effect
+ * config overrides deep-merged over each effect's defaults.
+ * @example
+ * const t: EffectTheme = { id: 'elegant', label: 'Elegant', effectIds: ['dust'] };
+ */
+export interface EffectTheme {
+  id: string
+  label: string
+  effectIds: string[]
+  configs?: Record<string, Record<string, unknown>>
+}
+
+/**
+ * The studio's per-browser localStorage override shape: effectId → partial config.
+ */
+export type EffectConfigOverride = Record<string, Record<string, unknown>>
+
+/** The id of the shipped default theme. */
+export const DEFAULT_THEME_ID: string
+
+/** All available themes. The admin picker and studio read this directly. */
+export const EFFECT_THEMES: EffectTheme[]
+
+/**
+ * Resolve a theme by id, falling back to the default theme for an unknown id.
+ * @example
+ * const theme = resolveTheme('romantic');
+ */
+export function resolveTheme(id: string | undefined): EffectTheme
+
+/**
+ * Read the active theme id from the server-rendered <html data-effect-theme>
+ * attribute, falling back to the default id in non-DOM contexts.
+ */
+export function getActiveThemeId(): string
+
+/**
+ * Resolve the currently active theme (getActiveThemeId + resolveTheme).
+ */
+export function getActiveTheme(): EffectTheme
+
 /** @file sparkle-stars.js - Types for twinkling stars effect */
 
 /**

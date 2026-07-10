@@ -15,7 +15,8 @@ import { createParallaxSparkles } from "./parallax-sparkles.js"
 import { createGrandEntrance } from "./grand-entrance.js"
 import { createDiscoSpotlight } from "./disco-spotlight.js"
 import { createMirrorReflections } from "./mirror-reflections.js"
-import { getDefaultConfig } from "./config.js"
+import { getEffectiveConfig } from "./config.js"
+import { getActiveTheme } from "./themes.js"
 import { getTypedElement } from "../pages/utils.js"
 
 /** Registry of every effect, mapping its ID to its factory. Exported so dev
@@ -46,11 +47,17 @@ function startEffects() {
       ? requestIdleCallback
       : /** @param {() => void} cb */ (cb) => setTimeout(cb, 16)
 
+  // Resolve the active theme's effect subset against the full registry,
+  // preserving registry order and silently skipping ids the theme names but
+  // that aren't registered (e.g. a theme referencing a not-yet-built effect).
+  const allowed = new Set(getActiveTheme().effectIds)
+  const defs = EFFECT_DEFINITIONS.filter((d) => allowed.has(d.id))
+
   function startNext(/** @type {number} */ index) {
-    if (index >= EFFECT_DEFINITIONS.length) return
+    if (index >= defs.length) return
     if (!managerActive) return
-    const def = EFFECT_DEFINITIONS[index]
-    const cfg = getDefaultConfig(def.id) || {}
+    const def = defs[index]
+    const cfg = getEffectiveConfig(def.id) || {}
     const instance = def.create(cfg)
     try {
       instance.start()
