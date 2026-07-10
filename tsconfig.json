@@ -18,6 +18,7 @@
     "data",
     "js",
     "public",
-    "tests/unit/reaction-glyphs.test.js"
+    "tests/unit/reaction-glyphs.test.js",
+    "tests/unit/dresscode-descriptor.test.js"
   ]
 }

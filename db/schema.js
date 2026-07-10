@@ -450,17 +450,17 @@ export function runMigrations(db) {
       CREATE TRIGGER IF NOT EXISTS check_media_section_insert
       BEFORE INSERT ON media
       FOR EACH ROW
-      WHEN NEW.section NOT IN ('official', 'guest')
+      WHEN NEW.section NOT IN ('official', 'guest', 'content')
       BEGIN
-        SELECT RAISE(ABORT, 'Invalid media section. Must be: official or guest');
+        SELECT RAISE(ABORT, 'Invalid media section. Must be: official, guest, or content');
       END;
 
       CREATE TRIGGER IF NOT EXISTS check_media_section_update
       BEFORE UPDATE ON media
       FOR EACH ROW
-      WHEN NEW.section NOT IN ('official', 'guest')
+      WHEN NEW.section NOT IN ('official', 'guest', 'content')
       BEGIN
-        SELECT RAISE(ABORT, 'Invalid media section. Must be: official or guest');
+        SELECT RAISE(ABORT, 'Invalid media section. Must be: official, guest, or content');
       END;
 
       CREATE TRIGGER IF NOT EXISTS auto_updated_at_media

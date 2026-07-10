@@ -32,6 +32,19 @@ function readStoredOverride() {
   }
 }
 
+/** Whether the content-media row with this file_key has been soft-deleted. */
+function isSoftDeleted(/** @type {string} */ fileKey) {
+  const db = new DatabaseSync(TEST_DB_PATH, { readOnly: true })
+  try {
+    const row = /** @type {{ deleted_at: string | null } | undefined} */ (
+      db.prepare("SELECT deleted_at FROM media WHERE file_key = ?").get(fileKey)
+    )
+    return Boolean(row && row.deleted_at)
+  } finally {
+    db.close()
+  }
+}
+
 /** @typedef {{ content: { couple: { display: string }, contactEmail: string | null } }} ContentResp */
 /** @typedef {{ coupleDisplay: string, mode: string }} ConfigResp */
 
@@ -289,6 +302,52 @@ describe("admin site-content editor", () => {
     assert.ok(homeHtml.includes(`/media/${key}/w400 400w`), "landing page renders the ladder srcset")
     assert.ok(homeHtml.includes('alt="Dress code figure"'), "alt attribute rendered")
     assert.ok(homeHtml.includes("Wear pink"), "caption rendered")
+  })
+
+  it("soft-deletes a content media row when its dress-code image is dropped on save", { skip: !hasAdmin }, async () => {
+    const auth = await adminLogin()
+    const key = "beef000000000000000000000000feed"
+    // Seed an approved content-section row, as a finished admin upload would leave.
+    const seed = new DatabaseSync(TEST_DB_PATH)
+    try {
+      seed
+        .prepare(
+          "INSERT INTO media (file_key, kind, section, status, original_bytes) VALUES (?, 'image', 'content', 'approved', 1000)",
+        )
+        .run(key)
+    } finally {
+      seed.close()
+    }
+
+    // Save content that references it → row stays live.
+    const withImg = sampleBody()
+    withImg.dressCode.images = /** @type {any} */ ([
+      {
+        src: `/media/${key}/w1600`,
+        srcset: null,
+        sizes: null,
+        alt: "Figure",
+        caption: null,
+        width: 800,
+        height: 600,
+      },
+    ])
+    let put = await adminFetch(
+      "/api/admin/site-content",
+      { method: "PUT", body: JSON.stringify(withImg) },
+      auth,
+    )
+    assert.strictEqual(put.status, 200)
+    assert.ok(!isSoftDeleted(key), "row stays live while still referenced")
+
+    // Save again without the image → the de-referenced row is reclaimed.
+    put = await adminFetch(
+      "/api/admin/site-content",
+      { method: "PUT", body: JSON.stringify(sampleBody()) },
+      auth,
+    )
+    assert.strictEqual(put.status, 200)
+    assert.ok(isSoftDeleted(key), "dropped content image's media row is soft-deleted")
   })
 
   it("escapes content tokens in templated HTML (no raw injection)", { skip: !hasAdmin }, async () => {

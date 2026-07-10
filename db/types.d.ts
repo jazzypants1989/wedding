@@ -594,6 +594,11 @@ export function updateMediaCaption(id: number, caption: string | null): boolean
 /** Soft-delete (owner/admin gate is enforced in the API). Returns true if changed. */
 export function softDeleteMedia(id: number): boolean
 
+/** Soft-delete a section='content' row by file_key (site-content reconciliation
+ *  when a dress-code image is dropped). Scoped to 'content' so it can never
+ *  touch a gallery row. Returns true if a row was soft-deleted. */
+export function softDeleteContentMediaByFileKey(fileKey: string): boolean
+
 /** Hard-delete an abandoned 'uploading' row (sweep only). */
 export function hardDeleteMedia(id: number): void
 

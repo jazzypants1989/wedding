@@ -3,6 +3,7 @@
 
 import { sql } from "./sql.js"
 import { now } from "./utils.js"
+import { MEDIA_SECTION } from "../types.js"
 
 // Fixed variant -> byte-column map. Variant strings arrive from a frozen route
 // allowlist, but we still resolve the column through this object (never
@@ -87,7 +88,7 @@ export function getMediaFeedRowById(id, callerId = null) {
       m.created_at, a.name AS author_name, ${isOwn} AS is_own
     FROM media m
     LEFT JOIN accounts a ON a.id = m.account_id
-    WHERE m.id = ${id} AND m.deleted_at IS NULL AND m.section != 'content'`.get()
+    WHERE m.id = ${id} AND m.deleted_at IS NULL AND m.section != ${MEDIA_SECTION.CONTENT}`.get()
 }
 
 /** @type {Types.setMediaVariantBytes} */
@@ -167,6 +168,13 @@ export function updateMediaCaption(id, caption) {
 export function softDeleteMedia(id) {
   const result = sql`UPDATE media SET deleted_at = ${now()}
     WHERE id = ${id} AND deleted_at IS NULL`.run()
+  return result.changes > 0
+}
+
+/** @type {Types.softDeleteContentMediaByFileKey} */
+export function softDeleteContentMediaByFileKey(fileKey) {
+  const result = sql`UPDATE media SET deleted_at = ${now()}
+    WHERE file_key = ${fileKey} AND section = ${MEDIA_SECTION.CONTENT} AND deleted_at IS NULL`.run()
   return result.changes > 0
 }
 

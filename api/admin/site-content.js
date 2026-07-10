@@ -14,6 +14,7 @@ import { log, AUDIT_ACTIONS } from "../../core/utils.js"
 import { getClientIp } from "../../core/rate-limit.js"
 import { setAppState } from "../../db/utils.js"
 import { sql } from "../../db/sql.js"
+import { softDeleteContentMediaByFileKey } from "../../db/media.js"
 import { getContent, diffFromDefaults } from "../../core/site-content.js"
 import { onContentChanged } from "../../core/static.js"
 
@@ -372,10 +373,40 @@ export async function get(req, res) {
   return sendJson(res, 200, { content: getContent() })
 }
 
+/**
+ * Collect the file_keys of content-media-backed dress-code images — those whose
+ * `src` points at "/media/{file_key}/…" (static "/images/…" defaults are skipped).
+ * Used to reconcile which content rows are still referenced when content is saved,
+ * so a dropped image's underlying media row can be soft-deleted rather than left
+ * orphaned but publicly servable forever. No regex.
+ * @param {Root.SiteContent} content
+ * @returns {Set<string>}
+ */
+function contentMediaKeys(content) {
+  /** @type {Set<string>} */
+  const keys = new Set()
+  const images = content?.dressCode?.images
+  if (!Array.isArray(images)) return keys
+  const prefix = "/media/"
+  for (const img of images) {
+    const src = img?.src
+    if (typeof src !== "string" || !src.startsWith(prefix)) continue
+    const rest = src.slice(prefix.length)
+    const slash = rest.indexOf("/")
+    const key = slash === -1 ? rest : rest.slice(0, slash)
+    if (key) keys.add(key)
+  }
+  return keys
+}
+
 /** @type {Types.AuthedHandler} */
 export async function update(req, res, { session }) {
   const body = await parseBody(req)
   const validated = buildOverride(body)
+
+  // Snapshot which content-media images the currently-saved content references
+  // BEFORE we overwrite it, so we can reclaim rows this save drops.
+  const previousKeys = contentMediaKeys(getContent())
 
   // Store only the diff from shipped defaults so unchanged fields keep tracking
   // future content.js edits. An all-defaults submission clears the override.
@@ -386,6 +417,15 @@ export async function update(req, res, { session }) {
     setAppState(SITE_CONTENT_KEY, JSON.stringify(sparse))
   }
   onContentChanged()
+
+  // Reconcile dress-code media: soft-delete the content rows this save removed so
+  // de-referenced uploads don't linger, publicly servable by file_key, forever.
+  // Done only after the new content is committed, so a validation throw above
+  // never deletes a row that's still live.
+  const nextKeys = contentMediaKeys(validated)
+  for (const key of previousKeys) {
+    if (!nextKeys.has(key)) softDeleteContentMediaByFileKey(key)
+  }
 
   log({
     action: AUDIT_ACTIONS.SITE_CONTENT_UPDATE,
