@@ -258,6 +258,39 @@ describe("admin site-content editor", () => {
     assert.strictEqual(res.status, 400)
   })
 
+  it("accepts a media-backed dress-code image and renders its ladder srcset", { skip: !hasAdmin }, async () => {
+    // Mirrors what the admin image manager produces after a content upload:
+    // src = /media/{key}/w1600, srcset built from the responsive ladder.
+    const auth = await adminLogin()
+    const key = "abcdef0123456789abcdef0123456789"
+    const body = sampleBody()
+    // Cast: sampleBody() infers srcset/sizes as null from its literal; this
+    // media-backed descriptor supplies real strings (as reqContentImage allows).
+    body.dressCode.images = /** @type {any} */ ([
+      {
+        src: `/media/${key}/w1600`,
+        srcset: `/media/${key}/w400 400w, /media/${key}/w800 800w, /media/${key}/w1600 1200w`,
+        sizes: "(min-width: 400px) 400px, 100vw",
+        alt: "Dress code figure",
+        caption: "Wear pink",
+        width: 1200,
+        height: 800,
+      },
+    ])
+    const put = await adminFetch(
+      "/api/admin/site-content",
+      { method: "PUT", body: JSON.stringify(body) },
+      auth,
+    )
+    assert.strictEqual(put.status, 200, "media-backed descriptor passes the content validators")
+
+    const homeHtml = await (await fetch(`${BASE_URL}/`)).text()
+    assert.ok(homeHtml.includes(`/media/${key}/w1600`), "landing page renders the media src")
+    assert.ok(homeHtml.includes(`/media/${key}/w400 400w`), "landing page renders the ladder srcset")
+    assert.ok(homeHtml.includes('alt="Dress code figure"'), "alt attribute rendered")
+    assert.ok(homeHtml.includes("Wear pink"), "caption rendered")
+  })
+
   it("escapes content tokens in templated HTML (no raw injection)", { skip: !hasAdmin }, async () => {
     const auth = await adminLogin()
     const body = sampleBody()

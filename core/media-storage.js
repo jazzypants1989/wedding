@@ -26,6 +26,10 @@ const PUBLIC_VARIANT_EXTS = {
   display: ["webp", "jpg"],
   thumb: ["webp", "jpg"],
   poster: ["jpg", "webp"],
+  // Content-section responsive width ladder (same webp/jpeg encode as display/thumb).
+  w400: ["webp", "jpg"],
+  w800: ["webp", "jpg"],
+  w1600: ["webp", "jpg"],
 }
 
 /** @type {Record<string, string>} */

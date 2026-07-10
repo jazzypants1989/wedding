@@ -1174,3 +1174,79 @@ tr:hover td {
 .form-actions {
   margin-top: 1rem;
 }
+
+/* Dress-code image manager (Site content tab) */
+.dc-image-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.dc-card {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.dc-card-thumb {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  background: var(--color-primary-faint);
+}
+
+.dc-card-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.dc-card-fields input {
+  width: 100%;
+  min-width: 0;
+}
+
+.dc-card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.dc-upload-tray {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0.75rem;
+}
+
+.dc-upload-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) 0;
+  border-top: 1px solid var(--color-border);
+  font-size: 0.82rem;
+}
+
+.dc-upload-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dc-upload-state {
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.dc-upload-row.is-error .dc-upload-state {
+  color: var(--color-danger);
+}

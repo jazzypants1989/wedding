@@ -45,7 +45,7 @@ function typeSelect(type, status, accountId) {
       NULL AS target_type, NULL AS target_id,
       m.file_key AS file_key, m.kind AS kind, m.caption AS caption, m.needs_display AS needs_display
     FROM media m LEFT JOIN accounts a ON a.id = m.account_id
-    WHERE m.status = ${status} AND m.deleted_at IS NULL ${acct}`
+    WHERE m.status = ${status} AND m.deleted_at IS NULL AND m.section != 'content' ${acct}`
 }
 
 /** @type {Types.getModerationQueue} */

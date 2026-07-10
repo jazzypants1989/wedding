@@ -14,7 +14,7 @@ Severity/effort tags: 🔴 large · 🟡 medium · 🟢 small.
 
 ---
 
-## Track 1 — Finish content-as-data: migrate the remaining landing prose 🟡
+## Track 1 — Finish content-as-data: migrate the remaining landing prose ✅
 
 **Phase 1a — text migration: ✅ DONE.** All hardcoded landing copy now lives in `SiteContent`
 and is admin-editable: schedule, dress-code prose, registry body + frame-note, memories, every
@@ -37,18 +37,29 @@ Key facts that shaped it (for anyone extending):
   hand-authored srcset; a media-backed descriptor points at `/media/{file_key}/…`. The renderer
   never branches on origin.
 
-**Phase 1b — dress-code images through the media pipeline: remaining.** Decided (with the
-user): admin-uploaded dress-code images go through the existing media pipeline, gated by a new
-**`section='content'`** (schema/trigger migration; gallery feeds already filter by `official`/
-`guest`, so `content` is excluded from the gallery for free). Add a **responsive width ladder**
-(e.g. `w400`/`w800`/`w1600`) **scoped to `section='content'` uploads only** — the guest gallery
-keeps `display`+`thumb` to contain storage. Then a dress-code image manager in the Site-content
-tab (reuse the `media-uploader` component; store the returned `file_key`-based descriptor with
-admin-entered alt/caption). Files: `types.js` (VARIANT_SPEC, section enum), `db/schema.js`,
-`db/media.js` (BYTES_COLUMN), `api/media.js` (putVariant/finalize `requiredVariants` by section),
-`core/media-storage.js`, `core/media-serve.js`, `public/components/media-uploader.js`.
-*Note:* this couple's current images are ≤800px, so `display`+`thumb` already reproduce their
-srcset — the ladder is really for future large uploads / the no-code product.
+**Phase 1b — dress-code images through the media pipeline: ✅ DONE.** Admin-uploaded dress-code
+images now go through the existing media pipeline, gated by a new **`section='content'`**
+(the `add_content_ladder` schema migration widens the section-CHECK triggers). A **responsive
+width ladder** (`w400`/`w800`/`w1600`) is **scoped to `section='content'` uploads only** — the
+guest gallery keeps `display`+`thumb` to contain storage. The Site-content tab has a dress-code
+image manager (add/remove/reorder/edit) reusing the `media-uploader` component; on finalize it
+appends a `file_key`-based `SiteContentImage` descriptor with a computed ladder `srcset` and
+admin-entered alt/caption. Landed across: `types.js` (section enum, ladder caps, shared
+`expectedVariants`), `db/schema.js`, `db/media.js` (BYTES_COLUMN), `api/media.js`
+(create-session/VARIANT_SPEC/finalize gates), `core/media-storage.js`, `core/media-serve.js`,
+`core/media-sweep.js`, `public/components/media-{processing,uploader}.js`, and the admin
+Site-content tab (HTML/JS/CSS). Integration coverage for the section exclusion + section-gated
+finalize + render round-trip.
+
+**Correction to the original plan:** `content` is **NOT** "excluded from the gallery for free."
+The public feed (`GET /api/media?section=…`) validates the section param only against
+`isMediaSection()`, so adding `content` to the enum made it publicly listable. Exclusion required
+three explicit gates: clamp the public `list` section to `guest|official`; exclude `content` in
+`getMediaFeedRowById` (kills the public id deep-link *and* comment/reaction targeting in one
+filter); and exclude it in the moderation media branch. Byte-serving by `file_key` stays public
+by design — that's how the landing page loads the figures.
+*Note:* this couple's current images are ≤800px, so `display`+`thumb` would already reproduce
+their srcset — the ladder was built (per user decision) for future large uploads / the no-code product.
 
 **Not a security fix:** `copy.welcomeIntro` is injected raw (`RAW_TOKENS`) on purpose so the
 couple can use inline `<em>`. Under the trust model (single deployment, two co-admins who are
@@ -176,13 +187,13 @@ this stage.
 ## Sequencing
 
 ```
-Track 1a ✅ ── Track 1b (media) ─┐
-Track 2 (themes) ────────────────┼──► Track 4 (no-code wizard + container)
-override-store → Track 3b ───────┘
+Track 1a ✅ ── Track 1b ✅ (media) ─┐
+Track 2 (themes) ──────────────────┼──► Track 4 (no-code wizard + container)
+override-store → Track 3b ─────────┘
 ```
 
-- **Track 1a** (text migration) has landed. **Track 1b** (media-pipeline dress-code images),
-  **Track 2** (themes), and **Track 3a** (live preview) are the independent remaining pieces —
+- **Track 1** (1a text migration + 1b media-pipeline dress-code images) has fully landed.
+  **Track 2** (themes) and **Track 3a** (live preview) are the independent remaining pieces —
   Track 2 and Track 3 are being taken up in parallel worktrees.
 - The **override-store generalization** (Track 3b pre-step) is cheap and unblocks both 3b and
   Track 4's admin-hash move — do it before either.

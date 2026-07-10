@@ -45,6 +45,7 @@ export const MEDIA_KIND: {
 export const MEDIA_SECTION: {
   readonly OFFICIAL: "official"
   readonly GUEST: "guest"
+  readonly CONTENT: "content"
 }
 
 export const TARGET_TYPE: {
@@ -67,6 +68,9 @@ export const MEDIA_LIMITS: {
   readonly DISPLAY_MAX: number
   readonly THUMB_MAX: number
   readonly POSTER_MAX: number
+  readonly W400_MAX: number
+  readonly W800_MAX: number
+  readonly W1600_MAX: number
   readonly VIDEO_MAX_DURATION_S: number
   readonly UPLOAD_IDLE_TIMEOUT_MS: number
   readonly UPLOAD_ABSOLUTE_TIMEOUT_MS: number
@@ -168,7 +172,7 @@ export const COMMUNICATION_TYPE_VALUES: readonly ["email", "sms"]
 export const CONTENT_STATUS_VALUES: readonly ["pending", "approved", "hidden", "rejected"]
 export const MEDIA_STATUS_VALUES: readonly ["uploading", "pending", "approved", "hidden", "rejected"]
 export const MEDIA_KIND_VALUES: readonly ["image", "video"]
-export const MEDIA_SECTION_VALUES: readonly ["official", "guest"]
+export const MEDIA_SECTION_VALUES: readonly ["official", "guest", "content"]
 export const TARGET_TYPE_VALUES: readonly ["guestbook", "media"]
 export const REACTION_EMOJI_VALUES: readonly [
   "heart",
@@ -186,7 +190,7 @@ export type CommunicationStatus = "sent" | "failed"
 export type ContentStatus = "pending" | "approved" | "hidden" | "rejected"
 export type MediaStatus = "uploading" | "pending" | "approved" | "hidden" | "rejected"
 export type MediaKind = "image" | "video"
-export type MediaSection = "official" | "guest"
+export type MediaSection = "official" | "guest" | "content"
 export type TargetType = "guestbook" | "media"
 export type ReactionEmoji =
   | "heart"
@@ -205,6 +209,21 @@ export function isMediaKind(value: unknown): value is MediaKind
 export function isMediaSection(value: unknown): value is MediaSection
 export function isTargetType(value: unknown): value is TargetType
 export function isReactionEmoji(value: unknown): value is ReactionEmoji
+
+/** One rung of the content-image responsive width ladder. */
+export interface ContentLadderVariant {
+  readonly name: string
+  readonly maxEdge: number
+}
+export const CONTENT_IMAGE_LADDER: readonly ContentLadderVariant[]
+export const CONTENT_LADDER_VARIANT_NAMES: readonly string[]
+
+/** The variant files a finalized row is expected to carry. */
+export function expectedVariants(
+  kind: MediaKind,
+  section: MediaSection,
+  needsDisplay: boolean,
+): string[]
 
 export interface Guest {
   id: number

@@ -20,7 +20,7 @@ import {
   itemDir,
   variantExistsOnDisk,
 } from "./media-storage.js"
-import { MEDIA_LIMITS, MEDIA_KIND } from "../types.js"
+import { MEDIA_LIMITS, expectedVariants } from "../types.js"
 
 const HOURS = MEDIA_LIMITS.ABANDONED_UPLOAD_MAX_AGE_MS / 3_600_000
 
@@ -108,15 +108,11 @@ export function runMediaIntegrityPass() {
   }
 
   // B. Finalized rows whose expected variant files are missing → log loudly.
-  //    needs_display images legitimately lack display/thumb, so expectations are
-  //    computed per-row (issue: don't false-alarm HEIC fallbacks).
+  //    Expectations are computed per-row via the shared expectedVariants() (same
+  //    source finalize gates on): video → poster, content images → the width
+  //    ladder, needs_display HEIC fallbacks → original-only (no false alarms).
   for (const row of getFinalizedMediaForIntegrity()) {
-    const expected =
-      row.kind === MEDIA_KIND.VIDEO
-        ? ["original", "poster"]
-        : row.needs_display
-          ? ["original"]
-          : ["original", "display", "thumb"]
+    const expected = expectedVariants(row.kind, row.section, !!row.needs_display)
     for (const variant of expected) {
       if (!variantExistsOnDisk(row.file_key, variant, row.original_ext)) {
         missingVariants++

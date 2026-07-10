@@ -99,6 +99,22 @@ async function uploadImage(auth) {
   return { id: data.id, fileKey: data.fileKey, finalizeRes: fin }
 }
 
+/** Full content-section (dress-code) upload with the responsive width ladder.
+ * @param {any} adminAuth */
+async function uploadContentImage(adminAuth) {
+  const { data } = await createSession(
+    { kind: "image", originalBytes: 256, section: "content" },
+    adminAuth,
+    adminFetch,
+  )
+  await putVariant(data.id, "original", makeJpeg(256), "image/jpeg", adminAuth, adminFetch)
+  await putVariant(data.id, "w400", makeJpeg(120), "image/jpeg", adminAuth, adminFetch)
+  await putVariant(data.id, "w800", makeJpeg(180), "image/jpeg", adminAuth, adminFetch)
+  await putVariant(data.id, "w1600", makeJpeg(240), "image/jpeg", adminAuth, adminFetch)
+  const fin = await finalize(data.id, { width: 1200, height: 800 }, adminAuth, adminFetch)
+  return { id: data.id, fileKey: data.fileKey, finalizeRes: fin }
+}
+
 before(async () => {
   await startServer()
   db = getTestDb()
@@ -406,5 +422,123 @@ describe("gallery list + single-item API", () => {
     assert.strictEqual(item.author_name, WEDDING.COUPLE_NAMES)
     assert.strictEqual(item.section, "official")
     assert.strictEqual(body.nextCursor, null, "official section is a single page")
+  })
+})
+
+describe("content section: dress-code images (requires TEST_ADMIN_PASSWORD)", () => {
+  /** @returns {Promise<any>} */
+  async function adminAuthFor() {
+    const a = await adminLogin(process.env.TEST_ADMIN_PASSWORD)
+    return { cookieHeader: a.cookieHeader, csrfToken: a.csrfToken }
+  }
+
+  it("admin content upload finalizes approved as section=content, account_id NULL, immutable-cached ladder", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const adminAuth = await adminAuthFor()
+    const { id, fileKey, finalizeRes } = await uploadContentImage(adminAuth)
+    assert.strictEqual((await json(finalizeRes)).status, "approved")
+
+    const row = /** @type {any} */ (
+      db.prepare("SELECT account_id, section FROM media WHERE id = ?").get(id)
+    )
+    assert.strictEqual(row.account_id, null)
+    assert.strictEqual(row.section, "content")
+
+    // Each ladder variant is publicly servable by file_key with the immutable cache.
+    for (const v of ["w400", "w800", "w1600"]) {
+      const get = await fetch(`${BASE_URL}/media/${fileKey}/${v}`)
+      assert.strictEqual(get.status, 200, `${v} servable`)
+      assert.strictEqual(
+        get.headers.get("cache-control"),
+        "public, max-age=31536000, immutable",
+      )
+    }
+  })
+
+  it("content is excluded from every public gallery feed (and ?section=content clamps to guest)", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const adminAuth = await adminAuthFor()
+    const content = await uploadContentImage(adminAuth)
+    const { auth } = signIn({ trusted: 1 })
+    const guest = await uploadImage(auth)
+
+    for (const section of ["content", "guest", "official"]) {
+      const body = await json(await fetch(`${BASE_URL}/api/media?section=${section}`))
+      const ids = body.items.map((/** @type {any} */ i) => i.id)
+      assert.ok(!ids.includes(content.id), `content absent from section=${section}`)
+    }
+    // The unknown 'content' param falls back to the guest feed rather than erroring.
+    const asContent = await json(await fetch(`${BASE_URL}/api/media?section=content`))
+    assert.ok(
+      asContent.items.some((/** @type {any} */ i) => i.id === guest.id),
+      "section=content clamps to the guest feed",
+    )
+  })
+
+  it("content is not deep-linkable via GET /api/media/:id (even for admin)", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const adminAuth = await adminAuthFor()
+    const content = await uploadContentImage(adminAuth)
+    assert.strictEqual(
+      (await fetch(`${BASE_URL}/api/media/${content.id}`)).status,
+      404,
+      "content excluded from the public id deep-link",
+    )
+    assert.strictEqual(
+      (await adminFetch(`/api/media/${content.id}`, {}, adminAuth)).status,
+      404,
+      "content is not a gallery feed item",
+    )
+  })
+
+  it("content never appears in the moderation queue", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const adminAuth = await adminAuthFor()
+    const content = await uploadContentImage(adminAuth)
+    for (const status of ["approved", "pending", "hidden"]) {
+      const q = await json(
+        await adminFetch(`/api/admin/moderation/queue?type=media&status=${status}`, {}, adminAuth),
+      )
+      const ids = (q.items || []).map((/** @type {any} */ i) => i.id)
+      assert.ok(!ids.includes(content.id), `content absent from moderation status=${status}`)
+    }
+  })
+
+  it("finalize requires the full ladder for content (original-only → 409)", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const adminAuth = await adminAuthFor()
+    const { data } = await createSession(
+      { kind: "image", originalBytes: 256, section: "content" },
+      adminAuth,
+      adminFetch,
+    )
+    await putVariant(data.id, "original", makeJpeg(256), "image/jpeg", adminAuth, adminFetch)
+    // No ladder variants uploaded.
+    const fin = await finalize(data.id, { width: 1200, height: 800 }, adminAuth, adminFetch)
+    assert.strictEqual(fin.status, 409, "content finalize demands the ladder variants")
+  })
+
+  it("content section is admin-only — a guest is forced into the guest section", async () => {
+    const { auth, accountId } = signIn({ trusted: 1 })
+    const { data } = await createSession(
+      { kind: "image", originalBytes: 256, section: "content" },
+      auth,
+    )
+    const row = /** @type {any} */ (
+      db.prepare("SELECT section, account_id FROM media WHERE id = ?").get(data.id)
+    )
+    assert.strictEqual(row.section, "guest", "non-admin cannot create content-section media")
+    assert.strictEqual(row.account_id, accountId)
+  })
+
+  it("content section is image-only — admin video → 400", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const adminAuth = await adminAuthFor()
+    const { res } = await createSession(
+      { kind: "video", originalBytes: 4096, section: "content" },
+      adminAuth,
+      adminFetch,
+    )
+    assert.strictEqual(res.status, 400, "content section rejects video uploads")
   })
 })

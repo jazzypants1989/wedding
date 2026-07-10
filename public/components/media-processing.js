@@ -6,28 +6,39 @@
 
 const MAX_VIDEO_BYTES = 100 * 1024 * 1024 // 100 MB
 const MAX_VIDEO_DURATION_S = 60
-const DISPLAY_MAX_EDGE = 2000
-const THUMB_MAX_EDGE = 400
 const POSTER_MAX_EDGE = 2000
 
+// Default image variants for gallery (guest/official) uploads: the ≤2000px
+// display + ≤400px thumb. Content-section uploads pass their own responsive
+// ladder instead (see types.js CONTENT_IMAGE_LADDER + site-content.js).
+/** @type {import('./types.js').ImageVariantSpec[]} */
+const DEFAULT_IMAGE_VARIANTS = [
+  { name: "display", maxEdge: 2000, quality: 0.82 },
+  { name: "thumb", maxEdge: 400, quality: 0.7 },
+]
+
 /**
- * Process one image or video file into upload-ready derived variants.
+ * Process one image or video file into upload-ready derived variants. `imageVariants`
+ * overrides which sizes are produced for images (defaults to display+thumb).
  * @param {File} file
+ * @param {import('./types.js').ImageVariantSpec[]} [imageVariants]
  * @returns {Promise<import('./types.js').ProcessedMedia>}
  */
-export async function processMediaFile(file) {
+export async function processMediaFile(file, imageVariants) {
   const type = file.type || ""
   if (type.startsWith("video/")) return processVideo(file)
-  return processImage(file)
+  return processImage(file, imageVariants)
 }
 
 // --- Images ---
 
 /**
  * @param {File} file
+ * @param {import('./types.js').ImageVariantSpec[]} [variantSpecs]
  * @returns {Promise<import('./types.js').ProcessedMedia>}
  */
-async function processImage(file) {
+async function processImage(file, variantSpecs) {
+  const specs = variantSpecs && variantSpecs.length ? variantSpecs : DEFAULT_IMAGE_VARIANTS
   let bitmap
   try {
     // imageOrientation:"from-image" bakes EXIF orientation into the pixels so
@@ -38,17 +49,33 @@ async function processImage(file) {
     // needs_display=1 and the gallery shows a placeholder. Rare in practice —
     // iOS's Photos picker hands the page a JPEG for HEIC (raw HEIC only arrives
     // via the Files app) and Safari 17+ decodes HEIC in-page — so this mostly
-    // serves Android-HEIC and Files-app uploads viewed on Chrome. Both display
-    // AND thumb are absent (they share this one decode). Don't "optimize" away.
+    // serves Android-HEIC and Files-app uploads viewed on Chrome. All derived
+    // variants share this one decode, so none are produced. Don't "optimize" away.
     return { kind: "image", displayMissing: true, width: 0, height: 0 }
   }
 
   const width = bitmap.width
   const height = bitmap.height
-  const displayBlob = await encodePreferWebp(scaledCanvas(bitmap, width, height, DISPLAY_MAX_EDGE), 0.82)
-  const thumbBlob = await encodePreferWebp(scaledCanvas(bitmap, width, height, THUMB_MAX_EDGE), 0.7)
+  /** @type {import('./types.js').ProcessedVariant[]} */
+  const variants = []
+  /** @type {Blob | undefined} */
+  let previewBlob
+  let previewEdge = Infinity
+  for (const spec of specs) {
+    const blob = await encodePreferWebp(
+      scaledCanvas(bitmap, width, height, spec.maxEdge),
+      spec.quality,
+    )
+    if (!blob) continue
+    variants.push({ name: spec.name, blob })
+    // Tray preview uses the smallest produced variant.
+    if (spec.maxEdge < previewEdge) {
+      previewEdge = spec.maxEdge
+      previewBlob = blob
+    }
+  }
   if (bitmap.close) bitmap.close()
-  return { kind: "image", displayBlob, thumbBlob, width, height }
+  return { kind: "image", variants, previewBlob, width, height }
 }
 
 /**

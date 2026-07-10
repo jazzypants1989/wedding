@@ -46,6 +46,7 @@ export const MEDIA_KIND = Object.freeze({ IMAGE: "image", VIDEO: "video" })
 export const MEDIA_SECTION = Object.freeze({
   OFFICIAL: "official", // admin-curated, explicitly ordered
   GUEST: "guest", // guest uploads, newest-first
+  CONTENT: "content", // admin site-content images (e.g. dress-code); never in a gallery feed
 })
 
 // Polymorphic content targets — comments and reactions attach to either a
@@ -160,6 +161,11 @@ export const MEDIA_LIMITS = Object.freeze({
   DISPLAY_MAX: 4 * 1024 * 1024,
   THUMB_MAX: 500 * 1024,
   POSTER_MAX: 1024 * 1024,
+  // Responsive width-ladder variants (content section only). Byte caps scale
+  // with the long-edge target, roughly tracking THUMB_MAX..DISPLAY_MAX.
+  W400_MAX: 500 * 1024,
+  W800_MAX: 1536 * 1024,
+  W1600_MAX: 4 * 1024 * 1024,
   VIDEO_MAX_DURATION_S: 60,
   UPLOAD_IDLE_TIMEOUT_MS: 30_000,
   UPLOAD_ABSOLUTE_TIMEOUT_MS: 10 * 60_000,
@@ -183,6 +189,36 @@ export const MEDIA_STORAGE = Object.freeze({
   MAX_TOTAL_BYTES: envBytes("MEDIA_MAX_TOTAL_BYTES", 45 * 1024 * 1024 * 1024), // 45GB total originals
   UNTRUSTED_QUOTA_BYTES: envBytes("MEDIA_UNTRUSTED_QUOTA_BYTES", 250 * 1024 * 1024), // 250MB per untrusted account
 })
+
+// Responsive width ladder for content-section images (e.g. dress-code figures).
+// Long-edge caps; scoped to section='content' so the thousands of guest gallery
+// uploads keep the lean display+thumb pair and don't pay the ladder's storage.
+// The client mirrors these names + edges in its processing config (there is a
+// keep-in-sync note there — types.js can't be imported client-side).
+export const CONTENT_IMAGE_LADDER = Object.freeze([
+  Object.freeze({ name: "w400", maxEdge: 400 }),
+  Object.freeze({ name: "w800", maxEdge: 800 }),
+  Object.freeze({ name: "w1600", maxEdge: 1600 }),
+])
+export const CONTENT_LADDER_VARIANT_NAMES = Object.freeze(
+  CONTENT_IMAGE_LADDER.map((v) => v.name),
+)
+
+/**
+ * The variant files a finalized row is expected to carry — the single source of
+ * truth shared by `finalize` (which gates the upload) and the daily integrity
+ * sweep (which flags missing files). Video → poster; content images → the width
+ * ladder; guest/official images → display+thumb (or original-only when the
+ * client couldn't decode a display, e.g. desktop-Chrome HEIC).
+ * @type {Types.expectedVariants}
+ */
+export function expectedVariants(kind, section, needsDisplay) {
+  if (kind === MEDIA_KIND.VIDEO) return ["original", "poster"]
+  if (section === MEDIA_SECTION.CONTENT) {
+    return ["original", ...CONTENT_LADDER_VARIANT_NAMES]
+  }
+  return needsDisplay ? ["original"] : ["original", "display", "thumb"]
+}
 
 export const PAGINATION = Object.freeze({
   DEFAULT_PAGE_SIZE: 50,

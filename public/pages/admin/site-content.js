@@ -5,8 +5,10 @@
  *  edited with a small repeatable row editor.
  */
 /** @import * as Types from './types.js' */
+/** @import * as Components from '../../components/types.js' */
 
 import { api, showError, showSuccess } from "./utils.js"
+import { createUploadQueue } from "../../components/media-uploader.js"
 import {
   html,
   getElement,
@@ -85,8 +87,206 @@ function collectNavRows(containerId) {
   return links
 }
 
-/** @type {Types.SiteContentImage[]} Dress-code images, round-tripped unchanged in this phase. */
+// ---- Dress-code image manager --------------------------------------------
+//
+// Admins upload dress-code figures through the media pipeline (section:'content',
+// admin csrf) and reference them from dressCode.images. Uploads generate a
+// responsive width ladder; on finalize we append a SiteContentImage descriptor
+// pointing at /media/{fileKey}/{variant}. `dressCodeImages` is the authoritative
+// in-memory list that collectForm() submits; cards render from it and their
+// alt/caption edits sync back before any reorder/remove/save.
+
+/** @type {Types.SiteContentImage[]} */
 let dressCodeImages = []
+
+/** Server-approved cap (api/admin/site-content.js MAX_DC_IMAGES). */
+const MAX_DRESSCODE_IMAGES = 12
+
+/** Default `sizes` for uploaded figures (matches the shipped defaults in content.js). */
+const DRESSCODE_SIZES = "(min-width: 400px) 400px, 100vw"
+
+// Responsive width ladder for content uploads. Names + long edges MUST match the
+// server's CONTENT_IMAGE_LADDER (types.js) and VARIANT_SPEC (api/media.js).
+/** @type {Components.ImageVariantSpec[]} */
+const DRESSCODE_LADDER = [
+  { name: "w400", maxEdge: 400, quality: 0.72 },
+  { name: "w800", maxEdge: 800, quality: 0.78 },
+  { name: "w1600", maxEdge: 1600, quality: 0.82 },
+]
+
+/** @type {Components.UploadQueue | null} */
+let dressCodeQueue = null
+/** Upload ids already folded into a descriptor (guards a double-append). */
+const foldedUploads = new Set()
+
+/** Read each card's alt/caption back into dressCodeImages before a re-render. */
+function syncDressCodeCards() {
+  const cards = getElement("sc-dresscode-images").querySelectorAll(".dc-card")
+  cards.forEach((card, i) => {
+    if (i >= dressCodeImages.length) return
+    const altEl = card.querySelector(".dc-alt")
+    const capEl = card.querySelector(".dc-caption")
+    const alt = altEl instanceof HTMLInputElement ? altEl.value.trim() : dressCodeImages[i].alt
+    const caption = capEl instanceof HTMLInputElement ? capEl.value.trim() : dressCodeImages[i].caption
+    dressCodeImages[i] = { ...dressCodeImages[i], alt, caption: caption || null }
+  })
+}
+
+/** @param {Types.SiteContentImage} img @param {number} index */
+function addDressCodeCard(img, index) {
+  const total = dressCodeImages.length
+  getElement("sc-dresscode-images").insertAdjacentHTML(
+    "beforeend",
+    html`<div class="dc-card" data-index="${index}">
+      <img class="dc-card-thumb" src="${img.src}" alt="" loading="lazy">
+      <div class="dc-card-fields">
+        <input type="text" class="dc-alt" placeholder="Alt text (describe the image)" maxlength="500" value="${img.alt}">
+        <input type="text" class="dc-caption" placeholder="Caption (optional)" maxlength="500" value="${img.caption || ""}">
+      </div>
+      <div class="dc-card-actions">
+        <button type="button" class="btn btn-secondary btn-sm dc-up" title="Move up" aria-label="Move up" ${index === 0 ? "disabled" : ""}>↑</button>
+        <button type="button" class="btn btn-secondary btn-sm dc-down" title="Move down" aria-label="Move down" ${index === total - 1 ? "disabled" : ""}>↓</button>
+        <button type="button" class="btn btn-danger btn-sm dc-remove">Remove</button>
+      </div>
+    </div>`,
+  )
+}
+
+function renderDressCodeCards() {
+  const container = getElement("sc-dresscode-images")
+  container.innerHTML = ""
+  dressCodeImages.forEach((img, i) => addDressCodeCard(img, i))
+}
+
+/** @param {MouseEvent} e */
+function handleDressCodeClick(e) {
+  const target = e.target
+  if (!(target instanceof Element)) return
+  const card = target.closest(".dc-card")
+  if (!card) return
+  const index = Number(card.getAttribute("data-index"))
+  if (!Number.isInteger(index) || index < 0 || index >= dressCodeImages.length) return
+
+  if (target.closest(".dc-remove")) {
+    syncDressCodeCards()
+    dressCodeImages.splice(index, 1)
+    renderDressCodeCards()
+  } else if (target.closest(".dc-up") && index > 0) {
+    syncDressCodeCards()
+    const prev = dressCodeImages[index - 1]
+    dressCodeImages[index - 1] = dressCodeImages[index]
+    dressCodeImages[index] = prev
+    renderDressCodeCards()
+  } else if (target.closest(".dc-down") && index < dressCodeImages.length - 1) {
+    syncDressCodeCards()
+    const next = dressCodeImages[index + 1]
+    dressCodeImages[index + 1] = dressCodeImages[index]
+    dressCodeImages[index] = next
+    renderDressCodeCards()
+  }
+}
+
+/**
+ * Build a SiteContentImage from a finished content upload. srcset carries each
+ * ladder rung at its actual pixel width (computed from intrinsic dims, deduped
+ * for small images that don't upscale); src is the largest rung.
+ * @param {Components.UploadQueueItem} item
+ * @returns {Types.SiteContentImage}
+ */
+function buildDressCodeDescriptor(item) {
+  const key = item.fileKey
+  const w = item.width
+  const h = item.height
+  const longEdge = Math.max(w, h, 1)
+  /** @type {Set<number>} */
+  const seenWidths = new Set()
+  const parts = []
+  for (const rung of DRESSCODE_LADDER) {
+    const scale = Math.min(1, rung.maxEdge / longEdge)
+    const variantW = Math.max(1, Math.round(w * scale))
+    if (seenWidths.has(variantW)) continue
+    seenWidths.add(variantW)
+    parts.push("/media/" + key + "/" + rung.name + " " + variantW + "w")
+  }
+  const hasSrcset = parts.length > 1
+  return {
+    src: "/media/" + key + "/w1600",
+    srcset: hasSrcset ? parts.join(", ") : null,
+    sizes: hasSrcset ? DRESSCODE_SIZES : null,
+    alt: "",
+    caption: null,
+    width: w > 0 ? w : null,
+    height: h > 0 ? h : null,
+  }
+}
+
+/** @param {Components.UploadQueueItem} item */
+function onDressCodeUpload(item) {
+  // Admin content uploads auto-approve → state "done" with a fileKey. Fold each
+  // finished item into a descriptor + card, then drop it from the queue so the
+  // tray only shows in-flight work.
+  if (
+    (item.state === "done" || item.state === "pending") &&
+    item.fileKey &&
+    !foldedUploads.has(item.id)
+  ) {
+    foldedUploads.add(item.id)
+    syncDressCodeCards()
+    dressCodeImages.push(buildDressCodeDescriptor(item))
+    renderDressCodeCards()
+    if (dressCodeQueue) dressCodeQueue.remove(item.id)
+  }
+  renderDressCodeUploadTray()
+}
+
+function renderDressCodeUploadTray() {
+  const tray = getElement("sc-dresscode-upload")
+  const items = dressCodeQueue ? dressCodeQueue.getItems() : []
+  if (items.length === 0) {
+    tray.hidden = true
+    tray.innerHTML = ""
+    return
+  }
+  tray.hidden = false
+  tray.innerHTML = html`${items.map(dressCodeUploadRow)}`
+}
+
+/** @param {Components.UploadQueueItem} item @returns {string} */
+function dressCodeUploadRow(item) {
+  const label =
+    item.state === "failed"
+      ? "⚠ " + (item.error || "Upload failed")
+      : item.state === "uploading"
+        ? "Uploading… " + Math.round(item.progress * 100) + "%"
+        : item.state === "processing"
+          ? "Processing…"
+          : "Queued"
+  return html`<div class="dc-upload-row ${item.state === "failed" ? "is-error" : ""}">
+    <span class="dc-upload-name">${item.name}</span>
+    <span class="dc-upload-state">${label}</span>
+  </div>`
+}
+
+/** Enqueue selected files, respecting the image cap. */
+function handleDressCodeFiles() {
+  const input = getInputElement("sc-dresscode-file")
+  const files = input.files
+  if (!files || files.length === 0) return
+  const room = MAX_DRESSCODE_IMAGES - dressCodeImages.length
+  if (room <= 0) {
+    showError(`You can add at most ${MAX_DRESSCODE_IMAGES} dress-code images.`)
+    input.value = ""
+    return
+  }
+  if (!dressCodeQueue) {
+    dressCodeQueue = createUploadQueue(
+      { onChange: onDressCodeUpload },
+      { csrfCookie: "csrf", section: "content", imageVariants: DRESSCODE_LADDER },
+    )
+  }
+  dressCodeQueue.add(Array.from(files).slice(0, room))
+  input.value = "" // allow re-selecting the same file
+}
 
 /** @param {Element} card @param {string} sel @returns {string} trimmed input value */
 function fieldVal(card, sel) {
@@ -187,6 +387,7 @@ function populate(c) {
   setVal("sc-dresscode-title", c.dressCode.title)
   setTa("sc-dresscode-body", c.dressCode.body)
   dressCodeImages = c.dressCode.images.map((img) => ({ ...img }))
+  renderDressCodeCards()
   setVal("sc-registry-title", c.registry.title)
   setTa("sc-registry-body", c.registry.body)
   setTa("sc-registry-framenote", c.registry.frameNote)
@@ -206,6 +407,8 @@ function populate(c) {
 
 /** Build the request body from the form fields. */
 function collectForm() {
+  // Capture any pending alt/caption edits before reading the images list.
+  syncDressCodeCards()
   return {
     couple: {
       display: val("sc-couple-display"),
@@ -330,4 +533,9 @@ export function initSiteContent() {
   getElement("sc-nav-post-rows").addEventListener("click", handleNavRemove)
   getButtonElement("sc-schedule-add").addEventListener("click", () => addScheduleRow())
   getElement("sc-schedule-rows").addEventListener("click", handleScheduleRemove)
+  getButtonElement("sc-dresscode-add").addEventListener("click", () =>
+    getInputElement("sc-dresscode-file").click(),
+  )
+  getInputElement("sc-dresscode-file").addEventListener("change", handleDressCodeFiles)
+  getElement("sc-dresscode-images").addEventListener("click", handleDressCodeClick)
 }
