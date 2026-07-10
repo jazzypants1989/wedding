@@ -15,6 +15,9 @@ import { createParallaxSparkles } from "./parallax-sparkles.js"
 import { createGrandEntrance } from "./grand-entrance.js"
 import { createDiscoSpotlight } from "./disco-spotlight.js"
 import { createMirrorReflections } from "./mirror-reflections.js"
+import { createRosePetals } from "./rose-petals.js"
+import { createFloatingHearts } from "./floating-hearts.js"
+import { createGoldenDust } from "./golden-dust.js"
 import { getEffectiveConfig } from "./config.js"
 import { getActiveTheme } from "./themes.js"
 import { getTypedElement } from "../pages/utils.js"
@@ -34,6 +37,9 @@ export const EFFECT_DEFINITIONS = [
   { id: "entrance", create: createGrandEntrance },
   { id: "spotlight", create: createDiscoSpotlight },
   { id: "reflections", create: createMirrorReflections },
+  { id: "petals", create: createRosePetals },
+  { id: "hearts", create: createFloatingHearts },
+  { id: "dust", create: createGoldenDust },
 ]
 
 /** @type {Map<string, Types.EffectInstance>} */

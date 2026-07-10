@@ -558,3 +558,77 @@ export interface Reflection {
 export function createMirrorReflections(
   config?: MirrorReflectionsConfig,
 ): EffectInstance
+
+/**
+ * Default config for rose petals effect.
+ * @example
+ * const cfg: RosePetalsConfig = { petalCount: 18, swayRange: [20, 60] };
+ */
+export interface RosePetalsConfig {
+  petalCount?: number
+  fallDurationRange?: [number, number]
+  delayRange?: [number, number]
+  sizeRange?: [number, number]
+  swayRange?: [number, number]
+  colors?: string[]
+}
+
+/**
+ * Default config for floating hearts effect.
+ * @example
+ * const cfg: FloatingHeartsConfig = { heartCount: 14, driftRange: [15, 50] };
+ */
+export interface FloatingHeartsConfig {
+  heartCount?: number
+  riseDurationRange?: [number, number]
+  delayRange?: [number, number]
+  sizeRange?: [number, number]
+  driftRange?: [number, number]
+  colors?: string[]
+}
+
+/**
+ * Default config for golden dust effect.
+ * @example
+ * const cfg: GoldenDustConfig = { density: 26, swayRange: [10, 30] };
+ */
+export interface GoldenDustConfig {
+  density?: number
+  driftDurationRange?: [number, number]
+  delayRange?: [number, number]
+  sizeRange?: [number, number]
+  swayRange?: [number, number]
+  colors?: string[]
+}
+
+/** @file rose-petals.js - Types for drifting rose petals effect */
+
+/**
+ * Create soft petals drifting down with lateral sway and spin.
+ * @example
+ * const petals = createRosePetals({ petalCount: 24 });
+ * petals.start();
+ */
+export function createRosePetals(config?: RosePetalsConfig): EffectInstance
+
+/** @file floating-hearts.js - Types for rising hearts effect */
+
+/**
+ * Create small hearts that rise and fade with a gentle horizontal drift.
+ * @example
+ * const hearts = createFloatingHearts({ heartCount: 20 });
+ * hearts.start();
+ */
+export function createFloatingHearts(
+  config?: FloatingHeartsConfig,
+): EffectInstance
+
+/** @file golden-dust.js - Types for drifting champagne dust effect */
+
+/**
+ * Create fine champagne motes drifting slowly upward with a soft glow.
+ * @example
+ * const dust = createGoldenDust({ density: 30 });
+ * dust.start();
+ */
+export function createGoldenDust(config?: GoldenDustConfig): EffectInstance

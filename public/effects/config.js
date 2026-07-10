@@ -172,6 +172,39 @@ export const EFFECT_CONFIGS = {
       frameInterval: 33,
     },
   },
+
+  petals: {
+    defaults: {
+      petalCount: 18,
+      fallDurationRange: [6, 12],
+      delayRange: [0, 8],
+      sizeRange: [10, 20],
+      swayRange: [20, 60],
+      colors: [EFFECT_PALETTE.brand, EFFECT_PALETTE.pink, EFFECT_PALETTE.blush, "#ffb7c5"],
+    },
+  },
+
+  hearts: {
+    defaults: {
+      heartCount: 14,
+      riseDurationRange: [7, 13],
+      delayRange: [0, 9],
+      sizeRange: [10, 18],
+      driftRange: [15, 50],
+      colors: [EFFECT_PALETTE.brand, EFFECT_PALETTE.pink, "#ff8fa3", EFFECT_PALETTE.blush],
+    },
+  },
+
+  dust: {
+    defaults: {
+      density: 26,
+      driftDurationRange: [10, 20],
+      delayRange: [0, 12],
+      sizeRange: [2, 5],
+      swayRange: [10, 30],
+      colors: [EFFECT_PALETTE.gold, "#f0e0b0", "#fff8e7", "#e8c977"],
+    },
+  },
 }
 
 /** @type {Types.getDefaultConfig} */
