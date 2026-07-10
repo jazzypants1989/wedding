@@ -5,6 +5,8 @@
  */
 /** @import * as Types from './types.js' */
 
+import { getActiveTheme } from "./themes.js"
+
 // Brand color — single source is the `--effect-brand` CSS token
 // (public/styles/tokens.css), read here so the palette isn't a second place to
 // edit the wedding's brand color. Guarded for non-DOM contexts (tests/SSR); the
@@ -170,6 +172,129 @@ export const EFFECT_CONFIGS = {
       frameInterval: 33,
     },
   },
+
+  petals: {
+    defaults: {
+      petalCount: 18,
+      fallDurationRange: [6, 12],
+      delayRange: [0, 8],
+      sizeRange: [10, 20],
+      swayRange: [20, 60],
+      colors: [EFFECT_PALETTE.brand, EFFECT_PALETTE.pink, EFFECT_PALETTE.blush, "#ffb7c5"],
+    },
+  },
+
+  hearts: {
+    defaults: {
+      heartCount: 14,
+      riseDurationRange: [7, 13],
+      delayRange: [0, 9],
+      sizeRange: [10, 18],
+      driftRange: [15, 50],
+      colors: [EFFECT_PALETTE.brand, EFFECT_PALETTE.pink, "#ff8fa3", EFFECT_PALETTE.blush],
+    },
+  },
+
+  dust: {
+    defaults: {
+      density: 26,
+      driftDurationRange: [10, 20],
+      delayRange: [0, 12],
+      sizeRange: [2, 5],
+      swayRange: [10, 30],
+      colors: [EFFECT_PALETTE.gold, "#f0e0b0", "#fff8e7", "#e8c977"],
+    },
+  },
+
+  starfield: {
+    defaults: {
+      starCount: 70,
+      sizeRange: [1, 3],
+      twinkleDurationRange: [2, 6],
+      delayRange: [0, 6],
+      colors: ["#ffffff", "#dbe9ff", "#fff4d6", "#c9d8ff"],
+    },
+  },
+
+  shootingstars: {
+    defaults: {
+      streakCount: 5,
+      cycleDurationRange: [5, 11],
+      delayRange: [0, 12],
+      lengthRange: [120, 220],
+      colors: ["#ffffff", "#eaf2ff", "#fff4d6"],
+    },
+  },
+
+  aurora: {
+    defaults: {
+      opacity: 0.16,
+      speed: 24,
+      palette: "aurora",
+      height: 55,
+      angle: 105,
+    },
+  },
+
+  fireflies: {
+    defaults: {
+      flyCount: 22,
+      sizeRange: [2, 5],
+      blinkDurationRange: [2, 5],
+      driftDurationRange: [8, 16],
+      driftRange: [20, 70],
+      colors: ["#ffe98a", "#c9ff8a", "#fff3b0", "#a8e063"],
+    },
+  },
+
+  leaves: {
+    defaults: {
+      leafCount: 16,
+      fallDurationRange: [7, 14],
+      delayRange: [0, 9],
+      sizeRange: [10, 20],
+      swayRange: [30, 80],
+      colors: ["#d98634", "#c25b28", "#e0a83c", "#8a9a3b", "#b7502a"],
+    },
+  },
+
+  snow: {
+    defaults: {
+      flakeCount: 40,
+      fallDurationRange: [6, 13],
+      delayRange: [0, 10],
+      sizeRange: [3, 8],
+      swayRange: [15, 55],
+      colors: ["#ffffff", "#eaf4ff", "#dcefff"],
+    },
+  },
+
+  frost: {
+    defaults: {
+      opacity: 0.5,
+      breatheSpeed: 9,
+      color: "#dceeff",
+      clearRadius: 42,
+    },
+  },
+
+  bubbles: {
+    defaults: {
+      bubbleCount: 20,
+      riseDurationRange: [8, 16],
+      delayRange: [0, 10],
+      sizeRange: [6, 22],
+      wobbleRange: [15, 50],
+    },
+  },
+
+  caustics: {
+    defaults: {
+      intensity: 55,
+      speed: 50,
+      layerCount: 3,
+    },
+  },
 }
 
 /** @type {Types.getDefaultConfig} */
@@ -177,4 +302,62 @@ export function getDefaultConfig(id) {
   const entry = EFFECT_CONFIGS[id]
   if (!entry) return null
   return structuredClone(entry.defaults)
+}
+
+/** Browser localStorage key holding per-browser effect config overrides written
+ *  by the effect studio (Track 3). Shape: `{ [effectId]: Partial<config> }`. */
+export const OVERRIDE_STORAGE_KEY = "effect-config-override"
+
+/** @param {unknown} v @returns {v is Record<string, unknown>} */
+function isPlainObject(v) {
+  return typeof v === "object" && v !== null && !Array.isArray(v)
+}
+
+/** In-place deep merge mirroring core/site-content.js `applyOverride`: plain
+ *  objects recurse (merge key-by-key), arrays/scalars/null replace wholesale,
+ *  `undefined` is ignored. Skips prototype-pollution keys. No regex.
+ *  @param {Record<string, unknown>} target
+ *  @param {Record<string, unknown>} override */
+function mergeInto(target, override) {
+  for (const key of Object.keys(override)) {
+    if (key === "__proto__" || key === "constructor" || key === "prototype") continue
+    const val = override[key]
+    const cur = target[key]
+    if (isPlainObject(val) && isPlainObject(cur)) {
+      mergeInto(cur, val)
+    } else if (val !== undefined) {
+      target[key] = val
+    }
+  }
+}
+
+/** Read the studio's per-browser override map, guarding corrupt/absent JSON by
+ *  returning null (mirrors resolveSiteContent's fall-back discipline).
+ *  @returns {Record<string, unknown> | null} */
+function readLocalOverride() {
+  try {
+    if (typeof localStorage === "undefined") return null
+    const raw = localStorage.getItem(OVERRIDE_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return isPlainObject(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+/** @type {Types.getEffectiveConfig} */
+export function getEffectiveConfig(id) {
+  // Base is already a structuredClone (getDefaultConfig) — safe to mutate.
+  const base = getDefaultConfig(id)
+  if (!base) return null
+  // Layer 1: the active theme's per-effect override.
+  const themeConfigs = getActiveTheme().configs
+  const themeCfg = themeConfigs ? themeConfigs[id] : undefined
+  if (isPlainObject(themeCfg)) mergeInto(base, themeCfg)
+  // Layer 2: the studio's per-browser override (wins over defaults + theme).
+  const local = readLocalOverride()
+  const localCfg = local ? local[id] : undefined
+  if (isPlainObject(localCfg)) mergeInto(base, localCfg)
+  return base
 }

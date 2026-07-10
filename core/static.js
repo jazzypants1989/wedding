@@ -227,6 +227,10 @@ function rebuildContentTokens() {
     "registry.title": content.registry.title,
     "registry.body": content.registry.body,
     "registry.frameNote": content.registry.frameNote,
+    // Effect theme id for <html data-effect-theme>. Literal fallback keeps the
+    // server/browser layer boundary (can't import public/effects/themes.js);
+    // must match DEFAULT_THEME_ID there.
+    "effectTheme": content.theme || "mermaid-disco",
     "registry.url": content.registry.url,
     "registry.label": content.registry.label,
     "memories.title": content.memories.title,

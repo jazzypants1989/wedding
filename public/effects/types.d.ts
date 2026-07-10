@@ -307,6 +307,62 @@ export const EFFECT_PALETTE: Record<string, string>
  */
 export function getDefaultConfig(id: string): Record<string, unknown> | null
 
+/** localStorage key holding the studio's per-browser override map. */
+export const OVERRIDE_STORAGE_KEY: string
+
+/**
+ * Get the effective config for an effect ID: the default config deep-merged with
+ * the active theme's per-effect override, then with the studio's per-browser
+ * localStorage override (which wins). Returns null for an unknown ID.
+ * @example
+ * const cfg = getEffectiveConfig('parallaxsparkles');
+ */
+export function getEffectiveConfig(id: string): Record<string, unknown> | null
+
+/** @file themes.js - Types for the effect theme registry */
+
+/**
+ * A theme: a subset of the effect registry to run, plus optional per-effect
+ * config overrides deep-merged over each effect's defaults.
+ * @example
+ * const t: EffectTheme = { id: 'elegant', label: 'Elegant', effectIds: ['dust'] };
+ */
+export interface EffectTheme {
+  id: string
+  label: string
+  effectIds: string[]
+  configs?: Record<string, Record<string, unknown>>
+}
+
+/**
+ * The studio's per-browser localStorage override shape: effectId → partial config.
+ */
+export type EffectConfigOverride = Record<string, Record<string, unknown>>
+
+/** The id of the shipped default theme. */
+export const DEFAULT_THEME_ID: string
+
+/** All available themes. The admin picker and studio read this directly. */
+export const EFFECT_THEMES: EffectTheme[]
+
+/**
+ * Resolve a theme by id, falling back to the default theme for an unknown id.
+ * @example
+ * const theme = resolveTheme('romantic');
+ */
+export function resolveTheme(id: string | undefined): EffectTheme
+
+/**
+ * Read the active theme id from the server-rendered <html data-effect-theme>
+ * attribute, falling back to the default id in non-DOM contexts.
+ */
+export function getActiveThemeId(): string
+
+/**
+ * Resolve the currently active theme (getActiveThemeId + resolveTheme).
+ */
+export function getActiveTheme(): EffectTheme
+
 /** @file sparkle-stars.js - Types for twinkling stars effect */
 
 /**
@@ -502,3 +558,184 @@ export interface Reflection {
 export function createMirrorReflections(
   config?: MirrorReflectionsConfig,
 ): EffectInstance
+
+/**
+ * Default config for rose petals effect.
+ * @example
+ * const cfg: RosePetalsConfig = { petalCount: 18, swayRange: [20, 60] };
+ */
+export interface RosePetalsConfig {
+  petalCount?: number
+  fallDurationRange?: [number, number]
+  delayRange?: [number, number]
+  sizeRange?: [number, number]
+  swayRange?: [number, number]
+  colors?: string[]
+}
+
+/**
+ * Default config for floating hearts effect.
+ * @example
+ * const cfg: FloatingHeartsConfig = { heartCount: 14, driftRange: [15, 50] };
+ */
+export interface FloatingHeartsConfig {
+  heartCount?: number
+  riseDurationRange?: [number, number]
+  delayRange?: [number, number]
+  sizeRange?: [number, number]
+  driftRange?: [number, number]
+  colors?: string[]
+}
+
+/**
+ * Default config for golden dust effect.
+ * @example
+ * const cfg: GoldenDustConfig = { density: 26, swayRange: [10, 30] };
+ */
+export interface GoldenDustConfig {
+  density?: number
+  driftDurationRange?: [number, number]
+  delayRange?: [number, number]
+  sizeRange?: [number, number]
+  swayRange?: [number, number]
+  colors?: string[]
+}
+
+/** @file rose-petals.js - Types for drifting rose petals effect */
+
+/**
+ * Create soft petals drifting down with lateral sway and spin.
+ * @example
+ * const petals = createRosePetals({ petalCount: 24 });
+ * petals.start();
+ */
+export function createRosePetals(config?: RosePetalsConfig): EffectInstance
+
+/** @file floating-hearts.js - Types for rising hearts effect */
+
+/**
+ * Create small hearts that rise and fade with a gentle horizontal drift.
+ * @example
+ * const hearts = createFloatingHearts({ heartCount: 20 });
+ * hearts.start();
+ */
+export function createFloatingHearts(
+  config?: FloatingHeartsConfig,
+): EffectInstance
+
+/** @file golden-dust.js - Types for drifting champagne dust effect */
+
+/**
+ * Create fine champagne motes drifting slowly upward with a soft glow.
+ * @example
+ * const dust = createGoldenDust({ density: 30 });
+ * dust.start();
+ */
+export function createGoldenDust(config?: GoldenDustConfig): EffectInstance
+
+/** Default config for the starfield effect. */
+export interface StarfieldConfig {
+  starCount?: number
+  sizeRange?: [number, number]
+  twinkleDurationRange?: [number, number]
+  delayRange?: [number, number]
+  colors?: string[]
+}
+
+/** Default config for the shooting-stars effect. */
+export interface ShootingStarsConfig {
+  streakCount?: number
+  cycleDurationRange?: [number, number]
+  delayRange?: [number, number]
+  lengthRange?: [number, number]
+  colors?: string[]
+}
+
+/** Default config for the aurora-wash effect. */
+export interface AuroraWashConfig {
+  opacity?: number
+  speed?: number
+  /** Named gradient palette: "aurora" | "polar" | "dusk". */
+  palette?: string
+  height?: number
+  angle?: number
+}
+
+/** Default config for the fireflies effect. */
+export interface FirefliesConfig {
+  flyCount?: number
+  sizeRange?: [number, number]
+  blinkDurationRange?: [number, number]
+  driftDurationRange?: [number, number]
+  driftRange?: [number, number]
+  colors?: string[]
+}
+
+/** Default config for the falling-leaves effect. */
+export interface FallingLeavesConfig {
+  leafCount?: number
+  fallDurationRange?: [number, number]
+  delayRange?: [number, number]
+  sizeRange?: [number, number]
+  swayRange?: [number, number]
+  colors?: string[]
+}
+
+/** Default config for the snowfall effect. */
+export interface SnowfallConfig {
+  flakeCount?: number
+  fallDurationRange?: [number, number]
+  delayRange?: [number, number]
+  sizeRange?: [number, number]
+  swayRange?: [number, number]
+  colors?: string[]
+}
+
+/** Default config for the frost-shimmer effect. */
+export interface FrostShimmerConfig {
+  opacity?: number
+  breatheSpeed?: number
+  color?: string
+  clearRadius?: number
+}
+
+/** Default config for the bubbles-rising effect. */
+export interface BubblesRisingConfig {
+  bubbleCount?: number
+  riseDurationRange?: [number, number]
+  delayRange?: [number, number]
+  sizeRange?: [number, number]
+  wobbleRange?: [number, number]
+}
+
+/** @file starfield.js - Types for the twinkling starfield effect */
+/** Create a scatter of stars twinkling in place. */
+export function createStarfield(config?: StarfieldConfig): EffectInstance
+
+/** @file shooting-stars.js - Types for occasional diagonal streaks */
+/** Create occasional shooting-star streaks across the upper sky. */
+export function createShootingStars(config?: ShootingStarsConfig): EffectInstance
+
+/** @file aurora-wash.js - Types for the drifting aurora gradient band */
+/** Create a slow, soft aurora gradient band across the top of the page. */
+export function createAuroraWash(config?: AuroraWashConfig): EffectInstance
+
+/** @file fireflies.js - Types for blinking, drifting fireflies */
+/** Create warm points that blink and wander slowly. */
+export function createFireflies(config?: FirefliesConfig): EffectInstance
+
+/** @file falling-leaves.js - Types for tumbling autumn leaves */
+/** Create autumn leaves tumbling down with sway and spin. */
+export function createFallingLeaves(config?: FallingLeavesConfig): EffectInstance
+
+/** @file snowfall.js - Types for drifting snow */
+/** Create soft snowflakes drifting down with lateral sway. */
+export function createSnowfall(config?: SnowfallConfig): EffectInstance
+
+/** @file frost-shimmer.js - Types for the breathing frost vignette */
+/** Create a frosted vignette at the page edges that gently breathes. */
+export function createFrostShimmer(config?: FrostShimmerConfig): EffectInstance
+
+/** @file bubbles-rising.js - Types for rising underwater bubbles */
+/** Create translucent bubbles floating up with a lateral wobble. */
+export function createBubblesRising(config?: BubblesRisingConfig): EffectInstance

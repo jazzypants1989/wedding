@@ -636,17 +636,409 @@
   box-shadow: 0 0 6px 1px rgba(255, 255, 255, 0.3);
 }
 
+/* ============ Rose Petals ============ */
+
+.rose-petal {
+  position: absolute;
+  top: 0;
+  border-radius: 150% 0 150% 0;
+  opacity: 0;
+  transform: translate(0, -10vh) rotate(0deg);
+  animation-name: rose-petal-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes rose-petal-fall {
+  0% {
+    transform: translate(0, -10vh) rotate(0deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: var(--petal-opacity, 0.7);
+  }
+  50% {
+    transform: translate(var(--sway, 30px), 50vh) rotate(180deg);
+  }
+  90% {
+    opacity: var(--petal-opacity, 0.7);
+  }
+  100% {
+    transform: translate(0, 110vh) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+/* ============ Floating Hearts ============ */
+
+.floating-heart {
+  position: absolute;
+  bottom: 0;
+  opacity: 0;
+  transform: translate(0, 0) scale(0.6);
+  animation-name: floating-heart-rise;
+  animation-timing-function: ease-in;
+  animation-iteration-count: infinite;
+  will-change: transform, opacity;
+}
+
+.floating-heart-shape {
+  position: relative;
+  transform: rotate(-45deg);
+}
+
+.floating-heart-shape::before,
+.floating-heart-shape::after {
+  content: "";
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background-color: inherit;
+}
+
+.floating-heart-shape::before {
+  top: -50%;
+  left: 0;
+}
+
+.floating-heart-shape::after {
+  top: 0;
+  left: 50%;
+}
+
+@keyframes floating-heart-rise {
+  0% {
+    transform: translate(0, 0) scale(0.6);
+    opacity: 0;
+  }
+  15% {
+    opacity: var(--heart-opacity, 0.7);
+  }
+  85% {
+    opacity: var(--heart-opacity, 0.7);
+  }
+  100% {
+    transform: translate(var(--drift, 20px), -110vh) scale(1);
+    opacity: 0;
+  }
+}
+
+/* ============ Golden Dust ============ */
+
+.golden-dust-mote {
+  position: absolute;
+  bottom: 0;
+  border-radius: 50%;
+  opacity: 0;
+  transform: translate(0, 5vh);
+  box-shadow: 0 0 4px 1px currentColor;
+  animation-name: golden-dust-drift;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes golden-dust-drift {
+  0% {
+    transform: translate(0, 5vh);
+    opacity: 0;
+  }
+  10% {
+    opacity: var(--dust-opacity, 0.6);
+  }
+  50% {
+    transform: translate(var(--sway, 15px), -50vh);
+  }
+  90% {
+    opacity: var(--dust-opacity, 0.6);
+  }
+  100% {
+    transform: translate(0, -105vh);
+    opacity: 0;
+  }
+}
+
+/* ============ Starfield ============ */
+
+.starfield-star {
+  position: absolute;
+  border-radius: 50%;
+  opacity: 0;
+  box-shadow: 0 0 4px 1px currentColor;
+  animation-name: starfield-twinkle;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  will-change: opacity, transform;
+}
+
+@keyframes starfield-twinkle {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  50% {
+    opacity: var(--star-opacity, 0.8);
+    transform: scale(1);
+  }
+}
+
+/* ============ Shooting Stars ============ */
+
+.shooting-star {
+  position: absolute;
+  height: 2px;
+  border-radius: 2px;
+  opacity: 0;
+  transform-origin: left center;
+  background: linear-gradient(90deg, transparent, var(--streak-color, #fff));
+  box-shadow: 0 0 6px 1px var(--streak-color, #fff);
+  animation-name: shooting-star-streak;
+  animation-timing-function: ease-in;
+  animation-iteration-count: infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes shooting-star-streak {
+  0% {
+    opacity: 0;
+    transform: rotate(var(--streak-angle, 25deg)) translateX(0);
+  }
+  3% {
+    opacity: 1;
+  }
+  15% {
+    opacity: 1;
+  }
+  20% {
+    opacity: 0;
+    transform: rotate(var(--streak-angle, 25deg)) translateX(var(--streak-travel, 70vw));
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(var(--streak-angle, 25deg)) translateX(var(--streak-travel, 70vw));
+  }
+}
+
+/* ============ Aurora Wash ============ */
+
+.aurora-wash {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  pointer-events: none;
+  z-index: var(--z-mermaid-shimmer);
+  filter: blur(28px);
+  animation-name: aurora-drift;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  will-change: background-position;
+  -webkit-mask-image: linear-gradient(to bottom, black 45%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 45%, transparent 100%);
+}
+
+@keyframes aurora-drift {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+/* ============ Fireflies ============ */
+
+.firefly {
+  position: absolute;
+  animation-name: firefly-drift;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+  will-change: transform;
+}
+
+.firefly-glow {
+  border-radius: 50%;
+  opacity: 0;
+  box-shadow: 0 0 8px 2px currentColor;
+  animation-name: firefly-blink;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  will-change: opacity;
+}
+
+@keyframes firefly-drift {
+  0% {
+    transform: translate(0, 0);
+  }
+  100% {
+    transform: translate(var(--drift-x, 40px), var(--drift-y, 40px));
+  }
+}
+
+@keyframes firefly-blink {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: var(--fly-opacity, 0.9);
+  }
+}
+
+/* ============ Falling Leaves ============ */
+
+.falling-leaf {
+  position: absolute;
+  top: 0;
+  border-radius: 0 60% 0 60%;
+  opacity: 0;
+  transform: translate(0, -10vh) rotate(0deg);
+  animation-name: falling-leaf-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes falling-leaf-fall {
+  0% {
+    transform: translate(0, -10vh) rotate(0deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: var(--leaf-opacity, 0.7);
+  }
+  50% {
+    transform: translate(var(--sway, 50px), 50vh) rotate(calc(var(--spin, 540deg) * 0.5));
+  }
+  90% {
+    opacity: var(--leaf-opacity, 0.7);
+  }
+  100% {
+    transform: translate(0, 110vh) rotate(var(--spin, 540deg));
+    opacity: 0;
+  }
+}
+
+/* ============ Snowfall ============ */
+
+.snow-flake {
+  position: absolute;
+  top: 0;
+  border-radius: 50%;
+  opacity: 0;
+  transform: translate(0, -10vh);
+  box-shadow: 0 0 3px 1px rgba(255, 255, 255, 0.35);
+  animation-name: snow-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes snow-fall {
+  0% {
+    transform: translate(0, -10vh);
+    opacity: 0;
+  }
+  10% {
+    opacity: var(--flake-opacity, 0.8);
+  }
+  50% {
+    transform: translate(var(--sway, 30px), 50vh);
+  }
+  90% {
+    opacity: var(--flake-opacity, 0.8);
+  }
+  100% {
+    transform: translate(0, 110vh);
+    opacity: 0;
+  }
+}
+
+/* ============ Frost Shimmer (breathing vignette) ============ */
+
+.frost-shimmer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: var(--z-effect-layer);
+  opacity: 0;
+  animation-name: frost-breathe;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  will-change: opacity;
+}
+
+@keyframes frost-breathe {
+  0%,
+  100% {
+    opacity: calc(var(--frost-opacity, 0.5) * 0.55);
+  }
+  50% {
+    opacity: var(--frost-opacity, 0.5);
+  }
+}
+
+/* ============ Rising Bubbles ============ */
+
+.rising-bubble {
+  position: absolute;
+  bottom: 0;
+  border-radius: 50%;
+  opacity: 0;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  background: radial-gradient(
+    circle at 30% 30%,
+    rgba(255, 255, 255, 0.5),
+    rgba(200, 235, 255, 0.15) 60%,
+    transparent 75%
+  );
+  animation-name: bubble-rise;
+  animation-timing-function: ease-in;
+  animation-iteration-count: infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes bubble-rise {
+  0% {
+    transform: translate(0, 0);
+    opacity: 0;
+  }
+  12% {
+    opacity: var(--bubble-opacity, 0.5);
+  }
+  50% {
+    transform: translate(var(--wobble, 30px), -60vh);
+  }
+  88% {
+    opacity: var(--bubble-opacity, 0.5);
+  }
+  100% {
+    transform: translate(0, -120vh);
+    opacity: 0;
+  }
+}
+
 /* ============ Print: hide effects ============ */
 @media print {
   .effect-layer,
   .mermaid-shimmer,
+  .aurora-wash,
+  .frost-shimmer,
   .disco-ball-wrapper,
   .trail-particle,
   .trail-container,
   .grand-entrance-overlay,
   .grand-entrance-sparkles,
   .disco-spotlight-container,
-  .mirror-reflection-container {
+  .mirror-reflection-container,
+  .rose-petals-container,
+  .floating-hearts-container,
+  .golden-dust-container {
     display: none !important;
   }
 }

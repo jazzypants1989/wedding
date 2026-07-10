@@ -23,6 +23,9 @@ export const CONTENT = Object.freeze({
   // timeline mode; the human "April 26, 2026" is derived (formatWeddingDate).
   weddingDate: "2026-04-26T11:00:00-07:00",
   location: "Portland, OR",
+  // Visual effect theme id (public/effects/themes.js). Server-rendered into
+  // <html data-effect-theme>; picks the effect subset + brand palette.
+  theme: "mermaid-disco",
   // Landing-page Schedule. Server-rendered into repeating .schedule-item blocks
   // (renderSchedule in core/static.js); every field is escaped. Optional lines
   // are null (not omitted) so a validated override is always complete.

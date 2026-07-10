@@ -674,6 +674,8 @@ export interface SiteContent {
   }
   readonly weddingDate: string
   readonly location: string
+  /** Visual effect theme id (public/effects/themes.js EFFECT_THEMES). */
+  readonly theme: string
   readonly schedule: {
     readonly title: string
     readonly items: readonly SiteContentScheduleItem[]
@@ -737,6 +739,7 @@ export type SiteContentOverride = {
   }>
   weddingDate?: string
   location?: string
+  theme?: string
   schedule?: Partial<{ title: string; items: SiteContentScheduleItem[] }>
   dressCode?: Partial<{ title: string; body: string; images: SiteContentImage[] }>
   registry?: Partial<{ title: string; body: string; frameNote: string; url: string; label: string }>

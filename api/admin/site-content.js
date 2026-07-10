@@ -29,6 +29,7 @@ const CAP = {
   name: 100,
   weddingDate: 40,
   location: 200,
+  theme: 40,
   url: 500,
   label: 200,
   heading: 200,
@@ -56,6 +57,21 @@ const MAX_SCHEDULE_ITEMS = 20
 const MAX_DETAILS = 20
 const MAX_DC_IMAGES = 12
 const MAX_IMG_DIMENSION = 20000
+
+// Allowed effect theme ids. Duplicated from public/effects/themes.js
+// EFFECT_THEMES because the server can't import that browser-only module; keep
+// in sync when adding a theme. Exported so a unit test can assert parity with
+// EFFECT_THEMES (tests/unit/effect-themes.test.js) and catch drift.
+export const THEME_IDS = new Set([
+  "mermaid-disco",
+  "romantic",
+  "elegant",
+  "classic",
+  "celestial",
+  "garden",
+  "winter",
+  "coastal",
+])
 
 /**
  * @param {unknown} v
@@ -135,6 +151,21 @@ function reqDate(value) {
   const s = reqStr(value, "Wedding date", CAP.weddingDate)
   if (Number.isNaN(Date.parse(s))) {
     throw new ValidationError("Wedding date must be a valid date")
+  }
+  return s
+}
+
+/**
+ * Effect theme id — absent/empty falls back to the default; a present value must
+ * be a known theme id.
+ * @param {unknown} value
+ * @returns {string}
+ */
+function reqTheme(value) {
+  if (value === undefined || value === null || value === "") return "mermaid-disco"
+  const s = reqStr(value, "Theme", CAP.theme)
+  if (!THEME_IDS.has(s)) {
+    throw new ValidationError("Theme must be one of: " + Array.from(THEME_IDS).join(", "))
   }
   return s
 }
@@ -333,6 +364,7 @@ function buildOverride(body) {
     },
     weddingDate: reqDate(body.weddingDate),
     location: reqStr(body.location, "Location", CAP.location),
+    theme: reqTheme(body.theme),
     schedule: reqSchedule(body.schedule),
     dressCode: reqDressCode(body.dressCode),
     registry: {

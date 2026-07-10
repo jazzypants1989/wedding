@@ -17,8 +17,10 @@ import {
   getTextAreaElement,
   getButtonElement,
   getFormElement,
+  getSelectElement,
   getErrorMessage,
 } from "../utils.js"
+import { EFFECT_THEMES } from "../../effects/themes.js"
 
 /** @param {string} id @returns {string} trimmed input value */
 function val(id) {
@@ -38,6 +40,19 @@ function taVal(id) {
 /** @param {string} id @param {string} value */
 function setTa(id, value) {
   getTextAreaElement(id).value = value
+}
+
+/** Fill the theme <select> with an <option> per EFFECT_THEMES entry, so adding a
+ *  theme updates the picker without editing the admin HTML. */
+function renderThemeOptions() {
+  const select = getSelectElement("sc-theme")
+  select.innerHTML = ""
+  for (const theme of EFFECT_THEMES) {
+    const option = document.createElement("option")
+    option.value = theme.id
+    option.textContent = theme.label
+    select.appendChild(option)
+  }
 }
 
 /**
@@ -350,6 +365,7 @@ function populate(c) {
   setVal("sc-couple-fullnames", c.couple.fullNames.join(", "))
   setVal("sc-wedding-date", c.weddingDate)
   setVal("sc-location", c.location)
+  getSelectElement("sc-theme").value = c.theme
   setVal("sc-contact-email", c.contactEmail || "")
   setVal("sc-schedule-title", c.schedule.title)
   renderScheduleRows(c.schedule.items)
@@ -390,6 +406,7 @@ function collectForm() {
     },
     weddingDate: val("sc-wedding-date"),
     location: val("sc-location"),
+    theme: getSelectElement("sc-theme").value,
     contactEmail: val("sc-contact-email") || null,
     schedule: {
       title: val("sc-schedule-title"),
@@ -494,6 +511,7 @@ function handleNavRemove(e) {
 }
 
 export function initSiteContent() {
+  renderThemeOptions()
   getFormElement("site-content-form").addEventListener("submit", handleSubmit)
   getButtonElement("site-content-reset-btn").addEventListener("click", handleReset)
   getButtonElement("sc-nav-pre-add").addEventListener("click", () => addNavRow("sc-nav-pre-rows"))

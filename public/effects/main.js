@@ -15,7 +15,20 @@ import { createParallaxSparkles } from "./parallax-sparkles.js"
 import { createGrandEntrance } from "./grand-entrance.js"
 import { createDiscoSpotlight } from "./disco-spotlight.js"
 import { createMirrorReflections } from "./mirror-reflections.js"
-import { getDefaultConfig } from "./config.js"
+import { createRosePetals } from "./rose-petals.js"
+import { createFloatingHearts } from "./floating-hearts.js"
+import { createGoldenDust } from "./golden-dust.js"
+import { createStarfield } from "./starfield.js"
+import { createShootingStars } from "./shooting-stars.js"
+import { createAuroraWash } from "./aurora-wash.js"
+import { createFireflies } from "./fireflies.js"
+import { createFallingLeaves } from "./falling-leaves.js"
+import { createSnowfall } from "./snowfall.js"
+import { createFrostShimmer } from "./frost-shimmer.js"
+import { createBubblesRising } from "./bubbles-rising.js"
+import { createCaustics } from "./caustics.js"
+import { getEffectiveConfig } from "./config.js"
+import { getActiveTheme } from "./themes.js"
 import { getTypedElement } from "../pages/utils.js"
 
 /** Registry of every effect, mapping its ID to its factory. Exported so dev
@@ -33,6 +46,18 @@ export const EFFECT_DEFINITIONS = [
   { id: "entrance", create: createGrandEntrance },
   { id: "spotlight", create: createDiscoSpotlight },
   { id: "reflections", create: createMirrorReflections },
+  { id: "petals", create: createRosePetals },
+  { id: "hearts", create: createFloatingHearts },
+  { id: "dust", create: createGoldenDust },
+  { id: "starfield", create: createStarfield },
+  { id: "shootingstars", create: createShootingStars },
+  { id: "aurora", create: createAuroraWash },
+  { id: "fireflies", create: createFireflies },
+  { id: "leaves", create: createFallingLeaves },
+  { id: "snow", create: createSnowfall },
+  { id: "frost", create: createFrostShimmer },
+  { id: "bubbles", create: createBubblesRising },
+  { id: "caustics", create: createCaustics },
 ]
 
 /** @type {Map<string, Types.EffectInstance>} */
@@ -40,17 +65,35 @@ const activeEffects = new Map()
 
 let managerActive = false
 
+// Monotonic token identifying the current staggered start-up chain. Bumped on
+// every startEffects() and whenever effects are torn down, so a chain queued via
+// requestIdleCallback bails the moment a newer start (or a hide) supersedes it.
+// Without this, hiding the tab mid-stagger leaves the old chain running (it
+// re-adds effects while hidden) and a later resume spawns a second chain whose
+// def.create() overwrites the map, leaking the un-stopped instances.
+let startGeneration = 0
+
 function startEffects() {
   const schedule =
     typeof requestIdleCallback === "function"
       ? requestIdleCallback
       : /** @param {() => void} cb */ (cb) => setTimeout(cb, 16)
 
+  // Resolve the active theme's effect subset against the full registry,
+  // preserving registry order and silently skipping ids the theme names but
+  // that aren't registered (e.g. a theme referencing a not-yet-built effect).
+  const allowed = new Set(getActiveTheme().effectIds)
+  const defs = EFFECT_DEFINITIONS.filter((d) => allowed.has(d.id))
+
+  const gen = ++startGeneration
+
   function startNext(/** @type {number} */ index) {
-    if (index >= EFFECT_DEFINITIONS.length) return
+    if (index >= defs.length) return
     if (!managerActive) return
-    const def = EFFECT_DEFINITIONS[index]
-    const cfg = getDefaultConfig(def.id) || {}
+    // A newer start-up chain, or a teardown, has superseded this one.
+    if (gen !== startGeneration) return
+    const def = defs[index]
+    const cfg = getEffectiveConfig(def.id) || {}
     const instance = def.create(cfg)
     try {
       instance.start()
@@ -74,6 +117,9 @@ export function initEffectManager() {
 
 /** @type {Types.stopAllEffects} */
 export function stopAllEffects() {
+  // Invalidate any in-flight staggered start chain so it can't re-populate the
+  // map after we've torn it down (e.g. tab hidden mid-stagger).
+  startGeneration++
   for (const [id, instance] of activeEffects) {
     try {
       instance.stop()
