@@ -15,6 +15,13 @@ import {
   getButtonElement,
 } from "../utils.js"
 import { LABELS, getHint, numericBounds, serializeConfig } from "./controls.js"
+import {
+  readOverride,
+  saveOverride,
+  clearOverride,
+  clearAll,
+  seedFromOverride,
+} from "./override-store.js"
 
 // ---- State -----------------------------------------------------------------
 
@@ -397,7 +404,9 @@ function renderEffectList() {
 
 /** @param {string} id */
 function loadConfigFor(id) {
-  config = structuredClone(getDefaultConfig(id) || {})
+  // Seed from defaults ⊕ this browser's saved override so the studio matches
+  // what the real pages render (and Reset visibly returns to defaults).
+  config = seedFromOverride(getDefaultConfig(id) || {}, readOverride(id))
 }
 
 /** @param {string} id */
@@ -426,16 +435,33 @@ function copyValues() {
   console.log(text)
 }
 
+/** Persist the current effect's tuned config (as a sparse diff) to this browser. */
+function saveToBrowser() {
+  saveOverride(currentEffectId, config, getDefaultConfig(currentEffectId) || {})
+  flash("Saved to this browser — reload a page to see it", "ok")
+}
+
 function init() {
   renderEffectList()
 
   getButtonElement("replay-btn").addEventListener("click", replay)
   getButtonElement("stop-btn").addEventListener("click", stopInstance)
   getButtonElement("copy-btn").addEventListener("click", copyValues)
+  getButtonElement("save-btn").addEventListener("click", saveToBrowser)
   getButtonElement("reset-btn").addEventListener("click", () => {
+    // Reset = drop this effect's saved override and reload its defaults.
+    clearOverride(currentEffectId)
     loadConfigFor(currentEffectId)
     renderControls()
     replay()
+    flash("Reset to defaults", "ok")
+  })
+  getButtonElement("clear-all-btn").addEventListener("click", () => {
+    clearAll()
+    loadConfigFor(currentEffectId)
+    renderControls()
+    replay()
+    flash("Cleared all overrides", "ok")
   })
 
   loadConfigFor(currentEffectId)
