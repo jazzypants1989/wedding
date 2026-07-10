@@ -1,6 +1,8 @@
 # Deferred Work
 
-Most of the follow-ups captured during the 2026-06-29 change-review cleanup were executed on 2026-07-02 (grand-entrance star restore, CSS tokenization + chevron fix, `SERVER` config object, CI install step, WAL-safe backup, `stop_grace_period`, pinned base image). What remains below is deferred deliberately — it needs a production/deploy decision or off-repo access, not a code edit.
+Most of the follow-ups captured during the 2026-06-29 change-review cleanup were executed on 2026-07-02 (grand-entrance star restore, CSS tokenization + chevron fix, `SERVER` config object, CI install step, WAL-safe backup, `stop_grace_period`, pinned base image). What remains below is deferred deliberately — it needs a production/deploy decision, off-repo access, an owner copy/branding call, or a larger product effort, not a quick code edit.
+
+The 2026-07 UX/DX triage pass (guest-facing correctness, admin consistency, DX hygiene) is fully done; its remaining owner-decision / can't-code-fix items were folded into the sections below and its standalone backlog retired.
 
 Severity tags: 🔴 high · 🟡 medium · 🟢 low.
 
@@ -44,13 +46,16 @@ The daily media sweep (`core/media-sweep.js`) reconciles the DB against the disk
 
 ## 3. Two deploy paths, maintained separately 🟢
 
-The CI inline script (`.github/workflows/deploy.yml`) and `scripts/deploy.js` duplicate the same backup→pull→`compose up`→health-poll logic; both now call `docker exec wedding node scripts/backup-db.js`, so they're in sync, but drift is possible. `scripts/deploy.js:9-10` hardcodes `jesse@jovial-penguin-1:2420` and `deploy.yml:38` hardcodes port `2420`. Consider collapsing to one path (CI calls `scripts/deploy.js`, or the SSH step runs a committed remote script).
+The CI inline script (`.github/workflows/deploy.yml`) and `scripts/deploy.js` duplicate the same backup→pull→`compose up`→health-poll logic; both now call `docker exec wedding node scripts/backup-db.js`, so they're in sync, but drift is possible. `scripts/deploy.js:9-10` hardcodes `jesse@jovial-penguin-1:2420` and `deploy.yml:38` hardcodes port `2420`. Consider collapsing to one path (CI calls `scripts/deploy.js`, or the SSH step runs a committed remote script). Re-confirmed still-open in the 2026-07 UX/DX pass.
 
 ---
 
-## 4. Verify VPS `.env` completeness 🟢
+## 4. `.env` completeness + secret rotation 🟡
 
 Compose uses `env_file: .env` on the VPS. The local `.env` leaves `TWILIO_PHONE_NUMBER`/`RESEND_API_KEY`/`FROM_EMAIL` empty; SMS/email paths gate on these (`services/twilio.js:9-11`, `services/email.js:10-11`). Confirm the production `.env` has everything it needs (incl. `ADMIN_PASSWORD_HASH`, and `TRUSTED_PROXIES` once §1 is decided). Deploy-environment check, not a code change.
+
+- **Local `.env` drift:** the working `.env` is missing keys that `.env.example` documents and code reads — `CONTACT_EMAIL`, `TRUSTED_PROXIES`, `NODE_ENV`, and the three `MEDIA_*_BYTES` thresholds (`types.js`, `core/env.js`). So the template is more complete than the actual file; a dev copying from `.env` misses real config surface. Fill the missing keys in the working `.env`; keep `.env.example` as source of truth.
+- **Rotate secrets 🔴 (if live):** the working `.env` holds real-looking plaintext Twilio SID + auth token, an admin password hash, and `TEST_ADMIN_PASSWORD`. It's gitignored (never committed), but if the Twilio creds are real, rotate them.
 
 ---
 
@@ -74,6 +79,8 @@ hardcoded touchpoints along the way: the `Jordana & Jesse` / "— Wedding" copy 
 `public/pages/studio/index.html`; the `.couple-names` selector in `public/effects/name-shimmer.js`;
 `EFFECT_PALETTE.brand` in `public/effects/config.js`; the "Mermaid"/"Disco" labels in
 `public/pages/studio/controls.js`.
+
+Re-confirmed in the 2026-07 UX/DX pass — the copy de-personalization is the cheap first step ahead of the full theme refactor, and it's a prerequisite for the reusable-product direction in §14.
 
 ---
 
@@ -113,8 +120,60 @@ surface behavior that currently only lives in the maintainer's head (see §13).
 
 ---
 
-## 13. Documentation / self-explanatory-app debt 🟢
+## 13. Documentation, architecture doc & license 🟢
 
 Several non-obvious app behaviors are undocumented and only known to the maintainer. Triage each:
 fix some in the app itself (clearer UX) and document the rest, aiming for portfolio-grade clarity so
 a newcomer can understand and run the project.
+
+- **Architecture doc:** `CLAUDE.md` is the richest architecture/constraints doc but is gitignored and
+  untracked. Distill it into a tracked `docs/architecture.md` (or a README section) — good portfolio
+  signal and it de-risks the maintainer-only knowledge above. (A heavy `CONTRIBUTING` doc isn't wanted
+  — "be nice" covers it; the architecture doc is the valuable piece.)
+- **License:** add an Apache 2.0 `LICENSE` (owner's usual choice). Also a prerequisite for the
+  reusable-product direction in §14.
+
+---
+
+## 14. Pre-/post-wedding modes + no-code onboarding (reusable wedding-site product) 🟢
+
+The landing copy still reads pre-event (the Schedule, "Please join us… we want to keep it simple,"
+"Wearing pink is encouraged") even though `countdown.js` and the Memories section already flip to a
+post-wedding state. The minimal launch-time fix is a copy pass reconciling tense for a post-wedding
+visitor — but the owner's direction is bigger: make **timeline mode a first-class concept**. A
+**pre-wedding** mode (countdown, schedule, RSVP-forward, invite/registry copy) and a **post-wedding**
+mode (Memories/guestbook/gallery-forward, past-tense copy) that swap both the landing copy *and* the
+nav bar.
+
+That's the seed of turning this repo into a **reusable, self-hostable wedding-site product for
+non-coders**:
+
+- **No-code onboarding flow** (extends the walkthrough idea in §12): forms that capture *all* site
+  copy — couple names, dates, schedule, dress code, registry link, RSVP/guestbook/gallery copy — so a
+  user never touches HTML/CSS/JS. The captured content drives both timeline modes.
+- **Ship a Docker container** so the self-hosting crowd (r/selfhosted and similar — an audience that's
+  grown a lot and is increasingly non-technical) can run it without a build step; finding a host
+  becomes the only prerequisite.
+- Ties directly into §9 (de-personalize + generalize effects into selectable themes) and §11 (gate
+  `/studio`/`/demo`), both prerequisites for a genuinely reusable build, plus §13's Apache 2.0 license.
+
+Scope is large; captured as a product direction, not a launch task.
+
+---
+
+## 15. Guest-page footer / public source-link consistency 🟢 (owner decision)
+
+The footer GitHub link (`https://github.com/jazzypants1989/wedding`) appears on `/` (`index.html:204`)
+and `/rsvp` (`rsvp/index.html:225`) but **not** on `/guestbook` or `/gallery` (their
+`<footer class="site-footer">` lacks it). So it's both inconsistent and advertises the public source +
+admin surface to wedding guests. Decide: for portfolio value, keep it and add to all four footers;
+otherwise remove it from the guest pages. Either way, make the four `.site-footer` blocks match.
+
+---
+
+## 16. Post-wedding launch smoke test 🔴 (ops, Phase 7 §6)
+
+On a real phone over cellular: register with a seeded code, post a guestbook entry, upload one photo
+**and one ~30MB video**, react, comment, approve from the admin queue, and play the video on iOS Safari
+via `/media/:key/video` (validates Range/206 + the GPS-blanked variant; spot-check that the served
+bytes carry no coordinates). Manual go-live verification, no repo code.
