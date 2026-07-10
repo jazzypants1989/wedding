@@ -3,7 +3,7 @@
 
 import { isMobile, randomFrom, randomBetween } from "./effect-utils.js"
 
-const DEFAULT_COLORS = ["#d98634", "#c25b28", "#e0a83c", "#8a9a3b", "#b7502a"]
+const DEFAULT_COLORS = ["var(--fx-leaf-1)", "var(--fx-leaf-2)", "var(--fx-gold-3)", "var(--fx-leaf-3)", "var(--fx-leaf-2)"]
 
 /** @type {Types.createFallingLeaves} */
 export function createFallingLeaves(config) {

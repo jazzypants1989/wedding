@@ -381,7 +381,7 @@
 .caustics-layer-1 {
   background: radial-gradient(
     ellipse at 30% 40%,
-    rgba(255, 255, 255, 0.12),
+    var(--fx-film),
     transparent 60%
   );
   animation: caustics-move-1 8s ease-in-out infinite;
@@ -390,7 +390,7 @@
 .caustics-layer-2 {
   background: radial-gradient(
     ellipse at 60% 50%,
-    rgba(255, 255, 255, 0.1),
+    var(--fx-film),
     transparent 55%
   );
   animation: caustics-move-2 11s ease-in-out infinite reverse;
@@ -399,7 +399,7 @@
 .caustics-layer-3 {
   background: radial-gradient(
     ellipse at 50% 30%,
-    rgba(255, 255, 255, 0.08),
+    var(--fx-film),
     transparent 50%
   );
   animation: caustics-move-3 15s ease-in-out infinite alternate;
@@ -793,8 +793,8 @@
   border-radius: 2px;
   opacity: 0;
   transform-origin: left center;
-  background: linear-gradient(90deg, transparent, var(--streak-color, #fff));
-  box-shadow: 0 0 6px 1px var(--streak-color, #fff);
+  background: linear-gradient(90deg, transparent, var(--streak-color, var(--fx-bright)));
+  box-shadow: 0 0 6px 1px var(--streak-color, var(--fx-bright));
   animation-name: shooting-star-streak;
   animation-timing-function: ease-in;
   animation-iteration-count: infinite;
@@ -932,7 +932,7 @@
   border-radius: 50%;
   opacity: 0;
   transform: translate(0, -10vh);
-  box-shadow: 0 0 3px 1px rgba(255, 255, 255, 0.35);
+  box-shadow: 0 0 3px 1px var(--fx-glow-soft);
   animation-name: snow-fall;
   animation-timing-function: linear;
   animation-iteration-count: infinite;
@@ -990,11 +990,11 @@
   bottom: 0;
   border-radius: 50%;
   opacity: 0;
-  border: 1px solid rgba(255, 255, 255, 0.55);
+  border: 1px solid var(--fx-film-line);
   background: radial-gradient(
     circle at 30% 30%,
-    rgba(255, 255, 255, 0.5),
-    rgba(200, 235, 255, 0.15) 60%,
+    var(--fx-film-line),
+    var(--fx-film) 60%,
     transparent 75%
   );
   animation-name: bubble-rise;

@@ -3,7 +3,7 @@
 
 import { isMobile, randomFrom, randomBetween } from "./effect-utils.js"
 
-const DEFAULT_COLORS = ["#ffffff", "#eaf4ff", "#dcefff"]
+const DEFAULT_COLORS = ["var(--fx-bright)", "var(--fx-cool-1)", "var(--fx-cool-2)"]
 
 /** @type {Types.createSnowfall} */
 export function createSnowfall(config) {

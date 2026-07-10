@@ -60,6 +60,46 @@
      form — brandAlpha() (config.js) injects alpha by string substitution, not a parser. */
   --effect-brand: rgb(221, 115, 100);
   --effect-brand-dark: #c1330d;
+
+  /* Flat JS-sampled effect palette (mirrors --effect-brand): read by config.js. */
+  --effect-gold: #ffd700;
+  --effect-white: #fff;
+  --effect-blush: #ffe4e1;
+  --effect-pink: #ff69b4;
+  --effect-sky: #87ceeb;
+  --effect-purple: #c44dff;
+
+  /* Effect particle palette. The pure-CSS ambient effects (starfield, snowfall,
+     rose-petals, …) read these tokens instead of hardcoded hex, so they (a) stay
+     legible in BOTH light and dark — the light() slot is dark enough for the
+     cream #eee6dc canvas, the dark() slot bright for the plum #1a1525 — and (b)
+     can be re-tinted per effect-theme (see the data-effect-theme blocks below).
+     Consumed via inline `style.backgroundColor = "var(--fx-…)"` in the JS
+     factories (valid — the browser resolves the var) and directly in effects.css.
+     Unlike --effect-brand (flat, for canvas/JS-sampled colors), these ARE
+     light-dark() because their effects are pure DOM/CSS and never sampled by JS. */
+  --fx-bright: light-dark(#465a80, #ffffff); /* star/snow/sparkle core */
+  --fx-cool-1: light-dark(#3f5a86, #dbe9ff);
+  --fx-cool-2: light-dark(#54689f, #c9d8ff);
+  --fx-warm-1: light-dark(#7a6230, #fff4d6); /* warm star/spark tint */
+  --fx-gold-1: light-dark(#a9760f, #ffe98a);
+  --fx-gold-2: light-dark(#8c6410, #fff3b0);
+  --fx-gold-3: light-dark(#956f14, #f0e0b0);
+  --fx-green-1: light-dark(#5c7a2a, #a8e063);
+  --fx-green-2: light-dark(#4c6a24, #c9ff8a);
+  --fx-rose-1: light-dark(#c85a78, #ff8fa3);
+  --fx-rose-2: light-dark(#c06a86, #ffb7c5);
+  --fx-rose-3: light-dark(#b23a5e, #ff6b9d);
+  --fx-leaf-1: light-dark(#b3641f, #e0a83c);
+  --fx-leaf-2: light-dark(#9a4a1e, #d98634);
+  --fx-leaf-3: light-dark(#5c6a24, #8a9a3b);
+  --fx-frost: light-dark(#6a89b8, #dceeff);
+  /* Alpha helpers for glows / translucent films (box-shadow, caustics, bubbles). */
+  --fx-glow: light-dark(rgba(70, 95, 145, 0.4), rgba(255, 255, 255, 0.4));
+  --fx-glow-soft: light-dark(rgba(70, 95, 145, 0.28), rgba(255, 255, 255, 0.3));
+  --fx-film: light-dark(rgba(70, 95, 145, 0.12), rgba(255, 255, 255, 0.12));
+  --fx-film-line: light-dark(rgba(70, 95, 145, 0.5), rgba(255, 255, 255, 0.55));
+
   --color-primary-dark: light-dark(#a02a0b, #e09585);
   --color-background: light-dark(#eee6dc, #1a1525);
   --color-text: light-dark(#c1330d, #f0c0b0);
@@ -223,6 +263,9 @@
 :root[data-effect-theme="celestial"] {
   --effect-brand: rgb(124, 108, 214);
   --effect-brand-dark: #4a3f8f;
+  /* Slightly more indigo particle tint. */
+  --fx-cool-1: light-dark(#3a4f86, #dbe9ff);
+  --fx-cool-2: light-dark(#4a3f8f, #c9d8ff);
 }
 :root[data-effect-theme="garden"] {
   --effect-brand: rgb(122, 160, 96);
@@ -231,10 +274,15 @@
 :root[data-effect-theme="winter"] {
   --effect-brand: rgb(120, 160, 196);
   --effect-brand-dark: #3d5f7d;
+  --fx-cool-1: light-dark(#4a6a90, #eaf4ff);
+  --fx-cool-2: light-dark(#5a7aa0, #dcefff);
 }
 :root[data-effect-theme="coastal"] {
   --effect-brand: rgb(74, 170, 168);
   --effect-brand-dark: #2c6f6d;
+  /* Teal particle tint. */
+  --fx-cool-1: light-dark(#2c6f6d, #bfeae8);
+  --fx-cool-2: light-dark(#3a8f8c, #a8dedb);
 }
 
 /* ============ Utilities ============ */

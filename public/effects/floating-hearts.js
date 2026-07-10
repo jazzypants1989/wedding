@@ -2,13 +2,12 @@
 /** @import * as Types from './types.js' */
 
 import { isMobile, randomFrom, randomBetween } from "./effect-utils.js"
-import { EFFECT_PALETTE } from "./config.js"
 
 const DEFAULT_COLORS = [
-  EFFECT_PALETTE.brand,
-  EFFECT_PALETTE.pink,
-  "#ff8fa3",
-  EFFECT_PALETTE.blush,
+  "var(--fx-rose-1)",
+  "var(--fx-rose-3)",
+  "var(--fx-rose-1)",
+  "var(--fx-rose-2)",
 ]
 
 /** @type {Types.createFloatingHearts} */

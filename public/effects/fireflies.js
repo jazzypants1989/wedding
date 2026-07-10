@@ -3,7 +3,7 @@
 
 import { isMobile, randomFrom, randomBetween } from "./effect-utils.js"
 
-const DEFAULT_COLORS = ["#ffe98a", "#c9ff8a", "#fff3b0", "#a8e063"]
+const DEFAULT_COLORS = ["var(--fx-gold-1)", "var(--fx-green-2)", "var(--fx-gold-2)", "var(--fx-green-1)"]
 
 /** @type {Types.createFireflies} */
 export function createFireflies(config) {

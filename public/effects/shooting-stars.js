@@ -3,7 +3,7 @@
 
 import { isMobile, randomFrom, randomBetween } from "./effect-utils.js"
 
-const DEFAULT_COLORS = ["#ffffff", "#eaf2ff", "#fff4d6"]
+const DEFAULT_COLORS = ["var(--fx-bright)", "var(--fx-cool-1)", "var(--fx-warm-1)"]
 
 /** @type {Types.createShootingStars} */
 export function createShootingStars(config) {

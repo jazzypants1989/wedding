@@ -11,10 +11,18 @@ import { getActiveTheme } from "./themes.js"
 // (public/styles/tokens.css), read here so the palette isn't a second place to
 // edit the wedding's brand color. Guarded for non-DOM contexts (tests/SSR); the
 // fallback mirrors the token value.
-const brand =
-  (typeof getComputedStyle === "function" &&
-    getComputedStyle(document.documentElement).getPropertyValue("--effect-brand").trim()) ||
-  "rgb(221, 115, 100)"
+/** Read a CSS custom property off :root, falling back in non-DOM contexts
+ *  (tests/SSR) or when the token is absent/empty.
+ *  @param {string} name @param {string} fallback @returns {string} */
+function readToken(name, fallback) {
+  return (
+    (typeof getComputedStyle === "function" &&
+      getComputedStyle(document.documentElement).getPropertyValue(name).trim()) ||
+    fallback
+  )
+}
+
+const brand = readToken("--effect-brand", "rgb(221, 115, 100)")
 
 /** Compose an `rgba()` from the `rgb(r, g, b)` brand color (no regex). If the
  *  token isn't in functional `rgb(` form (e.g. a hex re-skin), fall back to the
@@ -28,12 +36,12 @@ export function brandAlpha(alpha) {
 /** Shared color palette used across effects */
 export const EFFECT_PALETTE = {
   brand,
-  gold: "#ffd700",
-  white: "#fff",
-  blush: "#ffe4e1",
-  pink: "#ff69b4",
-  sky: "#87ceeb",
-  purple: "#c44dff",
+  gold: readToken("--effect-gold", "#ffd700"),
+  white: readToken("--effect-white", "#fff"),
+  blush: readToken("--effect-blush", "#ffe4e1"),
+  pink: readToken("--effect-pink", "#ff69b4"),
+  sky: readToken("--effect-sky", "#87ceeb"),
+  purple: readToken("--effect-purple", "#c44dff"),
 }
 
 /** @type {typeof Types.EFFECT_CONFIGS} */
@@ -180,7 +188,7 @@ export const EFFECT_CONFIGS = {
       delayRange: [0, 8],
       sizeRange: [10, 20],
       swayRange: [20, 60],
-      colors: [EFFECT_PALETTE.brand, EFFECT_PALETTE.pink, EFFECT_PALETTE.blush, "#ffb7c5"],
+      colors: ["var(--fx-rose-1)", "var(--fx-rose-3)", "var(--fx-rose-2)", "var(--fx-rose-2)"],
     },
   },
 
@@ -191,7 +199,7 @@ export const EFFECT_CONFIGS = {
       delayRange: [0, 9],
       sizeRange: [10, 18],
       driftRange: [15, 50],
-      colors: [EFFECT_PALETTE.brand, EFFECT_PALETTE.pink, "#ff8fa3", EFFECT_PALETTE.blush],
+      colors: ["var(--fx-rose-1)", "var(--fx-rose-3)", "var(--fx-rose-1)", "var(--fx-rose-2)"],
     },
   },
 
@@ -202,7 +210,7 @@ export const EFFECT_CONFIGS = {
       delayRange: [0, 12],
       sizeRange: [2, 5],
       swayRange: [10, 30],
-      colors: [EFFECT_PALETTE.gold, "#f0e0b0", "#fff8e7", "#e8c977"],
+      colors: ["var(--fx-gold-1)", "var(--fx-gold-3)", "var(--fx-warm-1)", "var(--fx-gold-2)"],
     },
   },
 
@@ -212,7 +220,7 @@ export const EFFECT_CONFIGS = {
       sizeRange: [1, 3],
       twinkleDurationRange: [2, 6],
       delayRange: [0, 6],
-      colors: ["#ffffff", "#dbe9ff", "#fff4d6", "#c9d8ff"],
+      colors: ["var(--fx-bright)", "var(--fx-cool-1)", "var(--fx-warm-1)", "var(--fx-cool-2)"],
     },
   },
 
@@ -222,7 +230,7 @@ export const EFFECT_CONFIGS = {
       cycleDurationRange: [5, 11],
       delayRange: [0, 12],
       lengthRange: [120, 220],
-      colors: ["#ffffff", "#eaf2ff", "#fff4d6"],
+      colors: ["var(--fx-bright)", "var(--fx-cool-1)", "var(--fx-warm-1)"],
     },
   },
 
@@ -243,7 +251,7 @@ export const EFFECT_CONFIGS = {
       blinkDurationRange: [2, 5],
       driftDurationRange: [8, 16],
       driftRange: [20, 70],
-      colors: ["#ffe98a", "#c9ff8a", "#fff3b0", "#a8e063"],
+      colors: ["var(--fx-gold-1)", "var(--fx-green-2)", "var(--fx-gold-2)", "var(--fx-green-1)"],
     },
   },
 
@@ -254,7 +262,7 @@ export const EFFECT_CONFIGS = {
       delayRange: [0, 9],
       sizeRange: [10, 20],
       swayRange: [30, 80],
-      colors: ["#d98634", "#c25b28", "#e0a83c", "#8a9a3b", "#b7502a"],
+      colors: ["var(--fx-leaf-1)", "var(--fx-leaf-2)", "var(--fx-gold-3)", "var(--fx-leaf-3)", "var(--fx-leaf-2)"],
     },
   },
 
@@ -265,7 +273,7 @@ export const EFFECT_CONFIGS = {
       delayRange: [0, 10],
       sizeRange: [3, 8],
       swayRange: [15, 55],
-      colors: ["#ffffff", "#eaf4ff", "#dcefff"],
+      colors: ["var(--fx-bright)", "var(--fx-cool-1)", "var(--fx-cool-2)"],
     },
   },
 

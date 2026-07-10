@@ -2,9 +2,8 @@
 /** @import * as Types from './types.js' */
 
 import { isMobile, randomFrom, randomBetween } from "./effect-utils.js"
-import { EFFECT_PALETTE } from "./config.js"
 
-const DEFAULT_COLORS = [EFFECT_PALETTE.gold, "#f0e0b0", "#fff8e7", "#e8c977"]
+const DEFAULT_COLORS = ["var(--fx-gold-1)", "var(--fx-gold-3)", "var(--fx-warm-1)", "var(--fx-gold-2)"]
 
 /** @type {Types.createGoldenDust} */
 export function createGoldenDust(config) {

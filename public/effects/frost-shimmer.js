@@ -10,7 +10,7 @@ export function createFrostShimmer(config) {
 
   const opacity = cfg.opacity !== undefined ? cfg.opacity : 0.5
   const breatheSpeed = cfg.breatheSpeed !== undefined ? cfg.breatheSpeed : 9
-  const color = cfg.color || "#dceeff"
+  const color = cfg.color || "var(--fx-frost)"
   // How far the frost reaches in from the edges (transparent hole radius, %).
   const clearRadius = cfg.clearRadius !== undefined ? cfg.clearRadius : 42
 

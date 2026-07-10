@@ -3,7 +3,7 @@
 
 import { isMobile, randomFrom, randomBetween } from "./effect-utils.js"
 
-const DEFAULT_COLORS = ["#ffffff", "#dbe9ff", "#fff4d6", "#c9d8ff"]
+const DEFAULT_COLORS = ["var(--fx-bright)", "var(--fx-cool-1)", "var(--fx-warm-1)", "var(--fx-cool-2)"]
 
 /** @type {Types.createStarfield} */
 export function createStarfield(config) {
