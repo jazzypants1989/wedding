@@ -129,7 +129,13 @@ function render() {
       <img class="lightbox-media" src="/media/${item.file_key}/display" alt="${alt}">`
   }
 
-  getElement("lightbox-counter").textContent = `${index + 1} / ${items.length}`
+  // `items.length` is only the loaded page(s), not the section's true total.
+  // Rather than silently understate it (and grow as you page), append "+" while
+  // more remain unloaded so the denominator reads as a floor, not a total.
+  const more = source.hasMore(section)
+  getElement("lightbox-counter").textContent = `${index + 1} / ${items.length}${
+    more ? "+" : ""
+  }`
   getElement("lightbox-author").textContent = item.author_name
   const time = getElement("lightbox-time")
   time.textContent = formatRelative(item.created_at)

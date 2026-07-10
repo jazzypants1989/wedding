@@ -29,6 +29,19 @@ export function renderCommentThread(targetType, targetId, count = 0) {
 export function initCommentThreads(root = document.body) {
   root.addEventListener("click", onClick)
   root.addEventListener("submit", onSubmit)
+  root.addEventListener("input", onInput)
+}
+
+/** Live "N/500" counter for the comment textarea (2.6). @param {Event} e */
+function onInput(e) {
+  const input = e.target
+  if (!(input instanceof HTMLTextAreaElement)) return
+  if (!input.matches("[data-comment-input]")) return
+  const form = input.closest("[data-comment-form]")
+  const counter = form && form.querySelector("[data-comment-counter]")
+  if (counter instanceof HTMLElement) {
+    counter.textContent = `${input.value.length}/500`
+  }
 }
 
 /** @param {number} count @returns {string} */
@@ -66,6 +79,7 @@ function composerMarkup() {
     <form class="comment-composer" data-comment-form>
       <textarea class="comment-input" data-comment-input rows="2" maxlength="500"
         placeholder="Add a comment…" aria-label="Add a comment"></textarea>
+      <span class="char-counter" data-comment-counter aria-hidden="true">0/500</span>
       <button type="submit" class="btn btn-small comment-submit">Post</button>
     </form>
     <p class="comment-error" data-comment-error hidden></p>`

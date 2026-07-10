@@ -175,7 +175,9 @@
   opacity: 1;
   padding: var(--spacing-lg);
   margin-bottom: var(--spacing-lg);
-  max-height: 500px;
+  /* Generous cap so long dietary + accommodation + message text never clips;
+     clip-path drives the reveal, so an oversized max-height only bounds it. */
+  max-height: 2000px;
 }
 
 /* Success state */

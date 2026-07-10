@@ -87,8 +87,14 @@ function wireSwitcher() {
  */
 function selectSection(section, updateUrl) {
   const isOfficial = section === "official"
-  getButtonElement("tab-official").setAttribute("aria-selected", String(isOfficial))
-  getButtonElement("tab-guest").setAttribute("aria-selected", String(!isOfficial))
+  const officialTab = getButtonElement("tab-official")
+  const guestTab = getButtonElement("tab-guest")
+  officialTab.setAttribute("aria-selected", String(isOfficial))
+  guestTab.setAttribute("aria-selected", String(!isOfficial))
+  // Roving tabindex: only the active tab is in the tab order; arrows (wired in
+  // wireSwitcher) move between them, and Tab exits the tablist (2.5).
+  officialTab.tabIndex = isOfficial ? 0 : -1
+  guestTab.tabIndex = isOfficial ? -1 : 0
   // Upload CTA belongs to the guest section only.
   getElement("guest-cta").hidden = isOfficial
   showSection(section)

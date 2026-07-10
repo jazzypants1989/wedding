@@ -299,8 +299,25 @@
 
 .gb-composer-actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   margin-top: var(--spacing-sm);
+}
+
+/* Live "N/max" counter for capped textareas (guestbook + comments). Visual
+   aid only (aria-hidden); the maxlength attribute does the real enforcing. */
+.char-counter {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.gb-composer-actions .char-counter {
+  margin-right: auto; /* counter left, submit stays right */
+}
+
+.comment-composer .char-counter {
+  align-self: flex-end; /* column flex — push the counter to the right edge */
 }
 
 .gb-pending-note {

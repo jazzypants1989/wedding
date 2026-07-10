@@ -37,7 +37,10 @@ export function initUpload() {
   )
 
   getElement("upload-cancel-all").addEventListener("click", () => {
-    if (queue.activeCount() > 1 && !confirm("Cancel all uploads?")) return
+    // Confirm whenever there's in-flight work, regardless of count (a single
+    // active upload is just as easy to cancel by accident as several); with
+    // nothing active this only clears the finished tray, so skip the prompt.
+    if (queue.activeCount() > 0 && !confirm("Cancel all uploads?")) return
     queue.cancelAll()
     renderTray()
   })

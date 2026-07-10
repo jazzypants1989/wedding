@@ -190,6 +190,23 @@ export function detectContactType(contact) {
 
 const DEFAULT_API_TIMEOUT = 30000
 
+/**
+ * Map an HTTP error into guest-friendly copy (2.7): soften 5xx (which carry
+ * terse or no message) and rate limits, but keep the server's specific message
+ * for 4xx validation errors ("Invalid invite code" etc.), which reads fine.
+ * @param {number} status @param {unknown} serverMessage @returns {string}
+ */
+function friendlyMessage(status, serverMessage) {
+  if (status >= 500) {
+    return "Something went wrong on our end — please try again in a moment."
+  }
+  if (typeof serverMessage === "string" && serverMessage) return serverMessage
+  if (status === 429) {
+    return "You're doing that a little too fast — please wait a moment and try again."
+  }
+  return `Request failed (${status})`
+}
+
 /** @type {Types.api} */
 export async function api(endpoint, options = {}) {
   /** @type {Record<string, string>} */
@@ -249,7 +266,7 @@ export async function api(endpoint, options = {}) {
       if (res.status === 401 && options.onUnauthorized) {
         options.onUnauthorized()
       }
-      throw new Error(data.error || "Request failed with status " + res.status)
+      throw new Error(friendlyMessage(res.status, data.error))
     }
 
     return data

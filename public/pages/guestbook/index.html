@@ -99,6 +99,7 @@
           <textarea id="gb-message" class="gb-textarea" rows="3" maxlength="2000"
             placeholder="Share a memory, a wish, a bit of advice…"></textarea>
           <div class="gb-composer-actions">
+            <span id="gb-counter" class="char-counter" aria-hidden="true">0/2000</span>
             <button type="submit" class="btn btn-primary" id="gb-submit">Sign the guestbook</button>
           </div>
         </form>
@@ -111,7 +112,11 @@
         <span class="spinner" aria-hidden="true"></span>Loading messages…
       </div>
 
-      <div id="gb-feed" class="gb-feed" aria-live="polite"></div>
+      <!-- No aria-live on the whole feed: bulk-fetching 20 entries (and each
+           paginated batch) would flood a screen reader. Only the guest's own
+           freshly-composed post is announced, via #gb-live below. -->
+      <div id="gb-feed" class="gb-feed"></div>
+      <div id="gb-live" class="sr-only" aria-live="polite"></div>
 
       <div id="gb-empty" class="empty-state" hidden>
         No messages yet.

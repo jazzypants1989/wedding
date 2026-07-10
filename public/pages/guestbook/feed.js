@@ -138,6 +138,10 @@ function celebrate(status) {
 }
 
 function showPendingNote() {
+  // One-time only (spec — Phase 2 §5); mirrors the gbCelebrated guard above so
+  // it doesn't reappear on every pending post/reload.
+  if (localStorage.getItem("gbPendingNoteSeen")) return
+  localStorage.setItem("gbPendingNoteSeen", "1")
   const note = getElement("gb-pending-note")
   note.innerHTML = html`
     <span>Thanks! Jordana &amp; Jesse approve messages from new folks — yours
@@ -167,6 +171,11 @@ async function submitPost(message) {
     )
     getTextAreaElement("gb-message").value = ""
     addEntries([data.entry], true)
+    // Announce only this own post (the feed itself is not a live region, 2.15).
+    getElement("gb-live").textContent =
+      data.status === "pending"
+        ? "Your message was posted and is awaiting approval."
+        : "Your message was posted."
     celebrate(data.status)
     if (data.status === "pending") showPendingNote()
   } catch (err) {
@@ -193,6 +202,15 @@ function onComposerSubmit(e) {
 /** @type {Types.initFeed} */
 export function initFeed() {
   getElement("gb-composer-form").addEventListener("submit", onComposerSubmit)
+
+  // Live character counter (2.6) — mirrors the textarea's maxlength.
+  const messageEl = getTextAreaElement("gb-message")
+  const counterEl = getElement("gb-counter")
+  const updateCounter = () => {
+    counterEl.textContent = `${messageEl.value.length}/2000`
+  }
+  messageEl.addEventListener("input", updateCounter)
+  updateCounter()
 
   getElement("gb-empty-cta").addEventListener("click", () => {
     getTextAreaElement("gb-message").focus()

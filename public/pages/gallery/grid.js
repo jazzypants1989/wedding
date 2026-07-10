@@ -44,6 +44,10 @@ export function initGrid(cb) {
     container.appendChild(sentinel)
     // One delegated click handler per container → open the lightbox.
     container.addEventListener("click", onCellClick)
+    // A 404 / processing gap would otherwise show the raw alt text on a bare
+    // box. `error` doesn't bubble, so listen in the capture phase and swap the
+    // failed thumb for the same 📷 placeholder used for un-processable media.
+    container.addEventListener("error", onThumbError, true)
 
     sections[section] = {
       section,
@@ -83,6 +87,20 @@ export function initGrid(cb) {
     s.autoFetches = 0 // a manual click re-arms auto-loading
     void loadMore(active)
   })
+}
+
+/** @param {Event} e */
+function onThumbError(e) {
+  const img = e.target
+  if (!(img instanceof HTMLImageElement)) return
+  if (!img.classList.contains("media-thumb")) return
+  if (img.dataset.errored) return // guard against a re-error loop
+  img.dataset.errored = "1"
+  const ph = document.createElement("span")
+  ph.className = "media-placeholder"
+  ph.setAttribute("role", "img")
+  ph.setAttribute("aria-label", img.alt || "Photo unavailable")
+  img.replaceWith(ph)
 }
 
 /** @param {Event} e */

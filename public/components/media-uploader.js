@@ -184,7 +184,7 @@ export function createUploadQueue(callbacks = {}, options = {}) {
     } catch (err) {
       if (item.state === "canceled") return // remove() already handled it
       const status = err instanceof UploadError ? err.status : 0
-      fail(item, uploadMessage(err), !isTerminal(status))
+      fail(item, uploadMessage(err, item.kind), !isTerminal(status))
     }
   }
 
@@ -487,10 +487,16 @@ function processingMessage(err) {
     : "This file type isn't supported on your device — try uploading from Photos as JPEG"
 }
 
-/** @param {unknown} err @returns {string} */
-function uploadMessage(err) {
+/** @param {unknown} err @param {string} [kind] @returns {string} */
+function uploadMessage(err, kind) {
   if (err instanceof UploadError) {
-    if (err.status === 413) return "File too large"
+    if (err.status === 413) {
+      // Mirrors MEDIA_LIMITS.IMAGE_ORIGINAL_MAX (30MB) / the 100MB video cap.
+      // types.js can't be imported client-side (it reads process.env at load),
+      // so the caps are restated here — keep in sync if they change.
+      const maxMb = kind === "video" ? 100 : 30
+      return `File too large (max ${maxMb} MB)`
+    }
     if (err.status === 415) return "Not a supported format"
     if (err.status === 507) return "Storage is full — please try later"
     if (err.status === 401) return "Please sign in again to upload"

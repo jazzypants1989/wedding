@@ -171,6 +171,12 @@ function showForm(data) {
     option.textContent = i === 1 ? "1 (just me)" : `${i} guests`
     partySize.appendChild(option)
   }
+  // A solo guest gets a no-op single-option dropdown; hide its group (the select
+  // keeps value "1" so actual_party_size still submits correctly).
+  const partyGroup = partySize.closest(".form-group")
+  if (partyGroup instanceof HTMLElement) {
+    partyGroup.hidden = data.guest.party_size === 1
+  }
 
   if (data.rsvp) {
     prefillForm(data.rsvp)
