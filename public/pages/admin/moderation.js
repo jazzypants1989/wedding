@@ -5,13 +5,21 @@
 /** @import * as Types from './types.js' */
 
 import { state } from "./state.js"
-import { api, openModal, closeModal, showError, showSuccess } from "./utils.js"
+import {
+  api,
+  openModal,
+  closeModal,
+  showError,
+  showSuccess,
+  showLoading,
+} from "./utils.js"
 import {
   html,
   formatDate,
   getElement,
   getInputElement,
   getSelectElement,
+  getTextAreaElement,
   getButtonElement,
   getDialogElement,
   getErrorMessage,
@@ -34,7 +42,7 @@ const selected = new Set()
 let detailItem = /** @type {Types.ModerationItem | null} */ (null)
 /** The pending confirm-dialog action. */
 let confirmState =
-  /** @type {null | { title: string, desc: string, confirmLabel: string, danger: boolean, showRelease: boolean, run: () => Promise<void> }} */ (
+  /** @type {null | { title: string, desc: string, confirmLabel: string, danger: boolean, showRelease: boolean, showReason?: boolean, run: () => Promise<void> }} */ (
     null
   )
 
@@ -100,6 +108,7 @@ async function loadQueue() {
   if (accountFilter !== null) params.set("account_id", String(accountFilter))
 
   try {
+    showLoading(getElement("moderation-tbody"), 6)
     const data = /** @type {Types.ModerationQueueResponse} */ (
       await api(`/api/admin/moderation/queue?${params}`)
     )
@@ -300,7 +309,7 @@ function handleBulkReject() {
 // ---- confirm dialog -------------------------------------------------------
 
 /**
- * @param {{ title: string, desc: string, confirmLabel: string, danger: boolean, showRelease: boolean, run: () => Promise<void> }} cfg
+ * @param {{ title: string, desc: string, confirmLabel: string, danger: boolean, showRelease: boolean, showReason?: boolean, run: () => Promise<void> }} cfg
  */
 function openConfirmDialog(cfg) {
   confirmState = cfg
@@ -308,6 +317,8 @@ function openConfirmDialog(cfg) {
   getElement("mod-confirm-desc").textContent = cfg.desc
   getElement("mod-confirm-release-row").hidden = !cfg.showRelease
   getInputElement("mod-confirm-release").checked = false
+  getElement("mod-confirm-reason-row").hidden = !cfg.showReason
+  getTextAreaElement("mod-confirm-reason").value = ""
   getElement("mod-confirm-error").hidden = true
   const btn = getButtonElement("mod-confirm-btn")
   btn.textContent = cfg.confirmLabel
@@ -374,7 +385,15 @@ function openConfirm(action, items) {
       confirmLabel: "Reject",
       danger: true,
       showRelease: false,
-      run: () => runModeration(action, items, false),
+      // A single reject can carry an optional reason (recorded in the audit
+      // log); bulk reject would need a per-item reason, so it's single-only.
+      showReason: !!single,
+      run: () => {
+        const reason = single
+          ? getTextAreaElement("mod-confirm-reason").value
+          : ""
+        return runModeration(action, items, false, reason)
+      },
     })
     return
   }
@@ -394,14 +413,17 @@ function openConfirm(action, items) {
  * @param {"approve" | "reject" | "hide"} action
  * @param {Types.ModerationItem[]} items
  * @param {boolean} releasePending
+ * @param {string} [reason] Optional rejection reason (single reject only).
  */
-async function runModeration(action, items, releasePending) {
+async function runModeration(action, items, releasePending, reason = "") {
   if (items.length === 1) {
     const it = items[0]
-    const body =
-      action === "approve" && releasePending
-        ? JSON.stringify({ releasePending: true })
-        : undefined
+    let body
+    if (action === "approve" && releasePending) {
+      body = JSON.stringify({ releasePending: true })
+    } else if (action === "reject" && reason.trim()) {
+      body = JSON.stringify({ reason: reason.trim() })
+    }
     const res = /** @type {Types.ModerationActionResponse} */ (
       await api(`/api/admin/moderation/${it.content_type}/${it.id}/${action}`, {
         method: "POST",
@@ -559,6 +581,7 @@ async function loadAccounts() {
   const params = new URLSearchParams()
   if (trusted) params.set("trusted", trusted)
   try {
+    showLoading(getElement("accounts-tbody"), 6)
     const data = /** @type {Types.AccountsResponse} */ (
       await api(`/api/admin/accounts?${params}`)
     )
@@ -575,7 +598,7 @@ function renderAccounts(accounts) {
   const tbody = getElement("accounts-tbody")
   if (accounts.length === 0) {
     tbody.innerHTML = html`<tr>
-      <td colspan="6" class="empty-state">No accounts found</td>
+      <td colspan="6" class="empty-state">No accounts yet</td>
     </tr>`
     return
   }

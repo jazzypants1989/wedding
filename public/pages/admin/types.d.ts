@@ -415,6 +415,7 @@ export interface GuestsApiResponse {
  */
 export interface GuestModuleState {
   deleteId: number | null
+  restoreId: number | null
   searchTimeout: ReturnType<typeof setTimeout> | undefined
 }
 
@@ -478,11 +479,11 @@ export function editGuest(id: number): void
 export function confirmDeleteGuest(id: number): void
 
 /**
- * Restore a soft-deleted guest.
+ * Open the restore-confirmation dialog for a soft-deleted guest.
  * @example
- * await restoreGuest(5);
+ * restoreGuest(5);
  */
-export function restoreGuest(id: number): Promise<void>
+export function restoreGuest(id: number): void
 
 /**
  * Handle guest form submission.
@@ -497,6 +498,13 @@ export function handleGuestFormSubmit(e: SubmitEvent): Promise<void>
  * btn.addEventListener('click', handleDeleteConfirm);
  */
 export function handleDeleteConfirm(): Promise<void>
+
+/**
+ * Handle restore confirmation click.
+ * @example
+ * btn.addEventListener('click', handleRestoreConfirm);
+ */
+export function handleRestoreConfirm(): Promise<void>
 
 /**
  * Handle search input.
@@ -707,6 +715,14 @@ export function showSuccess(message: string): void
  * clearNotification();
  */
 export function clearNotification(): void
+
+/** Render a centered spinner into a tab container while its data loads, so a
+ * slow fetch doesn't leave the prior tab's stale rows in place. For a
+ * `<tbody>`, pass the table's column count so the row spans full width.
+ * @example
+ * showLoading(getElement('guests-tbody'), 6);
+ */
+export function showLoading(el: HTMLElement, colspan?: number): void
 
 /**
  * Open a modal dialog with optional focus return support.

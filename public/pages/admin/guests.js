@@ -2,7 +2,14 @@
 /** @import * as Types from './types.js' */
 
 import { state } from "./state.js"
-import { api, showError, openModal, closeModal } from "./utils.js"
+import {
+  api,
+  showError,
+  showSuccess,
+  showLoading,
+  openModal,
+  closeModal,
+} from "./utils.js"
 import {
   html,
   raw,
@@ -19,7 +26,7 @@ import {
 } from "../utils.js"
 
 /** @type {Types.GuestModuleState} */
-const moduleState = { deleteId: null, searchTimeout: undefined }
+const moduleState = { deleteId: null, restoreId: null, searchTimeout: undefined }
 
 /** @type {AbortController | null} */
 let searchController = null
@@ -62,6 +69,7 @@ export async function loadGuests() {
     if (search) params.set("search", search)
     if (status) params.set("status", status)
 
+    showLoading(getElement("guests-tbody"), 6)
     const data = await api(`/api/admin/guests?${params}`, {
       signal: searchController.signal,
     })
@@ -85,7 +93,7 @@ function renderGuests(guests, pagination) {
     tbody.innerHTML = html`
       <tr>
         <td colspan="6" class="empty-state">
-          ${isViewingArchived ? "No archived guests" : "No guests found"}
+          ${isViewingArchived ? "No archived guests yet" : "No guests yet"}
         </td>
       </tr>
     `
@@ -230,15 +238,40 @@ export function confirmDeleteGuest(id) {
 }
 
 /** @type {Types.restoreGuest} */
-export async function restoreGuest(id) {
-  if (!confirm("Restore this guest from the archive?")) return
+export function restoreGuest(id) {
+  const guest = state.getGuestById(id)
+  if (!guest) return
+
+  moduleState.restoreId = id
+  getElement("restore-message").textContent =
+    `Are you sure you want to restore "${guest.name}" from the archive?`
+  getElement("restore-error").hidden = true
+  openModal(getDialogElement("restore-modal"))
+}
+
+/** @type {Types.handleRestoreConfirm} */
+async function handleRestoreConfirm() {
+  const btn = getButtonElement("confirm-restore-btn")
+  if (btn.disabled || !moduleState.restoreId) return
+
+  btn.disabled = true
+  const errorEl = getElement("restore-error")
+  errorEl.hidden = true
 
   try {
-    await api(`/api/admin/guests/${id}/restore`, { method: "POST" })
+    await api(`/api/admin/guests/${moduleState.restoreId}/restore`, {
+      method: "POST",
+    })
+    closeModal(getDialogElement("restore-modal"))
     await loadGuests()
     await loadStats()
+    showSuccess("Guest restored")
   } catch (err) {
-    showError("Failed to restore guest: " + getErrorMessage(err))
+    errorEl.textContent = getErrorMessage(err)
+    errorEl.hidden = false
+  } finally {
+    btn.disabled = false
+    moduleState.restoreId = null
   }
 }
 
@@ -278,6 +311,7 @@ async function handleGuestFormSubmit(e) {
     closeModal(getDialogElement("guest-modal"))
     await loadGuests()
     await loadStats()
+    showSuccess(id ? "Guest updated" : "Guest added")
   } catch (err) {
     errorEl.textContent = getErrorMessage(err)
     errorEl.hidden = false
@@ -301,6 +335,7 @@ async function handleDeleteConfirm() {
     closeModal(getDialogElement("delete-modal"))
     await loadGuests()
     await loadStats()
+    showSuccess("Guest archived")
   } catch (err) {
     errorEl.textContent = getErrorMessage(err)
     errorEl.hidden = false
@@ -359,6 +394,10 @@ export function initGuests() {
   getButtonElement("confirm-delete-btn").addEventListener(
     "click",
     handleDeleteConfirm,
+  )
+  getButtonElement("confirm-restore-btn").addEventListener(
+    "click",
+    handleRestoreConfirm,
   )
   getInputElement("guest-search").addEventListener("input", handleSearchInput)
   getSelectElement("guest-status-filter").addEventListener("change", () => {

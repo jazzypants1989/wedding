@@ -8,7 +8,7 @@
 /** @import * as Components from '../../components/types.js' */
 
 import { state } from "./state.js"
-import { api, openModal, closeModal } from "./utils.js"
+import { api, openModal, closeModal, showSuccess, showLoading } from "./utils.js"
 import {
   html,
   getElement,
@@ -23,6 +23,8 @@ import { createUploadQueue } from "../../components/media-uploader.js"
 let queue
 /** Debounce handle for the batched reorder POST. */
 let reorderTimer = /** @type {ReturnType<typeof setTimeout> | undefined} */ (undefined)
+/** Debounce handle coalescing the post-upload grid reload across a batch. */
+let uploadReloadTimer = /** @type {ReturnType<typeof setTimeout> | undefined} */ (undefined)
 /** Upload ids already folded into the grid (guards double-refresh). */
 const foldedIn = new Set()
 
@@ -31,6 +33,7 @@ const foldedIn = new Set()
 /** @type {Types.loadGalleryAdmin} */
 export async function loadGalleryAdmin() {
   try {
+    if (!foldedIn.size) showLoading(getElement("curated-grid"))
     const data = /** @type {GlobalTypes.MediaListResponse} */ (
       await api("/api/media?section=official&limit=500")
     )
@@ -126,6 +129,7 @@ async function saveOrder() {
       method: "POST",
       body: JSON.stringify({ ids }),
     })
+    showSuccess("Order saved ✓")
   } catch (err) {
     showGalleryError("Couldn't save the new order — reloading the current order.")
     loadGalleryAdmin()
@@ -143,6 +147,7 @@ async function saveCaption(id, value) {
     })
     const item = state.getCuratedById(id)
     if (item) item.caption = value.trim() || null
+    showSuccess("Caption saved ✓")
   } catch (err) {
     showGalleryError("Couldn't save that caption.")
   }
@@ -169,6 +174,7 @@ async function confirmRemove() {
     pendingRemoveId = null
     closeModal(getDialogElement("gallery-remove-modal"))
     renderGrid()
+    showSuccess("Photo removed")
   } catch (err) {
     const el = getElement("gallery-remove-error")
     el.textContent = getErrorMessage(err)
@@ -247,13 +253,15 @@ function initUploadModal() {
 /** @param {Components.UploadQueueItem} item */
 function onUploadChange(item) {
   // Official uploads auto-approve (admin principal); fold each finished item into
-  // the grid once it lands.
+  // the grid once it lands. A batch of N files would otherwise fire N sequential
+  // full-grid reloads, so coalesce them into one reload after the burst settles.
   if (
     (item.state === "done" || item.state === "pending") &&
     !foldedIn.has(item.id)
   ) {
     foldedIn.add(item.id)
-    loadGalleryAdmin()
+    clearTimeout(uploadReloadTimer)
+    uploadReloadTimer = setTimeout(() => loadGalleryAdmin(), 400)
   }
   renderUploadTray()
 }

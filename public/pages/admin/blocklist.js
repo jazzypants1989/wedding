@@ -2,12 +2,20 @@
 /** @import * as Types from './types.js' */
 
 import { state } from "./state.js"
-import { api, openModal, closeModal, showError } from "./utils.js"
+import {
+  api,
+  openModal,
+  closeModal,
+  showError,
+  showSuccess,
+  showLoading,
+} from "./utils.js"
 import {
   html,
   getElement,
   getFormElement,
   getInputElement,
+  getTextAreaElement,
   getButtonElement,
   getDialogElement,
   getErrorMessage,
@@ -19,6 +27,7 @@ const moduleState = { deleteId: null }
 /** @type {Types.loadBlocklist} */
 export async function loadBlocklist() {
   try {
+    showLoading(getElement("blocklist-tbody"), 5)
     const data = await api("/api/admin/blocklist")
     const response = /** @type {Types.BlocklistResponse} */ (data)
     state.currentBlocklist = response.blocklist
@@ -35,7 +44,7 @@ function renderBlocklist(entries) {
 
   if (entries.length === 0) {
     tbody.innerHTML = html`<tr>
-      <td colspan="5" class="empty-state">No blocklist entries</td>
+      <td colspan="5" class="empty-state">No blocklist entries yet</td>
     </tr>`
     return
   }
@@ -72,7 +81,7 @@ async function handleBlocklistFormSubmit(e) {
   const name = getInputElement("blocklist-name").value.trim() || null
   const email = getInputElement("blocklist-email").value.trim() || null
   const phone = getInputElement("blocklist-phone").value.trim() || null
-  const reason = getInputElement("blocklist-reason").value.trim() || null
+  const reason = getTextAreaElement("blocklist-reason").value.trim() || null
 
   if (!name && !email && !phone) {
     errorEl.textContent = "At least one of name, email, or phone is required"
@@ -91,6 +100,7 @@ async function handleBlocklistFormSubmit(e) {
 
     closeModal(getDialogElement("blocklist-modal"))
     await loadBlocklist()
+    showSuccess("Added to blocklist")
   } catch (err) {
     errorEl.textContent = getErrorMessage(err)
     errorEl.hidden = false
@@ -127,6 +137,7 @@ async function handleBlocklistDeleteConfirm() {
     })
     closeModal(getDialogElement("blocklist-delete-modal"))
     await loadBlocklist()
+    showSuccess("Removed from blocklist")
   } catch (err) {
     errorEl.textContent = getErrorMessage(err)
     errorEl.hidden = false

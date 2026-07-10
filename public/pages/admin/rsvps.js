@@ -1,7 +1,7 @@
 /** @file RSVP list display module */
 /** @import * as Types from './types.js' */
 
-import { api, showError } from "./utils.js"
+import { api, showError, showLoading } from "./utils.js"
 import { html, formatDate, getElement } from "../utils.js"
 
 /** @type {WeakMap<Element, AbortController>} */
@@ -120,6 +120,7 @@ document.addEventListener("click", (e) => {
 /** @type {Types.loadRsvps} */
 export async function loadRsvps() {
   try {
+    showLoading(getElement("rsvps-tbody"), 6)
     const data = await api("/api/admin/rsvps")
     const response = /** @type {Types.RSVPsResponse} */ (data)
     renderRsvps(response.rsvps)

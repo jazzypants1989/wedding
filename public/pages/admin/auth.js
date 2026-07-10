@@ -59,12 +59,29 @@ export async function checkSession() {
       state.csrfToken = getCookie("csrf")
       showDashboard()
       onLoginSuccess()
+      return
+    }
+    // 401/403 is the normal "not logged in / session expired" path — show the
+    // login form silently. Any other status is a server-side blip, not a
+    // sign-out, so say so instead of implying the session ended.
+    showLogin()
+    if (res.status !== 401 && res.status !== 403) {
+      showTransientSessionNotice()
     }
   } catch (err) {
-    // Not logged in or timed out, show login
+    // Network failure or timeout — transient, not an expired session.
+    showLogin()
+    showTransientSessionNotice()
   } finally {
     clearTimeout(timeoutId)
   }
+}
+
+/** Distinguish a connection blip from an expired session on the login screen. */
+function showTransientSessionNotice() {
+  loginError.textContent =
+    "We couldn't reach the server to check your session — this is usually a temporary connection issue, not a sign-out. Please try logging in again."
+  loginError.hidden = false
 }
 
 /** @type {Types.handleLoginSubmit} */

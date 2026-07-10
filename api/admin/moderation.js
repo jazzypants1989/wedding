@@ -5,7 +5,7 @@
 /** @import * as GlobalTypes from '../../types.js' */
 
 import fs from "node:fs"
-import { sendJson, parseBody } from "../../core/http.js"
+import { sendJson, parseBody, sanitize } from "../../core/http.js"
 import { log, AUDIT_ACTIONS } from "../../core/utils.js"
 import { getClientIp } from "../../core/rate-limit.js"
 import {
@@ -243,14 +243,21 @@ async function moderate(req, res, { params, session }, action) {
   const idResult = validateId(params.id, "entry ID")
   if (!idResult.valid) throw new ValidationError(idResult.error)
 
-  // Optional { releasePending } — only meaningful on approve (detail-modal
-  // "approve & release their other pending items"). Body is optional on POST.
+  // Optional body: { releasePending } on approve (detail-modal "approve &
+  // release their other pending items"), { reason } on reject (an optional
+  // note recorded in the audit log for an irreversible action). Body is
+  // optional on POST.
   let releasePending = false
-  if (action === "approve") {
+  /** @type {string | null} */
+  let reason = null
+  if (action === "approve" || action === "reject") {
     const body = await parseBody(req).catch(
       () => /** @type {Record<string, unknown>} */ ({}),
     )
     releasePending = body.releasePending === true
+    if (action === "reject" && typeof body.reason === "string") {
+      reason = sanitize(body.reason, 500)
+    }
   }
 
   const outcome = withTransaction(() =>
@@ -268,17 +275,19 @@ async function moderate(req, res, { params, session }, action) {
     fs.rmSync(itemDir(outcome.row.file_key), { recursive: true, force: true })
   }
 
+  /** @type {Record<string, unknown>} */
+  const details = {}
+  if (outcome.autoTrusted) details.autoTrusted = outcome.row.account_id
+  if (outcome.released) details.released = outcome.released
+  if (reason) details.reason = reason
+
   log({
     action: auditActionFor(action, outcome.wasHidden),
     adminId: session?.token,
     ip: getClientIp(req),
     resourceType: params.type,
     resourceId: idResult.value,
-    details: outcome.autoTrusted
-      ? { autoTrusted: outcome.row.account_id, released: outcome.released }
-      : outcome.released
-        ? { released: outcome.released }
-        : undefined,
+    details: Object.keys(details).length ? details : undefined,
   })
 
   return sendJson(res, 200, {

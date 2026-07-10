@@ -2,7 +2,14 @@
 /** @import * as Types from './types.js' */
 
 import { state } from "./state.js"
-import { api, openModal, closeModal, showError } from "./utils.js"
+import {
+  api,
+  openModal,
+  closeModal,
+  showError,
+  showSuccess,
+  showLoading,
+} from "./utils.js"
 import { loadGuests, loadStats } from "./guests.js"
 import { loadBlocklist } from "./blocklist.js"
 import {
@@ -13,10 +20,14 @@ import {
   getElement,
   getSelectElement,
   getInputElement,
+  getTextAreaElement,
   getButtonElement,
   getDialogElement,
   getErrorMessage,
 } from "../utils.js"
+
+/** The petition currently shown in the detail modal (for the approve/deny buttons). */
+let viewingPetitionId = /** @type {number | null} */ (null)
 
 /** @type {Types.updatePetitionBadge} */
 export function updatePetitionBadge(count) {
@@ -35,6 +46,7 @@ export async function loadPetitions() {
     const params = new URLSearchParams()
     if (status) params.set("status", status)
 
+    showLoading(getElement("petitions-tbody"), 6)
     const data = await api(`/api/admin/petitions?${params}`)
     const response = /** @type {Types.PetitionsWithCountsResponse} */ (data)
     state.currentPetitions = response.petitions
@@ -63,7 +75,7 @@ function renderPetitions(petitions) {
 
   if (petitions.length === 0) {
     tbody.innerHTML = html`<tr>
-      <td colspan="6" class="empty-state">No petitions found</td>
+      <td colspan="6" class="empty-state">No petitions yet</td>
     </tr>`
     return
   }
@@ -136,35 +148,35 @@ export function viewPetition(id) {
     </div>`}
   `
 
+  viewingPetitionId = id
   const approveBtn = getButtonElement("petition-approve-btn")
   const denyBtn = getButtonElement("petition-deny-btn")
-  const petitionModal = getDialogElement("petition-modal")
+  const isPending = petition.status === "pending"
+  approveBtn.hidden = !isPending
+  denyBtn.hidden = !isPending
 
-  if (petition.status === "pending") {
-    approveBtn.hidden = false
-    denyBtn.hidden = false
-    approveBtn.onclick = () => {
-      closeModal(petitionModal)
-      openApprovePetition(id)
-    }
-    denyBtn.onclick = () => {
-      closeModal(petitionModal)
-      openDenyPetition(id)
-    }
-  } else {
-    approveBtn.hidden = true
-    denyBtn.hidden = true
-  }
+  openModal(getDialogElement("petition-modal"))
+}
 
-  openModal(petitionModal)
+/** From the detail modal, close it and open the approve/deny confirm modal. */
+function handleViewApprove() {
+  if (viewingPetitionId === null) return
+  closeModal(getDialogElement("petition-modal"))
+  openApprovePetition(viewingPetitionId)
+}
+
+function handleViewDeny() {
+  if (viewingPetitionId === null) return
+  closeModal(getDialogElement("petition-modal"))
+  openDenyPetition(viewingPetitionId)
 }
 
 /** @type {Types.openApprovePetition} */
 export function openApprovePetition(id) {
   getInputElement("approve-petition-id").value = String(id)
-  getInputElement("approve-party-size").value = "2"
+  getSelectElement("approve-party-size").value = "2"
   getInputElement("approve-send-invite").checked = true
-  getInputElement("approve-notes").value = ""
+  getTextAreaElement("approve-notes").value = ""
   getElement("approve-error").hidden = true
   openModal(getDialogElement("petition-approve-modal"))
 }
@@ -173,7 +185,7 @@ export function openApprovePetition(id) {
 export function openDenyPetition(id) {
   getInputElement("deny-petition-id").value = String(id)
   getInputElement("deny-add-blocklist").checked = false
-  getInputElement("deny-notes").value = ""
+  getTextAreaElement("deny-notes").value = ""
   getElement("deny-error").hidden = true
   openModal(getDialogElement("petition-deny-modal"))
 }
@@ -181,9 +193,9 @@ export function openDenyPetition(id) {
 /** @type {Types.handleApproveConfirm} */
 async function handleApproveConfirm() {
   const id = getInputElement("approve-petition-id").value
-  const partySize = getInputElement("approve-party-size").value
+  const partySize = getSelectElement("approve-party-size").value
   const sendInvite = getInputElement("approve-send-invite").checked
-  const adminNotes = getInputElement("approve-notes").value
+  const adminNotes = getTextAreaElement("approve-notes").value
 
   const btn = getButtonElement("confirm-approve-btn")
   btn.disabled = true
@@ -203,6 +215,7 @@ async function handleApproveConfirm() {
     await loadPetitions()
     await loadGuests()
     await loadStats()
+    showSuccess("Petition approved")
   } catch (err) {
     const errorEl = getElement("approve-error")
     errorEl.textContent = getErrorMessage(err)
@@ -217,7 +230,7 @@ async function handleApproveConfirm() {
 async function handleDenyConfirm() {
   const id = getInputElement("deny-petition-id").value
   const addToBlocklist = getInputElement("deny-add-blocklist").checked
-  const adminNotes = getInputElement("deny-notes").value
+  const adminNotes = getTextAreaElement("deny-notes").value
 
   const btn = getButtonElement("confirm-deny-btn")
   btn.disabled = true
@@ -235,6 +248,7 @@ async function handleDenyConfirm() {
     closeModal(getDialogElement("petition-deny-modal"))
     await loadPetitions()
     if (addToBlocklist) await loadBlocklist()
+    showSuccess("Petition denied")
   } catch (err) {
     const errorEl = getElement("deny-error")
     errorEl.textContent = getErrorMessage(err)
@@ -279,6 +293,11 @@ export function initPetitions() {
     "click",
     handleDenyConfirm,
   )
+  getButtonElement("petition-approve-btn").addEventListener(
+    "click",
+    handleViewApprove,
+  )
+  getButtonElement("petition-deny-btn").addEventListener("click", handleViewDeny)
   getElement("petitions-tbody").addEventListener(
     "click",
     handlePetitionsTableClick,

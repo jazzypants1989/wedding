@@ -77,7 +77,8 @@
         </div>
       </div>
 
-      <div id="notification-banner" class="alert alert-error" role="alert" aria-live="polite" hidden></div>
+      <!-- Shared success/error banner: polite (not role=alert) since it also announces successes. -->
+      <div id="notification-banner" class="alert alert-error" aria-live="polite" hidden></div>
 
       <div class="tabs" role="tablist" aria-label="Admin dashboard sections">
         <button class="tab-btn active" data-tab="guests" role="tab" id="tab-btn-guests" aria-selected="true"
@@ -423,6 +424,19 @@
     </div>
   </dialog>
 
+  <dialog id="restore-modal" aria-labelledby="restore-modal-title">
+    <div class="modal-header flex-between">
+      <h2 id="restore-modal-title">Restore Guest</h2>
+      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
+    </div>
+    <p id="restore-message">Are you sure you want to restore this guest from the archive?</p>
+    <div id="restore-error" class="alert alert-error" role="alert" hidden></div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
+      <button type="button" class="btn btn-primary" id="confirm-restore-btn">Restore</button>
+    </div>
+  </dialog>
+
   <dialog id="rsvp-modal" aria-labelledby="rsvp-modal-title">
     <div class="modal-header flex-between">
       <h2 id="rsvp-modal-title">RSVP Details</h2>
@@ -620,6 +634,11 @@
       <input type="checkbox" id="mod-confirm-release">
       <span>Also approve this author's other pending items</span>
     </label>
+    <div id="mod-confirm-reason-row" class="form-group" hidden>
+      <label for="mod-confirm-reason">Reason <span class="text-muted">(optional, recorded in the audit log)</span></label>
+      <textarea id="mod-confirm-reason" rows="2" maxlength="500"
+        placeholder="Why is this being rejected?"></textarea>
+    </div>
     <div id="mod-confirm-error" class="alert alert-error" role="alert" hidden></div>
     <div class="modal-actions">
       <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
@@ -688,7 +707,7 @@
       <div id="blocklist-form-error" class="alert alert-error" role="alert" hidden></div>
       <div class="modal-actions">
         <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
-        <button type="submit" class="btn btn-primary">Add to Blocklist</button>
+        <button type="submit" class="btn btn-primary" id="blocklist-form-submit">Add to Blocklist</button>
       </div>
     </form>
   </dialog>

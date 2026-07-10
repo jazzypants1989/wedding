@@ -1,7 +1,7 @@
 /** @file Admin API helpers and modal & notification banner utilities */
 /** @import * as Types from './types.js' */
 
-import { getElement, api as baseApi } from "../utils.js"
+import { getElement, html, api as baseApi } from "../utils.js"
 import { state } from "./state.js"
 
 /** @type {WeakMap<HTMLDialogElement, HTMLElement>} */
@@ -11,8 +11,21 @@ const banner = getElement("notification-banner")
 /** @type {ReturnType<typeof setTimeout> | undefined} */
 let dismissTimer
 
+/**
+ * Set when a 401 is handled by redirecting to the login screen. The caller's
+ * `catch` block would otherwise call `showError` right after, leaving a stale
+ * error banner behind the (hidden) dashboard that flashes back on the next
+ * successful login. We swallow that one follow-up error. One-shot, with a
+ * timeout fallback in case the caller doesn't follow with `showError`.
+ */
+let authRedirectPending = false
+
 /** @type {Types.showError} */
 export function showError(message) {
+  if (authRedirectPending) {
+    authRedirectPending = false
+    return
+  }
   clearTimeout(dismissTimer)
   banner.textContent = message
   banner.className = "alert alert-error"
@@ -31,6 +44,18 @@ export function showSuccess(message) {
   dismissTimer = setTimeout(() => {
     banner.hidden = true
   }, 6000)
+}
+
+/** @type {Types.showLoading} */
+export function showLoading(el, colspan) {
+  const spinner = html`<span class="spinner" aria-hidden="true"></span>Loading…`
+  if (el instanceof HTMLTableSectionElement) {
+    el.innerHTML = html`<tr>
+      <td colspan="${colspan || 1}" class="loading">${spinner}</td>
+    </tr>`
+  } else {
+    el.innerHTML = html`<div class="loading">${spinner}</div>`
+  }
 }
 
 /** @type {Types.clearNotification} */
@@ -112,6 +137,16 @@ export function api(endpoint, options = {}) {
   return baseApi(endpoint, {
     ...options,
     csrf: true,
-    onUnauthorized: state.onAuthRequired,
+    onUnauthorized: () => {
+      // A 401 means the session expired — redirect to login and clear any
+      // banner. Suppress the caller's follow-up showError (see above) so we
+      // don't stack a stale error over the login screen.
+      authRedirectPending = true
+      clearNotification()
+      setTimeout(() => {
+        authRedirectPending = false
+      }, 1000)
+      state.onAuthRequired()
+    },
   })
 }
