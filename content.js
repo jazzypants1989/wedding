@@ -2,8 +2,8 @@
  *
  *  Everything wedding-specific — couple names, date, location, registry, nav,
  *  and the pre-/post-wedding copy variants — lives here so the site can be
- *  re-skinned by editing one file (the seed of the reusable-product direction
- *  in DEFERRED §14). The server templates the static HTML from these values
+ *  re-skinned by editing one file (the seed of the reusable-product roadmap
+ *  in TODO.md). The server templates the static HTML from these values
  *  (`core/static.js`) and exposes the client-needed scalars via `/api/config`.
  *
  *  Zero runtime deps, no regex. Browser code never imports this (repo-root, not

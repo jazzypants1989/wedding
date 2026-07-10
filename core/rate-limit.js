@@ -63,7 +63,7 @@ function createLimiter({ name, windowMs, max }) {
  * True for RFC-1918 private ranges + loopback. In the Docker/Traefik deployment
  * the reverse proxy always connects from one of these, and its container IP is
  * dynamic — so trusting the private ranges lets us honor X-Forwarded-For without
- * pinning a static proxy IP (DEFERRED §1). Public clients stay untrusted.
+ * pinning a static proxy IP. Public clients stay untrusted.
  * No regex: strip any IPv6-mapped prefix, then integer octet math.
  * @param {string} addr
  * @returns {boolean}
