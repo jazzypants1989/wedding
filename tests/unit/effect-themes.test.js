@@ -12,6 +12,7 @@ import {
   EFFECT_THEMES,
 } from "../../public/effects/themes.js"
 import { getEffectiveConfig, getDefaultConfig } from "../../public/effects/config.js"
+import { THEME_IDS } from "../../api/admin/site-content.js"
 
 test("resolveTheme returns the matching theme, else the default", () => {
   assert.equal(resolveTheme("elegant").id, "elegant")
@@ -74,6 +75,47 @@ test("localStorage override wins over theme + defaults; corrupt JSON is ignored"
     delete globalThis.localStorage
     delete globalThis.document
   }
+})
+
+test("array-valued config keys replace wholesale (no element merge)", () => {
+  // parallaxsparkles.sizeRange defaults to [2, 5]. A single-element override must
+  // REPLACE the array, not index-merge into [7, 5].
+  globalThis.localStorage = {
+    getItem: () => JSON.stringify({ parallaxsparkles: { sizeRange: [7] } }),
+  }
+  try {
+    const cfg = getEffectiveConfig("parallaxsparkles")
+    assert.ok(cfg)
+    assert.deepEqual(cfg.sizeRange, [7])
+  } finally {
+    delete globalThis.localStorage
+  }
+})
+
+test("prototype-pollution keys in an override are skipped", () => {
+  // A malicious stored blob carrying a nested __proto__ must not reach
+  // Object.prototype. JSON.parse gives it as an own key, so the merge must drop it.
+  globalThis.localStorage = {
+    getItem: () =>
+      '{ "parallaxsparkles": { "__proto__": { "polluted": true }, "density": 3 } }',
+  }
+  try {
+    const cfg = getEffectiveConfig("parallaxsparkles")
+    assert.ok(cfg)
+    assert.equal(cfg.density, 3) // benign sibling key still applied
+    assert.equal(/** @type {*} */ ({}).polluted, undefined) // prototype untouched
+  } finally {
+    delete globalThis.localStorage
+  }
+})
+
+test("server THEME_IDS allowlist stays in sync with EFFECT_THEMES", () => {
+  // The server validates against a hand-maintained THEME_IDS Set (it can't import
+  // the browser themes module). This asserts the two never silently drift: every
+  // shipped theme is accepted, and the allowlist names no phantom theme.
+  const themeIds = EFFECT_THEMES.map((t) => t.id).sort()
+  const allowIds = Array.from(THEME_IDS).sort()
+  assert.deepEqual(allowIds, themeIds)
 })
 
 test("getEffectiveConfig returns null for an unknown effect id", () => {

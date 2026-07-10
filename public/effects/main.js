@@ -47,6 +47,14 @@ const activeEffects = new Map()
 
 let managerActive = false
 
+// Monotonic token identifying the current staggered start-up chain. Bumped on
+// every startEffects() and whenever effects are torn down, so a chain queued via
+// requestIdleCallback bails the moment a newer start (or a hide) supersedes it.
+// Without this, hiding the tab mid-stagger leaves the old chain running (it
+// re-adds effects while hidden) and a later resume spawns a second chain whose
+// def.create() overwrites the map, leaking the un-stopped instances.
+let startGeneration = 0
+
 function startEffects() {
   const schedule =
     typeof requestIdleCallback === "function"
@@ -59,9 +67,13 @@ function startEffects() {
   const allowed = new Set(getActiveTheme().effectIds)
   const defs = EFFECT_DEFINITIONS.filter((d) => allowed.has(d.id))
 
+  const gen = ++startGeneration
+
   function startNext(/** @type {number} */ index) {
     if (index >= defs.length) return
     if (!managerActive) return
+    // A newer start-up chain, or a teardown, has superseded this one.
+    if (gen !== startGeneration) return
     const def = defs[index]
     const cfg = getEffectiveConfig(def.id) || {}
     const instance = def.create(cfg)
@@ -87,6 +99,9 @@ export function initEffectManager() {
 
 /** @type {Types.stopAllEffects} */
 export function stopAllEffects() {
+  // Invalidate any in-flight staggered start chain so it can't re-populate the
+  // map after we've torn it down (e.g. tab hidden mid-stagger).
+  startGeneration++
   for (const [id, instance] of activeEffects) {
     try {
       instance.stop()

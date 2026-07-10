@@ -41,8 +41,9 @@ const MAX_NAV = 20
 
 // Allowed effect theme ids. Duplicated from public/effects/themes.js
 // EFFECT_THEMES because the server can't import that browser-only module; keep
-// in sync when adding a theme.
-const THEME_IDS = new Set(["mermaid-disco", "romantic", "elegant", "classic"])
+// in sync when adding a theme. Exported so a unit test can assert parity with
+// EFFECT_THEMES (tests/unit/effect-themes.test.js) and catch drift.
+export const THEME_IDS = new Set(["mermaid-disco", "romantic", "elegant", "classic"])
 
 /**
  * @param {unknown} v
