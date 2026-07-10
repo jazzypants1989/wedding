@@ -221,6 +221,10 @@ function rebuildContentTokens() {
     "weddingDate": formatWeddingDate(content.weddingDate),
     "weddingDateISO": content.weddingDate,
     "location": content.location,
+    // Effect theme id for <html data-effect-theme>. Literal fallback keeps the
+    // server/browser layer boundary (can't import public/effects/themes.js);
+    // must match DEFAULT_THEME_ID there.
+    "effectTheme": content.theme || "mermaid-disco",
     "registry.url": content.registry.url,
     "registry.label": content.registry.label,
     "mode": MODE,

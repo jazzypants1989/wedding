@@ -23,6 +23,9 @@ export const CONTENT = Object.freeze({
   // timeline mode; the human "April 26, 2026" is derived (formatWeddingDate).
   weddingDate: "2026-04-26T11:00:00-07:00",
   location: "Portland, OR",
+  // Visual effect theme id (public/effects/themes.js). Server-rendered into
+  // <html data-effect-theme>; picks the effect subset + brand palette.
+  theme: "mermaid-disco",
   registry: {
     url: "https://www.honeyfund.com/site/north-pence-04-26-2026",
     label: "Open registry in a new window",

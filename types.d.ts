@@ -628,6 +628,8 @@ export interface SiteContent {
   }
   readonly weddingDate: string
   readonly location: string
+  /** Visual effect theme id (public/effects/themes.js EFFECT_THEMES). */
+  readonly theme: string
   readonly registry: {
     readonly url: string
     readonly label: string
@@ -674,6 +676,7 @@ export type SiteContentOverride = {
   }>
   weddingDate?: string
   location?: string
+  theme?: string
   registry?: Partial<{ url: string; label: string }>
   contactEmail?: string | null
   nav?: Partial<{
