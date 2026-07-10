@@ -34,9 +34,27 @@ const CAP = {
   intro: 5000,
   href: 200,
   navLabel: 100,
+  // Landing-copy sections (schedule / dress code / registry body / memories).
+  time: 100,
+  itemTitle: 200,
+  officiant: 300,
+  venue: 200,
+  address: 300,
+  detail: 2000,
+  note: 2000,
+  body: 5000,
+  imgUrl: 1000,
+  srcset: 2000,
+  sizes: 500,
+  alt: 500,
+  caption: 500,
 }
 const MAX_NAMES = 10
 const MAX_NAV = 20
+const MAX_SCHEDULE_ITEMS = 20
+const MAX_DETAILS = 20
+const MAX_DC_IMAGES = 12
+const MAX_IMG_DIMENSION = 20000
 
 /**
  * @param {unknown} v
@@ -155,6 +173,140 @@ function reqNav(value, field) {
 }
 
 /**
+ * Optional string that may be cleared to `null` (empty/absent → null).
+ * @param {unknown} value
+ * @param {string} field
+ * @param {number} max
+ * @returns {string | null}
+ */
+function optStr(value, field, max) {
+  if (value === null || value === undefined || value === "") return null
+  return reqStr(value, field, max)
+}
+
+/**
+ * Optional positive integer (image dimension) or null.
+ * @param {unknown} value
+ * @param {string} field
+ * @returns {number | null}
+ */
+function optDimension(value, field) {
+  if (value === null || value === undefined || value === "") return null
+  const n = typeof value === "number" ? value : Number(value)
+  if (!Number.isInteger(n) || n <= 0 || n > MAX_IMG_DIMENSION) {
+    throw new ValidationError(field + " must be a positive integer")
+  }
+  return n
+}
+
+/**
+ * An image URL: site-relative (`/`) or `https://` only — same policy as nav
+ * hrefs. Blocks `javascript:`/`data:` even though the URL is escaped at render.
+ * @param {unknown} value
+ * @param {string} field
+ * @param {number} max
+ * @returns {string}
+ */
+function reqImageUrl(value, field, max) {
+  const s = reqStr(value, field, max)
+  if (!s.startsWith("/") && !s.startsWith("https://")) {
+    throw new ValidationError(field + " must be a site path (/) or https URL")
+  }
+  return s
+}
+
+/**
+ * Optional srcset — a comma list of "url [descriptor]"; every url must be a
+ * safe scheme. Returns the trimmed string or null.
+ * @param {unknown} value
+ * @param {string} field
+ * @returns {string | null}
+ */
+function optSrcset(value, field) {
+  if (value === null || value === undefined || value === "") return null
+  const s = reqStr(value, field, CAP.srcset)
+  for (const part of s.split(",")) {
+    const url = part.trim().split(" ")[0]
+    if (url && !url.startsWith("/") && !url.startsWith("https://")) {
+      throw new ValidationError(field + " has an invalid image URL")
+    }
+  }
+  return s
+}
+
+/**
+ * @param {unknown} value
+ * @param {number} i zero-based index
+ * @returns {Root.SiteContentScheduleItem}
+ */
+function reqScheduleItem(value, i) {
+  const label = "Schedule item " + (i + 1)
+  const item = obj(value, label)
+  const details = item.details
+  if (!Array.isArray(details)) throw new ValidationError(label + " details must be a list")
+  if (details.length > MAX_DETAILS) throw new ValidationError(label + " has too many details")
+  return {
+    time: reqStr(item.time, label + " time", CAP.time),
+    title: reqStr(item.title, label + " title", CAP.itemTitle),
+    officiant: optStr(item.officiant, label + " officiant", CAP.officiant),
+    venue: optStr(item.venue, label + " venue", CAP.venue),
+    address: optStr(item.address, label + " address", CAP.address),
+    details: details.map((d, j) => reqStr(d, label + " detail " + (j + 1), CAP.detail)),
+    note: optStr(item.note, label + " note", CAP.note),
+  }
+}
+
+/**
+ * @param {unknown} value
+ * @returns {Root.SiteContent["schedule"]}
+ */
+function reqSchedule(value) {
+  const s = obj(value, "schedule")
+  const items = s.items
+  if (!Array.isArray(items)) throw new ValidationError("Schedule items must be a list")
+  if (items.length > MAX_SCHEDULE_ITEMS) throw new ValidationError("Too many schedule items")
+  return {
+    title: reqStr(s.title, "Schedule title", CAP.heading),
+    items: items.map((item, i) => reqScheduleItem(item, i)),
+  }
+}
+
+/**
+ * @param {unknown} value
+ * @param {number} i zero-based index
+ * @returns {Root.SiteContentImage}
+ */
+function reqContentImage(value, i) {
+  const label = "Dress-code image " + (i + 1)
+  const img = obj(value, label)
+  return {
+    src: reqImageUrl(img.src, label + " src", CAP.imgUrl),
+    srcset: optSrcset(img.srcset, label + " srcset"),
+    sizes: optStr(img.sizes, label + " sizes", CAP.sizes),
+    alt: reqStr(img.alt, label + " alt", CAP.alt),
+    caption: optStr(img.caption, label + " caption", CAP.caption),
+    width: optDimension(img.width, label + " width"),
+    height: optDimension(img.height, label + " height"),
+  }
+}
+
+/**
+ * @param {unknown} value
+ * @returns {Root.SiteContent["dressCode"]}
+ */
+function reqDressCode(value) {
+  const dc = obj(value, "dressCode")
+  const images = dc.images
+  if (!Array.isArray(images)) throw new ValidationError("Dress-code images must be a list")
+  if (images.length > MAX_DC_IMAGES) throw new ValidationError("Too many dress-code images")
+  return {
+    title: reqStr(dc.title, "Dress-code title", CAP.heading),
+    body: reqStr(dc.body, "Dress-code body", CAP.body),
+    images: images.map((img, i) => reqContentImage(img, i)),
+  }
+}
+
+/**
  * Validate a full submitted body into a clean, complete SiteContent object.
  * The caller diffs it against defaults before storing (only changed fields are
  * persisted), so every field is required and validated here.
@@ -164,6 +316,7 @@ function reqNav(value, field) {
 function buildOverride(body) {
   const couple = obj(body.couple, "couple")
   const registry = obj(body.registry, "registry")
+  const memories = obj(body.memories, "memories")
   const nav = obj(body.nav, "nav")
   const footer = obj(body.footer, "footer")
   const copy = obj(body.copy, "copy")
@@ -179,16 +332,28 @@ function buildOverride(body) {
     },
     weddingDate: reqDate(body.weddingDate),
     location: reqStr(body.location, "Location", CAP.location),
+    schedule: reqSchedule(body.schedule),
+    dressCode: reqDressCode(body.dressCode),
     registry: {
+      title: reqStr(registry.title, "Registry title", CAP.heading),
+      body: reqStr(registry.body, "Registry body", CAP.body),
+      frameNote: reqStr(registry.frameNote, "Registry frame note", CAP.body),
       url: reqUrl(registry.url, "Registry URL", CAP.url),
       label: reqStr(registry.label, "Registry label", CAP.label),
+    },
+    memories: {
+      title: reqStr(memories.title, "Memories title", CAP.heading),
+      body: reqStr(memories.body, "Memories body", CAP.body),
     },
     contactEmail: optEmail(body.contactEmail),
     nav: {
       pre: reqNav(nav.pre, "Pre-wedding nav"),
       post: reqNav(nav.post, "Post-wedding nav"),
     },
-    footer: { githubUrl: optUrl(footer.githubUrl, "Footer GitHub URL", CAP.url) },
+    footer: {
+      githubUrl: optUrl(footer.githubUrl, "Footer GitHub URL", CAP.url),
+      eventHeading: reqStr(footer.eventHeading, "Footer event heading", CAP.heading),
+    },
     copy: {
       pre: {
         welcomeHeading: reqStr(copyPre.welcomeHeading, "Pre welcome heading", CAP.heading),

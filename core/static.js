@@ -221,8 +221,17 @@ function rebuildContentTokens() {
     "weddingDate": formatWeddingDate(content.weddingDate),
     "weddingDateISO": content.weddingDate,
     "location": content.location,
+    "schedule.title": content.schedule.title,
+    "dressCode.title": content.dressCode.title,
+    "dressCode.body": content.dressCode.body,
+    "registry.title": content.registry.title,
+    "registry.body": content.registry.body,
+    "registry.frameNote": content.registry.frameNote,
     "registry.url": content.registry.url,
     "registry.label": content.registry.label,
+    "memories.title": content.memories.title,
+    "memories.body": content.memories.body,
+    "footer.eventHeading": content.footer.eventHeading,
     "mode": MODE,
     "copy.welcomeHeading": activeCopy.welcomeHeading,
     "copy.welcomeIntro": activeCopy.welcomeIntro,
@@ -289,6 +298,54 @@ function renderNav(currentPath, variant) {
 }
 
 /**
+ * Render the repeating `.schedule-item` blocks from CONTENT.schedule.items.
+ * Every field is escaped; optional lines (officiant/venue/address/note) are
+ * omitted when null. Mirrors the markup index.html previously hardcoded.
+ * @returns {string}
+ */
+function renderSchedule() {
+  const content = getContent()
+  let out = ""
+  for (const item of content.schedule.items) {
+    out += '<div class="schedule-item">'
+    out += '<p class="schedule-time">' + escapeHtml(item.time) + "</p>"
+    out += '<h3 class="schedule-title">' + escapeHtml(item.title) + "</h3>"
+    if (item.officiant) out += '<p class="schedule-officiant">' + escapeHtml(item.officiant) + "</p>"
+    if (item.venue) out += '<p class="schedule-venue">' + escapeHtml(item.venue) + "</p>"
+    if (item.address) out += '<address class="schedule-address">' + escapeHtml(item.address) + "</address>"
+    for (const detail of item.details) out += '<p class="schedule-details">' + escapeHtml(detail) + "</p>"
+    if (item.note) out += '<p class="schedule-note">' + escapeHtml(item.note) + "</p>"
+    out += "</div>"
+  }
+  return out
+}
+
+/**
+ * Render the dress-code `<figure>` blocks from CONTENT.dressCode.images. Every
+ * URL/text field is escaped; srcset/sizes/caption/dimensions are emitted only
+ * when present. src/srcset are validated to a safe scheme at write time
+ * (api/admin/site-content.js) and escaped here.
+ * @returns {string}
+ */
+function renderDressCodeImages() {
+  const content = getContent()
+  let out = ""
+  for (const img of content.dressCode.images) {
+    out += '<figure class="dress-code-figure">'
+    out += '<img src="' + escapeHtml(img.src) + '"'
+    if (img.srcset) out += ' srcset="' + escapeHtml(img.srcset) + '"'
+    if (img.sizes) out += ' sizes="' + escapeHtml(img.sizes) + '"'
+    out += ' alt="' + escapeHtml(img.alt) + '" class="dress-code-image" loading="lazy"'
+    if (img.width != null) out += ' width="' + img.width + '"'
+    if (img.height != null) out += ' height="' + img.height + '"'
+    out += ">"
+    if (img.caption) out += '<figcaption class="dress-code-caption">' + escapeHtml(img.caption) + "</figcaption>"
+    out += "</figure>"
+  }
+  return out
+}
+
+/**
  * Fill content tokens in an HTML page. Scalar tokens are constant per boot;
  * nav tokens depend on the request path (active state + anchor prefixing).
  * @param {string} html
@@ -304,6 +361,8 @@ function applyContent(html, currentPath) {
   result = result.replaceAll("{{nav.desktop}}", renderNav(currentPath, "desktop"))
   result = result.replaceAll("{{nav.mobile}}", renderNav(currentPath, "mobile"))
   result = result.replaceAll("{{nav.footer}}", renderNav(currentPath, "footer"))
+  result = result.replaceAll("{{schedule.items}}", renderSchedule())
+  result = result.replaceAll("{{dressCode.images}}", renderDressCodeImages())
   return result
 }
 

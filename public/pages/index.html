@@ -83,77 +83,25 @@
       <p>{{copy.welcomeIntro}}</p>
     </section>
     <section id="schedule" class="content-section text-center">
-      <h2>Schedule</h2>
+      <h2>{{schedule.title}}</h2>
 
-      <div class="schedule-item">
-        <p class="schedule-time">11:15 - 11:30 AM</p>
-        <h3 class="schedule-title">Ceremony at Peninsula Park</h3>
-        <p class="schedule-officiant">Officiated by the miraculous Mack Lee (they/them)</p>
-        <address class="schedule-address">700 N Rosa Parks Way, Portland, OR 97217</address>
-        <p class="schedule-details">
-          We will have a brief standing ceremony in the gazebo by the rose garden in Peninsula Park.
-          We will have a few chairs available for guests who are uncomfortable standing for that length of time.
-        </p>
-        <p class="schedule-note">
-          Public parking is available around the perimeter of the park and in surrounding neighborhood streets.
-          Please plan to arrive by 11 as parking can take some extra time. The gazebo is covered, but maybe bring
-          an umbrella since it may be rainy on the walk to/from parking areas.
-        </p>
-      </div>
-
-      <div class="schedule-item">
-        <p class="schedule-time">11:30 AM - 12:00 PM</p>
-        <h3 class="schedule-title">Photos &amp; Mingling</h3>
-        <p class="schedule-details">Meandering to the reception</p>
-      </div>
-
-      <div class="schedule-item">
-        <p class="schedule-time">12:00 - 3:30 PM</p>
-        <h3 class="schedule-title">Karaoke Reception</h3>
-        <p class="schedule-officiant">Hosted by the wonderful Ms. Gender (she/he/they)</p>
-        <p class="schedule-venue">Mississippi Pizza &amp; Atlantis Lounge</p>
-        <address class="schedule-address">3552 N Mississippi Ave, Portland, OR 97227</address>
-        <p class="schedule-details">
-          A pizza lunch will be served (gluten-free and vegan options available upon request).
-          The bar has a selection of both alcoholic and non-alcoholic beverages. We will be providing
-          two drink tickets to each guest, then it is a cash bar after that.
-        </p>
-        <p class="schedule-details">
-          Karaoke will kick off ASAP upon arriving. Intermittent toasts are welcome throughout the reception.
-        </p>
-        <p class="schedule-note">
-          Public parking in this area can be limited. We recommend looking for parking in the
-          neighborhood streets behind Mississippi.
-        </p>
-      </div>
+      {{schedule.items}}
     </section>
 
     <section id="dress-code" class="content-section text-center">
-      <h2>Dress Code</h2>
-      <p>Wearing pink is encouraged, but not required :)</p>
+      <h2>{{dressCode.title}}</h2>
+      <p>{{dressCode.body}}</p>
 
       <div class="dress-code-gallery">
-        <figure class="dress-code-figure">
-          <img src="/images/we-wear-pink.webp" srcset="/images/we-wear-pink-400w.webp 400w, /images/we-wear-pink.webp 800w" sizes="(min-width: 400px) 400px, 100vw"
-            alt="Karen from Mean Girls with text: At Jesse and Jordana's Wedding we wear pink" class="dress-code-image" loading="lazy" width="800" height="460">
-        </figure>
-        <figure class="dress-code-figure">
-          <img src="/images/patrick-star.webp" srcset="/images/patrick-star-400w.webp 400w, /images/patrick-star-600w.webp 600w, /images/patrick-star.webp 736w" sizes="(min-width: 400px) 400px, 100vw"
-            alt="Patrick Star from SpongeBob in a pink cowboy outfit singing karaoke" class="dress-code-image" loading="lazy" width="736" height="988">
-          <figcaption class="dress-code-caption">One example of an acceptable outfit</figcaption>
-        </figure>
+        {{dressCode.images}}
       </div>
     </section>
 
     <section id="registry" class="content-section text-center">
-      <h2>Registry/Gifts</h2>
-      <p>
-        Gifts are not expected. If you would like to gift funds to us for our Big Sur honeymoon,
-        you are welcome to, but your presence at our wedding is most definitely gift enough. 💗
-      </p>
+      <h2>{{registry.title}}</h2>
+      <p>{{registry.body}}</p>
       <div class="registry-frame-wrapper" id="registry-wrapper">
-        <p>We didn't want to deal with payment processing, so we're using Honeyfund for the honeymoon registry. The
-          HoneyFund website will load in a frame below, but you can click on the link if that's too cramped.</p>
+        <p>{{registry.frameNote}}</p>
         <p class="registry-link" id="registry-link">
           <a href="{{registry.url}}" target="_blank" rel="noopener noreferrer">{{registry.label}}</a>
         </p>
@@ -164,8 +112,8 @@
     </section>
 
     <section id="memories" class="content-section text-center">
-      <h2>Memories</h2>
-      <p>The big day has come and gone — relive it with us!</p>
+      <h2>{{memories.title}}</h2>
+      <p>{{memories.body}}</p>
       <p>
         <a href="/gallery" class="btn btn-primary">See the photos</a>
         <a href="/guestbook" class="btn btn-secondary">Sign our guestbook</a>
@@ -173,7 +121,7 @@
     </section>
 
     <section class="event-details text-center">
-      <h3>Wedding Day</h3>
+      <h3>{{footer.eventHeading}}</h3>
       <p>{{weddingDate}}</p>
     </section>
 

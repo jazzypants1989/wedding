@@ -9,9 +9,11 @@ import type {
   MediaListItem,
   SiteContent,
   SiteContentNavLink,
+  SiteContentScheduleItem,
+  SiteContentImage,
 } from "../../../types.js"
 
-export type { SiteContent, SiteContentNavLink }
+export type { SiteContent, SiteContentNavLink, SiteContentScheduleItem, SiteContentImage }
 
 /** Response of GET/PUT/DELETE /api/admin/site-content. */
 export interface SiteContentResponse {

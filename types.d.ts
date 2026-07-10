@@ -618,6 +618,33 @@ export interface SiteContentCopyVariant {
   readonly welcomeIntro: string
 }
 
+/** One entry in the landing-page Schedule. Optional lines are `null` (not
+ *  omitted) so a validated override is always a complete object. */
+export interface SiteContentScheduleItem {
+  readonly time: string
+  readonly title: string
+  readonly officiant: string | null
+  readonly venue: string | null
+  readonly address: string | null
+  readonly details: readonly string[]
+  readonly note: string | null
+}
+
+/** Origin-agnostic image descriptor. Defaults point at static `/images/*`
+ *  assets (with hand-authored srcset); an admin upload produces a descriptor
+ *  whose src/srcset point at `/media/{file_key}/{variant}`. The renderer emits
+ *  these verbatim and never branches on origin. */
+export interface SiteContentImage {
+  readonly src: string
+  readonly srcset: string | null
+  readonly sizes: string | null
+  readonly alt: string
+  readonly caption: string | null
+  /** Intrinsic dimensions for CLS-free layout; null when unknown. */
+  readonly width: number | null
+  readonly height: number | null
+}
+
 /** Single source of truth for wedding copy (content.js CONTENT). */
 export interface SiteContent {
   readonly couple: {
@@ -628,9 +655,25 @@ export interface SiteContent {
   }
   readonly weddingDate: string
   readonly location: string
+  readonly schedule: {
+    readonly title: string
+    readonly items: readonly SiteContentScheduleItem[]
+  }
+  readonly dressCode: {
+    readonly title: string
+    readonly body: string
+    readonly images: readonly SiteContentImage[]
+  }
   readonly registry: {
+    readonly title: string
+    readonly body: string
+    readonly frameNote: string
     readonly url: string
     readonly label: string
+  }
+  readonly memories: {
+    readonly title: string
+    readonly body: string
   }
   readonly contactEmail: string | null
   readonly nav: {
@@ -639,6 +682,7 @@ export interface SiteContent {
   }
   readonly footer: {
     readonly githubUrl: string | null
+    readonly eventHeading: string
   }
   readonly copy: {
     readonly pre: SiteContentCopyVariant
@@ -674,13 +718,16 @@ export type SiteContentOverride = {
   }>
   weddingDate?: string
   location?: string
-  registry?: Partial<{ url: string; label: string }>
+  schedule?: Partial<{ title: string; items: SiteContentScheduleItem[] }>
+  dressCode?: Partial<{ title: string; body: string; images: SiteContentImage[] }>
+  registry?: Partial<{ title: string; body: string; frameNote: string; url: string; label: string }>
+  memories?: Partial<{ title: string; body: string }>
   contactEmail?: string | null
   nav?: Partial<{
     pre: SiteContentNavLink[]
     post: SiteContentNavLink[]
   }>
-  footer?: Partial<{ githubUrl: string | null }>
+  footer?: Partial<{ githubUrl: string | null; eventHeading: string }>
   copy?: Partial<{
     pre: Partial<SiteContentCopyVariant>
     post: Partial<SiteContentCopyVariant>

@@ -85,6 +85,94 @@ function collectNavRows(containerId) {
   return links
 }
 
+/** @type {Types.SiteContentImage[]} Dress-code images, round-tripped unchanged in this phase. */
+let dressCodeImages = []
+
+/** @param {Element} card @param {string} sel @returns {string} trimmed input value */
+function fieldVal(card, sel) {
+  const el = card.querySelector(sel)
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return el.value.trim()
+  return ""
+}
+
+/**
+ * Append one schedule-item editor card. Optional fields are plain inputs;
+ * `details` paragraphs are a textarea split on blank lines.
+ * @param {Types.SiteContentScheduleItem} [item]
+ */
+function addScheduleRow(item) {
+  const time = item ? item.time : ""
+  const title = item ? item.title : ""
+  const officiant = item && item.officiant ? item.officiant : ""
+  const venue = item && item.venue ? item.venue : ""
+  const address = item && item.address ? item.address : ""
+  const details = item ? item.details.join("\n\n") : ""
+  const note = item && item.note ? item.note : ""
+  getElement("sc-schedule-rows").insertAdjacentHTML(
+    "beforeend",
+    html`<div class="schedule-card">
+      <input type="text" class="sched-time" placeholder="Time (e.g. 11:15 - 11:30 AM)" maxlength="100" value="${time}">
+      <input type="text" class="sched-title" placeholder="Title" maxlength="200" value="${title}">
+      <input type="text" class="sched-officiant" placeholder="Officiant (optional)" maxlength="300" value="${officiant}">
+      <input type="text" class="sched-venue" placeholder="Venue (optional)" maxlength="200" value="${venue}">
+      <input type="text" class="sched-address" placeholder="Address (optional)" maxlength="300" value="${address}">
+      <textarea class="sched-details" rows="3" placeholder="Details — leave a blank line between paragraphs">${details}</textarea>
+      <textarea class="sched-note" rows="2" placeholder="Note (optional)">${note}</textarea>
+      <button type="button" class="btn btn-danger btn-sm sched-remove">Remove item</button>
+    </div>`,
+  )
+}
+
+/** @param {readonly Types.SiteContentScheduleItem[]} items */
+function renderScheduleRows(items) {
+  getElement("sc-schedule-rows").innerHTML = ""
+  for (const item of items) addScheduleRow(item)
+}
+
+/**
+ * Read schedule cards back into items. Fully-empty cards are dropped; the
+ * server validates the rest. `details` splits on blank lines (no regex).
+ * @returns {Types.SiteContentScheduleItem[]}
+ */
+function collectScheduleRows() {
+  /** @type {Types.SiteContentScheduleItem[]} */
+  const items = []
+  const cards = getElement("sc-schedule-rows").querySelectorAll(".schedule-card")
+  cards.forEach((card) => {
+    const time = fieldVal(card, ".sched-time")
+    const title = fieldVal(card, ".sched-title")
+    const officiant = fieldVal(card, ".sched-officiant")
+    const venue = fieldVal(card, ".sched-venue")
+    const address = fieldVal(card, ".sched-address")
+    const details = fieldVal(card, ".sched-details")
+      .split("\n\n")
+      .map((s) => s.trim())
+      .filter(Boolean)
+    const note = fieldVal(card, ".sched-note")
+    if (!time && !title && !officiant && !venue && !address && details.length === 0 && !note) return
+    items.push({
+      time,
+      title,
+      officiant: officiant || null,
+      venue: venue || null,
+      address: address || null,
+      details,
+      note: note || null,
+    })
+  })
+  return items
+}
+
+/** @param {MouseEvent} e */
+function handleScheduleRemove(e) {
+  const target = e.target
+  if (!(target instanceof Element)) return
+  const btn = target.closest(".sched-remove")
+  if (!btn) return
+  const card = btn.closest(".schedule-card")
+  if (card) card.remove()
+}
+
 /** @param {Types.SiteContent} c */
 function populate(c) {
   setVal("sc-couple-display", c.couple.display)
@@ -94,8 +182,19 @@ function populate(c) {
   setVal("sc-wedding-date", c.weddingDate)
   setVal("sc-location", c.location)
   setVal("sc-contact-email", c.contactEmail || "")
+  setVal("sc-schedule-title", c.schedule.title)
+  renderScheduleRows(c.schedule.items)
+  setVal("sc-dresscode-title", c.dressCode.title)
+  setTa("sc-dresscode-body", c.dressCode.body)
+  dressCodeImages = c.dressCode.images.map((img) => ({ ...img }))
+  setVal("sc-registry-title", c.registry.title)
+  setTa("sc-registry-body", c.registry.body)
+  setTa("sc-registry-framenote", c.registry.frameNote)
   setVal("sc-registry-url", c.registry.url)
   setVal("sc-registry-label", c.registry.label)
+  setVal("sc-memories-title", c.memories.title)
+  setTa("sc-memories-body", c.memories.body)
+  setVal("sc-footer-event-heading", c.footer.eventHeading)
   setVal("sc-footer-github", c.footer.githubUrl || "")
   setVal("sc-copy-pre-heading", c.copy.pre.welcomeHeading)
   setTa("sc-copy-pre-intro", c.copy.pre.welcomeIntro)
@@ -120,11 +219,30 @@ function collectForm() {
     weddingDate: val("sc-wedding-date"),
     location: val("sc-location"),
     contactEmail: val("sc-contact-email") || null,
+    schedule: {
+      title: val("sc-schedule-title"),
+      items: collectScheduleRows(),
+    },
+    dressCode: {
+      title: val("sc-dresscode-title"),
+      body: taVal("sc-dresscode-body"),
+      images: dressCodeImages,
+    },
     registry: {
+      title: val("sc-registry-title"),
+      body: taVal("sc-registry-body"),
+      frameNote: taVal("sc-registry-framenote"),
       url: val("sc-registry-url"),
       label: val("sc-registry-label"),
     },
-    footer: { githubUrl: val("sc-footer-github") || null },
+    memories: {
+      title: val("sc-memories-title"),
+      body: taVal("sc-memories-body"),
+    },
+    footer: {
+      githubUrl: val("sc-footer-github") || null,
+      eventHeading: val("sc-footer-event-heading"),
+    },
     copy: {
       pre: {
         welcomeHeading: val("sc-copy-pre-heading"),
@@ -210,4 +328,6 @@ export function initSiteContent() {
   getButtonElement("sc-nav-post-add").addEventListener("click", () => addNavRow("sc-nav-post-rows"))
   getElement("sc-nav-pre-rows").addEventListener("click", handleNavRemove)
   getElement("sc-nav-post-rows").addEventListener("click", handleNavRemove)
+  getButtonElement("sc-schedule-add").addEventListener("click", () => addScheduleRow())
+  getElement("sc-schedule-rows").addEventListener("click", handleScheduleRemove)
 }

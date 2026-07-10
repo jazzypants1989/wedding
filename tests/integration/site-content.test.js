@@ -59,8 +59,37 @@ function sampleBody() {
     weddingDate: "2030-09-09T17:00:00-07:00",
     location: "Testville, TS",
     contactEmail: "",
-    registry: { url: "https://example.com/registry", label: "Our registry" },
-    footer: { githubUrl: "https://github.com/example/repo" },
+    schedule: {
+      title: "The Plan",
+      items: /** @type {import("../../types.js").SiteContentScheduleItem[]} */ ([
+        {
+          time: "5:00 PM",
+          title: "Ceremony",
+          officiant: "Officiant McOfficiant",
+          venue: null,
+          address: "1 Test Way",
+          details: ["First paragraph.", "Second paragraph."],
+          note: "Park on the street.",
+        },
+        { time: "6:00 PM", title: "Reception", officiant: null, venue: "The Hall", address: null, details: ["Dinner and dancing."], note: null },
+      ]),
+    },
+    dressCode: {
+      title: "What to Wear",
+      body: "Wear teal.",
+      images: [
+        { src: "/images/we-wear-pink.webp", srcset: null, sizes: null, alt: "Example outfit", caption: "Nice", width: 800, height: 460 },
+      ],
+    },
+    registry: {
+      title: "Gifts",
+      body: "No gifts needed.",
+      frameNote: "Frame loads below.",
+      url: "https://example.com/registry",
+      label: "Our registry",
+    },
+    memories: { title: "Looking Back", body: "Relive the day." },
+    footer: { githubUrl: "https://github.com/example/repo", eventHeading: "The Big Day" },
     copy: {
       pre: { welcomeHeading: "Hello Pre", welcomeIntro: "Come <em>celebrate</em>." },
       post: { welcomeHeading: "Thanks Post", welcomeIntro: "It was grand." },
@@ -176,6 +205,51 @@ describe("admin site-content editor", () => {
     const auth = await adminLogin()
     const body = sampleBody()
     body.registry.url = "javascript:alert(1)"
+    const res = await adminFetch(
+      "/api/admin/site-content",
+      { method: "PUT", body: JSON.stringify(body) },
+      auth,
+    )
+    assert.strictEqual(res.status, 400)
+  })
+
+  it("renders edited schedule items and headings into the landing HTML", { skip: !hasAdmin }, async () => {
+    const auth = await adminLogin()
+    const body = sampleBody()
+    body.schedule.title = "Order of the Day"
+    body.schedule.items = [
+      { time: "9:00 AM", title: "Sunrise Yoga", officiant: null, venue: "The Lawn", address: null, details: ["Bring a mat."], note: "BYO water." },
+    ]
+    body.memories.title = "The Afterglow"
+    await adminFetch("/api/admin/site-content", { method: "PUT", body: JSON.stringify(body) }, auth)
+
+    const homeHtml = await (await fetch(`${BASE_URL}/`)).text()
+    assert.ok(homeHtml.includes("Order of the Day"), "schedule heading should render")
+    assert.ok(homeHtml.includes("Sunrise Yoga"), "schedule item title should render")
+    assert.ok(homeHtml.includes('class="schedule-venue">The Lawn'), "optional venue line should render")
+    assert.ok(homeHtml.includes("Bring a mat."), "schedule detail paragraph should render")
+    assert.ok(!homeHtml.includes('class="schedule-officiant"'), "null officiant line should be omitted")
+    assert.ok(homeHtml.includes("The Afterglow"), "memories heading should render")
+  })
+
+  it("rejects a schedule item missing its time", { skip: !hasAdmin }, async () => {
+    const auth = await adminLogin()
+    const body = sampleBody()
+    body.schedule.items = /** @type {import("../../types.js").SiteContentScheduleItem[]} */ ([
+      { time: "", title: "No Time", officiant: null, venue: null, address: null, details: ["x"], note: null },
+    ])
+    const res = await adminFetch(
+      "/api/admin/site-content",
+      { method: "PUT", body: JSON.stringify(body) },
+      auth,
+    )
+    assert.strictEqual(res.status, 400)
+  })
+
+  it("rejects a dress-code image with an unsafe src scheme", { skip: !hasAdmin }, async () => {
+    const auth = await adminLogin()
+    const body = sampleBody()
+    body.dressCode.images[0].src = "javascript:alert(1)"
     const res = await adminFetch(
       "/api/admin/site-content",
       { method: "PUT", body: JSON.stringify(body) },

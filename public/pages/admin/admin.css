@@ -1145,6 +1145,32 @@ tr:hover td {
   min-width: 0;
 }
 
+.schedule-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.schedule-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border-color, #ccc);
+  border-radius: 6px;
+}
+
+.schedule-card input,
+.schedule-card textarea {
+  width: 100%;
+  min-width: 0;
+}
+
+.schedule-card .sched-remove {
+  align-self: flex-start;
+}
+
 .form-actions {
   margin-top: 1rem;
 }

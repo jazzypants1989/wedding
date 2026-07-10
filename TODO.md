@@ -16,37 +16,47 @@ Severity/effort tags: 🔴 large · 🟡 medium · 🟢 small.
 
 ## Track 1 — Finish content-as-data: migrate the remaining landing prose 🟡
 
-Today `SiteContent` covers couple, date, location, registry, nav, and the welcome
-heading/intro. The rest of the landing page is still hardcoded HTML in
-`public/pages/index.html` — so a re-skinner still has to edit source for the biggest sections.
-Migrate them into the `SiteContent` shape.
+**Phase 1a — text migration: ✅ DONE.** All hardcoded landing copy now lives in `SiteContent`
+and is admin-editable: schedule, dress-code prose, registry body + frame-note, memories, every
+section heading, and the footer event heading (was: only couple/date/location/registry-url/nav/
+welcome). Rendering is byte-identical to the old static HTML (verified). Landed:
+`schedule`/`dressCode`/`registry.{title,body,frameNote}`/`memories`/`footer.eventHeading` +
+`SiteContentScheduleItem`/`SiteContentImage` in `types.d.ts` + `content.js`; `renderSchedule` /
+`renderDressCodeImages` next to `renderNav` in `core/static.js`; `reqSchedule`/`reqDressCode`/
+`reqContentImage` validators in `api/admin/site-content.js`; a repeatable schedule-item card
+editor in the admin **Site content** tab; integration coverage for the new validators + rendering.
 
-**What's still hardcoded (`public/pages/index.html`):**
-- **Schedule** (`#schedule`, lines ~85–129): repeating `schedule-item`s — time, title, optional
-  officiant/venue, address, one-or-more detail paragraphs, optional note.
-- **Dress Code** (`#dress-code`, ~131–146): heading, a line of prose, and two figure images.
-- **Section headings** ("Registry/Gifts", "Memories") and the footer event-details block.
+Key facts that shaped it (for anyone extending):
+- **Mode visibility is pure CSS** (`components.css` `[data-mode]`): pre hides `#memories`, post
+  hides `#schedule`/`#dress-code`. So the new fields are **mode-agnostic single values** — the CSS
+  keeps gating. Only the existing welcome `copy.pre/post` stays mode-aware.
+- Repeating structures render via `{{schedule.items}}` / `{{dressCode.images}}` block-tokens
+  (function-rendered like `{{nav.*}}`), not scalar tokens. Everything is `escapeHtml`'d.
+- **`SiteContentImage` is an origin-agnostic descriptor** (`{ src, srcset?, sizes?, alt,
+  caption?, width?, height? }`): defaults point at the static `/images/*` assets with their
+  hand-authored srcset; a media-backed descriptor points at `/media/{file_key}/…`. The renderer
+  never branches on origin.
 
-**Approach:**
-1. Extend `SiteContent` (`types.d.ts`) + defaults (`content.js`) with structured fields, e.g.
-   `schedule: { title, items: [{ time, title, officiant?, venue?, address?, details: string[], note? }] }`
-   and `dressCode: { title, body, images?: [...] }`. `diffFromDefaults` already handles arbitrary
-   nesting + arrays, so sparse storage needs no changes.
-2. Server-render the repeating structures into new tokens (`{{schedule}}`, `{{dressCode}}`) with a
-   renderer that mirrors the existing `renderNav` pattern in `core/static.js` — escape every field
-   the same way (nav labels/href are the reference). Decide per-field whether any need the
-   trusted-HTML treatment `welcomeIntro` gets (default: escape everything).
-3. Extend the admin **Site content** tab (`public/pages/admin/site-content.js`) with a repeatable
-   schedule-item editor — reuse the nav-row editor already there as the template.
-4. Add validators in `buildOverride` (`api/admin/site-content.js`) for the new fields (length caps,
-   array bounds), matching the existing `reqStr`/`reqNav` style.
+**Phase 1b — dress-code images through the media pipeline: remaining.** Decided (with the
+user): admin-uploaded dress-code images go through the existing media pipeline, gated by a new
+**`section='content'`** (schema/trigger migration; gallery feeds already filter by `official`/
+`guest`, so `content` is excluded from the gallery for free). Add a **responsive width ladder**
+(e.g. `w400`/`w800`/`w1600`) **scoped to `section='content'` uploads only** — the guest gallery
+keeps `display`+`thumb` to contain storage. Then a dress-code image manager in the Site-content
+tab (reuse the `media-uploader` component; store the returned `file_key`-based descriptor with
+admin-entered alt/caption). Files: `types.js` (VARIANT_SPEC, section enum), `db/schema.js`,
+`db/media.js` (BYTES_COLUMN), `api/media.js` (putVariant/finalize `requiredVariants` by section),
+`core/media-storage.js`, `core/media-serve.js`, `public/components/media-uploader.js`.
+*Note:* this couple's current images are ≤800px, so `display`+`thumb` already reproduce their
+srcset — the ladder is really for future large uploads / the no-code product.
 
-**Open decision — images.** Dress-code figures are fixed assets today. Either (a) keep images
-fixed and make only text editable first (cheap), or (b) let admins upload them through the
-existing media pipeline (richer, but couples the two systems). Recommend (a) now, (b) later.
+**Not a security fix:** `copy.welcomeIntro` is injected raw (`RAW_TOKENS`) on purpose so the
+couple can use inline `<em>`. Under the trust model (single deployment, two co-admins who are
+the couple, no untrusted input) that's safe — do **not** add HTML-sanitization there. All *new*
+fields are escaped by default (nothing new in `RAW_TOKENS`).
 
 **Why first:** Track 4 (no-code onboarding) can't capture "all site copy" until all site copy is
-data. This unblocks it.
+data. Phase 1a unblocks it.
 
 ---
 
@@ -66,7 +76,12 @@ palette, with disco-mermaid as *one* option rather than the baked-in default.
    instead of the hardcoded list.
 3. Palette per theme: extend the CSS-token approach already in place (`--effect-brand[-dark]` in
    `tokens.css`, read by `config.js` + `celebrate.js`). A theme sets brand/accent tokens at boot;
-   the JS palette (`EFFECT_PALETTE`) derives from them.
+   the JS palette (`EFFECT_PALETTE`) derives from them. **Caveat (verified): the palette is only
+   *partially* token-derived today.** Only `EFFECT_PALETTE.brand` comes from a token;
+   `gold/white/blush/pink/sky/purple` are hardcoded literals, and many `EFFECT_CONFIGS` color
+   arrays are raw `rgba(...)` strings (disco, reflections, spotlight). A real per-theme palette
+   requires **de-hardcoding these into token-driven values first** — this is the bulk of the
+   palette work, not "set two tokens at boot."
 4. Make the active theme part of `SiteContent` (`theme: "mermaid-disco"`) so it's admin-selectable
    and captured by onboarding (Track 4). Default in `content.js`.
 5. Author **≥2 more themes** beyond disco-mermaid — e.g. an *elegant/minimal* set (calm: sparkle
@@ -103,6 +118,13 @@ into `config.js`. Close both loops.
 Recommend the `app_state` route: it turns studio tuning into a real product feature and reuses the
 override + resolve + cache-evict machinery already built for site content.
 
+**Pre-step worth doing first — generalize the override store.** `core/site-content.js` is a
+bespoke resolver hardcoded to the `site_content` key. Both 3b (`effect_config`) and Track 4 (the
+admin hash) want the *same* override + diff + resolve + cache-evict machinery. The helpers
+(`deepMerge`, `diffFromDefaults`) are already exported and generic — they just default their base
+to `CONTENT_DEFAULTS`. Extracting a `createOverrideStore(key, defaults, onChanged)` factory turns
+three copy-pasted resolvers into one and directly serves the no-code product. Cheap, high-leverage.
+
 ---
 
 ## Track 4 — No-code onboarding wizard + shipped container 🔴 (capstone)
@@ -116,14 +138,22 @@ selectable, effects are tunable via `app_state`).
    terminal, hashes with scrypt, writes `ADMIN_PASSWORD_HASH=` into `.env`, and needs a **server
    restart** to take effect — a file-write + restart model a containerized no-code flow can't use.
    Move the admin hash into `app_state` (the same runtime-override store as `site_content`): the
-   web wizard sets/changes the password live, no file, no restart. `core/auth.js` reads the hash
-   from `app_state` first, falling back to the `ADMIN_PASSWORD_HASH` env var for backward compat.
-   Reuse the existing scrypt hashing + `validatePasswordStrength` (lift them out of
-   `setup-admin.js` into a shared module). The CLI script stays only as an optional fallback for
+   web wizard sets/changes the password live, no file, no restart. Reuse the existing scrypt
+   hashing + `validatePasswordStrength` (lift them out of `setup-admin.js` into a shared module;
+   note `hashPassword` lives in `core/auth.js` but isn't exported, and `validatePasswordStrength`
+   exists only in `setup-admin.js`). The CLI script stays only as an optional fallback for
    advanced/headless setups (and as a way to generate a hash for CI — see DEFERRED "admin tests
    skip in CI").
+   **⚠ Behavioral change, not just a new key:** `SERVER.adminPasswordHash` is *frozen at boot*
+   from `process.env` (`types.js`), and the login path reads that snapshot (`api/admin/sessions.js`).
+   Moving the hash to `app_state` means login must read it at **request time**, not from the boot
+   snapshot — rewire those consumers, keeping the env var as a fallback for backward compat.
 2. **First-run detection:** no admin hash in `app_state`/env *and* no `site_content` override →
    route to a web `/setup` wizard; gate it so it disables itself once setup completes.
+   **⚠ First-run security:** an open `/setup` on a public container URL is an admin-takeover race —
+   whoever hits it first claims the site. Solve it the way self-hosted apps do: print a **one-time
+   setup token** to stdout/logs on first boot (the Jenkins `initialAdminPassword` pattern) and
+   require it to complete setup. Design this in, don't discover it in production.
 3. **Wizard steps** (each writes a sparse `app_state` override): set admin password → couple/date/
    location → schedule + dress code → registry → **theme pick** (Track 2) → nav → review & finish.
 4. **De-personalize the shipped defaults:** `content.js` defaults should become *generic sample
@@ -134,8 +164,11 @@ selectable, effects are tunable via `app_state`).
    "self-host in 5 minutes" doc (`docker run …` → open `/setup`). Keep the zero-dependency,
    Node-22-native constraints.
 
-**Boundary already documented:** email/SMS constants (`types.js` `WEDDING` / `EMAIL_SUBJECTS`) stay
-boot-resolved from defaults. If the wizard should own those too, lift them into the override at
+**Boundary — and a correctness bug in waiting:** email/SMS constants (`types.js` `WEDDING` /
+`EMAIL_SUBJECTS`) are boot-resolved from `content.js` **defaults**, not the effective override.
+For *this* couple that's harmless, but an onboarded self-hoster who sets their names via the
+wizard would still send invites/SMS signed with the shipped sample couple's name. So for the
+no-code product this isn't optional polish — wire these to the resolved (effective) content at
 this stage.
 
 ---
@@ -143,13 +176,17 @@ this stage.
 ## Sequencing
 
 ```
-Track 1 (content-as-data) ─┐
-Track 2 (themes) ──────────┼──► Track 4 (no-code wizard + container)
-Track 3b (effect app_state)┘
+Track 1a ✅ ── Track 1b (media) ─┐
+Track 2 (themes) ────────────────┼──► Track 4 (no-code wizard + container)
+override-store → Track 3b ───────┘
 ```
 
-- **Track 1** and **Track 3a** (live preview) are independent and cheap — good warm-ups.
+- **Track 1a** (text migration) has landed. **Track 1b** (media-pipeline dress-code images),
+  **Track 2** (themes), and **Track 3a** (live preview) are the independent remaining pieces —
+  Track 2 and Track 3 are being taken up in parallel worktrees.
+- The **override-store generalization** (Track 3b pre-step) is cheap and unblocks both 3b and
+  Track 4's admin-hash move — do it before either.
 - **Track 2** is the biggest single lift (authoring alternate themes takes design taste, not just
-  code).
+  code) — and remember the palette is only partially token-derived today (see Track 2 caveat).
 - **Track 4** is the capstone; start it only once 1, 2, and 3b land, since it stitches them into
   one flow.

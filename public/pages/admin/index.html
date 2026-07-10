@@ -410,7 +410,42 @@
             </fieldset>
 
             <fieldset class="form-section">
-              <legend>Registry &amp; footer</legend>
+              <legend>Schedule</legend>
+              <div class="form-group">
+                <label for="sc-schedule-title">Section heading</label>
+                <input type="text" id="sc-schedule-title" maxlength="200" required>
+              </div>
+              <div id="sc-schedule-rows" class="schedule-editor"></div>
+              <button type="button" id="sc-schedule-add" class="btn btn-secondary btn-sm">Add schedule item</button>
+            </fieldset>
+
+            <fieldset class="form-section">
+              <legend>Dress code</legend>
+              <div class="form-group">
+                <label for="sc-dresscode-title">Section heading</label>
+                <input type="text" id="sc-dresscode-title" maxlength="200" required>
+              </div>
+              <div class="form-group">
+                <label for="sc-dresscode-body">Body</label>
+                <textarea id="sc-dresscode-body" rows="2" maxlength="5000" required></textarea>
+              </div>
+              <p class="text-muted card-text">Dress-code images are managed separately (kept as the shipped figures for now).</p>
+            </fieldset>
+
+            <fieldset class="form-section">
+              <legend>Registry</legend>
+              <div class="form-group">
+                <label for="sc-registry-title">Section heading</label>
+                <input type="text" id="sc-registry-title" maxlength="200" required>
+              </div>
+              <div class="form-group">
+                <label for="sc-registry-body">Body</label>
+                <textarea id="sc-registry-body" rows="3" maxlength="5000" required></textarea>
+              </div>
+              <div class="form-group">
+                <label for="sc-registry-framenote">Registry-frame note</label>
+                <textarea id="sc-registry-framenote" rows="2" maxlength="5000" required></textarea>
+              </div>
               <div class="form-group">
                 <label for="sc-registry-url">Registry URL</label>
                 <input type="url" id="sc-registry-url" maxlength="500" required>
@@ -418,6 +453,26 @@
               <div class="form-group">
                 <label for="sc-registry-label">Registry link label</label>
                 <input type="text" id="sc-registry-label" maxlength="200" required>
+              </div>
+            </fieldset>
+
+            <fieldset class="form-section">
+              <legend>Memories (post-wedding)</legend>
+              <div class="form-group">
+                <label for="sc-memories-title">Section heading</label>
+                <input type="text" id="sc-memories-title" maxlength="200" required>
+              </div>
+              <div class="form-group">
+                <label for="sc-memories-body">Body</label>
+                <textarea id="sc-memories-body" rows="2" maxlength="5000" required></textarea>
+              </div>
+            </fieldset>
+
+            <fieldset class="form-section">
+              <legend>Footer</legend>
+              <div class="form-group">
+                <label for="sc-footer-event-heading">Event-details heading</label>
+                <input type="text" id="sc-footer-event-heading" maxlength="200" required>
               </div>
               <div class="form-group">
                 <label for="sc-footer-github">Footer GitHub URL (optional)</label>
