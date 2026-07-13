@@ -90,13 +90,36 @@ function renderGuests(guests, pagination) {
     getSelectElement("guest-status-filter").value === "archived"
 
   if (guests.length === 0) {
+    const isFiltered =
+      !!getInputElement("guest-search").value.trim() ||
+      (!isViewingArchived && !!getSelectElement("guest-status-filter").value)
+    // Only a truly empty roster (no search/filter) gets the onboarding CTA — a
+    // filtered-to-empty view would make "add your first guest" misleading.
+    const showAddCta = !isViewingArchived && !isFiltered
+
     tbody.innerHTML = html`
       <tr>
         <td colspan="6" class="empty-state">
-          ${isViewingArchived ? "No archived guests yet" : "No guests yet"}
+          ${isViewingArchived
+            ? "No archived guests yet"
+            : isFiltered
+              ? "No guests match your search or filter."
+              : html`No guests yet — add your first guest or import a list to get started.
+                  <div class="empty-state-actions">
+                    <button type="button" id="empty-add-guest" class="btn btn-primary btn-sm">Add Guest</button>
+                    <button type="button" id="empty-import-csv" class="btn btn-secondary btn-sm">Import CSV</button>
+                  </div>`}
         </td>
       </tr>
     `
+    if (showAddCta) {
+      getButtonElement("empty-add-guest").addEventListener("click", () =>
+        getButtonElement("add-guest-btn").click(),
+      )
+      getButtonElement("empty-import-csv").addEventListener("click", () =>
+        getButtonElement("import-csv-btn").click(),
+      )
+    }
     renderPagination(pagination)
     return
   }

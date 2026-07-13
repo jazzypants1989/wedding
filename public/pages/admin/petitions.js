@@ -54,7 +54,7 @@ export async function loadPetitions() {
     updatePetitionBadge(response.counts.pending)
   } catch (err) {
     console.error("Failed to load petitions:", err)
-    showError("Failed to load petitions. Please refresh the page.")
+    showError("Failed to load invitation requests. Please refresh the page.")
   }
 }
 
@@ -75,7 +75,7 @@ function renderPetitions(petitions) {
 
   if (petitions.length === 0) {
     tbody.innerHTML = html`<tr>
-      <td colspan="6" class="empty-state">No petitions yet</td>
+      <td colspan="6" class="empty-state">No invitation requests yet</td>
     </tr>`
     return
   }
@@ -215,7 +215,7 @@ async function handleApproveConfirm() {
     await loadPetitions()
     await loadGuests()
     await loadStats()
-    showSuccess("Petition approved")
+    showSuccess("Request approved")
   } catch (err) {
     const errorEl = getElement("approve-error")
     errorEl.textContent = getErrorMessage(err)
@@ -248,14 +248,14 @@ async function handleDenyConfirm() {
     closeModal(getDialogElement("petition-deny-modal"))
     await loadPetitions()
     if (addToBlocklist) await loadBlocklist()
-    showSuccess("Petition denied")
+    showSuccess("Request denied")
   } catch (err) {
     const errorEl = getElement("deny-error")
     errorEl.textContent = getErrorMessage(err)
     errorEl.hidden = false
   } finally {
     btn.disabled = false
-    btn.textContent = "Deny Petition"
+    btn.textContent = "Deny Request"
   }
 }
 

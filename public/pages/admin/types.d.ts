@@ -789,6 +789,28 @@ export function closeModal(dialog: HTMLDialogElement): void
  */
 export function initModals(): void
 
+/** @file confirm.js - Shared styled confirm dialog for destructive actions */
+
+/** Configuration for a single {@link openConfirm} invocation. */
+export interface ConfirmConfig {
+  /** Dialog heading. */
+  title: string
+  /** Body copy spelling out the consequence. */
+  desc: string
+  /** Label for the confirm button. */
+  confirmLabel: string
+  /** Style the confirm button as destructive (btn-danger) vs primary. */
+  danger: boolean
+  /** The action to run on confirm; errors surface inline, keeping it open. */
+  run: () => Promise<void>
+}
+
+/** Open the shared confirm dialog with the given copy + action. */
+export function openConfirm(cfg: ConfirmConfig): void
+
+/** Wire the shared confirm dialog's confirm button. Call once on load. */
+export function initConfirmDialog(): void
+
 /** @file petitions.js - Types for petition management module */
 
 /**

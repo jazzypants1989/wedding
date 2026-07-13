@@ -8,6 +8,7 @@
 /** @import * as Components from '../../components/types.js' */
 
 import { api, showError, showSuccess } from "./utils.js"
+import { openConfirm } from "./confirm.js"
 import { createUploadQueue } from "../../components/media-uploader.js"
 import { DRESSCODE_LADDER, buildDressCodeDescriptor } from "./dresscode-descriptor.js"
 import {
@@ -388,6 +389,25 @@ function populate(c) {
   setTa("sc-copy-post-intro", c.copy.post.welcomeIntro)
   renderNavRows("sc-nav-pre-rows", c.nav.pre)
   renderNavRows("sc-nav-post-rows", c.nav.post)
+  // Baseline for the unsaved-changes guard: the form now matches saved state.
+  loaded = true
+  savedSnapshot = snapshotForm()
+}
+
+// Unsaved-changes guard. `savedSnapshot` is the serialized form as of the last
+// populate() (initial load / save / reset); `loaded` stays false until the tab
+// is first opened so an untouched, never-loaded form never reads as dirty.
+let loaded = false
+let savedSnapshot = ""
+
+/** @returns {string} the current form serialized for dirty comparison */
+function snapshotForm() {
+  return JSON.stringify(collectForm())
+}
+
+/** @returns {boolean} whether the form has unsaved edits since the last load/save */
+export function isSiteContentDirty() {
+  return loaded && snapshotForm() !== savedSnapshot
 }
 
 /** Build the request body from the form fields. */
@@ -484,20 +504,21 @@ async function handleSubmit(e) {
   }
 }
 
-async function handleReset() {
-  if (!confirm("Reset all site content to the shipped defaults?")) return
-  const resetBtn = getButtonElement("site-content-reset-btn")
-  resetBtn.disabled = true
-  try {
-    const data = await api("/api/admin/site-content", { method: "DELETE" })
-    const response = /** @type {Types.SiteContentResponse} */ (data)
-    populate(response.content)
-    showSuccess("Site content reset to defaults")
-  } catch (err) {
-    showError(getErrorMessage(err))
-  } finally {
-    resetBtn.disabled = false
-  }
+function handleReset() {
+  openConfirm({
+    title: "Reset site content?",
+    desc:
+      "This replaces every field with the shipped defaults and removes the " +
+      "dress-code images you've uploaded. This can't be undone.",
+    confirmLabel: "Reset to defaults",
+    danger: true,
+    run: async () => {
+      const data = await api("/api/admin/site-content", { method: "DELETE" })
+      const response = /** @type {Types.SiteContentResponse} */ (data)
+      populate(response.content)
+      showSuccess("Site content reset to defaults")
+    },
+  })
 }
 
 /** @param {MouseEvent} e */
@@ -513,6 +534,13 @@ function handleNavRemove(e) {
 export function initSiteContent() {
   renderThemeOptions()
   getFormElement("site-content-form").addEventListener("submit", handleSubmit)
+  // Warn before a full page unload (refresh / close / session-expiry redirect)
+  // drops unsaved edits. Tab-switches within the dashboard are guarded in main.js.
+  window.addEventListener("beforeunload", (e) => {
+    if (!isSiteContentDirty()) return
+    e.preventDefault()
+    e.returnValue = ""
+  })
   getButtonElement("site-content-reset-btn").addEventListener("click", handleReset)
   getButtonElement("sc-nav-pre-add").addEventListener("click", () => addNavRow("sc-nav-pre-rows"))
   getButtonElement("sc-nav-post-add").addEventListener("click", () => addNavRow("sc-nav-post-rows"))

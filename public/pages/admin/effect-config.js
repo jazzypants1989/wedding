@@ -10,6 +10,7 @@
 /** @import * as Types from './types.js' */
 
 import { api, showError, showSuccess } from "./utils.js"
+import { openConfirm } from "./confirm.js"
 import {
   getElement,
   getTextAreaElement,
@@ -71,21 +72,22 @@ async function handleSubmit(e) {
   }
 }
 
-async function handleReset() {
-  if (!confirm("Reset all effect config to the shipped defaults?")) return
-  const resetBtn = getButtonElement("effect-config-reset-btn")
-  resetBtn.disabled = true
-  try {
-    const data = /** @type {Types.EffectConfigResponse} */ (
-      await api("/api/admin/effect-config", { method: "DELETE" })
-    )
-    fillTextarea(data.override || {})
-    showSuccess("Effect config reset to defaults")
-  } catch (err) {
-    showError(getErrorMessage(err))
-  } finally {
-    resetBtn.disabled = false
-  }
+function handleReset() {
+  openConfirm({
+    title: "Reset effect config?",
+    desc:
+      "This discards the site-wide effect override and returns every visitor " +
+      "to the theme's shipped defaults. This can't be undone.",
+    confirmLabel: "Reset to defaults",
+    danger: true,
+    run: async () => {
+      const data = /** @type {Types.EffectConfigResponse} */ (
+        await api("/api/admin/effect-config", { method: "DELETE" })
+      )
+      fillTextarea(data.override || {})
+      showSuccess("Effect config reset to defaults")
+    },
+  })
 }
 
 /** Pull the effect studio's per-browser override (this browser's localStorage)

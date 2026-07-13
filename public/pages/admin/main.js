@@ -12,8 +12,9 @@ import { initBlocklist, loadBlocklist } from "./blocklist.js"
 import { initManualSms } from "./manual-sms.js"
 import { initModeration, loadModeration, loadModerationCount } from "./moderation.js"
 import { initGalleryAdmin, loadGalleryAdmin } from "./gallery-admin.js"
-import { initSiteContent, loadSiteContent } from "./site-content.js"
+import { initSiteContent, loadSiteContent, isSiteContentDirty } from "./site-content.js"
 import { initEffectConfig, loadEffectConfig } from "./effect-config.js"
+import { initConfirmDialog } from "./confirm.js"
 import { initThemeToggle } from "../../components/theme-toggle.js"
 
 /** @type {Types.onLoginSuccess} */
@@ -26,6 +27,19 @@ function onLoginSuccess() {
 
 /** @type {Types.switchTab} */
 function switchTab(tabId) {
+  // Guard against silently discarding unsaved Site-content edits when leaving
+  // that tab. beforeunload covers full-page unloads; this covers in-app switches.
+  const scPanel = document.getElementById("tab-site-content")
+  if (tabId !== "site-content" && scPanel && !scPanel.hidden && isSiteContentDirty()) {
+    if (
+      !window.confirm(
+        "You have unsaved changes to your site content. Leave without saving?",
+      )
+    ) {
+      return
+    }
+  }
+
   document.querySelectorAll('[role="tab"]').forEach((tab) => {
     if (!(tab instanceof HTMLElement)) return
     const isSelected = tab.dataset.tab === tabId
@@ -112,6 +126,7 @@ function init() {
   initGalleryAdmin()
   initSiteContent()
   initEffectConfig()
+  initConfirmDialog()
   initThemeToggle()
 
   checkSession()

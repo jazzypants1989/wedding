@@ -51,7 +51,7 @@
         <button class="theme-toggle btn btn-secondary btn-sm" type="button" aria-label="Switch to dark mode"><span
             class="theme-icon-sun" aria-hidden="true"></span><span class="theme-icon-moon"
             aria-hidden="true"></span></button>
-        <a href="/" class="btn btn-secondary btn-sm">View Site</a>
+        <a href="/" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">View Site</a>
         <button id="logout-btn" class="btn btn-secondary btn-sm">Logout</button>
       </div>
     </header>
@@ -67,11 +67,13 @@
           <div class="stat-value" id="stat-responded">-</div>
           <div class="stat-detail" id="stat-responded-detail"></div>
         </div>
-        <div class="stat-card text-center">
-          <div class="stat-label">Pending</div>
+        <div class="stat-card text-center"
+          title="Guests who haven't responded yet — those invited plus those not yet invited.">
+          <div class="stat-label">Awaiting Reply</div>
           <div class="stat-value" id="stat-pending">-</div>
         </div>
-        <div class="stat-card text-center">
+        <div class="stat-card text-center"
+          title="People expected — the sum of party sizes from guests who RSVP'd yes.">
           <div class="stat-label">Expected Headcount</div>
           <div class="stat-value" id="stat-headcount">-</div>
         </div>
@@ -87,8 +89,8 @@
           aria-controls="tab-rsvps" tabindex="-1">RSVPs</button>
         <button class="tab-btn" data-tab="petitions" role="tab" id="tab-btn-petitions" aria-selected="false"
           aria-controls="tab-petitions" tabindex="-1">
-          Petitions
-          <span id="petitions-badge" class="tab-badge" hidden aria-label="pending petitions">0</span>
+          Invitation Requests
+          <span id="petitions-badge" class="tab-badge" hidden aria-label="pending invitation requests">0</span>
         </button>
         <button class="tab-btn" data-tab="moderation" role="tab" id="tab-btn-moderation" aria-selected="false"
           aria-controls="tab-moderation" tabindex="-1">
@@ -341,7 +343,7 @@
           </div>
 
           <p class="text-muted card-text">
-            People on this list will not see the petition form when they try to look up their invitation.
+            People on this list will not see the invitation-request form when they try to look up their invitation.
           </p>
 
           <div class="table-container">
@@ -367,12 +369,14 @@
         <div class="card">
           <div class="card-header flex-between">
             <h2>Site content</h2>
-            <button type="button" id="site-content-reset-btn" class="btn btn-secondary btn-sm">Reset to defaults</button>
           </div>
 
           <p class="text-muted card-text">
-            Edit the site-wide copy that content.js ships as defaults. Saving updates every page and
-            <code>/api/config</code> immediately — no redeploy. "Reset to defaults" clears the override.
+            Edit the words and details shown across your wedding site — names, date, schedule,
+            registry, and more. Changes save instantly, with no redeploy or technical steps.
+            Your site has two versions that switch automatically on your wedding date: a
+            <strong>before</strong> version (welcome, RSVP, schedule) and an <strong>after</strong>
+            version (guestbook, photos), each with its own welcome message and menu.
           </p>
 
           <form id="site-content-form">
@@ -533,6 +537,7 @@
             <p id="site-content-form-error" class="form-error" role="alert" hidden></p>
             <div class="form-actions">
               <button type="submit" id="site-content-save-btn" class="btn btn-primary">Save changes</button>
+              <button type="button" id="site-content-reset-btn" class="btn btn-secondary btn-sm">Reset to defaults</button>
             </div>
           </form>
         </div>
@@ -747,7 +752,7 @@
 
   <dialog id="petition-modal" aria-labelledby="petition-modal-title">
     <div class="modal-header flex-between">
-      <h2 id="petition-modal-title">Petition Details</h2>
+      <h2 id="petition-modal-title">Invitation Request</h2>
       <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
     </div>
     <div id="petition-details">
@@ -762,19 +767,26 @@
 
   <dialog id="petition-approve-modal" aria-labelledby="petition-approve-modal-title">
     <div class="modal-header flex-between">
-      <h2 id="petition-approve-modal-title">Approve Petition</h2>
+      <h2 id="petition-approve-modal-title">Approve Request</h2>
       <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
     </div>
-    <p>Approving this petition will create a guest and send them an invite.</p>
+    <p>Approving this request will create a guest and send them an invite.</p>
     <input type="hidden" id="approve-petition-id">
     <div class="form-group">
       <label for="approve-party-size">Party Size</label>
+      <!-- Ceiling matches the guest add/edit form (#guest-party-size): both cap
+           at 10, within the server's LIMITS.PARTY_SIZE_MAX clamp (types.js). -->
       <select id="approve-party-size">
         <option value="1">1</option>
         <option value="2" selected>2</option>
         <option value="3">3</option>
         <option value="4">4</option>
         <option value="5">5</option>
+        <option value="6">6</option>
+        <option value="7">7</option>
+        <option value="8">8</option>
+        <option value="9">9</option>
+        <option value="10">10</option>
       </select>
     </div>
     <div class="form-group">
@@ -796,15 +808,15 @@
 
   <dialog id="petition-deny-modal" aria-labelledby="petition-deny-modal-title">
     <div class="modal-header flex-between">
-      <h2 id="petition-deny-modal-title">Deny Petition</h2>
+      <h2 id="petition-deny-modal-title">Deny Request</h2>
       <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
     </div>
-    <p>This will deny the petition request.</p>
+    <p>This will deny the request.</p>
     <input type="hidden" id="deny-petition-id">
     <div class="form-group">
       <label class="checkbox-label">
         <input type="checkbox" id="deny-add-blocklist">
-        <span>Add to blocklist (prevent future petitions)</span>
+        <span>Add to blocklist (prevent future requests)</span>
       </label>
     </div>
     <div class="form-group">
@@ -814,7 +826,7 @@
     <div id="deny-error" class="alert alert-error" role="alert" hidden></div>
     <div class="modal-actions">
       <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
-      <button type="button" class="btn btn-danger" id="confirm-deny-btn">Deny Petition</button>
+      <button type="button" class="btn btn-danger" id="confirm-deny-btn">Deny Request</button>
     </div>
   </dialog>
 
@@ -853,6 +865,20 @@
     <div class="modal-actions">
       <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
       <button type="button" class="btn btn-primary" id="mod-confirm-btn">Confirm</button>
+    </div>
+  </dialog>
+
+  <!-- Generic destructive-action confirm dialog (site-content / effects resets) -->
+  <dialog id="admin-confirm-modal" aria-labelledby="admin-confirm-title">
+    <div class="modal-header flex-between">
+      <h2 id="admin-confirm-title">Confirm</h2>
+      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
+    </div>
+    <p id="admin-confirm-desc"></p>
+    <div id="admin-confirm-error" class="alert alert-error" role="alert" hidden></div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
+      <button type="button" class="btn btn-primary" id="admin-confirm-btn">Confirm</button>
     </div>
   </dialog>
 
