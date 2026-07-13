@@ -367,9 +367,11 @@ export async function bulk(req, res, { session }) {
 
   const ip = getClientIp(req)
   let changed = 0
+  let trusted = 0
   for (const { item, outcome } of results) {
     if (!outcome) continue
     changed++
+    if (outcome.autoTrusted) trusted++
     // One audit entry per item (documented granularity — matches the bulk test).
     log({
       action: auditActionFor(action, outcome.wasHidden),
@@ -381,5 +383,7 @@ export async function bulk(req, res, { session }) {
     })
   }
 
-  return sendJson(res, 200, { success: true, changed, total: items.length })
+  // `trusted` surfaces the standing side effect of a bulk approve (each newly
+  // trusted author's future posts skip review) so the client can disclose it.
+  return sendJson(res, 200, { success: true, changed, total: items.length, trusted })
 }

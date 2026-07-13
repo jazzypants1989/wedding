@@ -18,6 +18,7 @@ const TERMINAL_STATUSES = new Set([400, 401, 403, 404, 409, 413, 415, 507])
 
 /**
  * @typedef {Types.UploadQueueItem & {
+ *   caption: string,
  *   file: File,
  *   processed: Types.ProcessedMedia | null,
  *   ready: boolean,
@@ -171,6 +172,7 @@ export function createUploadQueue(callbacks = {}, options = {}) {
           height: item.height,
           durationS: item.durationS ?? undefined,
           displayMissing: item.displayMissing || undefined,
+          caption: item.caption || undefined,
         },
         csrfCookie,
       )
@@ -266,6 +268,7 @@ export function createUploadQueue(callbacks = {}, options = {}) {
           durationS: null,
           displayMissing: false,
           status: null,
+          caption: "",
           file,
           processed: null,
           ready: false,
@@ -277,6 +280,21 @@ export function createUploadQueue(callbacks = {}, options = {}) {
         emit(item)
       }
       pump()
+    },
+
+    /**
+     * Store a caption for an item. Included at finalize if not yet uploaded;
+     * once the row exists on the server (finalized), blur-saves via PATCH so a
+     * caption typed after a fast finalize still lands.
+     * @param {string} id @param {string} value
+     */
+    setCaption(id, value) {
+      const item = items.find((i) => i.id === id)
+      if (!item) return
+      item.caption = value
+      if (item.serverId && (item.state === "done" || item.state === "pending")) {
+        void patchCaption(item.serverId, value, csrfCookie)
+      }
     },
 
     /** @param {string} id */
@@ -412,6 +430,23 @@ function putBlob(item, url, blob, contentType, onProgress, csrfCookie = CSRF_COO
       reject(new UploadError(0, "Canceled"))
     }
     xhr.send(blob)
+  })
+}
+
+/**
+ * Best-effort PATCH of a finalized item's caption (blur-save from the tray).
+ * Fire-and-forget: a failure just means the typed caption didn't persist, which
+ * the guest can retry by editing again. @param {number} id @param {string} value
+ * @param {string} csrfCookie @returns {Promise<void>}
+ */
+function patchCaption(id, value, csrfCookie) {
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open("PATCH", `/api/media/${id}/caption`)
+    xhr.setRequestHeader("Content-Type", "application/json")
+    xhr.setRequestHeader("X-CSRF-Token", readCookie(csrfCookie))
+    xhr.onloadend = () => resolve()
+    xhr.send(JSON.stringify({ caption: value }))
   })
 }
 

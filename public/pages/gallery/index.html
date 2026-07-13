@@ -97,6 +97,11 @@
         <div id="guest-identity" class="guest-identity" hidden></div>
       </div>
 
+      <!-- Persistent post-upload notes (pending reassurance + guestbook nudge);
+           unlike the tray, these survive after the upload queue clears. -->
+      <div id="gallery-pending-note" role="status" hidden></div>
+      <div id="gallery-nudge" role="status" hidden></div>
+
       <!-- Two persistent grids: hidden/shown, never re-rendered on switch. -->
       <div id="grid-official" class="gallery-grid-container" role="tabpanel" aria-labelledby="tab-official" hidden></div>
       <div id="grid-guest" class="gallery-grid-container" role="tabpanel" aria-labelledby="tab-guest"></div>
@@ -135,6 +140,7 @@
     <button type="button" class="lightbox-nav lightbox-next" id="lightbox-next" aria-label="Next">&#8250;</button>
     <div class="lightbox-panel" id="lightbox-panel">
       <p class="lightbox-caption" id="lightbox-caption"></p>
+      <p class="status-badge status-pending lightbox-pending" id="lightbox-pending" hidden>Awaiting approval — only you can see this</p>
       <div class="lightbox-social" id="lightbox-social"></div>
       <p class="lightbox-report"><a href="#" id="lightbox-report">Report this photo</a></p>
       <p class="lightbox-owner"><button type="button" class="lightbox-delete" id="lightbox-delete" hidden>Delete this photo</button></p>

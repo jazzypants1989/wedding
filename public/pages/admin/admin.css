@@ -524,6 +524,20 @@ tr:hover td {
   font-style: italic;
 }
 
+.invite-default-preview {
+  margin-top: var(--spacing-xs);
+  padding: var(--spacing-sm);
+  max-height: 10rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  background: var(--color-bg-subtle, var(--color-card-bg));
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
 /* Tab Badge */
 .tab-badge {
   display: inline-block;
@@ -923,6 +937,19 @@ tr:hover td {
   flex-wrap: wrap;
 }
 
+.mod-detail-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.mod-detail-position {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
 .mod-detail-media {
   max-width: 100%;
   max-height: 50vh;
@@ -1171,8 +1198,54 @@ tr:hover td {
   align-self: flex-start;
 }
 
+/* Reorder controls shared by schedule cards + nav rows. */
+.card-reorder-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.wedding-date-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.wedding-date-picker input[type="datetime-local"] {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
 .form-actions {
   margin-top: 1rem;
+}
+
+/* Sticky save bar for the long Site-content form so a one-word edit anywhere
+   doesn't require scrolling to the bottom to Save. Holds the error too. */
+.form-actions-sticky {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+  padding: 0.75rem 1rem;
+  background: var(--color-card-bg);
+  border-top: 1px solid var(--color-border);
+  box-shadow: 0 -4px 12px light-dark(rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.3));
+}
+
+.form-actions-buttons {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.form-actions-sticky .form-error {
+  margin: 0;
+  flex: 1 1 auto;
 }
 
 /* Dress-code image manager (Site content tab) */

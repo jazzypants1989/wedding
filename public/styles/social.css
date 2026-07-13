@@ -248,6 +248,10 @@
   align-self: flex-end; /* column flex — push the counter to the right edge */
 }
 
+/* Dismissible one-time note, shared by the guestbook pending note, the gallery
+   pending note, and the cross-feature nudges. .gb-pending-note kept as an alias
+   for the guestbook's existing markup. */
+.pending-note,
 .gb-pending-note {
   display: flex;
   align-items: flex-start;
@@ -260,6 +264,19 @@
   font-size: var(--text-sm);
 }
 
+/* A nudge (not a warning) reads friendlier in the brand accent. */
+.pending-note.note-nudge {
+  background: var(--color-primary-faint);
+  color: var(--color-text);
+}
+
+.pending-note a {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.note-dismiss,
 .gb-note-dismiss {
   flex: none;
   min-width: 44px;

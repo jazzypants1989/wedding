@@ -268,7 +268,7 @@
               <thead>
                 <tr>
                   <th scope="col" class="mod-check-col">
-                    <input type="checkbox" id="mod-select-all" aria-label="Select all">
+                    <input type="checkbox" id="mod-select-all" aria-label="Select all loaded">
                   </th>
                   <th scope="col">Preview</th>
                   <th scope="col" class="hide-mobile">Type</th>
@@ -281,6 +281,10 @@
                 <!-- Populated by JS -->
               </tbody>
             </table>
+          </div>
+
+          <div class="mod-loadmore-wrap flex-center">
+            <button type="button" id="mod-loadmore" class="btn btn-secondary btn-sm" hidden>Load more</button>
           </div>
         </div>
 
@@ -403,8 +407,14 @@
             <fieldset class="form-section">
               <legend>Event</legend>
               <div class="form-group">
-                <label for="sc-wedding-date">Wedding date (ISO 8601, e.g. 2026-04-26T11:00:00-07:00)</label>
-                <input type="text" id="sc-wedding-date" maxlength="40" required>
+                <label for="sc-wedding-datetime">Wedding date &amp; time</label>
+                <div class="wedding-date-picker">
+                  <input type="datetime-local" id="sc-wedding-datetime" required>
+                  <select id="sc-wedding-offset" class="filter-select" aria-label="Time zone offset"></select>
+                </div>
+                <p id="sc-wedding-preview" class="text-muted card-text">The site flips from “before” to “after” at this moment. Stored as: <code id="sc-wedding-iso"></code></p>
+                <!-- Composed ISO string (the value actually saved); kept in sync by the picker. -->
+                <input type="hidden" id="sc-wedding-date">
               </div>
               <div class="form-group">
                 <label for="sc-location">Location</label>
@@ -534,10 +544,12 @@
               <button type="button" id="sc-nav-post-add" class="btn btn-secondary btn-sm">Add link</button>
             </fieldset>
 
-            <p id="site-content-form-error" class="form-error" role="alert" hidden></p>
-            <div class="form-actions">
-              <button type="submit" id="site-content-save-btn" class="btn btn-primary">Save changes</button>
-              <button type="button" id="site-content-reset-btn" class="btn btn-secondary btn-sm">Reset to defaults</button>
+            <div class="form-actions form-actions-sticky">
+              <p id="site-content-form-error" class="form-error" role="alert" tabindex="-1" hidden></p>
+              <div class="form-actions-buttons">
+                <button type="submit" id="site-content-save-btn" class="btn btn-primary">Save changes</button>
+                <button type="button" id="site-content-reset-btn" class="btn btn-secondary btn-sm">Reset to defaults</button>
+              </div>
             </div>
           </form>
         </div>
@@ -691,7 +703,8 @@
       <div class="form-group">
         <label for="invite-message">Message (use {name} and {url} as placeholders)</label>
         <textarea id="invite-message" rows="4" placeholder="Leave blank for default message"></textarea>
-        <small class="text-muted">Default message will be used if left blank</small>
+        <small class="text-muted">Leave blank to send the default for the selected channel:</small>
+        <pre id="invite-default-preview" class="invite-default-preview"></pre>
       </div>
 
       <div id="invite-recipients-summary" class="recipients-summary">
@@ -835,6 +848,11 @@
     <div class="modal-header flex-between">
       <h2 id="moderation-modal-title">Review Item</h2>
       <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
+    </div>
+    <div id="mod-detail-nav" class="mod-detail-nav" hidden>
+      <button type="button" class="btn btn-secondary btn-sm" id="mod-detail-prev">&lsaquo; Prev</button>
+      <span id="mod-detail-position" class="mod-detail-position" aria-live="polite"></span>
+      <button type="button" class="btn btn-secondary btn-sm" id="mod-detail-next">Next &rsaquo;</button>
     </div>
     <div id="moderation-detail-body">
       <!-- Populated by JS: preview (text / image / video) + author info -->

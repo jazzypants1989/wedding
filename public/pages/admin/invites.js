@@ -26,28 +26,57 @@ const moduleState = {
 function updateInviteConfigUI() {
   if (!moduleState.config) return
 
-  const emailStatus = getElement("email-status")
-  const smsStatus = getElement("sms-status")
-
-  if (moduleState.config.email.configured) {
-    emailStatus.textContent = "(configured)"
-    emailStatus.classList.remove("text-danger")
-    emailStatus.classList.add("text-success")
-  } else {
-    emailStatus.textContent = "(not configured)"
-    emailStatus.classList.remove("text-success")
-    emailStatus.classList.add("text-danger")
+  applyChannelStatus("email-status", moduleState.config.email.configured, "email")
+  applyChannelStatus("sms-status", moduleState.config.sms.configured, "sms")
+  // Pick the first configured channel so the composer doesn't open on a disabled
+  // radio; fall back to email if neither is configured (its Preview still warns).
+  const emailRadio = channelRadio("email")
+  const smsRadio = channelRadio("sms")
+  if (emailRadio && smsRadio && emailRadio.disabled && !smsRadio.disabled) {
+    smsRadio.checked = true
   }
+  updateDefaultPreview()
+}
 
-  if (moduleState.config.sms.configured) {
-    smsStatus.textContent = "(configured)"
-    smsStatus.classList.remove("text-danger")
-    smsStatus.classList.add("text-success")
-  } else {
-    smsStatus.textContent = "(not configured)"
-    smsStatus.classList.remove("text-success")
-    smsStatus.classList.add("text-danger")
+/**
+ * Reflect a channel's configured state in its status label and disable its radio
+ * when unconfigured (was: selectable, erroring only at Preview).
+ * @param {string} statusId @param {boolean} configured @param {string} channel
+ */
+function applyChannelStatus(statusId, configured, channel) {
+  const status = getElement(statusId)
+  status.textContent = configured ? "(configured)" : "(not configured)"
+  status.classList.toggle("text-success", configured)
+  status.classList.toggle("text-danger", !configured)
+  const radio = channelRadio(channel)
+  if (radio) radio.disabled = !configured
+}
+
+/** @param {string} value @returns {HTMLInputElement | null} */
+function channelRadio(value) {
+  const el = document.querySelector(`input[name="invite-type"][value="${value}"]`)
+  return el instanceof HTMLInputElement ? el : null
+}
+
+/** @returns {string} the currently selected invite channel. */
+function selectedChannel() {
+  const checked = document.querySelector('input[name="invite-type"]:checked')
+  return checked instanceof HTMLInputElement ? checked.value : "email"
+}
+
+/** Show the default message for the selected channel so the couple sees what
+ *  "leave blank" actually sends. */
+function updateDefaultPreview() {
+  const preview = getElement("invite-default-preview")
+  if (!moduleState.config) {
+    preview.textContent = ""
+    return
   }
+  const channel = selectedChannel()
+  preview.textContent =
+    channel === "sms"
+      ? moduleState.config.sms.defaultMessage
+      : moduleState.config.email.defaultMessage
 }
 
 /** @type {Types.renderInvitePreview} */
@@ -77,7 +106,7 @@ function renderInvitePreview() {
         (r) => html`
           <div class="preview-item">
             <strong>${r.name}</strong> (${r.contact})
-            <div class="preview-message">${r.messagePreview}...</div>
+            <div class="preview-message">${r.messagePreview}</div>
           </div>
         `,
       )}
@@ -151,14 +180,54 @@ async function openSendInvitesModal() {
     return
   }
 
-  moduleState.guestIds = invitable.guestIds
-
-  if (moduleState.guestIds.length === 0) {
+  if (invitable.guestIds.length === 0) {
     showError(
       "No guests available to invite. All guests have either responded or are archived.",
     )
     return
   }
+
+  // Spell out the active filter/search so the count is never a mystery.
+  const filterNotes = []
+  if (status) filterNotes.push(`status "${status}"`)
+  if (search) filterNotes.push(`search "${search}"`)
+  const filterText = filterNotes.length
+    ? ` matching ${filterNotes.join(" and ")}`
+    : ""
+  const count = invitable.guestIds.length
+
+  const summary = html`
+    <p>
+      Will invite all <strong>${count}</strong> guest${count !== 1 ? "s" : ""}
+      who haven't responded yet${filterText}.
+    </p>
+    <small class="text-muted"
+      >${invitable.pending} pending, ${invitable.invited} previously invited (not
+      yet responded)</small
+    >
+  `
+
+  await prepareInviteModal(invitable.guestIds, summary)
+}
+
+/**
+ * Invite one specific guest from the roster (no need to pre-filter the search
+ * box to a single person). @param {number} id @param {string} name
+ */
+export async function openSendInvitesForGuest(id, name) {
+  await prepareInviteModal(
+    [id],
+    html`<p>Will invite <strong>${name}</strong>.</p>`,
+  )
+}
+
+/**
+ * Load config, reset the wizard to its config step, and open the modal for a
+ * given recipient set + summary. Shared by the bulk and single-guest entry points.
+ * @param {number[]} guestIds @param {string} summaryHtml
+ */
+async function prepareInviteModal(guestIds, summaryHtml) {
+  moduleState.guestIds = guestIds
 
   try {
     const data = await api("/api/admin/invite/config")
@@ -182,25 +251,7 @@ async function openSendInvitesModal() {
   nextBtn.disabled = false
   backBtn.hidden = true
 
-  // Spell out the active filter/search so the count is never a mystery.
-  const filterNotes = []
-  if (status) filterNotes.push(`status "${status}"`)
-  if (search) filterNotes.push(`search "${search}"`)
-  const filterText = filterNotes.length
-    ? ` matching ${filterNotes.join(" and ")}`
-    : ""
-  const count = moduleState.guestIds.length
-
-  getElement("invite-recipients-summary").innerHTML = html`
-    <p>
-      Will invite all <strong>${count}</strong> guest${count !== 1 ? "s" : ""}
-      who haven't responded yet${filterText}.
-    </p>
-    <small class="text-muted"
-      >${invitable.pending} pending, ${invitable.invited} previously invited (not
-      yet responded)</small
-    >
-  `
+  getElement("invite-recipients-summary").innerHTML = summaryHtml
 
   openModal(getDialogElement("invite-modal"))
 }
@@ -340,4 +391,8 @@ export function initInvites() {
     "click",
     handleInviteBack,
   )
+  // Keep the default-message preview in sync with the selected channel.
+  document.querySelectorAll('input[name="invite-type"]').forEach((radio) => {
+    radio.addEventListener("change", updateDefaultPreview)
+  })
 }

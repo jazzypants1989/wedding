@@ -36,6 +36,7 @@ import {
   setMediaVariantBytes,
   setMediaOriginalExt,
   finalizeMedia,
+  updateMediaCaption,
   softDeleteMedia,
   sumOriginalBytes,
   sumOriginalBytesForAccount,
@@ -47,6 +48,7 @@ import {
   UnsupportedMediaTypeError,
 } from "../core/validation.js"
 import {
+  LIMITS,
   MEDIA_LIMITS,
   MEDIA_KIND,
   MEDIA_STATUS,
@@ -84,6 +86,21 @@ const VARIANT_SPEC = {
  */
 function owns(principal, row) {
   return principal.isAdmin || row.account_id === principal.accountId
+}
+
+/**
+ * Trim + length-clamp a raw caption; empty becomes null. Mirrors the admin
+ * caption validator (api/admin/media.js) so guest and admin captions share a
+ * ceiling. @param {unknown} raw @returns {string | null}
+ */
+function sanitizeCaption(raw) {
+  if (raw === null || raw === undefined) return null
+  if (typeof raw !== "string") throw new ValidationError("caption must be a string or null")
+  const trimmed = raw.trim()
+  if (trimmed.length > LIMITS.MESSAGE_MAX_LENGTH) {
+    throw new ValidationError(`Caption must be ${LIMITS.MESSAGE_MAX_LENGTH} characters or fewer`)
+  }
+  return trimmed.length > 0 ? trimmed : null
 }
 
 /** @param {unknown} v @returns {number | null} */
@@ -416,6 +433,8 @@ export async function finalize(req, res, { params, principal }) {
   const width = toIntOrNull(body.width)
   const height = toIntOrNull(body.height)
   const durationS = row.kind === MEDIA_KIND.VIDEO ? toFloatOrNull(body.durationS) : null
+  // Optional guest-supplied caption (validated before any disk work).
+  const caption = sanitizeCaption(body.caption)
 
   // Verify every required variant landed on disk. Content-section images require
   // the full responsive ladder; a displayMissing (undecodable) content upload
@@ -453,6 +472,8 @@ export async function finalize(req, res, { params, principal }) {
     status,
   })
 
+  if (caption !== null) updateMediaCaption(row.id, caption)
+
   if (row.kind !== MEDIA_KIND.VIDEO) {
     log({
       action: AUDIT_ACTIONS.MEDIA_FINALIZE,
@@ -464,6 +485,29 @@ export async function finalize(req, res, { params, principal }) {
   }
 
   return sendJson(res, 200, { id: finalized.id, status: finalized.status })
+}
+
+/** @type {Types.setCaption} */
+export async function setCaption(req, res, { params, principal }) {
+  const id = Number(params.id)
+  const row = Number.isInteger(id) ? getMediaById(id) : undefined
+  // Own item only (admins edit captions via the curated-gallery manager). A
+  // deleted row 404s. This exists so a caption typed in the upload tray still
+  // lands when a fast trusted upload finalized before the guest finished typing.
+  if (!row || !owns(principal, row) || row.deleted_at) throw new NotFoundError("Media")
+
+  const body = await parseBody(req)
+  const caption = sanitizeCaption(body.caption)
+  updateMediaCaption(row.id, caption)
+
+  log({
+    action: AUDIT_ACTIONS.MEDIA_UPDATE,
+    ip: getClientIp(req),
+    resourceType: "media",
+    resourceId: row.id,
+  })
+
+  return sendJson(res, 200, { id: row.id, caption })
 }
 
 /** @type {Types.remove} */

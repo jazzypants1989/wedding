@@ -237,6 +237,16 @@ function updateCount(thread) {
     ? list.querySelectorAll(".comment:not(.comment-pending)").length
     : 0
   label.textContent = countLabel(approved)
+  // Broadcast the fresh approved count so a page rendering the thread from
+  // cached data (the gallery lightbox) can write it back and stay faithful.
+  const { targetType, targetId } = context(thread)
+  if (targetType && targetId) {
+    window.dispatchEvent(
+      new CustomEvent("comment:changed", {
+        detail: { targetType, targetId: Number(targetId), count: approved },
+      }),
+    )
+  }
 }
 
 /** @param {HTMLElement} thread @param {string} message */

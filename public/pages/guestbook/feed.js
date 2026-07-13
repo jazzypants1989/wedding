@@ -13,6 +13,7 @@ import {
 } from "../utils.js"
 import { requireAccount } from "../../components/guest-session.js"
 import { fireConfetti, miniSparkle, setButtonLoading } from "../../components/celebrate.js"
+import { showNote } from "../../components/notice.js"
 import { upgradeTimes } from "../../components/relative-time.js"
 import { renderReactionBar } from "../../components/reaction-bar.js"
 import { renderCommentThread } from "../../components/comment-thread.js"
@@ -177,20 +178,22 @@ function celebrate(status) {
 }
 
 function showPendingNote() {
-  // One-time only (spec — Phase 2 §5); mirrors the gbCelebrated guard above so
-  // it doesn't reappear on every pending post/reload.
-  if (localStorage.getItem("gbPendingNoteSeen")) return
-  localStorage.setItem("gbPendingNoteSeen", "1")
-  const note = getElement("gb-pending-note")
-  note.innerHTML = html`
-    <span>Thanks! ${getCoupleName()} approve messages from new folks — yours
-      will appear for everyone soon.</span>
-    <button type="button" class="gb-note-dismiss" id="gb-note-dismiss"
-      aria-label="Dismiss">&times;</button>
-  `
-  note.hidden = false
-  getButtonElement("gb-note-dismiss").addEventListener("click", () => {
-    note.hidden = true
+  // One-time only (spec — Phase 2 §5); shared dismissible-note helper, same
+  // treatment as the gallery pending note.
+  showNote(getElement("gb-pending-note"), {
+    message: `Thanks! ${getCoupleName()} approve messages from new folks — yours will appear for everyone soon.`,
+    once: "gbPendingNoteSeen",
+  })
+}
+
+function showGalleryNudge() {
+  // Cross-pollinate: after signing, nudge toward adding photos.
+  showNote(getElement("gb-nudge"), {
+    message: "Thanks for signing! Got photos from the day? Add them to the gallery 📸",
+    once: "guestbookToGalleryNudge",
+    linkHref: "/gallery",
+    linkLabel: "Add photos",
+    nudge: true,
   })
 }
 
@@ -217,6 +220,7 @@ async function submitPost(message) {
         : "Your message was posted."
     celebrate(data.status)
     if (data.status === "pending") showPendingNote()
+    showGalleryNudge()
   } catch (err) {
     showError(getErrorMessage(err))
   } finally {

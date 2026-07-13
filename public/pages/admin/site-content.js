@@ -56,6 +56,100 @@ function renderThemeOptions() {
   }
 }
 
+// ---- Wedding date/time picker --------------------------------------------
+// The stored value is an ISO-8601 instant with a fixed UTC offset; it flips the
+// site's pre/post mode via Date.parse. A datetime-local + offset select is far
+// safer than a hand-typed offset — both compose into the hidden #sc-wedding-date
+// that collectForm() reads, so the save path is unchanged.
+
+/** @type {{ value: string, label: string }[]} */
+const OFFSET_OPTIONS = [
+  { value: "-10:00", label: "UTC−10:00 (Hawaii)" },
+  { value: "-09:00", label: "UTC−09:00 (Alaska)" },
+  { value: "-08:00", label: "UTC−08:00 (Pacific, winter)" },
+  { value: "-07:00", label: "UTC−07:00 (Pacific summer / Mountain)" },
+  { value: "-06:00", label: "UTC−06:00 (Central)" },
+  { value: "-05:00", label: "UTC−05:00 (Eastern)" },
+  { value: "-04:00", label: "UTC−04:00 (Atlantic)" },
+  { value: "Z", label: "UTC±00:00" },
+  { value: "+01:00", label: "UTC+01:00 (Central Europe)" },
+  { value: "+02:00", label: "UTC+02:00 (Eastern Europe)" },
+  { value: "+05:30", label: "UTC+05:30 (India)" },
+  { value: "+08:00", label: "UTC+08:00 (China / Singapore)" },
+  { value: "+09:00", label: "UTC+09:00 (Japan / Korea)" },
+  { value: "+10:00", label: "UTC+10:00 (East Australia)" },
+  { value: "+12:00", label: "UTC+12:00 (New Zealand)" },
+]
+
+/** Populate the offset <select>, guaranteeing `current` is present + selected. */
+/** @param {string} current */
+function renderOffsetOptions(current) {
+  const select = getSelectElement("sc-wedding-offset")
+  const options = OFFSET_OPTIONS.slice()
+  if (current && !options.some((o) => o.value === current)) {
+    options.push({ value: current, label: `UTC${current}` })
+  }
+  select.innerHTML = ""
+  for (const o of options) {
+    const opt = document.createElement("option")
+    opt.value = o.value
+    opt.textContent = o.label
+    select.appendChild(opt)
+  }
+  select.value = current || "-07:00"
+}
+
+/**
+ * Split an ISO instant "2026-04-26T11:00:00-07:00" into a datetime-local value
+ * ("2026-04-26T11:00") + offset ("-07:00" | "Z"). No regex; the time uses colons
+ * so the first +/-/Z after "T" marks the offset. Null if it isn't zoned ISO.
+ * @param {string} iso @returns {{ datetime: string, offset: string } | null}
+ */
+function parseWeddingDate(iso) {
+  const tIdx = iso.indexOf("T")
+  if (tIdx === -1) return null
+  const datePart = iso.slice(0, tIdx)
+  const timeRest = iso.slice(tIdx + 1)
+  let offIdx = -1
+  for (let i = 0; i < timeRest.length; i++) {
+    const c = timeRest[i]
+    if (c === "+" || c === "-" || c === "Z") {
+      offIdx = i
+      break
+    }
+  }
+  if (offIdx === -1) return null
+  const hhmm = timeRest.slice(0, offIdx).slice(0, 5)
+  if (hhmm.length < 5) return null
+  return { datetime: `${datePart}T${hhmm}`, offset: timeRest.slice(offIdx) }
+}
+
+/** Recompose the hidden ISO value + preview from the picker fields. */
+function syncWeddingDate() {
+  const dt = getInputElement("sc-wedding-datetime").value // "YYYY-MM-DDTHH:MM" | ""
+  const offset = getSelectElement("sc-wedding-offset").value
+  const iso = dt ? `${dt}:00${offset}` : ""
+  setVal("sc-wedding-date", iso)
+  getElement("sc-wedding-iso").textContent = iso || "—"
+}
+
+/** Load a stored ISO value into the picker (called from populate). */
+/** @param {string} iso */
+function setWeddingDate(iso) {
+  const parsed = iso ? parseWeddingDate(iso) : null
+  if (parsed) {
+    getInputElement("sc-wedding-datetime").value = parsed.datetime
+    renderOffsetOptions(parsed.offset)
+    syncWeddingDate()
+  } else {
+    // Preserve an unparseable stored value rather than blanking it.
+    getInputElement("sc-wedding-datetime").value = ""
+    renderOffsetOptions("")
+    setVal("sc-wedding-date", iso || "")
+    getElement("sc-wedding-iso").textContent = iso || "—"
+  }
+}
+
 /**
  * Append one nav-link editor row to a container.
  * @param {string} containerId
@@ -69,6 +163,8 @@ function addNavRow(containerId, link) {
     html`<div class="nav-row">
       <input type="text" class="nav-href" placeholder="href (e.g. #schedule or /rsvp)" maxlength="200" value="${href}">
       <input type="text" class="nav-label" placeholder="label" maxlength="100" value="${label}">
+      <button type="button" class="btn btn-secondary btn-sm nav-up" title="Move up" aria-label="Move up">↑</button>
+      <button type="button" class="btn btn-secondary btn-sm nav-down" title="Move down" aria-label="Move down">↓</button>
       <button type="button" class="btn btn-danger btn-sm nav-remove">Remove</button>
     </div>`,
   )
@@ -303,9 +399,30 @@ function addScheduleRow(item) {
       <input type="text" class="sched-address" placeholder="Address (optional)" maxlength="300" value="${address}">
       <textarea class="sched-details" rows="3" placeholder="Details — leave a blank line between paragraphs">${details}</textarea>
       <textarea class="sched-note" rows="2" placeholder="Note (optional)">${note}</textarea>
-      <button type="button" class="btn btn-danger btn-sm sched-remove">Remove item</button>
+      <div class="card-reorder-actions">
+        <button type="button" class="btn btn-secondary btn-sm sched-up" title="Move up" aria-label="Move up">↑</button>
+        <button type="button" class="btn btn-secondary btn-sm sched-down" title="Move down" aria-label="Move down">↓</button>
+        <button type="button" class="btn btn-danger btn-sm sched-remove">Remove item</button>
+      </div>
     </div>`,
   )
+}
+
+/**
+ * Move a card/row up or down among its siblings. Schedule + nav are collected by
+ * DOM order, and their inputs live in the moved node, so this needs no sync.
+ * @param {Element} el @param {number} dir -1 = up, +1 = down
+ */
+function moveSibling(el, dir) {
+  const parent = el.parentNode
+  if (!parent) return
+  if (dir < 0) {
+    const prev = el.previousElementSibling
+    if (prev) parent.insertBefore(el, prev)
+  } else {
+    const next = el.nextElementSibling
+    if (next) parent.insertBefore(next, el)
+  }
 }
 
 /** @param {readonly Types.SiteContentScheduleItem[]} items */
@@ -349,13 +466,14 @@ function collectScheduleRows() {
 }
 
 /** @param {MouseEvent} e */
-function handleScheduleRemove(e) {
+function handleScheduleClick(e) {
   const target = e.target
   if (!(target instanceof Element)) return
-  const btn = target.closest(".sched-remove")
-  if (!btn) return
-  const card = btn.closest(".schedule-card")
-  if (card) card.remove()
+  const card = target.closest(".schedule-card")
+  if (!card) return
+  if (target.closest(".sched-remove")) card.remove()
+  else if (target.closest(".sched-up")) moveSibling(card, -1)
+  else if (target.closest(".sched-down")) moveSibling(card, 1)
 }
 
 /** @param {Types.SiteContent} c */
@@ -364,7 +482,7 @@ function populate(c) {
   setVal("sc-couple-first", c.couple.first)
   setVal("sc-couple-monogram", c.couple.monogram)
   setVal("sc-couple-fullnames", c.couple.fullNames.join(", "))
-  setVal("sc-wedding-date", c.weddingDate)
+  setWeddingDate(c.weddingDate)
   setVal("sc-location", c.location)
   getSelectElement("sc-theme").value = c.theme
   setVal("sc-contact-email", c.contactEmail || "")
@@ -497,8 +615,12 @@ async function handleSubmit(e) {
     populate(response.content)
     showSuccess("Site content updated")
   } catch (err) {
+    // The server throws one ValidationError at a time; surface it in the sticky
+    // save bar (always in view) and move focus to it for screen readers.
     errorEl.textContent = getErrorMessage(err)
     errorEl.hidden = false
+    errorEl.scrollIntoView({ block: "nearest" })
+    errorEl.focus()
   } finally {
     saveBtn.disabled = false
   }
@@ -522,13 +644,14 @@ function handleReset() {
 }
 
 /** @param {MouseEvent} e */
-function handleNavRemove(e) {
+function handleNavClick(e) {
   const target = e.target
   if (!(target instanceof Element)) return
-  const btn = target.closest(".nav-remove")
-  if (!btn) return
-  const row = btn.closest(".nav-row")
-  if (row) row.remove()
+  const row = target.closest(".nav-row")
+  if (!row) return
+  if (target.closest(".nav-remove")) row.remove()
+  else if (target.closest(".nav-up")) moveSibling(row, -1)
+  else if (target.closest(".nav-down")) moveSibling(row, 1)
 }
 
 export function initSiteContent() {
@@ -542,12 +665,14 @@ export function initSiteContent() {
     e.returnValue = ""
   })
   getButtonElement("site-content-reset-btn").addEventListener("click", handleReset)
+  getInputElement("sc-wedding-datetime").addEventListener("input", syncWeddingDate)
+  getSelectElement("sc-wedding-offset").addEventListener("change", syncWeddingDate)
   getButtonElement("sc-nav-pre-add").addEventListener("click", () => addNavRow("sc-nav-pre-rows"))
   getButtonElement("sc-nav-post-add").addEventListener("click", () => addNavRow("sc-nav-post-rows"))
-  getElement("sc-nav-pre-rows").addEventListener("click", handleNavRemove)
-  getElement("sc-nav-post-rows").addEventListener("click", handleNavRemove)
+  getElement("sc-nav-pre-rows").addEventListener("click", handleNavClick)
+  getElement("sc-nav-post-rows").addEventListener("click", handleNavClick)
   getButtonElement("sc-schedule-add").addEventListener("click", () => addScheduleRow())
-  getElement("sc-schedule-rows").addEventListener("click", handleScheduleRemove)
+  getElement("sc-schedule-rows").addEventListener("click", handleScheduleClick)
   getButtonElement("sc-dresscode-add").addEventListener("click", () =>
     getInputElement("sc-dresscode-file").click(),
   )

@@ -7,6 +7,7 @@
 import { html, getCoupleName, getElement, getInputElement } from "../utils.js"
 import { requireAccount, session } from "../../components/guest-session.js"
 import { fireConfetti } from "../../components/celebrate.js"
+import { showNote } from "../../components/notice.js"
 import { createUploadQueue } from "../../components/media-uploader.js"
 import { prependItem } from "./grid.js"
 
@@ -14,13 +15,12 @@ import { prependItem } from "./grid.js"
 let queue
 /** Guard against prepending the same finished item twice. */
 const prepended = new Set()
-let pendingNoteShown = false
 
 /** @type {Types.initUpload} */
 export function initUpload() {
   queue = createUploadQueue({
     onChange: onItemChange,
-    onFirstSuccess: fireConfetti,
+    onFirstSuccess: onFirstSuccess,
   })
 
   const input = getInputElement("upload-input")
@@ -35,6 +35,14 @@ export function initUpload() {
   getElement("upload-fab").addEventListener("click", () =>
     requireAccount(() => input.click()),
   )
+
+  // The guest empty-state CTA is rendered dynamically by the grid; delegate.
+  getElement("grid-guest").addEventListener("click", (e) => {
+    const el = e.target
+    if (el instanceof HTMLElement && el.id === "gallery-empty-cta") {
+      requireAccount(() => input.click())
+    }
+  })
 
   getElement("upload-cancel-all").addEventListener("click", () => {
     // Confirm whenever there's in-flight work, regardless of count (a single
@@ -56,6 +64,17 @@ export function initUpload() {
       queue.remove(id)
       renderTray()
     }
+  })
+
+  // Delegated caption input → store on the queue item (sent at finalize, or
+  // PATCHed if the row already finalized). Kept off the full re-render path so
+  // typing isn't interrupted by other items' progress events.
+  getElement("upload-tray-list").addEventListener("input", (e) => {
+    const input = e.target
+    if (!(input instanceof HTMLInputElement)) return
+    if (!input.classList.contains("upload-caption")) return
+    const id = input.dataset.id
+    if (id) queue.setCaption(id, input.value)
   })
 
   wireDragDrop(getElement("grid-guest"))
@@ -85,7 +104,7 @@ function toListItem(item) {
     kind: item.kind === "video" ? "video" : "image",
     section: "guest",
     status: /** @type {any} */ (item.status),
-    caption: null,
+    caption: item.caption ? item.caption.trim() : null,
     width: item.width,
     height: item.height,
     duration_seconds: item.durationS,
@@ -112,7 +131,36 @@ function renderTray() {
       : "Uploads complete"
   getElement("upload-tray-summary").textContent = summary
 
-  getElement("upload-tray-list").innerHTML = html`${items.map(rowMarkup)}`
+  // Reconcile rows in place (create/update/remove) rather than replacing the
+  // list wholesale, so a caption input being typed into survives other items'
+  // progress events.
+  const list = getElement("upload-tray-list")
+  const seen = new Set()
+  for (const item of items) {
+    seen.add(item.id)
+    let row = list.querySelector(`.upload-row[data-id="${item.id}"]`)
+    if (!(row instanceof HTMLElement)) {
+      const wrapper = document.createElement("template")
+      wrapper.innerHTML = rowMarkup(item)
+      row = /** @type {HTMLElement} */ (wrapper.content.firstElementChild)
+      list.appendChild(row)
+    }
+    updateRow(row, item)
+  }
+  for (const row of Array.from(list.querySelectorAll(".upload-row"))) {
+    if (row instanceof HTMLElement && !seen.has(row.dataset.id)) row.remove()
+  }
+}
+
+/** Whether an item is far enough along to caption (past queued; not failed). */
+/** @param {Components.UploadQueueItem} item @returns {boolean} */
+function canCaption(item) {
+  return (
+    item.state === "processing" ||
+    item.state === "uploading" ||
+    item.state === "done" ||
+    item.state === "pending"
+  )
 }
 
 /** @param {Components.UploadQueueItem} item @returns {string} */
@@ -121,30 +169,56 @@ function rowMarkup(item) {
     ? html`<img class="upload-thumb" src="${item.previewUrl}" alt="">`
     : html`<span class="upload-thumb upload-thumb-empty" aria-hidden="true"></span>`
 
-  const bar =
-    item.state === "uploading"
-      ? html`<div class="upload-bar"><div class="upload-bar-fill"
-          style="width:${Math.round(item.progress * 100)}%"></div></div>`
-      : ""
-
-  let actions = html`<button type="button" class="upload-action" data-action="remove"
-    data-id="${item.id}">Remove</button>`
-  if (item.state === "failed" && item.retryable) {
-    actions = html`
-      <button type="button" class="upload-action" data-action="retry" data-id="${item.id}">Retry</button>
-      ${actions}`
-  }
-
   return html`
     <li class="upload-row" data-id="${item.id}">
       ${preview}
       <div class="upload-row-main">
         <span class="upload-name">${item.name}</span>
-        <span class="upload-row-state ${item.state === "failed" ? "is-error" : ""}">${stateLabel(item)}</span>
-        ${bar}
+        <span class="upload-row-state">${stateLabel(item)}</span>
+        <div class="upload-bar-slot"></div>
+        <input type="text" class="upload-caption" data-id="${item.id}"
+          maxlength="200" placeholder="Add a caption (optional)"
+          aria-label="Caption for ${item.name}" hidden>
       </div>
-      <div class="upload-row-actions">${actions}</div>
+      <div class="upload-row-actions"></div>
     </li>`
+}
+
+/**
+ * Update the mutable parts of an existing row in place (label, progress bar,
+ * actions, caption visibility) without touching the caption input's value.
+ * @param {HTMLElement} row @param {Components.UploadQueueItem} item
+ */
+function updateRow(row, item) {
+  const stateEl = row.querySelector(".upload-row-state")
+  if (stateEl instanceof HTMLElement) {
+    stateEl.textContent = stateLabel(item)
+    stateEl.classList.toggle("is-error", item.state === "failed")
+  }
+
+  const barSlot = row.querySelector(".upload-bar-slot")
+  if (barSlot instanceof HTMLElement) {
+    barSlot.innerHTML =
+      item.state === "uploading"
+        ? html`<div class="upload-bar"><div class="upload-bar-fill"
+            style="width:${Math.round(item.progress * 100)}%"></div></div>`
+        : ""
+  }
+
+  const caption = row.querySelector(".upload-caption")
+  if (caption instanceof HTMLInputElement) caption.hidden = !canCaption(item)
+
+  const actionsEl = row.querySelector(".upload-row-actions")
+  if (actionsEl instanceof HTMLElement) {
+    let actions = html`<button type="button" class="upload-action" data-action="remove"
+      data-id="${item.id}">Remove</button>`
+    if (item.state === "failed" && item.retryable) {
+      actions = html`
+        <button type="button" class="upload-action" data-action="retry" data-id="${item.id}">Retry</button>
+        ${actions}`
+    }
+    actionsEl.innerHTML = actions
+  }
 }
 
 /** @param {Components.UploadQueueItem} item @returns {string} */
@@ -168,13 +242,27 @@ function stateLabel(item) {
 }
 
 function showPendingNote() {
-  if (pendingNoteShown) return
-  pendingNoteShown = true
-  const summary = getElement("upload-tray-summary")
-  summary.insertAdjacentText(
-    "afterend",
-    ` ${getCoupleName()} approve photos from new folks — yours will appear for everyone soon.`,
-  )
+  // Same dismissible, once-persisted treatment as the guestbook pending note,
+  // in a persistent spot (the tray auto-hides when the queue clears).
+  showNote(getElement("gallery-pending-note"), {
+    message: `Thanks! ${getCoupleName()} approve photos from new folks — yours will appear for everyone soon.`,
+    once: "galleryPendingNoteSeen",
+  })
+}
+
+/**
+ * First finished upload this visit → confetti, then a one-time nudge toward the
+ * guestbook so the two post-wedding features cross-pollinate.
+ */
+function onFirstSuccess() {
+  fireConfetti()
+  showNote(getElement("gallery-nudge"), {
+    message: "Photos are up 🎉 — leave them a note in the guestbook too?",
+    once: "galleryToGuestbookNudge",
+    linkHref: "/guestbook",
+    linkLabel: "Sign the guestbook",
+    nudge: true,
+  })
 }
 
 /** @param {HTMLElement} dropZone */

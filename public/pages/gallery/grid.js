@@ -189,10 +189,16 @@ function showEmpty(s) {
   if (s.container.querySelector(".gallery-empty")) return
   const div = document.createElement("div")
   div.className = "empty-state gallery-empty"
-  div.textContent =
-    s.section === "guest"
-      ? "No guest photos yet — got some from the big day? 📸"
-      : "No official photos yet — the couple's favorites will land here soon. 📷"
+  if (s.section === "guest") {
+    // Actionable, like the guestbook's "Be the first to sign!" — the CTA is
+    // wired in upload.js (delegated) to the existing upload flow.
+    div.innerHTML = html`
+      No guest photos yet — got some from the big day? 📸
+      <button type="button" class="auth-link" id="gallery-empty-cta">Add the first photos</button>`
+  } else {
+    div.textContent =
+      "No official photos yet — the couple's favorites will land here soon. 📷"
+  }
   s.container.insertBefore(div, s.sentinel)
 }
 

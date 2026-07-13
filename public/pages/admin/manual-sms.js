@@ -221,8 +221,16 @@ async function openManualSmsModal() {
     moduleState.guests = data.guests || []
     moduleState.weddingInfo = data.wedding || null
     moduleState.template = data.defaultTemplate || ""
-    moduleState.currentIndex = 0
-    moduleState.sentIds = new Set()
+    // Seed "Sent" from persisted state (markSent flips status → invited), so
+    // reopening the modal keeps the checkmarks and the couple's place instead of
+    // starting over. Focus mode opens on the first guest not yet sent.
+    moduleState.sentIds = new Set(
+      moduleState.guests.filter((g) => g.status === "invited").map((g) => g.id),
+    )
+    const firstUnsent = moduleState.guests.findIndex(
+      (g) => !moduleState.sentIds.has(g.id),
+    )
+    moduleState.currentIndex = firstUnsent === -1 ? 0 : firstUnsent
   } catch (err) {
     showError("Failed to load guests: " + getErrorMessage(err))
     return

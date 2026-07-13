@@ -123,6 +123,35 @@ function reconcile(bar, res, toggledEmoji) {
         : pill.getAttribute("aria-pressed") === "true"
     setPill(pill, pressed, count)
   })
+  announceChange(bar)
+}
+
+/**
+ * Broadcast this bar's freshly-reconciled state so a page that re-renders the
+ * bar from cached data (the gallery lightbox, off the grid's in-memory item)
+ * can write it back and stay faithful. Built from the DOM so it always matches
+ * what the guest currently sees. @param {HTMLElement} bar
+ */
+function announceChange(bar) {
+  const targetType = bar.dataset.targetType
+  const targetId = bar.dataset.targetId
+  if (!targetType || !targetId) return
+  /** @type {Record<string, { count: number, mine: boolean }>} */
+  const reactions = {}
+  bar.querySelectorAll(".reaction-pill").forEach((pill) => {
+    if (!(pill instanceof HTMLButtonElement)) return
+    const emoji = pill.dataset.emoji
+    if (!emoji) return
+    const count = countOf(pill)
+    const mine = pill.getAttribute("aria-pressed") === "true"
+    // Match ReactionSummary semantics: only emojis with ≥1 reaction.
+    if (count > 0) reactions[emoji] = { count, mine }
+  })
+  window.dispatchEvent(
+    new CustomEvent("reaction:changed", {
+      detail: { targetType, targetId: Number(targetId), reactions },
+    }),
+  )
 }
 
 /** @param {HTMLButtonElement} btn @param {boolean} pressed @param {number} count */

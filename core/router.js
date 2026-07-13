@@ -181,6 +181,7 @@ route("GET", "/api/media/:id", media.getOne, { errorHandling: true })
 route("POST", "/api/media", media.createSession, { accountOrAdmin: true })
 route("PUT", "/api/media/:id/:variant", media.putVariant, { accountOrAdmin: true })
 route("POST", "/api/media/:id/finalize", media.finalize, { accountOrAdmin: true })
+route("PATCH", "/api/media/:id/caption", media.setCaption, { accountOrAdmin: true })
 route("DELETE", "/api/media/:id", media.remove, { accountOrAdmin: true })
 
 // Polymorphic comments. GET is public (getOptionalAccount inside for the

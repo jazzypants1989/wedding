@@ -27,7 +27,9 @@ export async function config(req, res) {
     },
     email: {
       configured: email.isConfigured(),
-      defaultMessage: email.getDefaultInviteEmail("{name}", "{url}"),
+      // The plain-text body (getDefaultInviteEmail returns { subject, text, ... });
+      // the composer shows this as the "leave blank" default.
+      defaultMessage: email.getDefaultInviteEmail("{name}", "{url}").text,
     },
   })
 }
@@ -104,7 +106,10 @@ export async function preview(req, res) {
       id: guest.id,
       name: guest.name,
       contact: commType === "sms" ? guest.phone : guest.email,
-      messagePreview: messagePreview.slice(0, 200),
+      // Append the ellipsis only when actually truncated, so a short message
+      // isn't shown with a misleading "…".
+      messagePreview:
+        messagePreview.length > 200 ? messagePreview.slice(0, 200) + "…" : messagePreview,
     })
   }
 

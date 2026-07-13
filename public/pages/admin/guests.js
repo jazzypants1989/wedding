@@ -2,6 +2,7 @@
 /** @import * as Types from './types.js' */
 
 import { state } from "./state.js"
+import { openSendInvitesForGuest } from "./invites.js"
 import {
   api,
   showError,
@@ -163,6 +164,11 @@ function renderGuests(guests, pagination) {
             : html`<button class="btn btn-secondary btn-sm" data-action="edit">
                   Edit
                 </button>
+                ${guest.status !== "responded"
+                  ? html`<button class="btn btn-secondary btn-sm" data-action="invite">
+                      Invite
+                    </button>`
+                  : ""}
                 <button class="btn btn-danger btn-sm" data-action="archive">
                   Archive
                 </button>`}
@@ -395,6 +401,10 @@ function handleGuestsTableClick(e) {
   if (action === "edit") editGuest(id)
   else if (action === "archive") confirmDeleteGuest(id)
   else if (action === "restore") restoreGuest(id)
+  else if (action === "invite") {
+    const guest = state.getGuestById(id)
+    if (guest) void openSendInvitesForGuest(id, guest.name)
+  }
 }
 
 /** @type {Types.handlePaginationClick} */

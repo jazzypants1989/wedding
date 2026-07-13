@@ -542,3 +542,64 @@ describe("content section: dress-code images (requires TEST_ADMIN_PASSWORD)", ()
     assert.strictEqual(res.status, 400, "content section rejects video uploads")
   })
 })
+
+describe("guest photo captions", () => {
+  it("finalize stores an optional caption, surfaced on the item", async () => {
+    const { auth } = signIn({ trusted: 1, name: "Capper" })
+    const { data } = await createSession({ kind: "image", originalBytes: 256 }, auth)
+    await putVariant(data.id, "original", makeJpeg(256), "image/jpeg", auth)
+    await putVariant(data.id, "display", makeJpeg(200), "image/jpeg", auth)
+    await putVariant(data.id, "thumb", makeJpeg(120), "image/jpeg", auth)
+    const fin = await finalize(
+      data.id,
+      { width: 1200, height: 800, caption: "  Golden hour  " },
+      auth,
+    )
+    assert.strictEqual(fin.status, 200)
+
+    const item = await json(await fetch(`${BASE_URL}/api/media/${data.id}`))
+    assert.strictEqual(item.caption, "Golden hour", "caption trimmed + stored at finalize")
+  })
+
+  it("PATCH caption updates the owner's item; a non-owner gets 404", async () => {
+    const { auth } = signIn({ trusted: 1, name: "Owner" })
+    const { id } = await uploadImage(auth)
+
+    const patched = await accountFetch(
+      `/api/media/${id}/caption`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ caption: "Later thought" }),
+      },
+      auth,
+    )
+    assert.strictEqual(patched.status, 200)
+    assert.strictEqual((await json(patched)).caption, "Later thought")
+
+    // A different account cannot caption someone else's item.
+    const { auth: other } = signIn({ trusted: 1, name: "Nosy" })
+    const denied = await accountFetch(
+      `/api/media/${id}/caption`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ caption: "hijack" }),
+      },
+      other,
+    )
+    assert.strictEqual(denied.status, 404, "non-owner caption edit is 404")
+
+    // Empty caption clears it back to null.
+    const cleared = await accountFetch(
+      `/api/media/${id}/caption`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ caption: "   " }),
+      },
+      auth,
+    )
+    assert.strictEqual((await json(cleared)).caption, null, "blank caption → null")
+  })
+})

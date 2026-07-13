@@ -75,7 +75,7 @@ function prefillForm(rsvp) {
   }
 
   if (rsvp.attending) {
-    getElement("attending-details").classList.add("attending-details-open")
+    setAttendingDetailsOpen(true)
     getSelectElement("party-size").value = String(rsvp.actual_party_size || 1)
     getTextAreaElement("dietary").value = rsvp.dietary_restrictions || ""
     getInputElement("anything-else").value = rsvp.additional_info || ""
@@ -114,18 +114,32 @@ function wireCounter(field, counter, max) {
   update()
 }
 
+/**
+ * Open/close the attending-details group. `inert` (not `hidden`, which would
+ * kill the collapse animation) keeps keyboard + screen-reader users out of the
+ * visually-collapsed fields. @param {boolean} isOpen
+ */
+function setAttendingDetailsOpen(isOpen) {
+  const attendingDetails = getElement("attending-details")
+  attendingDetails.classList.toggle("attending-details-open", isOpen)
+  attendingDetails.inert = !isOpen
+  getSelectElement("party-size").required = isOpen
+}
+
 /** @type {Types.setupFormListeners} */
 function setupFormListeners() {
   const form = getFormElement("rsvp-form")
-  const attendingDetails = getElement("attending-details")
-  const partySize = getSelectElement("party-size")
+
+  // Collapsed by default until the guest picks "yes" (or a prefill opened it).
+  if (!getElement("attending-details").classList.contains("attending-details-open")) {
+    setAttendingDetailsOpen(false)
+  }
 
   form.querySelectorAll('input[name="attending"]').forEach((radio) => {
     radio.addEventListener("change", (e) => {
       if (e.target instanceof HTMLInputElement) {
         const isAttending = e.target.value === "yes"
-        attendingDetails.classList.toggle("attending-details-open", isAttending)
-        partySize.required = isAttending
+        setAttendingDetailsOpen(isAttending)
         if (isAttending) {
           // Centre the sparkle burst on the radio card, matching prior behaviour.
           const card = e.target.closest(".radio-card")
@@ -157,18 +171,23 @@ async function handleSubmit(e) {
 
   if (!state.inviteCode) return
 
+  // Attending-only details: a guest who filled these then switched to "can't
+  // make it" must not send dietary/accommodation notes attached to a decline
+  // (the fields only visually collapse; their values stay in the DOM).
   /** @type {Types.RsvpSubmitPayload} */
   const payload = {
     attending,
     actual_party_size: attending
       ? parseInt(String(formData.get("actual_party_size")), 10)
       : null,
-    dietary_restrictions: formData.get("dietary_restrictions")
-      ? String(formData.get("dietary_restrictions"))
-      : null,
-    additional_info: formData.get("additional_info")
-      ? String(formData.get("additional_info"))
-      : null,
+    dietary_restrictions:
+      attending && formData.get("dietary_restrictions")
+        ? String(formData.get("dietary_restrictions"))
+        : null,
+    additional_info:
+      attending && formData.get("additional_info")
+        ? String(formData.get("additional_info"))
+        : null,
     message: formData.get("message") ? String(formData.get("message")) : null,
   }
 
@@ -230,8 +249,30 @@ function showForm(data) {
   setupFormListeners()
 }
 
+/** Show the post-wedding "RSVPs are closed" panel instead of the live form. */
+function showClosed() {
+  getElement("rsvp-loading").hidden = true
+  getElement("rsvp-error").hidden = true
+  getFormElement("rsvp-form").hidden = true
+  const el = getElement("rsvp-closed")
+  el.hidden = false
+  requestAnimationFrame(() => el.classList.add("form-state-visible"))
+}
+
 /** @type {Types.initRsvpForm} */
 export async function initRsvpForm() {
+  // Post-wedding: RSVPs are closed. Show a warm closed state (with links to the
+  // gallery/guestbook) rather than a live, confetti-firing form on stale links.
+  try {
+    const cfg = /** @type {{ mode?: string }} */ (await api("/api/config"))
+    if (cfg && cfg.mode === "post") {
+      showClosed()
+      return
+    }
+  } catch {
+    // Config unavailable — fall through to the normal form (fail open).
+  }
+
   const params = new URLSearchParams(window.location.search)
   state.inviteCode = params.get("code")
 

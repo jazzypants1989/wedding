@@ -41,7 +41,15 @@ export function initLightbox(src) {
   getElement("lightbox-close").addEventListener("click", () => close())
   getElement("lightbox-prev").addEventListener("click", () => void navigate(-1))
   getElement("lightbox-next").addEventListener("click", () => void navigate(1))
-  getElement("lightbox-copy").addEventListener("click", copyLink)
+  const copyBtn = getElement("lightbox-copy")
+  // On phones (the dominant post-wedding device) prefer the native share sheet
+  // so a guest can fire a photo straight into a group chat; copy-link is the
+  // desktop / no-share fallback.
+  if (typeof navigator.share === "function") {
+    copyBtn.textContent = "Share"
+    copyBtn.setAttribute("aria-label", "Share this photo")
+  }
+  copyBtn.addEventListener("click", shareOrCopy)
   getElement("lightbox-delete").addEventListener("click", () => void deleteCurrent())
 
   // Native <dialog> closes on Esc → keep our state + URL in sync.
@@ -150,6 +158,10 @@ function render() {
   caption.textContent = item.caption || ""
   caption.hidden = !item.caption
 
+  // Own pending upload: same reassurance the grid chip / guestbook / comments
+  // give, so the uploader knows it isn't public yet (visible only to them).
+  getElement("lightbox-pending").hidden = !(item.is_own && item.status === "pending")
+
   // Reaction bar + comment thread for this item. The delegated listeners live on
   // document.body (initialized once in main.js), so re-rendering here is safe.
   getElement("lightbox-social").innerHTML = html`
@@ -224,11 +236,20 @@ function pauseVideo() {
   if (video instanceof HTMLVideoElement) video.pause()
 }
 
-async function copyLink() {
+async function shareOrCopy() {
   const items = source.getItems(section)
   const item = items[index]
   if (!item) return
   const url = `${location.origin}/gallery?section=${section}&item=${item.id}`
+  if (typeof navigator.share === "function") {
+    try {
+      await navigator.share({ title: document.title, url })
+      return
+    } catch (err) {
+      // User dismissed the share sheet → done. Any other error → fall back to copy.
+      if (err instanceof DOMException && err.name === "AbortError") return
+    }
+  }
   const btn = getElement("lightbox-copy")
   const prev = btn.textContent
   // Only claim success once the copy actually lands. Clipboard API needs a

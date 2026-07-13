@@ -244,6 +244,13 @@ export function finalize(
   routeInfo: AccountOrAdminRouteInfo,
 ): Promise<void>
 
+/** PATCH /api/media/:id/caption — set the caption on the caller's own item. */
+export function setCaption(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AccountOrAdminRouteInfo,
+): Promise<void>
+
 /** DELETE /api/media/:id — soft-delete own/admin item + unlink files. */
 export function remove(
   req: IncomingMessage,

@@ -38,11 +38,18 @@ let subView = "queue"
 let accountFilter = /** @type {number | null} */ (null)
 /** Selected queue rows for bulk actions, keyed "type:id". */
 const selected = new Set()
+/** Queue pagination cursor + flags (the server queue is offset-paged). */
+const QUEUE_PAGE_SIZE = 50
+let queueOffset = 0
+let queueHasMore = false
+let queueLoading = false
 /** The item currently shown in the detail modal. */
 let detailItem = /** @type {Types.ModerationItem | null} */ (null)
+/** Index of the detail item within state.currentModeration (review-mode nav). */
+let detailIndex = -1
 /** The pending confirm-dialog action. */
 let confirmState =
-  /** @type {null | { title: string, desc: string, confirmLabel: string, danger: boolean, showRelease: boolean, showReason?: boolean, run: () => Promise<void> }} */ (
+  /** @type {null | { title: string, desc: string, confirmLabel: string, danger: boolean, showRelease: boolean, showReason?: boolean, run: () => Promise<void>, onComplete?: () => void }} */ (
     null
   )
 
@@ -99,30 +106,56 @@ export async function loadModeration() {
 
 // ---- queue ----------------------------------------------------------------
 
-async function loadQueue() {
+/**
+ * Load the queue. `append` fetches the next offset page and adds to the table;
+ * otherwise it resets to the first page (used on filter change / after actions).
+ * The server queue is offset-paged and returns `hasMore` — without paging, only
+ * the first 50 items were ever reachable while the badge showed the true total.
+ * @param {boolean} [append]
+ */
+async function loadQueue(append = false) {
+  if (queueLoading) return
+  queueLoading = true
   const type = getSelectElement("mod-type-filter").value
   const status = getSelectElement("mod-status-filter").value
   const params = new URLSearchParams()
   if (type) params.set("type", type)
   if (status) params.set("status", status)
   if (accountFilter !== null) params.set("account_id", String(accountFilter))
+  if (!append) queueOffset = 0
+  params.set("limit", String(QUEUE_PAGE_SIZE))
+  params.set("offset", String(queueOffset))
 
   try {
-    showLoading(getElement("moderation-tbody"), 6)
+    if (!append) showLoading(getElement("moderation-tbody"), 6)
     const data = /** @type {Types.ModerationQueueResponse} */ (
       await api(`/api/admin/moderation/queue?${params}`)
     )
-    state.currentModeration = data.items
-    selected.clear()
-    getInputElement("mod-select-all").checked = false
+    if (append) {
+      state.currentModeration = state.currentModeration.concat(data.items)
+      appendQueueRows(data.items)
+    } else {
+      state.currentModeration = data.items
+      selected.clear()
+      getInputElement("mod-select-all").checked = false
+      renderQueue(data.items)
+    }
+    queueOffset += data.items.length
+    queueHasMore = data.hasMore
+    updateLoadMore()
     updateBulkBar()
-    renderQueue(data.items)
     getElement("mod-account-filter-note").hidden = accountFilter === null
     await loadModerationCount()
   } catch (err) {
     console.error("Failed to load moderation queue:", err)
     showError("Failed to load the moderation queue. Please refresh the page.")
+  } finally {
+    queueLoading = false
   }
+}
+
+function updateLoadMore() {
+  getButtonElement("mod-loadmore").hidden = !queueHasMore
 }
 
 /** @param {Types.ModerationItem[]} items */
@@ -135,6 +168,24 @@ function renderQueue(items) {
     return
   }
   tbody.innerHTML = html`${items.map(rowMarkup)}`
+}
+
+/**
+ * Append a page of rows. If "select all" is currently on, newly-loaded rows are
+ * selected too, so select-all keeps meaning "everything I've loaded".
+ * @param {Types.ModerationItem[]} items
+ */
+function appendQueueRows(items) {
+  if (items.length === 0) return
+  const tbody = getElement("moderation-tbody")
+  tbody.insertAdjacentHTML("beforeend", String(html`${items.map(rowMarkup)}`))
+  if (getInputElement("mod-select-all").checked) {
+    for (const item of items) {
+      selected.add(itemKey(item))
+      const box = tbody.querySelector(`.mod-row-check[data-key="${itemKey(item)}"]`)
+      if (box instanceof HTMLInputElement) box.checked = true
+    }
+  }
 }
 
 /** @param {Types.ModerationItem} item @returns {string} */
@@ -281,7 +332,11 @@ function handleSelectAll() {
 
 function updateBulkBar() {
   getElement("mod-bulk-bar").hidden = selected.size === 0
-  getElement("mod-bulk-count").textContent = `${selected.size} selected`
+  // Disclose that a bulk action only touches loaded rows when more remain, so
+  // "select all → approve" isn't mistaken for acting on the whole backlog.
+  const selectAll = getInputElement("mod-select-all").checked
+  const hint = selectAll && queueHasMore ? " · Load more to include the rest" : ""
+  getElement("mod-bulk-count").textContent = `${selected.size} selected${hint}`
 }
 
 /** @returns {Types.ModerationItem[]} */
@@ -309,7 +364,7 @@ function handleBulkReject() {
 // ---- confirm dialog -------------------------------------------------------
 
 /**
- * @param {{ title: string, desc: string, confirmLabel: string, danger: boolean, showRelease: boolean, showReason?: boolean, run: () => Promise<void> }} cfg
+ * @param {{ title: string, desc: string, confirmLabel: string, danger: boolean, showRelease: boolean, showReason?: boolean, run: () => Promise<void>, onComplete?: () => void }} cfg
  */
 function openConfirmDialog(cfg) {
   confirmState = cfg
@@ -329,10 +384,13 @@ function openConfirmDialog(cfg) {
 async function handleConfirm() {
   if (!confirmState) return
   const btn = getButtonElement("mod-confirm-btn")
+  const onComplete = confirmState.onComplete
   btn.disabled = true
   try {
     await confirmState.run()
     closeModal(getDialogElement("mod-confirm-modal"))
+    // Run only on success (the queue has been reloaded inside run()).
+    if (onComplete) onComplete()
   } catch (err) {
     const el = getElement("mod-confirm-error")
     el.textContent = getErrorMessage(err)
@@ -345,8 +403,9 @@ async function handleConfirm() {
 /**
  * @param {"approve" | "reject" | "hide"} action
  * @param {Types.ModerationItem[]} items
+ * @param {() => void} [onComplete] Runs after a successful confirm (review-mode advance).
  */
-function openConfirm(action, items) {
+function openConfirm(action, items, onComplete) {
   const single = items.length === 1 ? items[0] : null
 
   if (action === "approve") {
@@ -369,6 +428,7 @@ function openConfirm(action, items) {
           : false
         await runModeration(action, items, releasePending)
       },
+      onComplete,
     })
     return
   }
@@ -394,6 +454,7 @@ function openConfirm(action, items) {
           : ""
         return runModeration(action, items, false, reason)
       },
+      onComplete,
     })
     return
   }
@@ -406,6 +467,7 @@ function openConfirm(action, items) {
     danger: false,
     showRelease: false,
     run: () => runModeration(action, items, false),
+    onComplete,
   })
 }
 
@@ -440,13 +502,24 @@ async function runModeration(action, items, releasePending, reason = "") {
       if (parts.length) showSuccess(parts.join(" · "))
     }
   } else {
-    await api("/api/admin/moderation/bulk", {
-      method: "POST",
-      body: JSON.stringify({
-        action,
-        items: items.map((i) => ({ type: i.content_type, id: i.id })),
-      }),
-    })
+    const res = /** @type {Types.ModerationBulkResponse} */ (
+      await api("/api/admin/moderation/bulk", {
+        method: "POST",
+        body: JSON.stringify({
+          action,
+          items: items.map((i) => ({ type: i.content_type, id: i.id })),
+        }),
+      })
+    )
+    // Surface the standing side effect a bulk approve carries (auto-trust) so
+    // the couple sees how many authors will now post without review.
+    if (action === "approve") {
+      const parts = [`Approved ${res.changed}`]
+      if (res.trusted) {
+        parts.push(`trusted ${res.trusted} new author${res.trusted === 1 ? "" : "s"}`)
+      }
+      showSuccess(parts.join(" · "))
+    }
   }
   await loadQueue()
 }
@@ -455,11 +528,48 @@ async function runModeration(action, items, releasePending, reason = "") {
 
 /** @param {Types.ModerationItem} item */
 function openDetail(item) {
+  renderDetail(item)
+  openModal(getDialogElement("moderation-modal"))
+}
+
+/** Render (or re-render) the detail modal for an item + its review-mode nav. */
+/** @param {Types.ModerationItem} item */
+function renderDetail(item) {
   detailItem = item
+  detailIndex = state.currentModeration.findIndex(
+    (m) => m.content_type === item.content_type && m.id === item.id,
+  )
   getElement("moderation-error").hidden = true
   getElement("moderation-detail-body").innerHTML = detailBody(item)
   getElement("moderation-detail-actions").innerHTML = detailActions(item)
-  openModal(getDialogElement("moderation-modal"))
+  updateDetailNav()
+}
+
+/**
+ * Show/position the Prev/Next reviewer controls. Hidden unless the modal item is
+ * part of a multi-item loaded queue (a lone/deep-linked item has nothing to step
+ * through). Load-more extends the queue, so Next can reach freshly-loaded items.
+ */
+function updateDetailNav() {
+  const total = state.currentModeration.length
+  const nav = getElement("mod-detail-nav")
+  if (detailIndex < 0 || total <= 1) {
+    nav.hidden = true
+    return
+  }
+  nav.hidden = false
+  getElement("mod-detail-position").textContent = `${detailIndex + 1} of ${total}${
+    queueHasMore ? "+" : ""
+  }`
+  getButtonElement("mod-detail-prev").disabled = detailIndex <= 0
+  getButtonElement("mod-detail-next").disabled = detailIndex >= total - 1
+}
+
+/** Step the detail modal to the neighbouring queued item. @param {number} delta */
+function stepDetail(delta) {
+  const next = detailIndex + delta
+  const item = state.currentModeration[next]
+  if (item) renderDetail(item)
 }
 
 /** @param {Types.ModerationItem} item @returns {string} */
@@ -541,15 +651,20 @@ function handleDetailActions(e) {
 
   const action = btn.getAttribute("data-action")
   const dialog = getDialogElement("moderation-modal")
+  // Review-mode: after acting, reopen the modal on the item that slid into this
+  // slot (the acted one left the queue) so the couple keeps draining without
+  // reopening rows. The queue is empty → stays closed.
+  const resumeAt = detailIndex
+  const advance = () => reopenReview(resumeAt)
   if (action === "approve") {
     closeModal(dialog)
-    openConfirm("approve", [item])
+    openConfirm("approve", [item], advance)
   } else if (action === "reject") {
     closeModal(dialog)
-    openConfirm("reject", [item])
+    openConfirm("reject", [item], advance)
   } else if (action === "hide") {
     closeModal(dialog)
-    openConfirm("hide", [item])
+    openConfirm("hide", [item], advance)
   } else if (action === "trust" && item.account_id !== null) {
     closeModal(dialog)
     openTrustConfirm(item.account_id, item.author_name || "this account", "trust")
@@ -557,6 +672,15 @@ function handleDetailActions(e) {
     closeModal(dialog)
     openPromoteConfirm(item)
   }
+}
+
+/** Reopen the detail modal on whatever item now occupies `index` (review flow). */
+/** @param {number} index */
+function reopenReview(index) {
+  const items = state.currentModeration
+  if (items.length === 0) return // queue drained — stay closed
+  const i = Math.min(Math.max(0, index), items.length - 1)
+  openDetail(items[i])
 }
 
 /** @param {Types.ModerationItem} item */
@@ -720,8 +844,9 @@ export function initModeration() {
   getButtonElement("mod-sub-accounts").addEventListener("click", () =>
     showSubView("accounts"),
   )
-  getSelectElement("mod-type-filter").addEventListener("change", loadQueue)
-  getSelectElement("mod-status-filter").addEventListener("change", loadQueue)
+  // Arrow-wrap so the change Event isn't passed as loadQueue's `append` arg.
+  getSelectElement("mod-type-filter").addEventListener("change", () => loadQueue())
+  getSelectElement("mod-status-filter").addEventListener("change", () => loadQueue())
   getSelectElement("mod-account-trusted-filter").addEventListener(
     "change",
     loadAccounts,
@@ -730,6 +855,7 @@ export function initModeration() {
   getElement("moderation-tbody").addEventListener("click", handleQueueClick)
   getElement("moderation-tbody").addEventListener("change", handleQueueChange)
   getInputElement("mod-select-all").addEventListener("change", handleSelectAll)
+  getButtonElement("mod-loadmore").addEventListener("click", () => loadQueue(true))
   getButtonElement("mod-bulk-approve").addEventListener("click", handleBulkApprove)
   getButtonElement("mod-bulk-reject").addEventListener("click", handleBulkReject)
   getButtonElement("mod-clear-account").addEventListener("click", () => {
@@ -738,6 +864,8 @@ export function initModeration() {
   })
 
   getElement("accounts-tbody").addEventListener("click", handleAccountsClick)
+  getButtonElement("mod-detail-prev").addEventListener("click", () => stepDetail(-1))
+  getButtonElement("mod-detail-next").addEventListener("click", () => stepDetail(1))
   getElement("moderation-detail-actions").addEventListener(
     "click",
     handleDetailActions,

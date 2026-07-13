@@ -188,6 +188,8 @@ export interface UploadQueueItem {
   displayMissing: boolean
   /** Final content status from finalize ("approved" | "pending"). */
   status: string | null
+  /** Optional guest-entered caption; sent at finalize (or PATCHed post-finalize). */
+  caption: string
 }
 
 export interface UploadQueueCallbacks {
@@ -216,6 +218,8 @@ export interface UploadQueue {
   add(files: FileList | File[]): void
   /** Re-run a failed item from the start (blobs re-derived from the File). */
   retry(id: string): void
+  /** Set an item's caption; sent at finalize or PATCHed if already finalized. */
+  setCaption(id: string, value: string): void
   /** Abort (if active) and drop an item; revokes its preview URL. */
   remove(id: string): void
   /** Abort + drop every item. */
@@ -230,6 +234,23 @@ export function createUploadQueue(
   callbacks?: UploadQueueCallbacks,
   options?: UploadQueueOptions,
 ): UploadQueue
+
+/** notice.js — one-time dismissible note (pending reassurances + cross nudges). */
+export interface NoteOptions {
+  /** Body text (escaped). */
+  message: string
+  /** localStorage key; when set and already present, the note is suppressed. */
+  once?: string
+  /** Optional trailing link href. */
+  linkHref?: string
+  /** Link label (defaults to "Open"). */
+  linkLabel?: string
+  /** Style as a friendly brand-accent nudge rather than a warning. */
+  nudge?: boolean
+}
+
+/** Render a dismissible note into `el` (no-op if its `once` key was seen). */
+export function showNote(el: HTMLElement, opts: NoteOptions): void
 
 /** @file reaction-bar.js - Types for the shared emoji reaction bar (Phase 5) */
 

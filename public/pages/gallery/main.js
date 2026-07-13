@@ -56,6 +56,7 @@ async function boot() {
   // cells have none; the lightbox panel re-renders them per item under body).
   initReactionBars(document.body)
   initCommentThreads(document.body)
+  wireSocialWriteback()
   wireSwitcher()
 
   const params = new URLSearchParams(location.search)
@@ -64,6 +65,38 @@ async function boot() {
 
   const item = params.get("item")
   if (item) void openItemById(Number(item))
+}
+
+// ---- social write-back ----
+
+/**
+ * The lightbox re-renders its reaction bar + comment thread from the grid's
+ * in-memory item on every navigate(). Reaction/comment writes only touch the
+ * DOM + server, so without this the guest's action reverts when they page away
+ * and back. Mirror each broadcast state onto the matching cached item.
+ */
+function wireSocialWriteback() {
+  window.addEventListener("reaction:changed", (e) => {
+    const detail = /** @type {CustomEvent} */ (e).detail
+    if (!detail || detail.targetType !== "media") return
+    const item = findLoadedItem(detail.targetId)
+    if (item) item.reactions = detail.reactions
+  })
+  window.addEventListener("comment:changed", (e) => {
+    const detail = /** @type {CustomEvent} */ (e).detail
+    if (!detail || detail.targetType !== "media") return
+    const item = findLoadedItem(detail.targetId)
+    if (item) item.comment_count = detail.count
+  })
+}
+
+/** @param {number} id @returns {Types.MediaListItem | undefined} */
+function findLoadedItem(id) {
+  for (const sec of /** @type {Types.MediaSection[]} */ (["guest", "official"])) {
+    const found = getSectionItems(sec).find((i) => i.id === id)
+    if (found) return found
+  }
+  return undefined
 }
 
 // ---- section switcher (tablist) ----

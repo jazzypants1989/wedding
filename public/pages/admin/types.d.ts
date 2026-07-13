@@ -158,6 +158,8 @@ export interface ModerationBulkResponse {
   success: boolean
   changed: number
   total: number
+  /** How many previously-untrusted authors were auto-trusted by this approve. */
+  trusted: number
 }
 
 export interface ModerationCountsResponse {
@@ -560,6 +562,8 @@ export function initGuests(): void
  */
 export interface ServiceConfig {
   configured: boolean
+  /** The default invite body (with {name}/{url} placeholders) for this channel. */
+  defaultMessage: string
 }
 
 /**

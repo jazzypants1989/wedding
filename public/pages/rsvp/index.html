@@ -89,6 +89,17 @@
         <p>Loading your invitation...</p>
       </div>
 
+      <!-- Post-wedding: RSVPs are closed. A stale invite link lands here instead
+           of a live, confetti-firing form. -->
+      <div id="rsvp-closed" class="rsvp-success form-state" hidden>
+        <h3>RSVPs are closed 💗</h3>
+        <p>Thank you for celebrating with us! The big day has come and gone — but the memories live on.</p>
+        <div class="rsvp-success-actions">
+          <a href="/gallery" class="btn btn-primary">See the photos</a>
+          <a href="/guestbook" class="btn btn-secondary">Sign our guestbook</a>
+        </div>
+      </div>
+
       <!-- Error state (no code or invalid code) -->
       <div id="rsvp-error" class="rsvp-error form-state" hidden>
         <p id="rsvp-error-message" role="alert">Unable to load your invitation.</p>
