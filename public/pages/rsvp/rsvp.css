@@ -196,24 +196,14 @@
   margin-bottom: var(--spacing-lg);
 }
 
-/* Onward CTAs on the success screen: keep the trio together, wrapping on
-   narrow viewports rather than stacking full-width. */
+/* Onward CTAs on the success screen: keep them together, wrapping on
+   narrow viewports rather than stacking full-width. An RSVP is always a
+   pre-wedding action, so both links point at pre-wedding destinations. */
 .rsvp-success-actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-sm);
   justify-content: center;
-}
-
-/* Onward CTAs are timeline-aware, mirroring the site's `data-mode` gating
-   (components.css): RSVPs happen pre-wedding, so point guests at the event
-   details then; the guestbook + gallery only exist post-wedding. */
-[data-mode="pre"] .rsvp-actions-post {
-  display: none;
-}
-
-[data-mode="post"] .rsvp-actions-pre {
-  display: none;
 }
 
 /* Returning-guest acknowledgment at the top of a pre-filled form. */
