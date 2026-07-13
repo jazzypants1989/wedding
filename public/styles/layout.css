@@ -587,3 +587,18 @@ main {
     padding: 0;
   }
 }
+
+/* Reduced motion — honor the OS "reduce motion" setting site-wide: stills the
+   countdown pulse, spinners, skeleton shimmer, and any transition/animation.
+   Lives here (a stylesheet inlined on every page) rather than in one page's
+   CSS so all guest pages are covered; the effects layer gates itself in JS. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

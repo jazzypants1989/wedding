@@ -6,7 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{couple.display}} - {{weddingDate}}</title>
   <meta name="description" content="Wedding website for {{couple.metaNames}} - {{weddingDate}} in {{location}}">
-  <meta name="theme-color" content="#eee6dc">
+  <meta name="theme-color" content="#eee6dc" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1a1614" media="(prefers-color-scheme: dark)">
   <link rel="icon" type="image/png" href="/images/favicon.png">
   <link rel="apple-touch-icon" href="/images/favicon.png">
   <meta property="og:type" content="website">
@@ -76,7 +77,7 @@
     <h1 class="couple-names">{{couple.display}}</h1>
     <p class="wedding-info">{{weddingDate}} &bull; {{location}}</p>
     <p class="countdown" id="countdown" data-wedding-date="{{weddingDateISO}}" aria-live="off">Loading... <span id="exact-time" class="exact-time"></span></p>
-    <img src="/images/us.webp" srcset="/images/us-240w.webp 240w, /images/us.webp 480w" sizes="(min-width: 768px) 240px, 180px" alt="Jordana and Jesse K-I-S-S-I-N-G" class="couple-photo" loading="eager" width="480" height="512">
+    <img src="/images/us.webp" srcset="/images/us-240w.webp 240w, /images/us.webp 480w" sizes="(min-width: 768px) 240px, 180px" alt="Jordana and Jesse together" class="couple-photo" loading="eager" width="480" height="512">
   </header>
 
   <nav class="desktop-nav" aria-label="Main navigation">

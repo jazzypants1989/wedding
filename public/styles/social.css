@@ -181,7 +181,7 @@
 }
 
 .guest-identity-switch {
-  min-height: 32px;
+  min-height: 44px;
   padding: 2px var(--spacing-xs);
   font-size: var(--text-sm);
 }

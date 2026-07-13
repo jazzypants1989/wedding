@@ -224,18 +224,6 @@
   text-align: right;
 }
 
-/* Reduced Motion - Respect user preferences for animations */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-}
-
 /* Form state transitions (fade-in-up) */
 .form-state {
   opacity: 0;
