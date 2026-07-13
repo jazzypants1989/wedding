@@ -317,6 +317,26 @@
   font-size: 0.8rem;
 }
 
+/* Uploader-only self-delete: quiet text button on the dark stage, mirrors the
+   Report link's weight but reads as destructive. */
+.lightbox-owner {
+  margin: var(--spacing-2xs) 0 0;
+}
+
+.lightbox-delete {
+  border: none;
+  background: none;
+  padding: 0;
+  color: #f0b4b4;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.lightbox-delete:hover {
+  text-decoration: underline;
+}
+
 @media (min-width: 1024px) {
   .lightbox-panel {
     top: 0;

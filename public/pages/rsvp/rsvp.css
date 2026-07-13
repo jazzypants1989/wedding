@@ -196,6 +196,44 @@
   margin-bottom: var(--spacing-lg);
 }
 
+/* Onward CTAs on the success screen: keep the trio together, wrapping on
+   narrow viewports rather than stacking full-width. */
+.rsvp-success-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  justify-content: center;
+}
+
+/* Onward CTAs are timeline-aware, mirroring the site's `data-mode` gating
+   (components.css): RSVPs happen pre-wedding, so point guests at the event
+   details then; the guestbook + gallery only exist post-wedding. */
+[data-mode="pre"] .rsvp-actions-post {
+  display: none;
+}
+
+[data-mode="post"] .rsvp-actions-pre {
+  display: none;
+}
+
+/* Returning-guest acknowledgment at the top of a pre-filled form. */
+.rsvp-return-banner {
+  margin-bottom: var(--spacing-lg);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-md);
+  background-color: var(--color-primary-faint);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+/* Char counter under a free-text field: right-aligned, quiet. */
+.rsvp-counter {
+  display: block;
+  margin-top: var(--spacing-2xs);
+  text-align: right;
+}
+
 /* Reduced Motion - Respect user preferences for animations */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -362,7 +400,7 @@
   animation: field-enter var(--duration-moderate) ease 0.4s backwards;
 }
 
-.rsvp-success.form-state-visible .btn-secondary {
+.rsvp-success.form-state-visible .rsvp-success-actions .btn {
   animation: field-enter var(--duration-moderate) ease 0.6s backwards;
 }
 

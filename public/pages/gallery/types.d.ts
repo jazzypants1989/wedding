@@ -32,6 +32,8 @@ export interface LightboxSource {
   loadMore: (section: MediaSection) => Promise<number>
   /** URL sync: called with the current item on open/navigate, null on close. */
   onChange: (section: MediaSection, id: number | null) => void
+  /** Drop a self-deleted item from the grid so the view stays consistent. */
+  onDelete: (section: MediaSection, id: number) => void
 }
 
 export function initGrid(callbacks: GridCallbacks): void
@@ -42,6 +44,7 @@ export function hasMore(section: MediaSection): boolean
 export function loadMore(section: MediaSection): Promise<number>
 export function ensureItemLoaded(item: MediaListItem): void
 export function getSectionCount(section: MediaSection): number
+export function removeItem(section: MediaSection, id: number): void
 
 export function initLightbox(source: LightboxSource): void
 export function openLightbox(section: MediaSection, id: number): void

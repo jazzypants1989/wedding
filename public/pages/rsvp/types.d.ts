@@ -180,6 +180,8 @@ export interface ExistingRsvp {
   dietary_restrictions: string | null
   additional_info: string | null
   message: string | null
+  submitted_at?: string | null
+  updated_at?: string | null
 }
 
 /**

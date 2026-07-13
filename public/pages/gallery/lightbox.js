@@ -2,10 +2,11 @@
  *  copy-link, report, and deep-link URL sync. See docs/post-wedding/04-gallery.md §5. */
 /** @import * as Types from "./types.js" */
 
-import { html, api, getElement, getDialogElement } from "../utils.js"
+import { html, api, getElement, getDialogElement, getErrorMessage } from "../utils.js"
 import { formatRelative } from "../../components/relative-time.js"
 import { renderReactionBar } from "../../components/reaction-bar.js"
 import { renderCommentThread } from "../../components/comment-thread.js"
+import { showToast } from "../../components/toast.js"
 
 const SWIPE_COMMIT_FRACTION = 0.25
 const SWIPE_COMMIT_VELOCITY = 0.3 // px/ms
@@ -24,8 +25,11 @@ async function loadContactEmail() {
     const cfg = /** @type {{ contactEmail?: string }} */ (await api("/api/config"))
     if (cfg && typeof cfg.contactEmail === "string") contactEmail = cfg.contactEmail
   } catch {
-    // Leave blank; render() falls back to a no-address mailto rather than break.
+    // Leave blank; render() hides Report rather than build a recipient-less draft.
   }
+  // Config may resolve after the deep-linked lightbox already painted — re-render
+  // so Report appears (or stays hidden) with the now-known address.
+  if (isLightboxOpen()) render()
 }
 
 /** @type {Types.initLightbox} */
@@ -38,6 +42,7 @@ export function initLightbox(src) {
   getElement("lightbox-prev").addEventListener("click", () => void navigate(-1))
   getElement("lightbox-next").addEventListener("click", () => void navigate(1))
   getElement("lightbox-copy").addEventListener("click", copyLink)
+  getElement("lightbox-delete").addEventListener("click", () => void deleteCurrent())
 
   // Native <dialog> closes on Esc → keep our state + URL in sync.
   dialog.addEventListener("close", () => {
@@ -151,11 +156,56 @@ function render() {
     ${renderReactionBar("media", item.id, item.reactions)}
     ${renderCommentThread("media", item.id, item.comment_count)}`
 
+  // Report link: only build a mailto when we actually have a recipient — a
+  // failed config load must not produce a recipient-less draft. Hide it otherwise.
   const report = /** @type {HTMLAnchorElement} */ (getElement("lightbox-report"))
-  const subject = encodeURIComponent(`Please remove a wedding photo (${item.file_key})`)
-  report.href = `mailto:${contactEmail}?subject=${subject}`
+  const reportWrap = report.closest(".lightbox-report")
+  if (contactEmail) {
+    const subject = encodeURIComponent(`Please remove a wedding photo (${item.file_key})`)
+    report.href = `mailto:${contactEmail}?subject=${subject}`
+    if (reportWrap instanceof HTMLElement) reportWrap.hidden = false
+  } else {
+    report.removeAttribute("href")
+    if (reportWrap instanceof HTMLElement) reportWrap.hidden = true
+  }
+
+  // Self-delete: only the uploader (is_own) sees it.
+  getElement("lightbox-delete").hidden = !item.is_own
 
   preloadNeighbors()
+}
+
+/**
+ * Delete the current item (the signed-in uploader's own photo). Confirms, calls
+ * DELETE /api/media/:id, drops it from the grid via source.onDelete, then either
+ * closes (section now empty) or advances to the neighbour that slid into place.
+ */
+async function deleteCurrent() {
+  const items = source.getItems(section)
+  const item = items[index]
+  if (!item) return
+  if (!window.confirm("Delete your photo? This can't be undone.")) return
+  try {
+    await api(`/api/media/${item.id}`, {
+      method: "DELETE",
+      csrf: true,
+      csrfCookie: "guest_csrf",
+    })
+  } catch (err) {
+    showToast(getErrorMessage(err), { variant: "error" })
+    return
+  }
+  source.onDelete(section, item.id)
+  const refreshed = source.getItems(section)
+  if (refreshed.length === 0) {
+    close()
+    showToast("Photo deleted.")
+    return
+  }
+  if (index >= refreshed.length) index = refreshed.length - 1
+  render()
+  source.onChange(section, refreshed[index].id)
+  showToast("Photo deleted.")
 }
 
 /** Preload ±1 display images so arrow/swipe nav is instant. */

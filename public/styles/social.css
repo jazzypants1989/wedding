@@ -399,6 +399,24 @@
   display: none;
 }
 
+/* Author-only self-delete on an own entry — quiet text button on its own row
+   below the reaction bar / comment toggle, mirrors .comment-delete. */
+.gb-delete {
+  display: block;
+  margin-top: var(--spacing-xs);
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--color-danger);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.gb-delete:hover {
+  text-decoration: underline;
+}
+
 .gb-loadmore-wrap {
   margin-top: var(--spacing-lg);
 }

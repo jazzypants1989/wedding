@@ -80,6 +80,9 @@ async function handleLookupSubmit(e) {
     }
 
     if (data.found && data.redirectCode) {
+      // Brief acknowledgment before the navigation so the redirect doesn't feel
+      // like an unexplained page jump.
+      showLookupResult("Found you! Taking you to your RSVP…", false)
       window.location.href = "/rsvp?code=" + data.redirectCode
       return
     }

@@ -17,6 +17,7 @@ import {
   hasMore,
   loadMore,
   ensureItemLoaded,
+  removeItem,
 } from "./grid.js"
 import {
   initLightbox,
@@ -48,6 +49,7 @@ async function boot() {
     hasMore,
     loadMore,
     onChange: syncUrl,
+    onDelete: removeItem,
   })
   initUpload()
   // One delegated listener each for every reaction bar / comment thread (grid

@@ -8,6 +8,7 @@ import {
   getSelectElement,
   getTextAreaElement,
   getErrorMessage,
+  formatDate,
   api,
 } from "../utils.js"
 import { fireConfetti, setButtonLoading } from "./utils.js"
@@ -81,6 +82,36 @@ function prefillForm(rsvp) {
   }
 
   getTextAreaElement("message").value = rsvp.message || ""
+}
+
+/**
+ * Reassure a returning guest that their RSVP is already on file, dated from the
+ * last change (updated_at, falling back to submitted_at). Calm, not alarming.
+ * @param {Types.ExistingRsvp} rsvp
+ */
+function showReturnBanner(rsvp) {
+  const banner = getElement("rsvp-return-banner")
+  const when = formatDate(rsvp.updated_at || rsvp.submitted_at || "")
+  banner.textContent = when
+    ? `You're all set — last responded ${when}. Need to change anything?`
+    : "You're all set — need to change anything?"
+  banner.hidden = false
+}
+
+/**
+ * Wire a live "N/max" counter that mirrors a field's maxlength (matches the
+ * guestbook composer + comment thread). Visual aid only (aria-hidden); the
+ * maxlength attribute does the real enforcing.
+ * @param {HTMLInputElement | HTMLTextAreaElement} field
+ * @param {HTMLElement} counter
+ * @param {number} max
+ */
+function wireCounter(field, counter, max) {
+  const update = () => {
+    counter.textContent = `${field.value.length}/${max}`
+  }
+  field.addEventListener("input", update)
+  update()
 }
 
 /** @type {Types.setupFormListeners} */
@@ -187,7 +218,14 @@ function showForm(data) {
 
   if (data.rsvp) {
     prefillForm(data.rsvp)
+    showReturnBanner(data.rsvp)
   }
+
+  // Live character counters — wired after any prefill so they reflect the
+  // pre-filled text on load, and mirror the maxlength set in the markup.
+  wireCounter(getTextAreaElement("dietary"), getElement("dietary-counter"), 500)
+  wireCounter(getInputElement("anything-else"), getElement("anything-else-counter"), 500)
+  wireCounter(getTextAreaElement("message"), getElement("message-counter"), 1000)
 
   setupFormListeners()
 }

@@ -50,6 +50,10 @@ function renderEntry(entry) {
       <footer class="gb-entry-foot">
         ${renderReactionBar("guestbook", entry.id, entry.reactions)}
         ${renderCommentThread("guestbook", entry.id, entry.comment_count)}
+        ${entry.is_own
+          ? html`<button type="button" class="gb-delete" data-gb-action="delete"
+              data-id="${entry.id}">Delete</button>`
+          : ""}
       </footer>
     </article>
   `
@@ -78,6 +82,40 @@ function addEntries(entries, prepend) {
 
 function updateEmptyState() {
   getElement("gb-empty").hidden = renderedCount > 0
+}
+
+/**
+ * Delegated feed click → self-delete for the author's own entry (mirrors the
+ * own-comment Delete affordance). Only own entries render the button.
+ * @param {Event} e
+ */
+function onFeedClick(e) {
+  const el = e.target
+  if (!(el instanceof Element)) return
+  const btn = el.closest("[data-gb-action='delete']")
+  if (!(btn instanceof HTMLElement)) return
+  const id = btn.dataset.id
+  if (!id) return
+  if (!window.confirm("Delete your guestbook message?")) return
+  void deleteEntry(Number(id), btn)
+}
+
+/** @param {number} id @param {HTMLElement} btn */
+async function deleteEntry(id, btn) {
+  hideError()
+  try {
+    await api(`/api/guestbook/${id}`, {
+      method: "DELETE",
+      csrf: true,
+      csrfCookie: "guest_csrf",
+    })
+    const article = btn.closest(".gb-entry")
+    if (article) article.remove()
+    renderedCount = Math.max(0, renderedCount - 1)
+    updateEmptyState()
+  } catch (err) {
+    showError(getErrorMessage(err))
+  }
 }
 
 /** @param {string} message */
@@ -203,6 +241,7 @@ function onComposerSubmit(e) {
 /** @type {Types.initFeed} */
 export function initFeed() {
   getElement("gb-composer-form").addEventListener("submit", onComposerSubmit)
+  getElement("gb-feed").addEventListener("click", onFeedClick)
 
   // Live character counter (2.6) — mirrors the textarea's maxlength.
   const messageEl = getTextAreaElement("gb-message")

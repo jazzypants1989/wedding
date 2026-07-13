@@ -192,7 +192,7 @@ function showEmpty(s) {
   div.textContent =
     s.section === "guest"
       ? "No guest photos yet — got some from the big day? 📸"
-      : "No official photos yet."
+      : "No official photos yet — the couple's favorites will land here soon. 📷"
   s.container.insertBefore(div, s.sentinel)
 }
 
@@ -334,6 +334,20 @@ export function ensureItemLoaded(item) {
   s.items.unshift(item)
   appendCell(s, item, true)
   upgradeTimes(s.container)
+}
+
+/** @type {Types.removeItem} */
+export function removeItem(section, id) {
+  const s = sections[section]
+  const idx = s.items.findIndex((i) => i.id === id)
+  if (idx === -1) return
+  s.items.splice(idx, 1)
+  const cell = s.container.querySelector(`[data-id="${id}"]`)
+  const li = cell ? cell.closest("li") : null
+  if (li) li.remove()
+  updateCount(section)
+  // A section emptied entirely by deletes should show its warm empty state.
+  if (s.items.length === 0 && s.reachedEnd) showEmpty(s)
 }
 
 /** @type {Types.getSectionItems} */

@@ -136,6 +136,7 @@
 
       <!-- RSVP Form -->
       <form id="rsvp-form" class="rsvp-form form-state" hidden>
+        <p id="rsvp-return-banner" class="rsvp-return-banner" role="status" hidden></p>
         <p class="rsvp-greeting text-center">Hi <span id="guest-name"></span>!</p>
         <p class="rsvp-intro text-center">Please let us know if you'll be joining us for our wedding celebration.</p>
 
@@ -164,20 +165,24 @@
 
           <div class="form-group">
             <label for="dietary">Any dietary restrictions?</label>
-            <textarea id="dietary" name="dietary_restrictions" rows="2"
+            <textarea id="dietary" name="dietary_restrictions" rows="2" maxlength="500"
               placeholder="Vegan, gluten-free, allergies, etc."></textarea>
+            <span id="dietary-counter" class="char-counter rsvp-counter" aria-hidden="true">0/500</span>
           </div>
 
           <div class="form-group">
             <label for="anything-else">Anything else we need to know about you? (accommodation needs, etc.)</label>
-            <input type="text" id="anything-else" name="additional_info" placeholder="Let us know here">
+            <input type="text" id="anything-else" name="additional_info" maxlength="500" placeholder="Let us know here">
+            <span id="anything-else-counter" class="char-counter rsvp-counter" aria-hidden="true">0/500</span>
           </div>
 
         </div>
 
         <div class="form-group">
           <label for="message">Message for {{couple.display}} (optional)</label>
-          <textarea id="message" name="message" rows="3" placeholder="We're so excited for you!"></textarea>
+          <textarea id="message" name="message" rows="3" maxlength="1000"
+            placeholder="We're so excited for you!"></textarea>
+          <span id="message-counter" class="char-counter rsvp-counter" aria-hidden="true">0/1000</span>
         </div>
 
         <button type="submit" class="btn btn-primary btn-large">Submit RSVP</button>
@@ -189,7 +194,12 @@
         <h3>Thank You!</h3>
         <p id="success-message"></p>
         <p class="rsvp-update-note">Changed your mind? You can update your RSVP anytime by visiting this page again.</p>
-        <a href="/" class="btn btn-secondary">Back to Home</a>
+        <div class="rsvp-success-actions">
+          <a href="/#schedule" class="btn btn-primary rsvp-actions-pre">See wedding details</a>
+          <a href="/guestbook" class="btn btn-primary rsvp-actions-post">Sign our guestbook</a>
+          <a href="/gallery" class="btn btn-secondary rsvp-actions-post">See the photos</a>
+          <a href="/" class="btn btn-secondary">Back to Home</a>
+        </div>
       </div>
     </section>
   </main>
