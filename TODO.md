@@ -138,11 +138,19 @@ three copy-pasted resolvers into one and directly serves the no-code product. Ch
 
 ---
 
-## Track 4 — No-code onboarding wizard + shipped container 🔴 (capstone)
+## Track 4 — No-code onboarding wizard + shipped container ✅ (capstone; one deferred step)
 
 The payoff. A non-coder self-hoster runs the container, opens a setup wizard, and produces a
 complete site entirely through forms. Depends on Tracks 1–3 (all copy is data, theme is
 selectable, effects are tunable via `app_state`).
+
+**Status — landed:** steps 1, 2, 3, 5 and the email/SMS boundary below are all done
+(`core/setup.js`, `api/setup.js`, `public/pages/setup/*`, `core/wedding-facts.js`,
+`core/auth.js` `getAdminHash`, `docs/self-host.md`, `Dockerfile`). The admin hash moved to
+`app_state` (read at request time, env fallback kept), first-run boots into a token-gated
+`/setup` wizard, and invites/SMS sign with the *effective* couple. **Only step 4 —
+de-personalizing the shipped `content.js` defaults — remains, and it's deliberately deferred
+(owner decision) to avoid regressing the live wedding page; see DEFERRED.md.**
 
 **Approach:**
 1. **Replace the CLI admin-password setup.** Today `scripts/setup-admin.js` prompts on the
@@ -188,16 +196,16 @@ this stage.
 
 ```
 Track 1a ✅ ── Track 1b ✅ (media) ─┐
-Track 2 (themes) ──────────────────┼──► Track 4 (no-code wizard + container)
-override-store → Track 3b ─────────┘
+Track 2 ✅ (themes) ────────────────┼──► Track 4 ✅ (no-code wizard + container)
+override-store ✅ → Track 3b ✅ ────┘        └─ only de-personalization deferred
 ```
 
-- **Track 1** (1a text migration + 1b media-pipeline dress-code images) has fully landed.
-  **Track 2** (themes) and **Track 3a** (live preview) are the independent remaining pieces —
-  Track 2 and Track 3 are being taken up in parallel worktrees.
-- The **override-store generalization** (Track 3b pre-step) is cheap and unblocks both 3b and
-  Track 4's admin-hash move — do it before either.
-- **Track 2** is the biggest single lift (authoring alternate themes takes design taste, not just
-  code) — and remember the palette is only partially token-derived today (see Track 2 caveat).
-- **Track 4** is the capstone; start it only once 1, 2, and 3b land, since it stitches them into
-  one flow.
+- **Tracks 1–3 and the override-store generalization have all landed.** Track 4 (the capstone)
+  is functionally complete: admin hash in `app_state`, first-run token-gated `/setup` wizard,
+  effective-content-driven email/SMS, and a runnable container + self-host doc.
+- **The single remaining roadmap item is de-personalizing the shipped `content.js` defaults**
+  (Track 4 step 4), which is deliberately deferred — see DEFERRED.md "De-personalize the shipped
+  content defaults" and "Local registry / honeyfund".
+- Historical context (already done): Track 2's palette was only partially token-derived; it was
+  de-hardcoded during the theme work. The override-store factory now backs both `site_content`
+  and `effect_config`.

@@ -37,98 +37,98 @@
 
     <form id="setup-form" novalidate>
       <!-- Step 0: token + admin password -->
-      <fieldset class="setup-panel is-active" data-panel="0">
+      <fieldset class="setup-panel is-active" data-panel="0" tabindex="-1">
         <legend class="setup-legend">Secure the admin</legend>
         <p class="setup-hint">Paste the one-time setup token printed in your server logs on first boot.</p>
-        <label class="setup-field">
-          <span class="setup-label">Setup token</span>
+        <div class="setup-field">
+          <label class="setup-label" for="f-token">Setup token</label>
           <input type="text" id="f-token" name="token" autocomplete="off" spellcheck="false" required>
-        </label>
-        <label class="setup-field">
-          <span class="setup-label">Admin password</span>
-          <input type="password" id="f-password" name="password" autocomplete="new-password" required>
-          <span class="setup-help">At least 12 characters, with an uppercase letter, a lowercase letter, and a digit.</span>
-        </label>
-        <label class="setup-field">
-          <span class="setup-label">Confirm password</span>
+        </div>
+        <div class="setup-field">
+          <label class="setup-label" for="f-password">Admin password</label>
+          <input type="password" id="f-password" name="password" autocomplete="new-password" aria-describedby="f-password-help" required>
+          <span class="setup-help" id="f-password-help">At least 12 characters, with an uppercase letter, a lowercase letter, and a digit.</span>
+        </div>
+        <div class="setup-field">
+          <label class="setup-label" for="f-password2">Confirm password</label>
           <input type="password" id="f-password2" name="password2" autocomplete="new-password" required>
-        </label>
+        </div>
       </fieldset>
 
       <!-- Step 1: couple + date + location -->
-      <fieldset class="setup-panel" data-panel="1" hidden>
+      <fieldset class="setup-panel" data-panel="1" tabindex="-1" hidden>
         <legend class="setup-legend">The couple</legend>
-        <label class="setup-field">
-          <span class="setup-label">Display names</span>
-          <input type="text" id="f-display" name="display" maxlength="100" required>
-          <span class="setup-help">Shown in headings, e.g. &ldquo;Alex &amp; Sam&rdquo;.</span>
-        </label>
-        <label class="setup-field">
-          <span class="setup-label">First names (prose)</span>
-          <input type="text" id="f-first" name="first" maxlength="100" required>
-          <span class="setup-help">Used in sign-offs, e.g. &ldquo;Alex and Sam&rdquo;.</span>
-        </label>
-        <label class="setup-field">
-          <span class="setup-label">Monogram</span>
-          <input type="text" id="f-monogram" name="monogram" maxlength="20" required>
-          <span class="setup-help">Compact mobile logo, e.g. &ldquo;A&amp;S&rdquo;.</span>
-        </label>
-        <label class="setup-field">
-          <span class="setup-label">Full names</span>
-          <input type="text" id="f-fullnames" name="fullnames" maxlength="220">
-          <span class="setup-help">Comma-separated, e.g. &ldquo;Alex Rivera, Sam Lee&rdquo;.</span>
-        </label>
-        <label class="setup-field">
-          <span class="setup-label">Wedding date</span>
-          <input type="text" id="f-date" name="weddingDate" maxlength="40" required>
-          <span class="setup-help">ISO with time &amp; offset drives the countdown, e.g. 2026-08-15T16:00:00-07:00.</span>
-        </label>
-        <label class="setup-field">
-          <span class="setup-label">Location</span>
+        <div class="setup-field">
+          <label class="setup-label" for="f-display">Display names</label>
+          <input type="text" id="f-display" name="display" maxlength="100" aria-describedby="f-display-help" required>
+          <span class="setup-help" id="f-display-help">Shown in headings, e.g. &ldquo;Alex &amp; Sam&rdquo;.</span>
+        </div>
+        <div class="setup-field">
+          <label class="setup-label" for="f-first">First names (prose)</label>
+          <input type="text" id="f-first" name="first" maxlength="100" aria-describedby="f-first-help" required>
+          <span class="setup-help" id="f-first-help">Used in sign-offs, e.g. &ldquo;Alex and Sam&rdquo;.</span>
+        </div>
+        <div class="setup-field">
+          <label class="setup-label" for="f-monogram">Monogram</label>
+          <input type="text" id="f-monogram" name="monogram" maxlength="20" aria-describedby="f-monogram-help" required>
+          <span class="setup-help" id="f-monogram-help">Compact mobile logo, e.g. &ldquo;A&amp;S&rdquo;.</span>
+        </div>
+        <div class="setup-field">
+          <label class="setup-label" for="f-fullnames">Full names</label>
+          <input type="text" id="f-fullnames" name="fullnames" maxlength="220" aria-describedby="f-fullnames-help">
+          <span class="setup-help" id="f-fullnames-help">Comma-separated, e.g. &ldquo;Alex Rivera, Sam Lee&rdquo;.</span>
+        </div>
+        <div class="setup-field">
+          <label class="setup-label" for="f-date">Wedding date</label>
+          <input type="text" id="f-date" name="weddingDate" maxlength="40" aria-describedby="f-date-help" required>
+          <span class="setup-help" id="f-date-help">ISO with time &amp; offset drives the countdown, e.g. 2026-08-15T16:00:00-07:00.</span>
+        </div>
+        <div class="setup-field">
+          <label class="setup-label" for="f-location">Location</label>
           <input type="text" id="f-location" name="location" maxlength="200" required>
-        </label>
+        </div>
       </fieldset>
 
       <!-- Step 2: theme -->
-      <fieldset class="setup-panel" data-panel="2" hidden>
+      <fieldset class="setup-panel" data-panel="2" tabindex="-1" hidden>
         <legend class="setup-legend">Pick a theme</legend>
         <p class="setup-hint">Sets the visual effect palette. Fine-tune it later in the admin Effects tab.</p>
         <div class="setup-themes" id="f-themes" role="radiogroup" aria-label="Theme"></div>
       </fieldset>
 
       <!-- Step 3: registry + welcome copy -->
-      <fieldset class="setup-panel" data-panel="3" hidden>
+      <fieldset class="setup-panel" data-panel="3" tabindex="-1" hidden>
         <legend class="setup-legend">Registry &amp; welcome</legend>
-        <label class="setup-field">
-          <span class="setup-label">Welcome heading</span>
-          <input type="text" id="f-welcomeHeading" name="welcomeHeading" maxlength="200">
-        </label>
-        <label class="setup-field">
-          <span class="setup-label">Welcome message</span>
-          <textarea id="f-welcomeIntro" name="welcomeIntro" rows="4" maxlength="5000"></textarea>
-          <span class="setup-help">A short note on your landing page. Basic inline HTML like &lt;em&gt; is allowed.</span>
-        </label>
-        <label class="setup-field">
-          <span class="setup-label">Registry title</span>
-          <input type="text" id="f-regTitle" name="regTitle" maxlength="200">
-        </label>
-        <label class="setup-field">
-          <span class="setup-label">Registry URL</span>
-          <input type="url" id="f-regUrl" name="regUrl" maxlength="500">
-          <span class="setup-help">Must start with http:// or https://.</span>
-        </label>
-        <label class="setup-field">
-          <span class="setup-label">Registry link text</span>
-          <input type="text" id="f-regLabel" name="regLabel" maxlength="200">
-        </label>
-        <label class="setup-field">
-          <span class="setup-label">Registry description</span>
-          <textarea id="f-regBody" name="regBody" rows="3" maxlength="5000"></textarea>
-        </label>
+        <div class="setup-field">
+          <label class="setup-label" for="f-welcomeHeading">Welcome heading</label>
+          <input type="text" id="f-welcomeHeading" name="welcomeHeading" maxlength="200" required>
+        </div>
+        <div class="setup-field">
+          <label class="setup-label" for="f-welcomeIntro">Welcome message</label>
+          <textarea id="f-welcomeIntro" name="welcomeIntro" rows="4" maxlength="5000" aria-describedby="f-welcomeIntro-help" required></textarea>
+          <span class="setup-help" id="f-welcomeIntro-help">A short note on your landing page. Basic inline HTML like &lt;em&gt; is allowed.</span>
+        </div>
+        <div class="setup-field">
+          <label class="setup-label" for="f-regTitle">Registry title</label>
+          <input type="text" id="f-regTitle" name="regTitle" maxlength="200" required>
+        </div>
+        <div class="setup-field">
+          <label class="setup-label" for="f-regUrl">Registry URL</label>
+          <input type="url" id="f-regUrl" name="regUrl" maxlength="500" aria-describedby="f-regUrl-help" required>
+          <span class="setup-help" id="f-regUrl-help">Must start with http:// or https://.</span>
+        </div>
+        <div class="setup-field">
+          <label class="setup-label" for="f-regLabel">Registry link text</label>
+          <input type="text" id="f-regLabel" name="regLabel" maxlength="200" required>
+        </div>
+        <div class="setup-field">
+          <label class="setup-label" for="f-regBody">Registry description</label>
+          <textarea id="f-regBody" name="regBody" rows="3" maxlength="5000" required></textarea>
+        </div>
       </fieldset>
 
       <!-- Step 4: review -->
-      <fieldset class="setup-panel" data-panel="4" hidden>
+      <fieldset class="setup-panel" data-panel="4" tabindex="-1" hidden>
         <legend class="setup-legend">Review &amp; finish</legend>
         <p class="setup-hint">Confirm the essentials. Everything is editable later in the admin dashboard.</p>
         <dl class="setup-review" id="f-review"></dl>

@@ -53,6 +53,45 @@ function clearAlert() {
   alertBox.textContent = ""
 }
 
+/** Drop any lingering aria-invalid marks before re-validating / changing step. */
+function clearInvalid() {
+  document
+    .querySelectorAll('[aria-invalid="true"]')
+    .forEach((el) => el.removeAttribute("aria-invalid"))
+}
+
+/** Surface a step error: alert text, plus mark + focus the offending field.
+ *  @param {{ error: string, field?: string }} result */
+function showError(result) {
+  showAlert(result.error)
+  const el = result.field ? document.getElementById(result.field) : null
+  if (el instanceof HTMLElement) {
+    el.setAttribute("aria-invalid", "true")
+    el.focus()
+  }
+}
+
+/** Mirror of core/password-policy.js `validatePasswordStrength` for fast, local
+ *  feedback. Can't import that module — it pulls in node:crypto (via hashPassword)
+ *  and won't load in the browser. Keep the two rules in sync.
+ *  @param {string} pw @returns {string | null} */
+function passwordError(pw) {
+  if (pw.length < 12) return "Password must be at least 12 characters."
+  let hasUpper = false
+  let hasLower = false
+  let hasDigit = false
+  for (let i = 0; i < pw.length; i++) {
+    const code = pw.charCodeAt(i)
+    if (code >= 65 && code <= 90) hasUpper = true
+    else if (code >= 97 && code <= 122) hasLower = true
+    else if (code >= 48 && code <= 57) hasDigit = true
+  }
+  if (!hasUpper) return "Password must contain an uppercase letter."
+  if (!hasLower) return "Password must contain a lowercase letter."
+  if (!hasDigit) return "Password must contain a digit."
+  return null
+}
+
 /** Fill the form inputs from the seeded content. */
 function seedForm() {
   if (!content) return
@@ -118,31 +157,57 @@ function collect() {
   content.theme = selectedTheme()
 }
 
-/** Light client-side validation for a step. Returns an error message or null.
- *  The server re-validates everything; this is just fast feedback.
+/** Light client-side validation for a step. Returns `{ error, field }` or null.
+ *  The server re-validates everything (buildOverride requires the registry +
+ *  welcome copy non-empty, and enforces the full password policy); this mirrors
+ *  those rules so failures surface on the right step, not as a late 400 on Review.
  *  @param {number} n
- *  @returns {string | null} */
+ *  @returns {{ error: string, field?: string } | null} */
 function validateStep(n) {
   if (n === 0) {
-    if (!getInputElement("f-token").value.trim()) return "Paste the setup token from your server logs."
+    if (!getInputElement("f-token").value.trim()) {
+      return { error: "Paste the setup token from your server logs.", field: "f-token" }
+    }
     const pw = getInputElement("f-password").value
-    const pw2 = getInputElement("f-password2").value
-    if (pw.length < 12) return "Password must be at least 12 characters."
-    if (pw !== pw2) return "Passwords do not match."
+    const pwErr = passwordError(pw)
+    if (pwErr) return { error: pwErr, field: "f-password" }
+    if (pw !== getInputElement("f-password2").value) {
+      return { error: "Passwords do not match.", field: "f-password2" }
+    }
   }
   if (n === 1) {
-    if (!getInputElement("f-display").value.trim()) return "Display names are required."
-    if (!getInputElement("f-first").value.trim()) return "First names are required."
-    if (!getInputElement("f-monogram").value.trim()) return "A monogram is required."
+    if (!getInputElement("f-display").value.trim()) return { error: "Display names are required.", field: "f-display" }
+    if (!getInputElement("f-first").value.trim()) return { error: "First names are required.", field: "f-first" }
+    if (!getInputElement("f-monogram").value.trim()) return { error: "A monogram is required.", field: "f-monogram" }
     const date = getInputElement("f-date").value.trim()
-    if (!date) return "A wedding date is required."
-    if (Number.isNaN(Date.parse(date))) return "That wedding date can't be parsed — try an ISO date."
-    if (!getInputElement("f-location").value.trim()) return "A location is required."
+    if (!date) return { error: "A wedding date is required.", field: "f-date" }
+    if (Number.isNaN(Date.parse(date))) {
+      return { error: "That wedding date can't be parsed — try an ISO date.", field: "f-date" }
+    }
+    if (!getInputElement("f-location").value.trim()) return { error: "A location is required.", field: "f-location" }
   }
   if (n === 3) {
+    // The server requires all of these non-empty (buildOverride). Registry is
+    // mandatory today; making it optional is deferred (see DEFERRED.md).
+    if (!getInputElement("f-welcomeHeading").value.trim()) {
+      return { error: "A welcome heading is required.", field: "f-welcomeHeading" }
+    }
+    if (!getTextAreaElement("f-welcomeIntro").value.trim()) {
+      return { error: "A welcome message is required.", field: "f-welcomeIntro" }
+    }
+    if (!getInputElement("f-regTitle").value.trim()) {
+      return { error: "A registry title is required.", field: "f-regTitle" }
+    }
     const url = getInputElement("f-regUrl").value.trim()
-    if (url && !url.startsWith("http://") && !url.startsWith("https://")) {
-      return "Registry URL must start with http:// or https://."
+    if (!url) return { error: "A registry URL is required.", field: "f-regUrl" }
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+      return { error: "Registry URL must start with http:// or https://.", field: "f-regUrl" }
+    }
+    if (!getInputElement("f-regLabel").value.trim()) {
+      return { error: "Registry link text is required.", field: "f-regLabel" }
+    }
+    if (!getTextAreaElement("f-regBody").value.trim()) {
+      return { error: "A registry description is required.", field: "f-regBody" }
     }
   }
   return null
@@ -165,11 +230,13 @@ function buildReview() {
     reviewRow("Registry", content.registry.url)
 }
 
-/** Show step `n`: toggle panels, stepper chips, and nav buttons.
- *  @param {number} n */
-function showStep(n) {
+/** Show step `n`: toggle panels, stepper chips, and nav buttons. When `focus`,
+ *  move focus to the newly revealed panel so keyboard/SR users track the change.
+ *  @param {number} n @param {boolean} [focus] */
+function showStep(n, focus = false) {
   step = n
   clearAlert()
+  clearInvalid()
   const panels = document.querySelectorAll(".setup-panel")
   panels.forEach((panel) => {
     const idx = Number(panel.getAttribute("data-panel"))
@@ -179,27 +246,47 @@ function showStep(n) {
   })
   document.querySelectorAll(".setup-step").forEach((chip) => {
     const idx = Number(chip.getAttribute("data-step"))
-    chip.classList.toggle("is-active", idx === n)
+    const active = idx === n
+    chip.classList.toggle("is-active", active)
     chip.classList.toggle("is-done", idx < n)
+    if (active) chip.setAttribute("aria-current", "step")
+    else chip.removeAttribute("aria-current")
   })
   backBtn.hidden = n === 0
   nextBtn.hidden = n === LAST_STEP
   finishBtn.hidden = n !== LAST_STEP
   if (n === LAST_STEP) buildReview()
+  if (focus) {
+    const panel = document.querySelector('.setup-panel[data-panel="' + n + '"]')
+    if (panel instanceof HTMLElement) panel.focus()
+  }
 }
 
 function onNext() {
+  clearInvalid()
   const err = validateStep(step)
   if (err) {
-    showAlert(err)
+    showError(err)
     return
   }
   collect()
-  showStep(Math.min(step + 1, LAST_STEP))
+  showStep(Math.min(step + 1, LAST_STEP), true)
 }
 
 function onBack() {
-  showStep(Math.max(step - 1, 0))
+  showStep(Math.max(step - 1, 0), true)
+}
+
+/** Enter advances to the next step rather than submitting the whole wizard from
+ *  wherever the cursor happens to be. Textareas keep their newline; the Review
+ *  step (no more Next) falls through to a real submit.
+ *  @param {KeyboardEvent} e */
+function onFormKeydown(e) {
+  if (e.key !== "Enter") return
+  if (e.target instanceof HTMLTextAreaElement) return
+  if (step === LAST_STEP) return
+  e.preventDefault()
+  onNext()
 }
 
 /** @param {SubmitEvent} e */
@@ -209,8 +296,8 @@ async function onSubmit(e) {
   for (let i = 0; i <= LAST_STEP; i++) {
     const err = validateStep(i)
     if (err) {
-      showAlert(err)
-      showStep(i)
+      showStep(i, true)
+      showError(err)
       return
     }
   }
@@ -259,7 +346,9 @@ async function init() {
   }
 }
 
-getFormElement("setup-form").addEventListener("submit", onSubmit)
+const form = getFormElement("setup-form")
+form.addEventListener("submit", onSubmit)
+form.addEventListener("keydown", onFormKeydown)
 nextBtn.addEventListener("click", onNext)
 backBtn.addEventListener("click", onBack)
 

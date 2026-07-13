@@ -20,11 +20,20 @@ import { getAdminHash } from "./auth.js"
 /** @type {string | null} in-memory one-time setup token, or null once complete */
 let setupToken = null
 
+/** Latches true once setup is complete and never reverts (an install never
+ *  un-onboards). Lets isSetupComplete() skip a per-request app_state read on the
+ *  hot path once onboarded — it's called on every request in server.js. */
+let setupComplete = false
+
 /** True once an admin password hash exists (wizard finished OR env-configured).
- *  This is the gate that disables the wizard and suppresses the token.
+ *  This is the gate that disables the wizard and suppresses the token. Latches so
+ *  the steady state doesn't hit the DB on every request; only an un-onboarded
+ *  install (pre-setup, transient) still reads app_state each call.
  *  @type {Types.isSetupComplete} */
 export function isSetupComplete() {
-  return !!getAdminHash()
+  if (setupComplete) return true
+  if (getAdminHash()) setupComplete = true
+  return setupComplete
 }
 
 /** Generate + print the one-time token when the install is un-onboarded. Called
@@ -59,8 +68,10 @@ export function verifySetupToken(provided) {
   return crypto.timingSafeEqual(a, b)
 }
 
-/** Clear the token so it can't be replayed after the wizard finishes.
+/** Latch setup complete and clear the token so it can't be replayed after the
+ *  wizard finishes.
  *  @type {Types.completeSetup} */
 export function completeSetup() {
+  setupComplete = true
   setupToken = null
 }

@@ -74,11 +74,14 @@ export async function submit(req, res) {
   }
   const validated = buildOverride(/** @type {Record<string, unknown>} */ (content))
 
-  // Persist the admin password hash (read at request time by getAdminHash()).
-  setAppState(ADMIN_HASH_KEY, hashPassword(password))
-
-  // Store only the diff from shipped defaults; an all-defaults submission leaves
-  // no override so unchanged fields keep tracking future content.js edits.
+  // Store the content diff FIRST, then the admin hash. The hash is the
+  // completion latch (isSetupComplete = !!getAdminHash), so writing it last means
+  // a throw partway through leaves the wizard re-runnable rather than half
+  // onboarded (an admin with no content). Storing content without an admin is
+  // safe and idempotent — the install is still un-onboarded until the hash lands.
+  //
+  // Only the diff from shipped defaults is kept; an all-defaults submission
+  // leaves no override so unchanged fields keep tracking future content.js edits.
   const sparse = diffFromDefaults(validated)
   if (Object.keys(sparse).length === 0) {
     sql`DELETE FROM app_state WHERE key = ${SITE_CONTENT_KEY}`.run()
@@ -87,7 +90,10 @@ export async function submit(req, res) {
   }
   onContentChanged()
 
-  // Retire the one-time token so it can't be replayed.
+  // Persist the admin password hash (read at request time by getAdminHash()).
+  setAppState(ADMIN_HASH_KEY, hashPassword(password))
+
+  // Latch setup complete + retire the one-time token so it can't be replayed.
   completeSetup()
 
   log({ action: AUDIT_ACTIONS.SETUP_COMPLETE, ip: clientIp, resourceType: "setup" })

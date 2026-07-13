@@ -105,6 +105,29 @@ window. When ready to make the repo a clean template:
 
 Everything else for the reusable product is done; this is the last, deliberate step.
 
+### Local registry / honeyfund (with optional Stripe) 🟡
+
+Today the registry is a single external link (`registry.url` → Honeyfund/etc.), and the setup
+wizard **requires** it — there's no "no registry" and no first-party registry. Two related
+pieces, deferred together:
+
+- **Make the registry optional.** `buildOverride` (`api/admin/site-content.js`) currently
+  requires `registry.{title,body,frameNote,url,label}` non-empty, and the wizard mirrors that
+  (fast, up-front validation — no late 400). To support a registry-less site, loosen the
+  validator (empty/absent `registry` → render nothing, drop the nav entry) and let the wizard
+  skip the step. Owner decision (2026-07-10): defer this and fold it into the feature below
+  rather than shipping a bare "optional link" toggle.
+- **Build a first-party registry / honeyfund** the couple manages in-app instead of linking out:
+  a list of gift/fund items (title, blurb, image, goal/price), shown on its **own page with a
+  nav-bar entry** (`registry.mode: "external" | "builtin"` in `SiteContent`, so the landing
+  section + `nav` render the internal page when built-in). Contributions via an **optional
+  Stripe integration** — guests pay toward an item/fund; gate it behind env keys the same way
+  Twilio/Resend are (`STRIPE_SECRET_KEY` / webhook secret), no-op when unset. Test keys are
+  already on hand. Keep the zero-dependency constraint: talk to Stripe over the existing
+  `services/http-client.js` (REST + webhook signature verify with `node:crypto`), not the npm
+  SDK. Scope needs its own design pass (data model for items/contributions, refund/dispute
+  posture, PCI surface — prefer Stripe Checkout/Payment Links so no card data touches this box).
+
 ## Configuration & hardening
 
 ### Production `.env` completeness + secret rotation 🟡

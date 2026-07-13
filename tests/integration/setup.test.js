@@ -136,6 +136,41 @@ describe("First-run setup", () => {
     assert.equal(res.status, 400)
   })
 
+  it("rejects a long password missing the complexity rules", async () => {
+    // 12 chars but all-lowercase — passes a length-only check, fails the
+    // upper/lower/digit policy the wizard client now mirrors.
+    const res = await fetch(BASE + "/api/setup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, password: "abcdefghijkl", content: seedContent() }),
+    })
+    assert.equal(res.status, 400)
+  })
+
+  it("rejects content missing a required section (buildOverride wants a full object)", async () => {
+    const content = seedContent()
+    // The wizard never edits nav, but it must ride along; dropping it entirely
+    // must be rejected, not silently defaulted.
+    delete (/** @type {Record<string, unknown>} */ (content)).nav
+    const res = await fetch(BASE + "/api/setup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, password: STRONG_PASSWORD, content }),
+    })
+    assert.equal(res.status, 400)
+  })
+
+  it("rejects a cleared required subfield (empty registry URL)", async () => {
+    const content = seedContent()
+    content.registry.url = ""
+    const res = await fetch(BASE + "/api/setup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, password: STRONG_PASSWORD, content }),
+    })
+    assert.equal(res.status, 400)
+  })
+
   it("completes setup with the token + strong password", async () => {
     const content = seedContent()
     content.couple.display = "Alex & Sam"
