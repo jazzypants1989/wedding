@@ -128,6 +128,45 @@ pieces, deferred together:
   SDK. Scope needs its own design pass (data model for items/contributions, refund/dispute
   posture, PCI surface — prefer Stripe Checkout/Payment Links so no card data touches this box).
 
+### Non-coder onboarding & reusable-product polish 🟡
+
+These surfaced during the UX overhaul (2026-07). They mainly help arbitrary
+self-hosters and non-technical couples; the live wedding's own guest + admin
+flows are handled. Grouped here so a future reusable-product pass can take them
+together:
+
+- **Visual theme picker.** Setup step 2 (`setup.js`) and the admin theme dropdown
+  (`admin/index.html`) present the 8 themes as text-only radios/options with no
+  swatch or preview — the couple picks the whole visual identity blind. Add
+  thumbnails / live preview.
+- **Setup-wizard de-jargon.** The one-time-token step points at "server logs"
+  with no guidance for a non-deployer (`setup/index.html`); "prose" / "monogram"
+  and "inline HTML like `<em>`" are unexplained. A plain-language pass on the
+  whole wizard (the admin Site-content intro was already de-jargoned in the
+  overhaul; the wizard is the remaining surface).
+- **Date/time/timezone picker.** The wedding date is free-text
+  ISO-8601-with-offset in both setup and admin Site-content; `Date.parse` accepts
+  ambiguous input that then breaks the countdown timezone. Replace with a real
+  picker.
+- **Effects tab is a raw JSON textarea** (`admin/index.html`) with a four-step,
+  cross-page, same-browser-only import dance (`effect-config.js`). Needs a
+  friendly control surface and a connection from the theme choice to its implied
+  effects.
+- **`.env` error copy in Send Invites** ("Set RESEND_API_KEY in .env",
+  `invites.js`) and "server logs" guidance expose deploy internals to a
+  non-technical couple. Reword for the couple; point elsewhere for the operator.
+- **Admin password self-service reset.** The login screen has no "forgot
+  password" path (`admin/index.html`); recovery today means editing env config.
+- **CSV template download.** Import lists the required columns
+  (`admin/index.html`) but the couple must hand-build the header row; offer a
+  downloadable template.
+- **Optional / first-party registry.** The setup wizard still *requires* a
+  registry (`setup.js`); cross-references the "Local registry / honeyfund" item
+  above (make registry optional is folded into that feature).
+- **Invite / manual-SMS placeholder parity.** The invite composer supports only
+  `{name}` / `{url}` (`admin/index.html`); manual SMS also supports `{date}` /
+  `{location}`. Unify the supported placeholders across both.
+
 ## Configuration & hardening
 
 ### Production `.env` completeness + secret rotation 🟡
