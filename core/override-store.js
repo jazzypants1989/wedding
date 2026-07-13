@@ -51,7 +51,9 @@ export function deepMerge(base, override) {
 /**
  * Structural equality: identity, then recursive for plain objects (same keys +
  * equal values) and arrays (same length + equal elements). Everything else is
- * only equal by `===`. Zero deps, no regex.
+ * only equal by `===` — note `NaN !== NaN`, so a NaN-valued field always reads
+ * as changed. Harmless here: defaults hold no NaN and stored overrides are
+ * validated before diffing. Zero deps, no regex.
  * @param {unknown} a
  * @param {unknown} b
  * @returns {boolean}
@@ -75,6 +77,10 @@ export function diffFromDefaults(full, base) {
   const fullObj = /** @type {Record<string, unknown>} */ (/** @type {unknown} */ (full))
   const baseObj = /** @type {Record<string, unknown>} */ (/** @type {unknown} */ (base))
   for (const key of Object.keys(fullObj)) {
+    // Mirror applyOverride's guard: never emit a prototype key into the diff. A
+    // later deepMerge of this diff already skips them, but keeping the diff clean
+    // avoids re-parenting the local out object via the __proto__ setter.
+    if (key === "__proto__" || key === "constructor" || key === "prototype") continue
     const v = fullObj[key]
     const d = baseObj[key]
     if (isPlainObject(v) && isPlainObject(d)) {

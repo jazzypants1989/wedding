@@ -17,14 +17,16 @@ import { getClientIp } from "../../core/rate-limit.js"
 import { setAppState, getAppState } from "../../db/utils.js"
 import { sql } from "../../db/sql.js"
 import { onEffectConfigChanged } from "../../core/static.js"
-import { EFFECT_CONFIG_KEYS } from "../../core/effect-config-schema.js"
+import { EFFECT_CONFIG_SPECS } from "../../core/effect-config-schema.js"
 
 const EFFECT_CONFIG_KEY = "effect_config"
 
 // Bounds — the override is admin-authored (authenticated) but still validated as
-// defense-in-depth and to keep the inlined page attribute small.
+// defense-in-depth: a wrong-typed or out-of-range value would otherwise reach
+// every visitor's browser (a huge count hangs it; a string where a number is
+// expected makes the effect throw). Numeric/array bounds come from the per-key
+// spec; strings are only length-capped here.
 const MAX_STRING = 500
-const MAX_ARRAY = 64
 
 /**
  * @param {unknown} v
@@ -40,39 +42,71 @@ function isProtoKey(key) {
   return key === "__proto__" || key === "constructor" || key === "prototype"
 }
 
+/** @import * as CoreTypes from '../../core/types.js' */
+
 /**
- * Validate a single config value: a finite number, bounded string, boolean, or
- * an array of those (effect configs are flat — no nested objects). Returns the
- * value unchanged when valid; throws otherwise.
+ * Validate a single config value against its key spec: correct kind, in range,
+ * and (for arrays) correct arity + element types. Returns the value unchanged
+ * when valid; throws ValidationError otherwise.
  * @param {unknown} v
+ * @param {CoreTypes.EffectKeySpec} spec
  * @param {string} field
- * @returns {number | string | boolean | Array<number | string | boolean>}
+ * @returns {number | string | Array<number | string>}
  */
-function validateValue(v, field) {
-  if (typeof v === "number") {
-    if (!Number.isFinite(v)) throw new ValidationError(field + " must be a finite number")
-    return v
+function validateValue(v, spec, field) {
+  switch (spec.kind) {
+    case "number":
+    case "count":
+      if (typeof v !== "number" || !Number.isFinite(v)) {
+        throw new ValidationError(field + " must be a finite number")
+      }
+      if (v < spec.min || v > spec.max) {
+        throw new ValidationError(field + " must be between " + spec.min + " and " + spec.max)
+      }
+      return v
+    case "string":
+      if (typeof v !== "string") throw new ValidationError(field + " must be a string")
+      if (v.length > MAX_STRING) throw new ValidationError(field + " is too long")
+      return v
+    case "numberArray": {
+      if (!Array.isArray(v)) throw new ValidationError(field + " must be an array")
+      if (v.length < spec.minItems || v.length > spec.maxItems) {
+        const arity =
+          spec.minItems === spec.maxItems
+            ? spec.minItems + " entries"
+            : "between " + spec.minItems + " and " + spec.maxItems + " entries"
+        throw new ValidationError(field + " must have " + arity)
+      }
+      return v.map((el, i) => {
+        if (typeof el !== "number" || !Number.isFinite(el)) {
+          throw new ValidationError(field + "[" + i + "] must be a finite number")
+        }
+        if (el < spec.min || el > spec.max) {
+          throw new ValidationError(field + "[" + i + "] must be between " + spec.min + " and " + spec.max)
+        }
+        return el
+      })
+    }
+    case "stringArray": {
+      if (!Array.isArray(v)) throw new ValidationError(field + " must be an array")
+      if (v.length > spec.maxItems) throw new ValidationError(field + " has too many entries")
+      return v.map((el, i) => {
+        if (typeof el !== "string") throw new ValidationError(field + "[" + i + "] must be a string")
+        if (el.length > MAX_STRING) throw new ValidationError(field + "[" + i + "] is too long")
+        return el
+      })
+    }
+    default:
+      throw new ValidationError(field + " has an unrecognized spec")
   }
-  if (typeof v === "boolean") return v
-  if (typeof v === "string") {
-    if (v.length > MAX_STRING) throw new ValidationError(field + " is too long")
-    return v
-  }
-  if (Array.isArray(v)) {
-    if (v.length > MAX_ARRAY) throw new ValidationError(field + " has too many entries")
-    return v.map((el, i) => {
-      const inner = validateValue(el, field + "[" + i + "]")
-      if (Array.isArray(inner)) throw new ValidationError(field + " may not nest arrays")
-      return inner
-    })
-  }
-  throw new ValidationError(field + " must be a number, string, boolean, or array")
 }
 
 /**
  * Validate a submitted override map into a clean sparse blob: every effect id
  * must be known, every key must be a known key for that effect, every value
- * must pass validateValue. Empty per-effect partials are dropped.
+ * must pass validateValue against its spec. Empty per-effect partials are
+ * dropped. `Object.hasOwn` guards keep an id/key like `"toString"` from
+ * resolving to an inherited Object.prototype member.
  * @param {unknown} raw
  * @returns {Record<string, Record<string, unknown>>}
  */
@@ -82,16 +116,18 @@ function validateOverride(raw) {
   const out = {}
   for (const id of Object.keys(raw)) {
     if (isProtoKey(id)) continue
-    const keys = EFFECT_CONFIG_KEYS[id]
-    if (!keys) throw new ValidationError('Unknown effect "' + id + '"')
+    if (!Object.hasOwn(EFFECT_CONFIG_SPECS, id)) throw new ValidationError('Unknown effect "' + id + '"')
+    const specs = EFFECT_CONFIG_SPECS[id]
     const partial = raw[id]
     if (!isPlainObject(partial)) throw new ValidationError('Effect "' + id + '" override must be an object')
     /** @type {Record<string, unknown>} */
     const clean = {}
     for (const key of Object.keys(partial)) {
       if (isProtoKey(key)) continue
-      if (!keys.has(key)) throw new ValidationError('Effect "' + id + '" has no config key "' + key + '"')
-      clean[key] = validateValue(partial[key], id + "." + key)
+      if (!Object.hasOwn(specs, key)) {
+        throw new ValidationError('Effect "' + id + '" has no config key "' + key + '"')
+      }
+      clean[key] = validateValue(partial[key], specs[key], id + "." + key)
     }
     if (Object.keys(clean).length > 0) out[id] = clean
   }

@@ -704,6 +704,18 @@ export function createOverrideStore<T>(
   onChanged?: (effective: T) => void,
 ): OverrideStore<T>
 
+// --- Effect config schema (core/effect-config-schema.js) ---
+
+/** The accepted value shape for one effect config key. `count` is a
+ *  non-negative element/loop count (bounded to keep an override from hanging a
+ *  visitor's browser); `numberArray` is a fixed-arity numeric range pair. */
+export type EffectKeySpec =
+  | { kind: "number"; min: number; max: number }
+  | { kind: "count"; min: number; max: number }
+  | { kind: "string" }
+  | { kind: "numberArray"; min: number; max: number; minItems: number; maxItems: number }
+  | { kind: "stringArray"; maxItems: number }
+
 // --- Effect config store (core/effect-config.js) ---
 
 /** Re-resolve the effect-config override from app_state (`effect_config`).

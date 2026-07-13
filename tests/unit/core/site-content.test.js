@@ -97,4 +97,21 @@ describe("diffFromDefaults (sparse override storage)", () => {
     const diff = diffFromDefaults(full)
     assert.deepStrictEqual(deepMerge(CONTENT, diff), full)
   })
+
+  it("never emits a prototype key into the diff", () => {
+    // A crafted 'full' object with an own __proto__ key must not re-parent the
+    // diff or leak the key — mirrors deepMerge's guard on the diff side.
+    const full = cloneContent()
+    full.couple.display = "Alex & Sam"
+    Object.defineProperty(full, "__proto__", {
+      value: { polluted: "yes" },
+      enumerable: true,
+      configurable: true,
+    })
+    const diff = diffFromDefaults(full)
+    assert.strictEqual(Object.hasOwn(diff, "__proto__"), false)
+    assert.strictEqual(/** @type {any} */ ({}).polluted, undefined)
+    // The legitimate change still lands.
+    assert.deepStrictEqual(diff, { couple: { display: "Alex & Sam" } })
+  })
 })

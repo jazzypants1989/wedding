@@ -3,50 +3,123 @@
  *  `public/effects/config.js` (EFFECT_CONFIGS) is the single source of truth for
  *  effect ids + their tunable keys, but it's a browser module (reads CSS tokens
  *  at import, pulls in DOM types) so the server can't import it without breaking
- *  the server tsconfig. This is a plain-data mirror of just the *ids and keys*,
- *  used by api/admin/effect-config.js to validate an override before storing it.
+ *  the server tsconfig. This is a plain-data mirror of each effect's *keys and
+ *  the value shape each key accepts*, used by api/admin/effect-config.js to
+ *  validate an admin override before storing it.
  *
  *  Drift is guarded by tests/unit/effect-config-schema.test.js, which imports
  *  both this map and the real EFFECT_CONFIGS and asserts the ids + keys match
- *  (same pattern as THEME_IDS ↔ EFFECT_THEMES). When you add or rename an effect
- *  key in config.js, update the matching entry here. Zero deps, no regex.
+ *  AND that each spec's `kind`/bounds are consistent with the shipped default
+ *  value (so a mis-classified key or a bound tighter than the default is caught).
+ *  When you add or rename an effect key in config.js, update the matching entry
+ *  here. Zero deps, no regex.
+ *
+ *  Why per-key specs (not just a name allowlist): key names collide across
+ *  effects with *different* types — `dividers.color` is a number (0.5) while
+ *  `frost.color` / `namespark.shimmerColor` are strings. And an unbounded number
+ *  on a count-like key (e.g. `snow.flakeCount: 1e9`) would make every visitor's
+ *  browser try to build a billion nodes. The spec pins both.
  */
 
-/** Each effect id → the set of config keys an override may set for it.
- *  @type {Record<string, ReadonlySet<string>>} */
-export const EFFECT_CONFIG_KEYS = {
-  disco: new Set([
-    "spinSpeed", "ballSize", "rayCount", "rayBrightness", "rayColors",
-    "tileSize", "tileGap", "rayDurationRange", "rayDelayRange",
-  ]),
-  cursor: new Set([
-    "trailDensity", "trailType", "throttleMs", "fadeSpeed", "size", "colors", "minDistance",
-  ]),
-  shimmer: new Set(["opacity", "gradientSpeed", "colorPalette", "scaleSize", "gradientAngle"]),
-  dividers: new Set(["dotDensity", "color", "animationDelayStep"]),
-  namespark: new Set(["shimmerSpeed", "shimmerColor"]),
-  textglow: new Set(["intensity", "threshold"]),
-  parallaxsparkles: new Set([
-    "layerCount", "density", "speedMultiplier", "colorScheme",
-    "sizeRange", "opacityRange", "glowThreshold",
-  ]),
-  entrance: new Set([
-    "entranceStyle", "sparkleIntensity", "speed", "colors", "sparkleSizeRange", "waveCount",
-  ]),
-  spotlight: new Set(["beamCount", "sweepSpeed", "beamWidth", "colors", "colorCycleMs", "beamStagger"]),
-  reflections: new Set(["reflectionCount", "speed", "brightness", "colors", "sizeRange", "frameInterval"]),
-  petals: new Set(["petalCount", "fallDurationRange", "delayRange", "sizeRange", "swayRange", "colors"]),
-  hearts: new Set(["heartCount", "riseDurationRange", "delayRange", "sizeRange", "driftRange", "colors"]),
-  dust: new Set(["density", "driftDurationRange", "delayRange", "sizeRange", "swayRange", "colors"]),
-  starfield: new Set(["starCount", "sizeRange", "twinkleDurationRange", "delayRange", "colors"]),
-  shootingstars: new Set(["streakCount", "cycleDurationRange", "delayRange", "lengthRange", "colors"]),
-  aurora: new Set(["opacity", "speed", "palette", "height", "angle"]),
-  fireflies: new Set([
-    "flyCount", "sizeRange", "blinkDurationRange", "driftDurationRange", "driftRange", "colors",
-  ]),
-  leaves: new Set(["leafCount", "fallDurationRange", "delayRange", "sizeRange", "swayRange", "colors"]),
-  snow: new Set(["flakeCount", "fallDurationRange", "delayRange", "sizeRange", "swayRange", "colors"]),
-  frost: new Set(["opacity", "breatheSpeed", "color", "clearRadius"]),
-  bubbles: new Set(["bubbleCount", "riseDurationRange", "delayRange", "sizeRange", "wobbleRange"]),
-  caustics: new Set(["intensity", "speed", "layerCount"]),
+/** @import * as Types from './types.js' */
+
+// Generous-but-finite bounds. Effect values are all small; these ceilings exist
+// to block absurd/DoS values, not to second-guess reasonable tuning.
+const MIN_NUM = -100000
+const MAX_NUM = 100000
+// Element-generating counts (loop bounds / grid sizes). Kept well above every
+// shipped default (max is starfield.starCount = 70) but low enough that no
+// single override can hang a visitor's browser.
+const MAX_COUNT = 5000
+
+/** @param {number} [min] @param {number} [max] @returns {Types.EffectKeySpec} */
+const num = (min = MIN_NUM, max = MAX_NUM) => ({ kind: "number", min, max })
+/** A non-negative count that drives element/loop creation. @param {number} [max] @returns {Types.EffectKeySpec} */
+const count = (max = MAX_COUNT) => ({ kind: "count", min: 0, max })
+/** @returns {Types.EffectKeySpec} */
+const str = () => ({ kind: "string" })
+/** A numeric range pair `[a, b]`. @returns {Types.EffectKeySpec} */
+const range = () => ({ kind: "numberArray", min: MIN_NUM, max: MAX_NUM, minItems: 2, maxItems: 2 })
+/** An array of color/token strings. @returns {Types.EffectKeySpec} */
+const colors = () => ({ kind: "stringArray", maxItems: 64 })
+
+/** Each effect id → { config key → the value shape an override may set }.
+ *  @type {Record<string, Record<string, Types.EffectKeySpec>>} */
+export const EFFECT_CONFIG_SPECS = {
+  disco: {
+    spinSpeed: num(), ballSize: num(1, 600), rayCount: count(), rayBrightness: num(),
+    rayColors: colors(), tileSize: num(1, 200), tileGap: num(0, 200),
+    rayDurationRange: range(), rayDelayRange: range(),
+  },
+  cursor: {
+    trailDensity: count(), trailType: str(), throttleMs: num(), fadeSpeed: num(),
+    size: num(), colors: colors(), minDistance: num(),
+  },
+  shimmer: {
+    opacity: num(), gradientSpeed: num(), colorPalette: str(), scaleSize: num(), gradientAngle: num(),
+  },
+  dividers: { dotDensity: count(), color: num(), animationDelayStep: num() },
+  namespark: { shimmerSpeed: num(), shimmerColor: str() },
+  textglow: { intensity: num(), threshold: num() },
+  parallaxsparkles: {
+    layerCount: count(), density: count(), speedMultiplier: num(), colorScheme: str(),
+    sizeRange: range(), opacityRange: range(), glowThreshold: num(),
+  },
+  entrance: {
+    entranceStyle: str(), sparkleIntensity: count(), speed: num(), colors: colors(),
+    sparkleSizeRange: range(), waveCount: count(),
+  },
+  spotlight: {
+    beamCount: count(), sweepSpeed: num(), beamWidth: num(), colors: colors(),
+    colorCycleMs: num(), beamStagger: num(),
+  },
+  reflections: {
+    reflectionCount: count(), speed: num(), brightness: num(), colors: colors(),
+    sizeRange: range(), frameInterval: num(),
+  },
+  petals: {
+    petalCount: count(), fallDurationRange: range(), delayRange: range(),
+    sizeRange: range(), swayRange: range(), colors: colors(),
+  },
+  hearts: {
+    heartCount: count(), riseDurationRange: range(), delayRange: range(),
+    sizeRange: range(), driftRange: range(), colors: colors(),
+  },
+  dust: {
+    density: count(), driftDurationRange: range(), delayRange: range(),
+    sizeRange: range(), swayRange: range(), colors: colors(),
+  },
+  starfield: {
+    starCount: count(), sizeRange: range(), twinkleDurationRange: range(),
+    delayRange: range(), colors: colors(),
+  },
+  shootingstars: {
+    streakCount: count(), cycleDurationRange: range(), delayRange: range(),
+    lengthRange: range(), colors: colors(),
+  },
+  aurora: { opacity: num(), speed: num(), palette: str(), height: num(), angle: num() },
+  fireflies: {
+    flyCount: count(), sizeRange: range(), blinkDurationRange: range(),
+    driftDurationRange: range(), driftRange: range(), colors: colors(),
+  },
+  leaves: {
+    leafCount: count(), fallDurationRange: range(), delayRange: range(),
+    sizeRange: range(), swayRange: range(), colors: colors(),
+  },
+  snow: {
+    flakeCount: count(), fallDurationRange: range(), delayRange: range(),
+    sizeRange: range(), swayRange: range(), colors: colors(),
+  },
+  frost: { opacity: num(), breatheSpeed: num(), color: str(), clearRadius: num() },
+  bubbles: {
+    bubbleCount: count(), riseDurationRange: range(), delayRange: range(),
+    sizeRange: range(), wobbleRange: range(),
+  },
+  caustics: { intensity: num(), speed: num(), layerCount: count() },
 }
+
+/** Derived id → set of valid keys (back-compat + the drift key-parity check).
+ *  @type {Record<string, ReadonlySet<string>>} */
+export const EFFECT_CONFIG_KEYS = Object.fromEntries(
+  Object.keys(EFFECT_CONFIG_SPECS).map((id) => [id, new Set(Object.keys(EFFECT_CONFIG_SPECS[id]))]),
+)

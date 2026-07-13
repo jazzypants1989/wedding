@@ -132,6 +132,46 @@ describe("admin effect-config editor", () => {
     assert.strictEqual(res.status, 400)
   })
 
+  it("rejects an out-of-range count (visitor-DoS guard)", { skip: !hasAdmin }, async () => {
+    const auth = await adminLogin()
+    const res = await adminFetch(
+      "/api/admin/effect-config",
+      { method: "PUT", body: JSON.stringify({ override: { snow: { flakeCount: 1e9 } } }) },
+      auth,
+    )
+    assert.strictEqual(res.status, 400)
+  })
+
+  it("rejects a wrong-typed value (string where a number is expected)", { skip: !hasAdmin }, async () => {
+    const auth = await adminLogin()
+    const res = await adminFetch(
+      "/api/admin/effect-config",
+      { method: "PUT", body: JSON.stringify({ override: { snow: { flakeCount: "lots" } } }) },
+      auth,
+    )
+    assert.strictEqual(res.status, 400)
+  })
+
+  it("rejects a scalar where a color array is expected", { skip: !hasAdmin }, async () => {
+    const auth = await adminLogin()
+    const res = await adminFetch(
+      "/api/admin/effect-config",
+      { method: "PUT", body: JSON.stringify({ override: { disco: { rayColors: 5 } } }) },
+      auth,
+    )
+    assert.strictEqual(res.status, 400)
+  })
+
+  it("rejects a range with the wrong arity", { skip: !hasAdmin }, async () => {
+    const auth = await adminLogin()
+    const res = await adminFetch(
+      "/api/admin/effect-config",
+      { method: "PUT", body: JSON.stringify({ override: { snow: { sizeRange: [1, 2, 3] } } }) },
+      auth,
+    )
+    assert.strictEqual(res.status, 400)
+  })
+
   it("an all-empty override clears the stored key", { skip: !hasAdmin }, async () => {
     const auth = await adminLogin()
     // First set something.
