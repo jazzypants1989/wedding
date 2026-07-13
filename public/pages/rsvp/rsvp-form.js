@@ -4,6 +4,7 @@
 import {
   getElement,
   getFormElement,
+  getInputElement,
   getSelectElement,
   getTextAreaElement,
   getErrorMessage,
@@ -42,7 +43,7 @@ function showError(message) {
 }
 
 /** @type {Types.showSuccess} */
-function showSuccess(message) {
+function showSuccess(message, attending) {
   getElement("rsvp-loading").hidden = true
   getElement("rsvp-error").hidden = true
   getFormElement("rsvp-form").hidden = true
@@ -56,7 +57,9 @@ function showSuccess(message) {
     window.scrollTo({ top: Math.max(0, scrollTarget), behavior: "smooth" })
   })
 
-  fireConfetti()
+  // Celebrate only a "yes" — a decline gets the same warm thank-you screen but no
+  // confetti, which would read as tone-deaf when someone just said they can't come.
+  if (attending) fireConfetti()
 }
 
 /** @type {Types.prefillForm} */
@@ -74,6 +77,7 @@ function prefillForm(rsvp) {
     getElement("attending-details").classList.add("attending-details-open")
     getSelectElement("party-size").value = String(rsvp.actual_party_size || 1)
     getTextAreaElement("dietary").value = rsvp.dietary_restrictions || ""
+    getInputElement("anything-else").value = rsvp.additional_info || ""
   }
 
   getTextAreaElement("message").value = rsvp.message || ""
@@ -131,12 +135,15 @@ async function handleSubmit(e) {
     dietary_restrictions: formData.get("dietary_restrictions")
       ? String(formData.get("dietary_restrictions"))
       : null,
+    additional_info: formData.get("additional_info")
+      ? String(formData.get("additional_info"))
+      : null,
     message: formData.get("message") ? String(formData.get("message")) : null,
   }
 
   try {
     const data = await submitRsvp(state.inviteCode, payload)
-    showSuccess(data.message)
+    showSuccess(data.message, attending)
   } catch (err) {
     formError.textContent = getErrorMessage(err)
     formError.hidden = false

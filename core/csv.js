@@ -104,6 +104,7 @@ export function rsvpsToCSV(rsvps) {
     "attending",
     "party_size",
     "dietary_restrictions",
+    "additional_info",
     "message",
     "submitted_at",
   ]
@@ -117,6 +118,7 @@ export function rsvpsToCSV(rsvps) {
       rsvp.attending ? "Yes" : "No",
       escapeCSVField(rsvp.actual_party_size),
       escapeCSVField(rsvp.dietary_restrictions),
+      escapeCSVField(rsvp.additional_info),
       escapeCSVField(rsvp.message),
       escapeCSVField(rsvp.submitted_at),
     ]

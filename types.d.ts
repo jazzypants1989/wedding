@@ -110,6 +110,7 @@ export const LIMITS: {
   readonly NAME_MAX_LENGTH: number
   readonly NOTES_MAX_LENGTH: number
   readonly MESSAGE_MAX_LENGTH: number
+  readonly ADDITIONAL_INFO_MAX_LENGTH: number
   readonly RELATIONSHIP_MAX_LENGTH: number
   readonly ACCOUNT_NAME_MAX_LENGTH: number
   readonly GUESTBOOK_MESSAGE_MAX_LENGTH: number
@@ -237,6 +238,7 @@ export interface RSVP {
   attending: 0 | 1
   actual_party_size: number | null
   dietary_restrictions: string | null
+  additional_info: string | null
   message: string | null
   submitted_at: string
   updated_at: string

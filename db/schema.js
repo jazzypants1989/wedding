@@ -40,6 +40,7 @@ export function createTables(db) {
       attending INTEGER NOT NULL CHECK(attending IN (0, 1)),
       actual_party_size INTEGER,
       dietary_restrictions TEXT,
+      additional_info TEXT,
       message TEXT,
       submitted_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -592,5 +593,20 @@ export function runMigrations(db) {
       END;
     `)
     record.run("add_content_ladder")
+  }
+
+  // RSVP "Anything else we need to know?" free-text field. Declared in the base
+  // CREATE TABLE for fresh installs; ALTER it into pre-existing DBs. Guard the add
+  // so a fresh DB (already has it) doesn't raise "duplicate column name".
+  if (!applied.get("add_rsvp_additional_info")) {
+    const have = new Set(
+      /** @type {Array<{ name: string }>} */ (
+        db.prepare("PRAGMA table_info(rsvps)").all()
+      ).map((c) => c.name),
+    )
+    if (!have.has("additional_info")) {
+      db.exec(`ALTER TABLE rsvps ADD COLUMN additional_info TEXT`)
+    }
+    record.run("add_rsvp_additional_info")
   }
 }

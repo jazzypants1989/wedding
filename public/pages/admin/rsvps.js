@@ -13,7 +13,7 @@ function renderRsvps(rsvps) {
 
   if (rsvps.length === 0) {
     tbody.innerHTML = html`<tr>
-      <td colspan="6" class="empty-state">No RSVPs yet</td>
+      <td colspan="7" class="empty-state">No RSVPs yet</td>
     </tr>`
     return
   }
@@ -34,6 +34,9 @@ function renderRsvps(rsvps) {
           ${rsvp.dietary_restrictions || "None"}
         </td>
         <td class="hide-mobile">
+          ${rsvp.additional_info || "None"}
+        </td>
+        <td class="hide-mobile">
           ${rsvp.message || "None"}
         </td>
         <td class="hide-mobile">
@@ -41,10 +44,11 @@ function renderRsvps(rsvps) {
         </td>
       </tr>
       <tr class="rsvp-detail-row" aria-hidden="true">
-        <td colspan="6">
+        <td colspan="7">
           <div class="rsvp-detail-content">
             <div class="rsvp-detail-inner">
               <div><strong>Food:</strong> ${rsvp.dietary_restrictions || "None"}</div>
+              <div><strong>Notes:</strong> ${rsvp.additional_info || "None"}</div>
               <div><strong>Message:</strong> ${rsvp.message || "None"}</div>
               <div><strong>Submitted:</strong> ${formatDate(rsvp.submitted_at)}</div>
             </div>
@@ -120,7 +124,7 @@ document.addEventListener("click", (e) => {
 /** @type {Types.loadRsvps} */
 export async function loadRsvps() {
   try {
-    showLoading(getElement("rsvps-tbody"), 6)
+    showLoading(getElement("rsvps-tbody"), 7)
     const data = await api("/api/admin/rsvps")
     const response = /** @type {Types.RSVPsResponse} */ (data)
     renderRsvps(response.rsvps)

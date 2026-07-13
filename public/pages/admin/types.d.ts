@@ -648,6 +648,18 @@ export interface InviteSendResult {
 }
 
 /**
+ * Full invitable-guest set for the current filter/search — the TRUE "Send Invites"
+ * audience across every page, not just the rows currently rendered.
+ * @example
+ * const res: InvitableIdsResponse = { guestIds: [1, 2, 3], pending: 2, invited: 1 };
+ */
+export interface InvitableIdsResponse {
+  guestIds: number[]
+  pending: number
+  invited: number
+}
+
+/**
  * Wizard step names.
  */
 export type InviteStep = "config" | "preview" | "results"

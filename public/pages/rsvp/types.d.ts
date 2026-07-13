@@ -178,6 +178,7 @@ export interface ExistingRsvp {
   attending: 0 | 1
   actual_party_size: number | null
   dietary_restrictions: string | null
+  additional_info: string | null
   message: string | null
 }
 
@@ -218,11 +219,12 @@ export interface RsvpFormState {
 export function showError(message: string): void
 
 /**
- * Show success state.
+ * Show success state. Confetti only fires when the guest is attending; a decline
+ * still gets a warm, non-celebratory success screen.
  * @example
- * showSuccess('Thank you!');
+ * showSuccess('Thank you!', true);
  */
-export function showSuccess(message: string): void
+export function showSuccess(message: string, attending: boolean): void
 
 /**
  * Pre-fill form with existing RSVP data.
@@ -285,6 +287,7 @@ export interface RsvpSubmitPayload {
   attending: boolean
   actual_party_size: number | null
   dietary_restrictions: string | null
+  additional_info: string | null
   message: string | null
 }
 

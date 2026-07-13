@@ -1,13 +1,13 @@
 /** @file Invite wizard module */
 /** @import * as Types from './types.js' */
-/** @import { Guest } from '../../../types.js' */
 
-import { state } from "./state.js"
 import { loadGuests, loadStats } from "./guests.js"
 import { api, openModal, closeModal, showError } from "./utils.js"
 import {
   html,
   getElement,
+  getInputElement,
+  getSelectElement,
   getButtonElement,
   getDialogElement,
   getTextAreaElement,
@@ -130,11 +130,28 @@ function renderInviteResults(result) {
 
 /** @type {Types.openSendInvitesModal} */
 async function openSendInvitesModal() {
-  /** @param {Guest} g */
-  const getInvitableId = (g) =>
-    !g.deleted_at && g.status !== "responded" ? [g.id] : []
+  // The recipient set must be the TRUE invitable audience for the current
+  // filter/search — every not-yet-responded guest, not just the visible page.
+  // Ask the server for the full id set matching the same status + search the
+  // guest table is showing.
+  const search = getInputElement("guest-search").value.trim()
+  const status = getSelectElement("guest-status-filter").value
+  const params = new URLSearchParams()
+  if (search) params.set("search", search)
+  if (status) params.set("status", status)
 
-  moduleState.guestIds = state.currentGuests.flatMap(getInvitableId)
+  /** @type {Types.InvitableIdsResponse} */
+  let invitable
+  try {
+    invitable = /** @type {Types.InvitableIdsResponse} */ (
+      await api(`/api/admin/guests/invitable-ids?${params}`)
+    )
+  } catch (err) {
+    showError("Failed to load invitable guests: " + getErrorMessage(err))
+    return
+  }
+
+  moduleState.guestIds = invitable.guestIds
 
   if (moduleState.guestIds.length === 0) {
     showError(
@@ -165,26 +182,23 @@ async function openSendInvitesModal() {
   nextBtn.disabled = false
   backBtn.hidden = true
 
-  /**
-   * @param {{ pending: number, invited: number }} counts
-   * @param {Guest} g
-   */
-  const countByStatus = (counts, g) => {
-    if (!g.deleted_at) {
-      if (g.status === "pending") counts.pending++
-      else if (g.status === "invited") counts.invited++
-    }
-    return counts
-  }
-
-  const { pending: pendingCount, invited: invitedCount } =
-    state.currentGuests.reduce(countByStatus, { pending: 0, invited: 0 })
+  // Spell out the active filter/search so the count is never a mystery.
+  const filterNotes = []
+  if (status) filterNotes.push(`status "${status}"`)
+  if (search) filterNotes.push(`search "${search}"`)
+  const filterText = filterNotes.length
+    ? ` matching ${filterNotes.join(" and ")}`
+    : ""
+  const count = moduleState.guestIds.length
 
   getElement("invite-recipients-summary").innerHTML = html`
-    <p><strong>${moduleState.guestIds.length}</strong> guests selected</p>
+    <p>
+      Will invite all <strong>${count}</strong> guest${count !== 1 ? "s" : ""}
+      who haven't responded yet${filterText}.
+    </p>
     <small class="text-muted"
-      >${pendingCount} pending, ${invitedCount} previously invited (not yet
-      responded)</small
+      >${invitable.pending} pending, ${invitable.invited} previously invited (not
+      yet responded)</small
     >
   `
 

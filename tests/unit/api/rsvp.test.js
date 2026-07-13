@@ -87,6 +87,31 @@ describe("upsertRsvp", () => {
     assert.strictEqual(rsvp.message, "Sorry!")
   })
 
+  it("persists and updates additional_info", () => {
+    const { id } = createGuest({ name: "Info", email: `${PREFIX}info@example.com`, party_size: 3 })
+    upsertRsvp(Number(id), {
+      attending: true,
+      actual_party_size: 2,
+      dietary_restrictions: null,
+      additional_info: "Accessible parking, please",
+      message: null,
+    })
+    let rsvp = getRsvpByGuestId(Number(id))
+    assert.ok(rsvp)
+    assert.strictEqual(rsvp.additional_info, "Accessible parking, please")
+
+    // Omitting additional_info on a later upsert clears it (excluded.additional_info).
+    upsertRsvp(Number(id), {
+      attending: true,
+      actual_party_size: 2,
+      dietary_restrictions: null,
+      message: null,
+    })
+    rsvp = getRsvpByGuestId(Number(id))
+    assert.ok(rsvp)
+    assert.strictEqual(rsvp.additional_info, null)
+  })
+
   it("updates existing RSVP (upsert)", () => {
     const { id } = createGuest({ name: "Upsert", email: `${PREFIX}upsert@example.com`, party_size: 5 })
     upsertRsvp(Number(id), {

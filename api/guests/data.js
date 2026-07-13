@@ -137,6 +137,31 @@ export function countGuests({
   return result ? result.count : 0
 }
 
+// Invitable = guests who can still receive an invitation: not archived and not
+// yet responded (status pending | invited). Returns just id + status for the
+// whole filtered set so "Send Invites" can target the TRUE audience across every
+// page, not only the 25 rows currently rendered. Mirrors getAllGuests' search
+// filter but omits pagination.
+/** @type {Types.getInvitableGuestIds} */
+export function getInvitableGuestIds({ status, search } = {}) {
+  const statusFilter = status
+    ? sql`AND status = ${status}`
+    : sql`AND status IN (${GUEST_STATUS.PENDING}, ${GUEST_STATUS.INVITED})`
+
+  const searchFilter = search
+    ? (() => {
+        const pattern = `%${escapeLikePattern(search)}%`
+        return sql`AND (name LIKE ${pattern} ESCAPE '\\' OR email LIKE ${pattern} ESCAPE '\\' OR phone LIKE ${pattern} ESCAPE '\\')`
+      })()
+    : sql.empty
+
+  return sql`SELECT id, status FROM guests
+    WHERE deleted_at IS NULL
+    ${statusFilter}
+    ${searchFilter}
+    ORDER BY created_at DESC`.all()
+}
+
 /** @type {Types.createGuest} */
 export function createGuest({
   name,
@@ -251,6 +276,39 @@ export function list(req, res) {
     guests,
     pagination: { total, limit, offset },
   })
+}
+
+/** @type {Types.invitableIdsHandler} */
+export function invitableIds(req, res) {
+  const urlObj = new URL(req.url ?? "/", `http://${req.headers.host}`)
+  const statusParam = urlObj.searchParams.get("status")
+  const search = urlObj.searchParams.get("search") ?? undefined
+
+  // The admin's active status filter narrows the invitable set: 'pending' or
+  // 'invited' restrict to that one status; 'responded' or 'archived' mean nothing
+  // is invitable (those guests can't be re-invited from here); no filter → both.
+  /** @type {GlobalTypes.GuestStatus | undefined} */
+  let status
+  let noneInvitable = false
+  if (statusParam === "pending" || statusParam === "invited") {
+    status = statusParam
+  } else if (statusParam === "responded" || statusParam === "archived") {
+    noneInvitable = true
+  }
+
+  const rows = noneInvitable ? [] : getInvitableGuestIds({ status, search })
+
+  /** @type {number[]} */
+  const guestIds = []
+  let pending = 0
+  let invited = 0
+  for (const row of rows) {
+    guestIds.push(row.id)
+    if (row.status === GUEST_STATUS.PENDING) pending++
+    else if (row.status === GUEST_STATUS.INVITED) invited++
+  }
+
+  return sendJson(res, 200, { guestIds, pending, invited })
 }
 
 /** @type {Types.createHandler} */

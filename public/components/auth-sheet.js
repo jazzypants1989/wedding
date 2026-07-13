@@ -41,6 +41,11 @@ const SHEET_MARKUP = html`
         <input id="auth-name" name="name" type="text" autocomplete="name"
           maxlength="100" required />
       </div>
+      <div class="form-group">
+        <label for="auth-email">Email (optional — lets you sign back in if you switch devices or lose your session)</label>
+        <input id="auth-email" name="email" type="email" autocomplete="email"
+          maxlength="254" />
+      </div>
       <button type="submit" class="btn btn-primary btn-large" id="auth-code-submit">
         Continue
       </button>
@@ -91,6 +96,11 @@ const SHEET_MARKUP = html`
         <label for="auth-open-relation">How do you know us? (optional)</label>
         <input id="auth-open-relation" name="relation" type="text" maxlength="200"
           placeholder="College friend, cousin, coworker…" />
+      </div>
+      <div class="form-group">
+        <label for="auth-open-email">Email (optional — lets you sign back in if you switch devices or lose your session)</label>
+        <input id="auth-open-email" name="email" type="email" autocomplete="email"
+          maxlength="254" />
       </div>
       <button type="submit" class="btn btn-primary btn-large" id="auth-open-submit">
         Join the celebration
@@ -147,8 +157,10 @@ function resetSheet() {
   }
   getInputElement("auth-code").value = savedCode
   getInputElement("auth-name").value = ""
+  getInputElement("auth-email").value = ""
   getInputElement("auth-open-name").value = ""
   getInputElement("auth-open-relation").value = ""
+  getInputElement("auth-open-email").value = ""
   const codeErr = getElement("auth-code-error")
   codeErr.hidden = true
   getInputElement("auth-code").removeAttribute("aria-invalid")
@@ -213,7 +225,7 @@ function finishAuth(returning, name) {
 }
 
 /**
- * @param {{ code?: string, name: string, relation?: string }} body
+ * @param {{ code?: string, name: string, relation?: string, contact?: string }} body
  * @param {{ submitBtn: HTMLButtonElement, alertEl: HTMLElement, defaultLabel: string, codeInput?: HTMLInputElement, codeErrorEl?: HTMLElement }} ctx
  */
 async function submitRegister(body, ctx) {
@@ -298,16 +310,18 @@ async function handleCodeSubmit(/** @type {Event} */ e) {
     codeInput.focus()
     return
   }
-  await submitRegister(
-    { name, code },
-    {
-      submitBtn: getButtonElement("auth-code-submit"),
-      alertEl: getElement("auth-alert-code"),
-      defaultLabel: "Continue",
-      codeInput,
-      codeErrorEl,
-    },
-  )
+  // Optional email — only for magic-link recovery; omit the field entirely when blank.
+  /** @type {{ code: string, name: string, contact?: string }} */
+  const body = { name, code }
+  const contact = getInputElement("auth-email").value.trim()
+  if (contact) body.contact = contact
+  await submitRegister(body, {
+    submitBtn: getButtonElement("auth-code-submit"),
+    alertEl: getElement("auth-alert-code"),
+    defaultLabel: "Continue",
+    codeInput,
+    codeErrorEl,
+  })
 }
 
 async function handleOpenSubmit(/** @type {Event} */ e) {
@@ -319,9 +333,11 @@ async function handleOpenSubmit(/** @type {Event} */ e) {
     return
   }
   const relation = getInputElement("auth-open-relation").value.trim()
-  /** @type {{ name: string, relation?: string }} */
+  /** @type {{ name: string, relation?: string, contact?: string }} */
   const body = { name }
   if (relation) body.relation = relation
+  const contact = getInputElement("auth-open-email").value.trim()
+  if (contact) body.contact = contact
   await submitRegister(body, {
     submitBtn: getButtonElement("auth-open-submit"),
     alertEl: getElement("auth-alert-open"),

@@ -66,6 +66,12 @@ export interface RSVPListResponse {
   rsvps: RSVP[]
 }
 
+export interface InvitableIdsResponse {
+  guestIds: number[]
+  pending: number
+  invited: number
+}
+
 export interface PetitionListResponse {
   petitions: Petition[]
 }

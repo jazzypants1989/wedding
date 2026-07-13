@@ -11,6 +11,7 @@ import * as sessions from "../api/admin/sessions.js"
 import {
   stats,
   list,
+  invitableIds,
   create,
   update,
   remove,
@@ -202,6 +203,9 @@ route("POST", "/api/admin/logout", sessions.logout, { errorHandling: true })
 route("GET", "/api/admin/stats", stats, { admin: true })
 route("GET", "/api/admin/guests", list, { admin: true })
 route("GET", "/api/admin/guests/export", exportCSV, { admin: true })
+// Full invitable-guest id set for the current filter/search (drives "Send Invites"
+// so it targets every not-yet-responded guest, not just the visible page).
+route("GET", "/api/admin/guests/invitable-ids", invitableIds, { admin: true })
 route("POST", "/api/admin/guests", create, { admin: true })
 route("POST", "/api/admin/guests/import", importCSV, { admin: true })
 route("PUT", "/api/admin/guests/:id", update, { admin: true })

@@ -171,6 +171,7 @@ export interface RSVPForCSV {
   attending?: number
   actual_party_size?: number | null
   dietary_restrictions?: string | null
+  additional_info?: string | null
   message?: string | null
   submitted_at?: string
 }

@@ -1,7 +1,7 @@
 /**
  * @file Integration tests for API endpoints
  */
-/** @import { TestGuest, TestBlocklistEntry, TestPetition, AdminAuth, ApiData, HealthResponse, RSVPGetResponse, RSVPPostResponse, ErrorResponse, PetitionResponse, LookupBlockedResponse, StatsResponse, GuestListResponse, GuestResponse, RSVPListResponse, ConfigResponse, PetitionListResponse, BlocklistResponse, BlocklistCreateResponse, ImportResponse, ManualSmsGuestsResponse, ManualSmsMarkSentResponse, ManualSmsBatchResponse } from '../helpers.js' */
+/** @import { TestGuest, TestBlocklistEntry, TestPetition, AdminAuth, ApiData, HealthResponse, RSVPGetResponse, RSVPPostResponse, ErrorResponse, PetitionResponse, LookupBlockedResponse, StatsResponse, GuestListResponse, GuestResponse, RSVPListResponse, InvitableIdsResponse, ConfigResponse, PetitionListResponse, BlocklistResponse, BlocklistCreateResponse, ImportResponse, ManualSmsGuestsResponse, ManualSmsMarkSentResponse, ManualSmsBatchResponse } from '../helpers.js' */
 /** @import { DatabaseSync } from 'node:sqlite' */
 
 import { describe, it, before, after, beforeEach, afterEach } from "node:test"
@@ -195,6 +195,30 @@ describe("API Integration Tests", async () => {
         .get(testGuest.id)
       assert.ok(rsvp)
       assert.strictEqual(rsvp.actual_party_size, 2)
+    })
+
+    it("POST /api/rsvp/:code stores and returns additional_info", async () => {
+      const postRes = await fetch(
+        `${BASE_URL}/api/rsvp/${testGuest.invite_code}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            attending: true,
+            actual_party_size: 1,
+            additional_info: "Wheelchair access needed",
+          }),
+        }
+      )
+      assert.strictEqual(postRes.status, 200)
+
+      await rateLimitDelay()
+
+      const getRes = await fetch(`${BASE_URL}/api/rsvp/${testGuest.invite_code}`)
+      assert.strictEqual(getRes.status, 200)
+      const data = /** @type {ApiData<RSVPGetResponse>} */ (await getRes.json())
+      assert.ok(data.rsvp)
+      assert.strictEqual(data.rsvp.additional_info, "Wheelchair access needed")
     })
   })
 
@@ -572,6 +596,33 @@ describe("API Integration Tests", async () => {
       assert.strictEqual(res.status, 200)
       const contentType = res.headers.get("content-type")
       assert.ok(contentType && contentType.includes("text/csv"))
+    })
+
+    it("GET /api/admin/guests/invitable-ids returns the not-yet-responded audience", async (t) => {
+      if (!auth) return t.skip("TEST_ADMIN_PASSWORD not set")
+
+      // A fresh guest defaults to 'pending', so it must appear in the invitable set.
+      const res = await adminFetch("/api/admin/guests/invitable-ids", {}, auth)
+      assert.strictEqual(res.status, 200)
+      const data = /** @type {ApiData<InvitableIdsResponse>} */ (
+        await res.json()
+      )
+      assert.ok(Array.isArray(data.guestIds))
+      assert.ok(data.guestIds.includes(Number(testGuest.id)))
+      assert.ok(typeof data.pending === "number")
+      assert.ok(typeof data.invited === "number")
+
+      // Filtering to already-responded means nothing is invitable from here.
+      const respondedRes = await adminFetch(
+        "/api/admin/guests/invitable-ids?status=responded",
+        {},
+        auth
+      )
+      assert.strictEqual(respondedRes.status, 200)
+      const respondedData = /** @type {ApiData<InvitableIdsResponse>} */ (
+        await respondedRes.json()
+      )
+      assert.ok(!respondedData.guestIds.includes(Number(testGuest.id)))
     })
 
     it("GET /api/admin/rsvps/export returns CSV", async (t) => {

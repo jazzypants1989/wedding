@@ -43,6 +43,7 @@ export async function get(req, res, { params }) {
           attending: rsvp.attending === 1,
           actual_party_size: rsvp.actual_party_size,
           dietary_restrictions: rsvp.dietary_restrictions,
+          additional_info: rsvp.additional_info,
           message: rsvp.message,
           submitted_at: rsvp.submitted_at,
           updated_at: rsvp.updated_at,
@@ -90,6 +91,10 @@ export async function post(req, res, { params }) {
   }
 
   const dietaryResult = validateOptionalString(body.dietary_restrictions, 500)
+  const additionalInfoResult = validateOptionalString(
+    body.additional_info,
+    LIMITS.ADDITIONAL_INFO_MAX_LENGTH,
+  )
   const messageResult = validateOptionalString(
     body.message,
     LIMITS.MESSAGE_MAX_LENGTH,
@@ -99,6 +104,7 @@ export async function post(req, res, { params }) {
     attending: body.attending,
     actual_party_size: actualPartySize,
     dietary_restrictions: dietaryResult.value,
+    additional_info: additionalInfoResult.value,
     message: messageResult.value,
   })
 
@@ -131,7 +137,7 @@ export function getRsvpByGuestId(guestId) {
 /** @type {Types.upsertRsvp} */
 export function upsertRsvp(
   guestId,
-  { attending, actual_party_size, dietary_restrictions, message },
+  { attending, actual_party_size, dietary_restrictions, additional_info, message },
 ) {
   const timestamp = now()
 
@@ -141,12 +147,13 @@ export function upsertRsvp(
       sql`SELECT id FROM guests WHERE id = ${guestId} AND deleted_at IS NULL`.get()
     if (!guest) throw new NotFoundError("Guest not found or deleted")
 
-    sql`INSERT INTO rsvps (guest_id, attending, actual_party_size, dietary_restrictions, message, submitted_at, updated_at)
-      VALUES (${guestId}, ${attending ? 1 : 0}, ${actual_party_size || null}, ${dietary_restrictions || null}, ${message || null}, ${timestamp}, ${timestamp})
+    sql`INSERT INTO rsvps (guest_id, attending, actual_party_size, dietary_restrictions, additional_info, message, submitted_at, updated_at)
+      VALUES (${guestId}, ${attending ? 1 : 0}, ${actual_party_size || null}, ${dietary_restrictions || null}, ${additional_info || null}, ${message || null}, ${timestamp}, ${timestamp})
       ON CONFLICT(guest_id) DO UPDATE SET
         attending = excluded.attending,
         actual_party_size = excluded.actual_party_size,
         dietary_restrictions = excluded.dietary_restrictions,
+        additional_info = excluded.additional_info,
         message = excluded.message,
         updated_at = excluded.updated_at`.run()
 

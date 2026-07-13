@@ -43,6 +43,17 @@ export interface CountResult {
   count: number
 }
 
+export interface GetInvitableGuestIdsOptions {
+  status?: GuestStatus
+  search?: string
+}
+
+/** A minimal id+status row used to build the "Send Invites" recipient set. */
+export interface InvitableGuestRow {
+  id: number
+  status: GuestStatus
+}
+
 export interface CreateGuestResult {
   id: number | bigint
   invite_code: string
@@ -71,6 +82,9 @@ export function getAllGuests(
   options?: GetAllGuestsOptions,
 ): GuestWithInviteCount[]
 export function countGuests(options?: CountGuestsOptions): number
+export function getInvitableGuestIds(
+  options?: GetInvitableGuestIdsOptions,
+): InvitableGuestRow[]
 export function createGuest(input: CreateGuestInput): CreateGuestResult
 export function updateGuest(id: number, input: UpdateGuestInput): boolean
 export function softDeleteGuest(id: number): boolean
@@ -80,6 +94,7 @@ export function updateGuestInvitedAt(id: number): void
 
 export type statsHandler = SyncHandler
 export type listHandler = SyncHandler
+export type invitableIdsHandler = SyncHandler
 export type createHandler = AuthedHandler
 export type updateHandler = ParamsHandler
 export type deleteHandler = ParamsHandler
