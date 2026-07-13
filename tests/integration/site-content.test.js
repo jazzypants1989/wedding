@@ -189,6 +189,17 @@ describe("admin site-content editor", () => {
     )
   })
 
+  it("renders social share (Open Graph) tags into every guest page head", async () => {
+    for (const path of ["/", "/rsvp", "/guestbook", "/gallery"]) {
+      const head = (await (await fetch(`${BASE_URL}${path}`)).text()).split("</head>")[0]
+      assert.ok(head.includes('property="og:title"'), `${path} head should include og:title`)
+      assert.ok(head.includes('property="og:image"'), `${path} head should include og:image`)
+      assert.ok(head.includes('name="twitter:card"'), `${path} head should include twitter:card`)
+      // Every OG/token placeholder must resolve — no literal "{{…}}" leaks.
+      assert.ok(!head.includes("{{"), `${path} head should have no unresolved template tokens`)
+    }
+  })
+
   it("replaces nav wholesale and renders the new links", { skip: !hasAdmin }, async () => {
     const auth = await adminLogin()
     const body = sampleBody()

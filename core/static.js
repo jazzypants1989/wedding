@@ -242,6 +242,10 @@ function rebuildContentTokens() {
     "memories.title": content.memories.title,
     "memories.body": content.memories.body,
     "footer.eventHeading": content.footer.eventHeading,
+    // Absolute URL for social share cards (og:image / twitter:image). Built
+    // from the same SERVER.baseUrl invite links use; points at an existing
+    // couple photo. og:url is request-specific, filled in applyContent.
+    "ogImage": SERVER.baseUrl + "/images/us.webp",
     "mode": MODE,
     "copy.welcomeHeading": activeCopy.welcomeHeading,
     "copy.welcomeIntro": activeCopy.welcomeIntro,
@@ -396,6 +400,8 @@ function applyContent(html, currentPath) {
     const value = RAW_TOKENS.has(key) ? CONTENT_TOKENS[key] : escapeHtml(CONTENT_TOKENS[key])
     result = result.replaceAll("{{" + key + "}}", value)
   }
+  // og:url is the absolute URL of this exact page (request path, query stripped).
+  result = result.replaceAll("{{ogUrl}}", escapeHtml(SERVER.baseUrl + currentPath))
   result = result.replaceAll("{{nav.desktop}}", renderNav(currentPath, "desktop"))
   result = result.replaceAll("{{nav.mobile}}", renderNav(currentPath, "mobile"))
   result = result.replaceAll("{{nav.footer}}", renderNav(currentPath, "footer"))

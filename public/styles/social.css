@@ -31,81 +31,9 @@
   animation: shake var(--duration-moderate) ease;
 }
 
-.confetti-piece {
-  position: absolute;
-  border-radius: 2px;
-  animation: confetti-fall ease-out forwards;
-  will-change: transform, opacity;
-}
-
-@keyframes confetti-fall {
-  0% {
-    transform: translate(0, 0) rotate(0deg) scale(0);
-    opacity: 0;
-  }
-  10% {
-    transform: translate(0, 0) rotate(0deg) scale(1);
-    opacity: 1;
-  }
-  100% {
-    transform: translate(var(--confetti-tx), var(--confetti-ty))
-      rotate(var(--confetti-rot)) scale(0.5);
-    opacity: 0;
-  }
-}
-
-.mini-sparkle {
-  position: fixed;
-  width: var(--sparkle-size, 5px);
-  height: var(--sparkle-size, 5px);
-  background: var(--sparkle-color, var(--color-primary));
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: var(--z-grand-entrance);
-  animation: mini-sparkle-pop 0.6s ease forwards;
-}
-
-.mini-sparkle::before,
-.mini-sparkle::after {
-  content: "";
-  position: absolute;
-  background: inherit;
-  border-radius: 1px;
-}
-
-.mini-sparkle::before {
-  width: 2px;
-  height: calc(var(--sparkle-size, 5px) * 2);
-  top: calc(var(--sparkle-size, 5px) * -0.5);
-  left: calc(var(--sparkle-size, 5px) / 2 - 1px);
-}
-
-.mini-sparkle::after {
-  width: calc(var(--sparkle-size, 5px) * 2);
-  height: 2px;
-  top: calc(var(--sparkle-size, 5px) / 2 - 1px);
-  left: calc(var(--sparkle-size, 5px) * -0.5);
-}
-
-@keyframes mini-sparkle-pop {
-  0% {
-    transform: translate(0, 0) scale(0) rotate(0deg);
-    opacity: 0.8;
-  }
-  35% {
-    transform: translate(
-        calc(var(--sparkle-tx) * 0.4),
-        calc(var(--sparkle-ty) * 0.4)
-      )
-      scale(1.1) rotate(35deg);
-    opacity: 1;
-  }
-  100% {
-    transform: translate(var(--sparkle-tx), var(--sparkle-ty)) scale(0)
-      rotate(90deg);
-    opacity: 0;
-  }
-}
+/* Confetti + sparkle motion (.confetti-piece / .mini-sparkle) moved to
+   components.css so celebrate.js works on pages that don't load social.css
+   (e.g. the home-page countdown milestone). */
 
 /* ------------------------------------------------------------------ *
  * Shared status chip + field error (guestbook page lacks admin.css)

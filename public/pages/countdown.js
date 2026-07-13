@@ -2,6 +2,7 @@
 /** @import * as Types from './types.js' */
 
 import { getElement } from "./utils.js"
+import { fireConfetti } from "../components/celebrate.js"
 
 /** @type {Types.initCountdown} */
 export function initCountdown() {
@@ -10,6 +11,26 @@ export function initCountdown() {
 
   // ISO date is templated into data-wedding-date from content.js (core/static.js).
   const weddingDate = new Date(countdownEl.dataset.weddingDate ?? "")
+
+  // Fire celebratory confetti once per milestone. localStorage makes it
+  // once-ever per browser; the in-memory guard backs it up when storage is
+  // unavailable (private mode) so a throw can't retrigger it every tick.
+  // Only the wedding-day / married states celebrate — never the countdown.
+  // fireConfetti() self-gates on prefers-reduced-motion (celebrate.js).
+  /** @type {Set<string>} */
+  const celebrated = new Set()
+  /** @param {string} key */
+  function celebrateOnce(key) {
+    if (celebrated.has(key)) return
+    celebrated.add(key)
+    try {
+      if (localStorage.getItem(key)) return
+      localStorage.setItem(key, "1")
+    } catch {
+      // Storage blocked — the in-memory guard still limits us to one burst.
+    }
+    fireConfetti()
+  }
 
   /** @type {Types.pad} */
   const pad = (num) => String(num).padStart(2, "0")
@@ -47,12 +68,14 @@ export function initCountdown() {
       countdownEl.classList.add("wedding-day")
       if (textNode) textNode.textContent = "Today's the Day! "
       exactTimeEl.textContent = ""
+      celebrateOnce("countdownWeddingDayCelebrated")
     } else {
       // Permanent post-wedding state.
       countdownEl.classList.remove("wedding-day")
       countdownEl.classList.add("married")
       if (textNode) textNode.textContent = "We're married! 💍 "
       exactTimeEl.textContent = "Relive the day below"
+      celebrateOnce("countdownMarriedCelebrated")
     }
   }
 
