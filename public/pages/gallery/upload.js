@@ -4,17 +4,32 @@
 /** @import * as Types from "./types.js" */
 /** @import * as Components from "../../components/types.js" */
 
-import { html, getCoupleName, getElement, getInputElement } from "../utils.js"
+import {
+  html,
+  getCoupleName,
+  getElement,
+  getInputElement,
+  announceCharsRemaining,
+} from "../utils.js"
 import { requireAccount, session, loadSession } from "../../components/guest-session.js"
 import { fireConfetti } from "../../components/celebrate.js"
 import { showNote } from "../../components/notice.js"
+import { announcePolite } from "../../components/announce.js"
 import { createUploadQueue } from "../../components/media-uploader.js"
 import { prependItem } from "./grid.js"
+
+/** Caption length cap — matches the server's sanitizeCaption clamp (LIMITS.MESSAGE_MAX_LENGTH). */
+const CAPTION_MAX = 1000
+/** Show the caption counter only within this many chars of the cap. */
+const CAPTION_COUNT_AT = 100
 
 /** @type {Components.UploadQueue} */
 let queue
 /** Guard against prepending the same finished item twice. */
 const prepended = new Set()
+/** Rows whose failure has already been spoken (cleared when they leave failed),
+ *  so a screen-reader user hears WHY each file failed once, not on every event. */
+const announcedFailures = new Set()
 
 /** @type {Types.initUpload} */
 export function initUpload() {
@@ -77,12 +92,45 @@ export function initUpload() {
     if (!(input instanceof HTMLInputElement)) return
     if (!input.classList.contains("upload-caption")) return
     const id = input.dataset.id
-    if (id) queue.setCaption(id, input.value)
+    if (!id) return
+    queue.setCaption(id, input.value)
+    updateCaptionCount(input)
   })
 
   wireDragDrop(getElement("grid-guest"))
   wireFab()
   wireUnloadGuard()
+
+  // When connectivity returns, resume uploads that failed on the network — the
+  // guest shouldn't have to tap Retry on each row after a dead spot. Only
+  // network failures (errorStatus 0) auto-resume; auth (401) and terminal
+  // format/size errors are left for the guest to handle.
+  window.addEventListener("online", () => {
+    for (const item of queue.getItems()) {
+      if (item.state === "failed" && item.retryable && item.errorStatus === 0) {
+        queue.retry(item.id)
+      }
+    }
+  })
+}
+
+/**
+ * Reveal a caption's character counter only as it nears the cap (a full counter
+ * on every row would clutter the tray), and announce "chars left" to SR users.
+ * @param {HTMLInputElement} input
+ */
+function updateCaptionCount(input) {
+  const row = input.closest(".upload-row")
+  const count = row && row.querySelector(".upload-caption-count")
+  if (!(count instanceof HTMLElement)) return
+  const len = input.value.length
+  if (CAPTION_MAX - len <= CAPTION_COUNT_AT) {
+    count.hidden = false
+    count.textContent = `${len}/${CAPTION_MAX}`
+  } else {
+    count.hidden = true
+  }
+  announceCharsRemaining(len, CAPTION_MAX, count)
 }
 
 /** @param {Components.UploadQueueItem} item */
@@ -97,6 +145,17 @@ function onItemChange(item) {
   // (gated by requireAccount) opens the auth sheet instead of failing again.
   if (item.state === "failed" && item.errorStatus === 401 && session.account) {
     void loadSession()
+  }
+  // Speak the specific reason once per failure — the tray summary only says
+  // "N failed", and the per-row reason ("Not a supported format", "too large")
+  // lives outside any live region, so a screen-reader user never hears it.
+  if (item.state === "failed") {
+    if (!announcedFailures.has(item.id)) {
+      announcedFailures.add(item.id)
+      announcePolite(`${item.name}: ${item.error || "upload failed"}`)
+    }
+  } else {
+    announcedFailures.delete(item.id)
   }
   renderTray()
 }
@@ -135,13 +194,19 @@ function renderTray() {
 
   const active = queue.activeCount()
   const failed = items.filter((i) => i.state === "failed").length
+  const succeeded = items.filter(
+    (i) => i.state === "done" || i.state === "pending",
+  ).length
   // The summary is the tray's only live region, so it must carry failures too —
   // otherwise a queue that ends entirely in errors still announces "complete".
+  // On a mixed batch, acknowledge what DID work rather than only the failures.
   const summary =
     active > 0
       ? `Uploading ${items.length - active + 1} of ${items.length}…`
       : failed > 0
-        ? `${failed} upload${failed === 1 ? "" : "s"} failed`
+        ? succeeded > 0
+          ? `${succeeded} added · ${failed} failed`
+          : `${failed} upload${failed === 1 ? "" : "s"} failed`
         : "Uploads complete"
   const summaryEl = getElement("upload-tray-summary")
   // The summary is the tray's only live region; skip identical reassignment,
@@ -158,7 +223,9 @@ function renderTray() {
   const seen = new Set()
   for (const item of items) {
     seen.add(item.id)
-    let row = list.querySelector(`.upload-row[data-id="${item.id}"]`)
+    let row = /** @type {HTMLElement | null} */ (
+      list.querySelector(`.upload-row[data-id="${item.id}"]`)
+    )
     if (!(row instanceof HTMLElement)) {
       const wrapper = document.createElement("template")
       wrapper.innerHTML = rowMarkup(item)
@@ -197,8 +264,10 @@ function rowMarkup(item) {
         <span class="upload-row-state">${stateLabel(item)}</span>
         <div class="upload-bar-slot"></div>
         <input type="text" class="upload-caption" data-id="${item.id}"
-          maxlength="200" placeholder="Add a caption (optional)"
+          maxlength="${CAPTION_MAX}" placeholder="Add a caption (optional)"
           aria-label="Caption for ${item.name}" hidden>
+        <span class="upload-caption-count char-counter" aria-hidden="true" hidden></span>
+        <span class="upload-caption-error" role="alert" hidden>Caption didn't save — try typing it again.</span>
       </div>
       <div class="upload-row-actions"></div>
     </li>`
@@ -227,6 +296,9 @@ function updateRow(row, item) {
 
   const caption = row.querySelector(".upload-caption")
   if (caption instanceof HTMLInputElement) caption.hidden = !canCaption(item)
+
+  const captionErr = row.querySelector(".upload-caption-error")
+  if (captionErr instanceof HTMLElement) captionErr.hidden = !item.captionError
 
   const actionsEl = row.querySelector(".upload-row-actions")
   if (actionsEl instanceof HTMLElement) {
@@ -272,12 +344,19 @@ function showPendingNote() {
 
 /**
  * First finished upload this visit → confetti, then a one-time nudge toward the
- * guestbook so the two post-wedding features cross-pollinate.
+ * guestbook so the two post-wedding features cross-pollinate. The copy adapts to
+ * whether the upload went live or is held for the couple's approval, so the
+ * celebration doesn't claim "Photos are up" while the row still says "pending".
+ * @param {string} status finalize status ("approved" | "pending")
  */
-function onFirstSuccess() {
+function onFirstSuccess(status) {
   fireConfetti()
+  const message =
+    status === "approved"
+      ? "Photos are up 🎉 — leave them a note in the guestbook too?"
+      : "Thanks — your photos are on their way! 🎉 Leave a note in the guestbook too?"
   showNote(getElement("gallery-nudge"), {
-    message: "Photos are up 🎉 — leave them a note in the guestbook too?",
+    message,
     once: "galleryToGuestbookNudge",
     linkHref: "/guestbook",
     linkLabel: "Sign the guestbook",

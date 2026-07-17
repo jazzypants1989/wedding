@@ -46,6 +46,37 @@ export function showSuccess(message) {
   }, 6000)
 }
 
+/**
+ * Success banner with an inline "Undo" button for a reversible moderation
+ * action. The button fires `onUndo` once; the banner stays up for a generous
+ * window (an undo must stay reachable longer than a plain confirmation).
+ * @param {string} message @param {() => void} onUndo
+ */
+export function showUndo(message, onUndo) {
+  clearTimeout(dismissTimer)
+  banner.className = "alert alert-success notification-undo"
+  banner.innerHTML = html`<span>${message}</span>
+    <button type="button" class="btn btn-secondary btn-sm" data-undo-action>Undo</button>`
+  banner.hidden = false
+  const btn = banner.querySelector("[data-undo-action]")
+  if (btn instanceof HTMLButtonElement) {
+    btn.addEventListener(
+      "click",
+      () => {
+        clearTimeout(dismissTimer)
+        banner.hidden = true
+        banner.className = "alert"
+        onUndo()
+      },
+      { once: true },
+    )
+  }
+  dismissTimer = setTimeout(() => {
+    banner.hidden = true
+    banner.className = "alert"
+  }, 10000)
+}
+
 /** @type {Types.showLoading} */
 export function showLoading(el, colspan) {
   const spinner = html`<span class="spinner" aria-hidden="true"></span>Loading…`

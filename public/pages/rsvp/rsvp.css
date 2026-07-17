@@ -190,6 +190,17 @@
   margin-bottom: var(--spacing-lg);
 }
 
+/* Inline field note (e.g. a clamped party-size prefill) — subtle but noticeable. */
+.form-hint {
+  margin-top: var(--spacing-2xs);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.form-hint[hidden] {
+  display: none;
+}
+
 /* Onward CTAs on the success screen: keep them together, wrapping on
    narrow viewports rather than stacking full-width. An RSVP is always a
    pre-wedding action, so both links point at pre-wedding destinations. */

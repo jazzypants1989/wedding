@@ -83,6 +83,8 @@ export function initLookupForm(
 ): Promise<void>
 
 export interface ConfigResponse {
+  /** "pre" | "post" — drives the closed-RSVP state on stale links. */
+  mode?: string
   features?: {
     enableNameLookup?: boolean
     enableEmailLookup?: boolean

@@ -57,6 +57,14 @@ const MODERATABLE = Object.freeze({
     /** approved → hidden */
     hide: (/** @type {number} */ id) =>
       setGuestbookStatus(id, [CONTENT_STATUS.APPROVED], CONTENT_STATUS.HIDDEN),
+    /** generic from→to setter for undo (uniform signature keeps the union callable) */
+    /** @type {(id: number, from: string[], to: string) => boolean} */
+    set: (id, from, to) =>
+      setGuestbookStatus(
+        id,
+        /** @type {GlobalTypes.ContentStatus[]} */ (from),
+        /** @type {GlobalTypes.ContentStatus} */ (to),
+      ),
     unlink: false,
   },
   comment: {
@@ -72,6 +80,13 @@ const MODERATABLE = Object.freeze({
       setCommentStatus(id, [CONTENT_STATUS.PENDING], CONTENT_STATUS.REJECTED),
     hide: (/** @type {number} */ id) =>
       setCommentStatus(id, [CONTENT_STATUS.APPROVED], CONTENT_STATUS.HIDDEN),
+    /** @type {(id: number, from: string[], to: string) => boolean} */
+    set: (id, from, to) =>
+      setCommentStatus(
+        id,
+        /** @type {GlobalTypes.ContentStatus[]} */ (from),
+        /** @type {GlobalTypes.ContentStatus} */ (to),
+      ),
     unlink: false,
   },
   media: {
@@ -87,6 +102,13 @@ const MODERATABLE = Object.freeze({
       setMediaStatus(id, [CONTENT_STATUS.PENDING], CONTENT_STATUS.REJECTED),
     hide: (/** @type {number} */ id) =>
       setMediaStatus(id, [CONTENT_STATUS.APPROVED], CONTENT_STATUS.HIDDEN),
+    /** @type {(id: number, from: string[], to: string) => boolean} */
+    set: (id, from, to) =>
+      setMediaStatus(
+        id,
+        /** @type {GlobalTypes.MediaStatus[]} */ (from),
+        /** @type {GlobalTypes.MediaStatus} */ (to),
+      ),
     unlink: true,
   },
 })
@@ -341,7 +363,56 @@ async function moderate(req, res, { params, session }, action) {
     success: true,
     autoTrusted: outcome.autoTrusted,
     released: outcome.released,
+    // The status BEFORE this transition, so the client's "Undo" toast knows
+    // what to revert to (a reject returns 'pending' but undo is disabled for it
+    // client-side — its files were quarantined; see undo()).
+    previousStatus: outcome.row.status,
   })
+}
+
+/**
+ * Reverse the last single-item transition (the "Undo" toast). Only clean,
+ * status-only reversals are allowed — approve→pending, unhide→hidden,
+ * hide→approved. A reject is never undone here (its files moved to quarantine;
+ * it stays hand-recoverable), and no reversal touches files.
+ * @type {Types.ParamsHandler}
+ */
+export async function undo(req, res, { params, session }) {
+  const target = resolveType(params.type)
+  const idResult = validateId(params.id, "entry ID")
+  if (!idResult.valid) throw new ValidationError(idResult.error)
+
+  const body = await parseBody(req).catch(
+    () => /** @type {Record<string, unknown>} */ ({}),
+  )
+  const to = body.to
+  if (typeof to !== "string") throw new ValidationError("Invalid target status")
+
+  const row = target.getRow(idResult.value)
+  if (!row) throw new NotFoundError("Moderation item")
+  const from = row.status
+
+  // Whitelist of reversible (from → to) pairs. Reject (from 'rejected', or to
+  // 'rejected') is intentionally excluded — those files were quarantined.
+  const legal =
+    (from === CONTENT_STATUS.APPROVED &&
+      (to === CONTENT_STATUS.PENDING || to === CONTENT_STATUS.HIDDEN)) ||
+    (from === CONTENT_STATUS.HIDDEN && to === CONTENT_STATUS.APPROVED)
+  if (!legal) throw new ConflictError("This action can no longer be undone")
+
+  const changed = withTransaction(() => target.set(idResult.value, [from], to))
+  if (!changed) throw new ConflictError("This action can no longer be undone")
+
+  log({
+    action: AUDIT_ACTIONS.MODERATION_UNDO,
+    adminId: session?.token,
+    ip: getClientIp(req),
+    resourceType: params.type,
+    resourceId: idResult.value,
+    details: { from, to },
+  })
+
+  return sendJson(res, 200, { success: true })
 }
 
 /** @type {Types.ParamsHandler} */

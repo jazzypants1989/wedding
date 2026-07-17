@@ -269,6 +269,37 @@
   object-fit: contain;
 }
 
+/* While the full display image loads, the stage shows the already-loaded thumb
+   (scaled up → soft) plus a spinner, so a cold open never flashes empty black. */
+.lightbox-stage.is-loading {
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.lightbox-stage.is-loading::after {
+  content: "";
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: lightbox-spin 0.8s linear infinite;
+}
+
+@keyframes lightbox-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lightbox-stage.is-loading::after {
+    animation: none;
+  }
+}
+
 .lightbox-missing {
   padding: var(--spacing-lg);
   text-align: center;
@@ -484,6 +515,27 @@
 }
 
 .upload-caption[hidden] {
+  display: none;
+}
+
+.upload-caption-error {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.72rem;
+  color: var(--color-danger);
+}
+
+.upload-caption-error[hidden] {
+  display: none;
+}
+
+.upload-caption-count {
+  display: block;
+  margin-top: 2px;
+  text-align: right;
+}
+
+.upload-caption-count[hidden] {
   display: none;
 }
 

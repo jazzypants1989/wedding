@@ -29,4 +29,7 @@ export interface GuestbookPostResponse {
 }
 
 /** Wire up the composer + feed, load the first page. */
-export function initFeed(): void
+export function initFeed(): Promise<void>
+
+/** Scroll to and highlight a deep-linked entry (?entry=N), fetching it if unloaded. */
+export function openEntry(id: number): Promise<void>

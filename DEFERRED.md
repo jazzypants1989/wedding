@@ -80,6 +80,15 @@ wanted, so it doesn't silently eat the disk headroom `MEDIA_MIN_FREE_BYTES` guar
 so a mis-clicked Reject is hand-recoverable until quarantine is emptied. Expect more volume in
 this directory than before — same manual-emptying doctrine applies.
 
+*Update (2026-07 UX pass, 2):* **admin gallery Remove** (`api/admin/media.js`) now quarantines
+too (was a hard `fs.rmSync`), and the moderation queue gained a one-tap **Undo** toast. Undo is
+intentionally **status-only** (approve→pending, hide→approved, unhide→hidden); it does **not**
+cover Reject, because a reject's files were already moved to quarantine and there's no
+restore-from-quarantine path (`undo` in `api/admin/moderation.js` returns 409 for a rejected
+item). A mis-clicked Reject therefore stays *hand*-recoverable from this directory, not one-tap
+recoverable. If a first-class "restore rejected media" affordance is ever wanted, it needs a
+`restoreItemDir()` inverse of `quarantineItemDir()` plus the collision/TTL-purge edge cases.
+
 ---
 
 ## Reusable-product roadmap

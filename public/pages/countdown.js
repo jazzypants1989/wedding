@@ -11,6 +11,13 @@ export function initCountdown() {
 
   // ISO date is templated into data-wedding-date from content.js (core/static.js).
   const weddingDate = new Date(countdownEl.dataset.weddingDate ?? "")
+  if (Number.isNaN(weddingDate.getTime())) {
+    // An empty/unparseable date makes every diff comparison false, which would
+    // fall through to the permanent "We're married!" state before the wedding.
+    // Hide the widget rather than show a wrong state.
+    countdownEl.hidden = true
+    return () => {}
+  }
 
   // Fire celebratory confetti once per milestone. localStorage makes it
   // once-ever per browser; the in-memory guard backs it up when storage is

@@ -183,7 +183,7 @@ export function createUploadQueue(callbacks = {}, options = {}) {
       })
       if (!firstSuccessFired) {
         firstSuccessFired = true
-        if (callbacks.onFirstSuccess) callbacks.onFirstSuccess()
+        if (callbacks.onFirstSuccess) callbacks.onFirstSuccess(finalized.status)
       }
     } catch (err) {
       if (item.state === "canceled") return // remove() already handled it
@@ -273,6 +273,7 @@ export function createUploadQueue(callbacks = {}, options = {}) {
           displayMissing: false,
           status: null,
           caption: "",
+          captionError: false,
           file,
           processed: null,
           ready: false,
@@ -297,7 +298,11 @@ export function createUploadQueue(callbacks = {}, options = {}) {
       if (!item) return
       item.caption = value
       if (item.serverId && (item.state === "done" || item.state === "pending")) {
-        void patchCaption(item.serverId, value, csrfCookie)
+        void patchCaption(item.serverId, value, csrfCookie).then((ok) => {
+          // Surface a persisted-vs-not signal on the row so a silently-dropped
+          // caption (network blip / expired CSRF) doesn't look saved.
+          if (item.captionError !== !ok) update(item, { captionError: !ok })
+        })
       }
     },
 
@@ -439,18 +444,28 @@ function putBlob(item, url, blob, contentType, onProgress, csrfCookie = CSRF_COO
 }
 
 /**
- * Best-effort PATCH of a finalized item's caption (blur-save from the tray).
- * Fire-and-forget: a failure just means the typed caption didn't persist, which
- * the guest can retry by editing again. @param {number} id @param {string} value
- * @param {string} csrfCookie @returns {Promise<void>}
+ * PATCH a finalized item's caption (blur-save from the tray). Resolves to
+ * whether the caption actually persisted, so the caller can flag a silent drop
+ * rather than assuming success. A 403 (rotated CSRF) gets one free retry with a
+ * freshly-read cookie, mirroring putBlob's single-retry contract.
+ * @param {number} id @param {string} value @param {string} csrfCookie
+ * @param {boolean} [csrfRetried] @returns {Promise<boolean>}
  */
-function patchCaption(id, value, csrfCookie) {
+function patchCaption(id, value, csrfCookie, csrfRetried = false) {
   return new Promise((resolve) => {
     const xhr = new XMLHttpRequest()
     xhr.open("PATCH", `/api/media/${id}/caption`)
     xhr.setRequestHeader("Content-Type", "application/json")
     xhr.setRequestHeader("X-CSRF-Token", readCookie(csrfCookie))
-    xhr.onloadend = () => resolve()
+    xhr.onloadend = () => {
+      if (xhr.status >= 200 && xhr.status < 300) return resolve(true)
+      // The 403 response refreshed the CSRF cookie — retry once before failing.
+      if (xhr.status === 403 && !csrfRetried) {
+        resolve(patchCaption(id, value, csrfCookie, true))
+        return
+      }
+      resolve(false)
+    }
     xhr.send(JSON.stringify({ caption: value }))
   })
 }

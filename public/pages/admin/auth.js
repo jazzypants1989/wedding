@@ -44,6 +44,13 @@ export function showLogin() {
   // logged-in-session timers first so they stop firing 401s (a live badge poll
   // would otherwise keep wiping the password field the admin is retyping).
   onLoggedOut()
+  // Close any modal left open by the session that just ended. Hiding the
+  // dashboard alone leaves the <dialog open>, so it would pop back up in its
+  // stale state over the fresh login — a confusing ghost. Reopening after
+  // re-login rebuilds each modal from scratch.
+  for (const dialog of document.querySelectorAll("dialog[open]")) {
+    if (dialog instanceof HTMLDialogElement) dialog.close()
+  }
   loginSection.hidden = false
   dashboardSection.classList.remove("active")
   getInputElement("password").value = ""

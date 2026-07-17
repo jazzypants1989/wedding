@@ -11,8 +11,11 @@ import {
   getTextAreaElement,
   getErrorMessage,
   setLoadMoreState,
+  announceCharsRemaining,
+  shareUrl,
 } from "../utils.js"
 import { requireAccount } from "../../components/guest-session.js"
+import { showToast } from "../../components/toast.js"
 import { fireConfetti, miniSparkle, setButtonLoading } from "../../components/celebrate.js"
 import { showNote } from "../../components/notice.js"
 import { upgradeTimes } from "../../components/relative-time.js"
@@ -52,6 +55,10 @@ function renderEntry(entry) {
       <footer class="gb-entry-foot">
         ${renderReactionBar("guestbook", entry.id, entry.reactions)}
         ${renderCommentThread("guestbook", entry.id, entry.comment_count)}
+        ${entry.status !== "pending"
+          ? html`<button type="button" class="gb-share" data-gb-action="share"
+              data-id="${entry.id}" aria-label="Share this message">Share</button>`
+          : ""}
         ${entry.is_own
           ? html`<button type="button" class="gb-delete" data-gb-action="delete"
               data-id="${entry.id}">Delete</button>`
@@ -69,15 +76,22 @@ function addEntries(entries, prepend) {
   if (entries.length === 0) return
   const feed = getElement("gb-feed")
   const frag = document.createDocumentFragment()
+  let added = 0
   for (const entry of entries) {
+    // Skip an entry already on the page — a ?entry= deep link prepends a row that
+    // a later pagination page could otherwise re-append as a duplicate.
+    if (feed.querySelector(`.gb-entry[data-id="${entry.id}"]`)) continue
     const wrapper = document.createElement("div")
     wrapper.innerHTML = renderEntry(entry)
     const card = wrapper.firstElementChild
-    if (card) frag.appendChild(card)
+    if (card) {
+      frag.appendChild(card)
+      added += 1
+    }
   }
   if (prepend) feed.insertBefore(frag, feed.firstChild)
   else feed.appendChild(frag)
-  renderedCount += entries.length
+  renderedCount += added
   upgradeTimes(feed)
   updateEmptyState()
 }
@@ -87,19 +101,67 @@ function updateEmptyState() {
 }
 
 /**
- * Delegated feed click → self-delete for the author's own entry (mirrors the
- * own-comment Delete affordance). Only own entries render the button.
+ * Delegated feed click → self-delete (own entry) or share (any visible entry).
  * @param {Event} e
  */
 function onFeedClick(e) {
   const el = e.target
   if (!(el instanceof Element)) return
-  const btn = el.closest("[data-gb-action='delete']")
+  const btn = el.closest("[data-gb-action]")
   if (!(btn instanceof HTMLElement)) return
   const id = btn.dataset.id
   if (!id) return
-  if (!window.confirm("Delete your guestbook message?")) return
-  void deleteEntry(Number(id), btn)
+  if (btn.dataset.gbAction === "delete") {
+    if (!window.confirm("Delete your guestbook message?")) return
+    void deleteEntry(Number(id), btn)
+  } else if (btn.dataset.gbAction === "share") {
+    void shareEntry(Number(id), btn)
+  }
+}
+
+/**
+ * Share a deep link to one entry — native share sheet on phones, else copy.
+ * Mirrors the gallery lightbox's share affordance so a guest can send someone
+ * straight to a single heartfelt note.
+ * @param {number} id @param {HTMLElement} btn
+ */
+async function shareEntry(id, btn) {
+  const url = `${location.origin}/guestbook?entry=${id}`
+  const prev = btn.textContent
+  const result = await shareUrl(url)
+  if (result === "shared") return
+  btn.textContent = result === "copied" ? "Copied!" : "Press ⌘/Ctrl+C"
+  setTimeout(() => {
+    btn.textContent = prev
+  }, 1500)
+}
+
+/**
+ * Reveal a deep-linked entry (?entry=N): scroll to it and briefly highlight. If
+ * it isn't already loaded, fetch the single entry and prepend it; a 404 (deleted
+ * / not visible) gets a gentle toast rather than a silent no-op.
+ * @param {number} id
+ */
+export async function openEntry(id) {
+  const feed = getElement("gb-feed")
+  let card = feed.querySelector(`.gb-entry[data-id="${id}"]`)
+  if (!(card instanceof HTMLElement)) {
+    try {
+      const entry = /** @type {Types.GuestbookFeedEntry} */ (
+        await api(`/api/guestbook/${id}`)
+      )
+      addEntries([entry], true)
+      card = feed.querySelector(`.gb-entry[data-id="${id}"]`)
+    } catch {
+      showToast("That message isn't available anymore.")
+      return
+    }
+  }
+  if (card instanceof HTMLElement) {
+    card.scrollIntoView({ behavior: "smooth", block: "center" })
+    card.classList.add("gb-entry-highlight")
+    setTimeout(() => card.classList.remove("gb-entry-highlight"), 2400)
+  }
 }
 
 /** @param {number} id @param {HTMLElement} btn */
@@ -215,7 +277,13 @@ async function submitPost(message) {
         body: JSON.stringify({ message }),
       })
     )
-    getTextAreaElement("gb-message").value = ""
+    const composer = getTextAreaElement("gb-message")
+    composer.value = ""
+    // Refresh the live counter for the now-empty field (a programmatic value
+    // change fires no input event) and put the cursor back so a guest can write
+    // another note without re-clicking.
+    composer.dispatchEvent(new Event("input", { bubbles: true }))
+    composer.focus()
     addEntries([data.entry], true)
     // Announce only this own post (the feed itself is not a live region, 2.15).
     getElement("gb-live").textContent =
@@ -256,6 +324,7 @@ export function initFeed() {
   const counterEl = getElement("gb-counter")
   const updateCounter = () => {
     counterEl.textContent = `${messageEl.value.length}/2000`
+    announceCharsRemaining(messageEl.value.length, 2000, counterEl)
   }
   messageEl.addEventListener("input", updateCounter)
   updateCounter()
@@ -290,5 +359,7 @@ export function initFeed() {
   )
   observer.observe(loadMoreBtn)
 
-  loadPage(false)
+  // Return the first page's load so callers can await it (the ?entry= deep link
+  // scrolls to the entry only once the feed has painted).
+  return loadPage(false)
 }

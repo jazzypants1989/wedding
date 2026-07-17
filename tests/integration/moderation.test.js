@@ -259,6 +259,72 @@ describe("approve/reject/hide state machine", () => {
   })
 })
 
+describe("undo (reversible transitions only)", () => {
+  it("returns previousStatus and reverts approve → pending", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const owner = signIn({ trusted: 1, name: "Undo Ursula" })
+    const entryId = seedEntry(owner.accountId, "pending")
+
+    const ap = await asAdmin(`/api/admin/moderation/guestbook/${entryId}/approve`, { method: "POST" })
+    assert.strictEqual(ap.status, 200)
+    const body = await json(ap)
+    assert.strictEqual(body.previousStatus, "pending")
+    assert.strictEqual(statusOf("guestbook_entries", entryId), "approved")
+
+    const un = await asAdmin(`/api/admin/moderation/guestbook/${entryId}/undo`, {
+      method: "POST",
+      body: JSON.stringify({ to: "pending" }),
+    })
+    assert.strictEqual(un.status, 200)
+    assert.strictEqual(statusOf("guestbook_entries", entryId), "pending")
+  })
+
+  it("reverts hide → approved", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const owner = signIn({ trusted: 1, name: "Undo Uma" })
+    const entryId = seedEntry(owner.accountId, "approved")
+
+    await asAdmin(`/api/admin/moderation/guestbook/${entryId}/hide`, { method: "POST" })
+    assert.strictEqual(statusOf("guestbook_entries", entryId), "hidden")
+
+    const un = await asAdmin(`/api/admin/moderation/guestbook/${entryId}/undo`, {
+      method: "POST",
+      body: JSON.stringify({ to: "approved" }),
+    })
+    assert.strictEqual(un.status, 200)
+    assert.strictEqual(statusOf("guestbook_entries", entryId), "approved")
+  })
+
+  it("refuses to undo a reject (its files were quarantined) → 409", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const owner = signIn({ trusted: 0, name: "Rejected Rita" })
+    const entryId = seedEntry(owner.accountId, "pending")
+    await asAdmin(`/api/admin/moderation/guestbook/${entryId}/reject`, { method: "POST" })
+    assert.strictEqual(statusOf("guestbook_entries", entryId), "rejected")
+
+    // Undo from a rejected state is not a supported reversal.
+    const un = await asAdmin(`/api/admin/moderation/guestbook/${entryId}/undo`, {
+      method: "POST",
+      body: JSON.stringify({ to: "pending" }),
+    })
+    assert.strictEqual(un.status, 409)
+    assert.strictEqual(statusOf("guestbook_entries", entryId), "rejected")
+  })
+
+  it("rejects an illegal undo target (to: rejected) → 409", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const owner = signIn({ trusted: 1, name: "Undo Ike" })
+    const entryId = seedEntry(owner.accountId, "approved")
+
+    const un = await asAdmin(`/api/admin/moderation/guestbook/${entryId}/undo`, {
+      method: "POST",
+      body: JSON.stringify({ to: "rejected" }),
+    })
+    assert.strictEqual(un.status, 409)
+    assert.strictEqual(statusOf("guestbook_entries", entryId), "approved")
+  })
+})
+
 describe("bulk actions", () => {
   it("bulk-approves a mix of types in one call", async (t) => {
     if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
@@ -794,7 +860,8 @@ describe("account recovery (magic link)", () => {
 
     const res = await fetch(`${BASE_URL}/api/account/recover/${token}`, { redirect: "manual" })
     assert.strictEqual(res.status, 302)
-    assert.strictEqual(res.headers.get("location"), "/guestbook")
+    // ?recover=success lets the guestbook greet the returning guest.
+    assert.strictEqual(res.headers.get("location"), "/guestbook?recover=success")
 
     const setCookies = res.headers.getSetCookie()
     const sessionCookie = setCookies.find((c) => c.startsWith("guest_session="))

@@ -1,7 +1,7 @@
 /** @file CSV Import module */
 /** @import * as Types from './types.js' */
 
-import { api, openModal } from "./utils.js"
+import { api, openModal, closeModal } from "./utils.js"
 import { loadGuests, loadStats } from "./guests.js"
 import {
   html,
@@ -102,6 +102,7 @@ function openImportModal() {
   const submitBtn = getButtonElement("import-submit-btn")
   submitBtn.disabled = true
   submitBtn.textContent = "Import Guests"
+  submitBtn.removeAttribute("data-done")
   moduleState.csvData = null
   openModal(getDialogElement("import-modal"))
 }
@@ -142,9 +143,15 @@ async function handleFileSelect(e) {
 
 /** @type {Types.handleImportSubmit} */
 async function handleImportSubmit() {
+  const submitBtn = getButtonElement("import-submit-btn")
+  // After a completed import the same button reads "Done" — turn it into the
+  // modal's exit rather than a disabled dead end.
+  if (submitBtn.dataset.done) {
+    closeModal(getDialogElement("import-modal"))
+    return
+  }
   if (!moduleState.csvData) return
 
-  const submitBtn = getButtonElement("import-submit-btn")
   const errorEl = getElement("import-form-error")
 
   submitBtn.disabled = true
@@ -195,6 +202,8 @@ async function handleImportSubmit() {
       `}
     `
     submitBtn.textContent = "Done"
+    submitBtn.disabled = false
+    submitBtn.dataset.done = "1"
 
     await loadGuests()
     await loadStats()

@@ -8,6 +8,7 @@ import { getOptionalAccount } from "../core/auth.js"
 import {
   createGuestbookEntry,
   getGuestbookFeed,
+  getGuestbookFeedEntryById,
   softDeleteGuestbookEntry,
 } from "../db/guestbook-entries.js"
 import {
@@ -87,6 +88,26 @@ export async function list(req, res) {
   const nextCursor = rows.length === limit ? rows[rows.length - 1].id : null
 
   return sendJson(res, 200, { entries, nextCursor })
+}
+
+/** @type {Types.guestbookGetOne} */
+export async function getOne(req, res, { params }) {
+  if (checkRateLimit(res, limiters.publicRead, getClientIp(req))) return
+
+  const account = getOptionalAccount(req)
+  const callerId = account ? account.account_id : null
+
+  const idResult = validateId(params.id, "entry ID")
+  if (!idResult.valid) throw new ValidationError(idResult.error)
+
+  const row = getGuestbookFeedEntryById(idResult.value, callerId)
+  // Missing/deleted or not visible to this caller → 404 (never confirm existence
+  // of unmoderated content by id-guessing), same posture as media.getOne.
+  if (!row) throw new NotFoundError("Guestbook entry")
+
+  const entry = toFeedEntry(row)
+  enrichSocial([entry], TARGET_TYPE.GUESTBOOK, callerId)
+  return sendJson(res, 200, entry)
 }
 
 /** @type {Types.guestbookCreate} */

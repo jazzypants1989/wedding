@@ -305,7 +305,9 @@ export async function recoverConsume(req, res, { params }) {
     resourceId: account.id,
   })
 
-  // Browser-follow: set the guest cookies and redirect into the app.
-  res.writeHead(302, { Location: "/guestbook", "Set-Cookie": cookies })
+  // Browser-follow: set the guest cookies and redirect into the app. The
+  // ?recover=success flag lets the page greet the returning guest (a bare
+  // redirect gives no sign the sign-in worked).
+  res.writeHead(302, { Location: "/guestbook?recover=success", "Set-Cookie": cookies })
   res.end()
 }

@@ -27,6 +27,12 @@ let reorderTimer = /** @type {ReturnType<typeof setTimeout> | undefined} */ (und
 let uploadReloadTimer = /** @type {ReturnType<typeof setTimeout> | undefined} */ (undefined)
 /** Upload ids already folded into the grid (guards double-refresh). */
 const foldedIn = new Set()
+/** Captions whose save FAILED → the unsaved text, keyed by media id. A later
+ *  renderGrid() (a reorder, an upload folding in, a reload) rebuilds the grid
+ *  from `state`, which still holds the OLD caption — this map lets itemMarkup
+ *  re-render the couple's unsaved text (with an error marker) so the edit is
+ *  never silently reverted. Cleared on a successful save. */
+const failedCaptions = /** @type {Map<number, string>} */ (new Map())
 
 // ---- load + render --------------------------------------------------------
 
@@ -67,6 +73,8 @@ function renderGrid() {
 function itemMarkup(item, index) {
   const total = state.currentCurated.length
   const isVideo = item.kind === "video"
+  const failed = failedCaptions.has(item.id)
+  const captionValue = failed ? failedCaptions.get(item.id) : item.caption || ""
   const thumb =
     item.needs_display && !isVideo
       ? html`<div class="curated-thumb mod-thumb-empty">HEIC</div>`
@@ -81,9 +89,10 @@ function itemMarkup(item, index) {
           aria-label="Position — type a number to move this photo there" />
         ${thumb}
       </div>
-      <input type="text" class="curated-caption" data-id="${item.id}"
-        value="${item.caption || ""}" placeholder="Add a caption…" maxlength="500"
-        aria-label="Caption" />
+      <input type="text" class="curated-caption ${failed ? "is-error" : ""}" data-id="${item.id}"
+        value="${captionValue}" placeholder="Add a caption…" maxlength="500"
+        aria-label="Caption" ${failed ? 'aria-invalid="true"' : ""} />
+      ${failed ? html`<span class="curated-caption-error" role="alert">Not saved — still here, try again</span>` : ""}
       <div class="curated-actions">
         <button type="button" class="btn btn-secondary btn-sm" data-action="top"
           title="Move to top" aria-label="Move to top" ${index === 0 ? "disabled" : ""}>⤒</button>
@@ -183,8 +192,36 @@ async function saveOrder() {
 
 // ---- caption + remove -----------------------------------------------------
 
+/** The `.curated-caption` input for a media id, or null. @param {number} id */
+function captionInput(id) {
+  const el = getElement("curated-grid").querySelector(
+    `.curated-caption[data-id="${id}"]`,
+  )
+  return el instanceof HTMLInputElement ? el : null
+}
+
+/** @param {HTMLInputElement} input @param {boolean} failed */
+function markCaptionErrorDom(input, failed) {
+  input.classList.toggle("is-error", failed)
+  if (failed) input.setAttribute("aria-invalid", "true")
+  else input.removeAttribute("aria-invalid")
+  const row = input.closest(".curated-item")
+  if (!row) return
+  const existing = row.querySelector(".curated-caption-error")
+  if (failed && !existing) {
+    const err = document.createElement("span")
+    err.className = "curated-caption-error"
+    err.setAttribute("role", "alert")
+    err.textContent = "Not saved — still here, try again"
+    input.insertAdjacentElement("afterend", err)
+  } else if (!failed && existing) {
+    existing.remove()
+  }
+}
+
 /** @param {number} id @param {string} value */
 async function saveCaption(id, value) {
+  const input = captionInput(id)
   try {
     await api(`/api/admin/media/${id}`, {
       method: "PATCH",
@@ -192,9 +229,30 @@ async function saveCaption(id, value) {
     })
     const item = state.getCuratedById(id)
     if (item) item.caption = value.trim() || null
-    showSuccess("Caption saved ✓")
+    failedCaptions.delete(id)
+    if (input) {
+      markCaptionErrorDom(input, false)
+      // Quiet per-row confirmation instead of the shared banner — editing many
+      // captions would otherwise flood it with "Caption saved ✓" toasts.
+      input.classList.remove("is-saved")
+      void input.offsetWidth // restart the flash animation
+      input.classList.add("is-saved")
+      input.addEventListener(
+        "animationend",
+        () => input.classList.remove("is-saved"),
+        { once: true },
+      )
+    }
   } catch (err) {
-    showGalleryError("Couldn't save that caption.")
+    // Keep the couple's text: stash it so a later renderGrid re-renders it,
+    // mark the row with a PERSISTENT inline error (not just the 6s toast), and
+    // put the cursor back so they can retry without hunting for the field.
+    failedCaptions.set(id, value)
+    if (input) {
+      markCaptionErrorDom(input, true)
+      input.focus()
+    }
+    showGalleryError("Couldn't save that caption — it's still here, try again.")
   }
 }
 
@@ -338,13 +396,18 @@ function renderUploadTray() {
   const items = queue.getItems()
   const active = queue.activeCount()
   const failed = items.filter((i) => i.state === "failed").length
+  const succeeded = items.filter(
+    (i) => i.state === "done" || i.state === "pending",
+  ).length
   getElement("gallery-upload-summary").textContent =
     items.length === 0
       ? ""
       : active > 0
         ? `Uploading ${items.length - active + 1} of ${items.length}…`
         : failed > 0
-          ? `${failed} upload${failed === 1 ? "" : "s"} failed`
+          ? succeeded > 0
+            ? `${succeeded} added · ${failed} failed`
+            : `${failed} upload${failed === 1 ? "" : "s"} failed`
           : "Uploads complete"
   getElement("gallery-upload-list").innerHTML = html`${items.map(uploadRow)}`
 }
@@ -436,4 +499,15 @@ export function initGalleryAdmin() {
   )
   getButtonElement("gallery-remove-btn").addEventListener("click", confirmRemove)
   initUploadModal()
+
+  // Resume network-failed curated uploads when connectivity returns (a 401 is
+  // handled via onAuthRequired, terminal errors aren't retryable).
+  window.addEventListener("online", () => {
+    if (!queue) return
+    for (const item of queue.getItems()) {
+      if (item.state === "failed" && item.retryable && item.errorStatus === 0) {
+        queue.retry(item.id)
+      }
+    }
+  })
 }

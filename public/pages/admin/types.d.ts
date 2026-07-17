@@ -158,6 +158,8 @@ export interface ModerationActionResponse {
   success: boolean
   autoTrusted: boolean
   released: number
+  /** The item's status BEFORE this transition, so an Undo knows what to revert to. */
+  previousStatus: string
 }
 
 export interface ModerationBulkResponse {

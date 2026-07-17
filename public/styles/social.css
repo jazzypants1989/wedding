@@ -362,6 +362,47 @@
   text-decoration: underline;
 }
 
+/* Share this note — quiet text button beside Delete, mirrors .gb-delete. */
+.gb-share {
+  display: inline-block;
+  margin-top: var(--spacing-xs);
+  margin-right: var(--spacing-md);
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--color-primary);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.gb-share:hover {
+  text-decoration: underline;
+}
+
+/* Brief highlight when a ?entry= deep link scrolls to a note. */
+.gb-entry-highlight {
+  animation: gb-entry-flash 2.4s ease-out;
+}
+
+@keyframes gb-entry-flash {
+  0%,
+  30% {
+    box-shadow: 0 0 0 3px var(--color-primary);
+  }
+  100% {
+    box-shadow: var(--shadow-sm);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gb-entry-highlight {
+    animation: none;
+    outline: 3px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+}
+
 .gb-loadmore-wrap {
   margin-top: var(--spacing-lg);
 }

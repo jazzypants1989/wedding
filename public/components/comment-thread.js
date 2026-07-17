@@ -8,7 +8,7 @@
  */
 /** @import * as Types from "./types.js" */
 
-import { html, api, getErrorMessage } from "../pages/utils.js"
+import { html, api, getErrorMessage, announceCharsRemaining } from "../pages/utils.js"
 import { requireAccount } from "./guest-session.js"
 import { formatRelative, upgradeTimes } from "./relative-time.js"
 import { announcePolite } from "./announce.js"
@@ -45,6 +45,7 @@ function onInput(e) {
   const counter = form && form.querySelector("[data-comment-counter]")
   if (counter instanceof HTMLElement) {
     counter.textContent = `${input.value.length}/${COMMENT_MAXLENGTH}`
+    announceCharsRemaining(input.value.length, COMMENT_MAXLENGTH, counter)
   }
 }
 

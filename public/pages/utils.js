@@ -1,6 +1,11 @@
 /** @file Type-safe DOM element utilities */
 /** @import * as Types from "./types.js" */
 
+import { announcePolite } from "../components/announce.js"
+
+/** Announce "chars left" only within this many chars of the limit. */
+const CHAR_WARN_AT = 20
+
 /** @type {Types.assertElement} */
 export function assertElement(element, name) {
   if (!element) {
@@ -298,6 +303,62 @@ export async function api(endpoint, options = {}) {
   }
 }
 
+/**
+ * Share a URL the way a phone-first guest expects: the native share sheet when
+ * available (fire it straight into a group chat), else copy to the clipboard,
+ * else surface a manual-copy prompt. Returns the outcome so the caller can
+ * reflect it (e.g. flip a button to "Copied!"). Shared by the gallery lightbox
+ * and the guestbook per-entry share.
+ * @param {string} url @param {string} [title]
+ * @returns {Promise<"shared" | "copied" | "manual">}
+ */
+export async function shareUrl(url, title = document.title) {
+  if (typeof navigator.share === "function") {
+    try {
+      await navigator.share({ title, url })
+      return "shared"
+    } catch (err) {
+      // User dismissed the sheet → treat as handled. Any other error → fall
+      // through to the copy path.
+      if (err instanceof DOMException && err.name === "AbortError") return "shared"
+    }
+  }
+  const ok = await copyToClipboard(url)
+  if (ok) return "copied"
+  window.prompt("Copy this link:", url)
+  return "manual"
+}
+
+/**
+ * Copy text to the clipboard: the async Clipboard API in a secure context, else
+ * a hidden-textarea execCommand fallback. Resolves to whether the copy landed.
+ * @param {string} text @returns {Promise<boolean>}
+ */
+export async function copyToClipboard(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {
+    // Fall through to the legacy path below.
+  }
+  try {
+    const ta = document.createElement("textarea")
+    ta.value = text
+    ta.setAttribute("readonly", "")
+    ta.style.position = "fixed"
+    ta.style.opacity = "0"
+    document.body.appendChild(ta)
+    ta.select()
+    const ok = document.execCommand("copy")
+    document.body.removeChild(ta)
+    return ok
+  } catch {
+    return false
+  }
+}
+
 /** @type {Types.stripQueryParam} */
 export function stripQueryParam(basePath, key) {
   const params = new URLSearchParams(location.search)
@@ -307,6 +368,24 @@ export function stripQueryParam(basePath, key) {
   // param would be silently dropped.
   const qs = params.toString()
   history.replaceState(null, "", qs ? `${basePath}?${qs}` : basePath)
+}
+
+/**
+ * Politely announce remaining characters as a field nears its limit, WITHOUT
+ * narrating every keystroke: fires once on entering the warning zone and once at
+ * the limit, tracked via a data-attr phase on the passed element. The visible
+ * counter stays aria-hidden (silent), so this is the only spoken source.
+ * @param {number} length current value length
+ * @param {number} max the field's maxlength
+ * @param {HTMLElement} el element used to remember the last announced phase
+ */
+export function announceCharsRemaining(length, max, el) {
+  const remaining = max - length
+  const phase = remaining > CHAR_WARN_AT ? "ok" : remaining <= 0 ? "full" : "warn"
+  if (el.dataset.charPhase === phase) return
+  el.dataset.charPhase = phase
+  if (phase === "warn") announcePolite(`${remaining} characters left`)
+  else if (phase === "full") announcePolite("Character limit reached")
 }
 
 /** @type {Types.setLoadMoreState} */

@@ -854,7 +854,8 @@
   </dialog>
 
   <!-- Moderation detail modal: full content + author + all applicable actions -->
-  <dialog id="moderation-modal" class="modal-lg" aria-labelledby="moderation-modal-title">
+  <dialog id="moderation-modal" class="modal-lg" aria-labelledby="moderation-modal-title"
+    aria-keyshortcuts="ArrowLeft ArrowRight A R H">
     <div class="modal-header flex-between">
       <h2 id="moderation-modal-title">Review Item</h2>
       <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
@@ -874,6 +875,10 @@
     <p class="mod-detail-keys text-muted hide-mobile" aria-hidden="true">
       Keyboard: <kbd>←</kbd>/<kbd>→</kbd> previous/next &middot; <kbd>A</kbd> approve
       &middot; <kbd>R</kbd> reject &middot; <kbd>H</kbd> hide
+    </p>
+    <p class="sr-only">
+      Keyboard shortcuts: left and right arrows move to the previous and next item;
+      A approves; R rejects; H hides.
     </p>
   </dialog>
 
@@ -941,7 +946,7 @@
       <h2 id="gallery-remove-title">Remove photo</h2>
       <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
     </div>
-    <p>Remove this photo from the site? Its files are deleted.</p>
+    <p>Remove this photo from the site? Its files are set aside out of sight (not permanently deleted) in case it was a mistake.</p>
     <div id="gallery-remove-error" class="alert alert-error" role="alert" hidden></div>
     <div class="modal-actions">
       <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>

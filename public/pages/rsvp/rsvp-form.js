@@ -11,7 +11,7 @@ import {
   formatDate,
   api,
 } from "../utils.js"
-import { fireConfetti, setButtonLoading } from "./utils.js"
+import { fireConfetti, setButtonLoading, getConfig } from "./utils.js"
 import { miniSparkle } from "../../components/celebrate.js"
 import { clearPetitionPending } from "./petition-flag.js"
 
@@ -31,9 +31,16 @@ function submitRsvp(code, payload) {
   })
 }
 
+/** Hide the loading placeholder and clear its busy state (it starts aria-busy). */
+function hideRsvpLoading() {
+  const el = getElement("rsvp-loading")
+  el.hidden = true
+  el.removeAttribute("aria-busy")
+}
+
 /** @type {Types.showError} */
 function showError(message, neutral = false) {
-  getElement("rsvp-loading").hidden = true
+  hideRsvpLoading()
   getFormElement("rsvp-form").hidden = true
   getElement("rsvp-success").hidden = true
   const errorEl = getElement("rsvp-error")
@@ -59,7 +66,7 @@ function showFindInvitation() {
 
 /** @type {Types.showSuccess} */
 function showSuccess(message, attending) {
-  getElement("rsvp-loading").hidden = true
+  hideRsvpLoading()
   getElement("rsvp-error").hidden = true
   getFormElement("rsvp-form").hidden = true
   const successEl = getElement("rsvp-success")
@@ -90,12 +97,34 @@ function prefillForm(rsvp) {
 
   if (rsvp.attending) {
     setAttendingDetailsOpen(true)
-    getSelectElement("party-size").value = String(rsvp.actual_party_size || 1)
+    prefillPartySize(rsvp.actual_party_size || 1)
     getTextAreaElement("dietary").value = rsvp.dietary_restrictions || ""
     getInputElement("anything-else").value = rsvp.additional_info || ""
   }
 
   getTextAreaElement("message").value = rsvp.message || ""
+}
+
+/**
+ * Prefill the party-size select from a prior RSVP, clamped to the options
+ * currently available (the couple may have lowered this household's allowed
+ * size since). Without the clamp, a too-large value silently falls back to the
+ * first option, quietly shrinking the guest's headcount on their next save — so
+ * when we do clamp, say so.
+ * @param {number} requested
+ */
+function prefillPartySize(requested) {
+  const select = getSelectElement("party-size")
+  const maxAllowed = select.options.length || 1 // options are 1..N
+  const clamped = Math.min(Math.max(1, requested), maxAllowed)
+  select.value = String(clamped)
+  const note = getElement("party-size-note")
+  if (clamped !== requested) {
+    note.textContent = `You previously listed ${requested}, but this invitation now allows up to ${maxAllowed}. We've set it to ${clamped} — please double-check.`
+    note.hidden = false
+  } else {
+    note.hidden = true
+  }
 }
 
 /**
@@ -223,7 +252,7 @@ async function handleSubmit(e) {
 
 /** @type {Types.showForm} */
 function showForm(data) {
-  getElement("rsvp-loading").hidden = true
+  hideRsvpLoading()
   getElement("rsvp-error").hidden = true
   getElement("rsvp-success").hidden = true
   const form = getFormElement("rsvp-form")
@@ -265,7 +294,7 @@ function showForm(data) {
 
 /** Show the post-wedding "RSVPs are closed" panel instead of the live form. */
 function showClosed() {
-  getElement("rsvp-loading").hidden = true
+  hideRsvpLoading()
   getElement("rsvp-error").hidden = true
   getFormElement("rsvp-form").hidden = true
   const el = getElement("rsvp-closed")
@@ -278,7 +307,7 @@ export async function initRsvpForm() {
   // Post-wedding: RSVPs are closed. Show a warm closed state (with links to the
   // gallery/guestbook) rather than a live, confetti-firing form on stale links.
   try {
-    const cfg = /** @type {{ mode?: string }} */ (await api("/api/config"))
+    const cfg = await getConfig()
     if (cfg && cfg.mode === "post") {
       showClosed()
       return

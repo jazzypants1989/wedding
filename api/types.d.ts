@@ -153,6 +153,13 @@ export function guestbookList(
   res: ServerResponse,
 ): Promise<void>
 
+/** GET /api/guestbook/:id — a single visible entry (public); powers ?entry= deep links. */
+export function guestbookGetOne(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: RouteInfo,
+): Promise<void>
+
 /** POST /api/guestbook — sign the guestbook (withAccount); hybrid moderation on trust. */
 export function guestbookCreate(
   req: IncomingMessage,

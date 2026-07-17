@@ -9,6 +9,7 @@ import { loadSession } from "../../components/guest-session.js"
 import { initGuestIdentity } from "../../components/guest-identity.js"
 import { initReactionBars } from "../../components/reaction-bar.js"
 import { initCommentThreads } from "../../components/comment-thread.js"
+import { startRelativeTimeTicker } from "../../components/relative-time.js"
 import { api, getElement, getButtonElement, stripQueryParam } from "../utils.js"
 import { showToast } from "../../components/toast.js"
 import {
@@ -59,6 +60,8 @@ async function boot() {
   initCommentThreads(document.body)
   wireSocialWriteback()
   wireSwitcher()
+  // Keep the lightbox's "posted N minutes ago" fresh while the gallery sits open.
+  startRelativeTimeTicker()
 
   const params = new URLSearchParams(location.search)
   const section = normalizeSection(params.get("section"))

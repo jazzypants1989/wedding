@@ -2,7 +2,14 @@
  *  copy-link, report, and deep-link URL sync. See docs/post-wedding/04-gallery.md §5. */
 /** @import * as Types from "./types.js" */
 
-import { html, api, getElement, getDialogElement, getErrorMessage } from "../utils.js"
+import {
+  html,
+  api,
+  getElement,
+  getDialogElement,
+  getErrorMessage,
+  shareUrl,
+} from "../utils.js"
 import { formatRelative } from "../../components/relative-time.js"
 import { renderReactionBar } from "../../components/reaction-bar.js"
 import { renderCommentThread } from "../../components/comment-thread.js"
@@ -16,6 +23,8 @@ let source
 /** @type {Types.MediaSection} */
 let section = "guest"
 let index = -1
+/** The element focused when the lightbox opened, to restore focus on close. */
+let opener = /** @type {HTMLElement | null} */ (null)
 /** Reply-to address for the "Report this photo" mailto; loaded from /api/config. */
 let contactEmail = ""
 
@@ -55,16 +64,30 @@ export function initLightbox(src) {
   // Native <dialog> closes on Esc → keep our state + URL in sync.
   dialog.addEventListener("close", () => {
     pauseVideo()
+    const openId = index !== -1 ? source.getItems(section)[index]?.id : null
     if (index !== -1) {
       index = -1
       source.onChange(section, null)
     }
+    restoreFocus(openId)
   })
 
   document.addEventListener("keydown", (e) => {
     if (!isLightboxOpen()) return
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return
+    // Don't hijack ←/→ when the guest is typing a comment (the composer lives in
+    // the lightbox) or scrubbing a video — navigating would rewrite the social
+    // panel's innerHTML and discard an in-progress comment draft.
+    const active = document.activeElement
+    if (
+      active instanceof HTMLInputElement ||
+      active instanceof HTMLTextAreaElement ||
+      active instanceof HTMLVideoElement
+    ) {
+      return
+    }
     if (e.key === "ArrowLeft") void navigate(-1)
-    else if (e.key === "ArrowRight") void navigate(1)
+    else void navigate(1)
   })
 
   wireSwipe(getElement("lightbox-stage"))
@@ -75,6 +98,9 @@ export function openLightbox(sec, id) {
   const items = source.getItems(sec)
   const i = items.findIndex((item) => item.id === id)
   if (i === -1) return
+  // Remember what had focus so we can return to it on close (native <dialog>
+  // restores the opener, but a deep-link open has none — see restoreFocus).
+  opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
   section = sec
   index = i
   render()
@@ -105,6 +131,24 @@ function close() {
 }
 
 /**
+ * Put focus somewhere sensible after close. When the lightbox was opened from a
+ * real element (a grid cell), the native <dialog> already restored focus there.
+ * When it was deep-linked (focus was on <body>, or the opener is gone), send
+ * focus to that photo's grid cell so keyboard users land back in context.
+ * @param {number | null | undefined} openId
+ */
+function restoreFocus(openId) {
+  if (opener && opener.isConnected && opener !== document.body) {
+    opener = null
+    return // the dialog's native restoration already handled it
+  }
+  opener = null
+  if (openId == null) return
+  const cell = document.querySelector(`.media-cell[data-id="${openId}"]`)
+  if (cell instanceof HTMLElement) cell.focus()
+}
+
+/**
  * Step by delta, lazily loading the next page when we run off the loaded end.
  * @param {number} delta
  */
@@ -129,6 +173,9 @@ function render() {
   if (!item) return
 
   const stage = getElement("lightbox-stage")
+  // Clear any loading placeholder left from the previous item.
+  stage.classList.remove("is-loading")
+  stage.style.backgroundImage = ""
   if (item.kind === "video") {
     stage.innerHTML = html`
       <video class="lightbox-media" src="/media/${item.file_key}/video" controls
@@ -140,6 +187,20 @@ function render() {
     const alt = item.caption || `Photo by ${item.author_name}`
     stage.innerHTML = html`
       <img class="lightbox-media" src="/media/${item.file_key}/display" alt="${alt}">`
+    // Cold-open a large photo shows an empty black stage until the display image
+    // arrives (neighbor preload only helps subsequent nav). Seed the stage with
+    // the already-tiny thumb (blurred) + a spinner until the full image loads.
+    const img = stage.querySelector(".lightbox-media")
+    if (img instanceof HTMLImageElement && !img.complete) {
+      stage.style.backgroundImage = `url(/media/${item.file_key}/thumb)`
+      stage.classList.add("is-loading")
+      const done = () => {
+        stage.classList.remove("is-loading")
+        stage.style.backgroundImage = ""
+      }
+      img.addEventListener("load", done, { once: true })
+      img.addEventListener("error", done, { once: true })
+    }
   }
 
   // `items.length` is only the loaded page(s), not the section's true total.
@@ -241,52 +302,15 @@ async function shareOrCopy() {
   const item = items[index]
   if (!item) return
   const url = `${location.origin}/gallery?section=${section}&item=${item.id}`
-  if (typeof navigator.share === "function") {
-    try {
-      await navigator.share({ title: document.title, url })
-      return
-    } catch (err) {
-      // User dismissed the share sheet → done. Any other error → fall back to copy.
-      if (err instanceof DOMException && err.name === "AbortError") return
-    }
-  }
   const btn = getElement("lightbox-copy")
   const prev = btn.textContent
-  // Only claim success once the copy actually lands. Clipboard API needs a
-  // secure context; fall back to a hidden-textarea execCommand, then to
-  // surfacing the URL so the guest can copy it by hand.
-  const ok = await copyToClipboard(url)
-  btn.textContent = ok ? "Copied!" : "Press ⌘/Ctrl+C"
-  if (!ok) window.prompt("Copy this link:", url)
+  const result = await shareUrl(url)
+  if (result === "shared") return
+  // Copy path (no native share): reflect the outcome on the button briefly.
+  btn.textContent = result === "copied" ? "Copied!" : "Press ⌘/Ctrl+C"
   setTimeout(() => {
     btn.textContent = prev
   }, 1500)
-}
-
-/** @param {string} text @returns {Promise<boolean>} */
-async function copyToClipboard(text) {
-  try {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(text)
-      return true
-    }
-  } catch {
-    // Fall through to the legacy path below.
-  }
-  try {
-    const ta = document.createElement("textarea")
-    ta.value = text
-    ta.setAttribute("readonly", "")
-    ta.style.position = "fixed"
-    ta.style.opacity = "0"
-    document.body.appendChild(ta)
-    ta.select()
-    const ok = document.execCommand("copy")
-    document.body.removeChild(ta)
-    return ok
-  } catch {
-    return false
-  }
 }
 
 /**

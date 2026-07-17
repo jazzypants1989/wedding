@@ -168,6 +168,7 @@ route("GET", "/api/account/recover/:token", account.recoverConsume, { errorHandl
 // Public guestbook routes. GET is public (with getOptionalAccount inside for
 // own-pending interleave); POST/DELETE require a guest account.
 route("GET", "/api/guestbook", guestbook.list, { errorHandling: true })
+route("GET", "/api/guestbook/:id", guestbook.getOne, { errorHandling: true })
 route("POST", "/api/guestbook", guestbook.create, { account: true })
 route("DELETE", "/api/guestbook/:id", guestbook.remove, { account: true })
 
@@ -237,6 +238,7 @@ route("POST", "/api/admin/moderation/approve-all", moderation.approveAllPending,
 route("POST", "/api/admin/moderation/:type/:id/approve", moderation.approve, { admin: true })
 route("POST", "/api/admin/moderation/:type/:id/reject", moderation.reject, { admin: true })
 route("POST", "/api/admin/moderation/:type/:id/hide", moderation.hide, { admin: true })
+route("POST", "/api/admin/moderation/:type/:id/undo", moderation.undo, { admin: true })
 
 // Admin account-management routes (Phase 6)
 route("GET", "/api/admin/accounts", adminAccounts.list, { admin: true })

@@ -196,13 +196,18 @@ export interface UploadQueueItem {
   status: string | null
   /** Optional guest-entered caption; sent at finalize (or PATCHed post-finalize). */
   caption: string
+  /** True when a post-finalize caption PATCH failed to persist; the row shows a
+   *  quiet "caption didn't save" note so the guest knows to re-enter it. */
+  captionError: boolean
 }
 
 export interface UploadQueueCallbacks {
   /** Fired on any state/progress change for an item. */
   onChange?: (item: UploadQueueItem) => void
-  /** Fired once, the first time any item in this queue reaches done/pending. */
-  onFirstSuccess?: () => void
+  /** Fired once, the first time any item in this queue reaches done/pending.
+   *  Receives the finalize status ("approved" | "pending") so the caller can
+   *  celebrate honestly — a held-for-moderation upload isn't "up" yet. */
+  onFirstSuccess?: (status: string) => void
 }
 
 /** Transport overrides for non-guest callers (admin curated uploads). */

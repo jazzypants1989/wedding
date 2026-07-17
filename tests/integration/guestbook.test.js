@@ -345,4 +345,50 @@ describe("Guestbook", () => {
       assert.strictEqual(own.entries.length, 1)
     })
   })
+
+  describe("GET /api/guestbook/:id — single entry (deep link)", () => {
+    it("returns an approved entry to an anonymous visitor", async () => {
+      const { auth } = signIn({ trusted: 1, name: "Aunt Carol" })
+      const id = /** @type {any} */ (
+        await (await post("/api/guestbook", "hello from afar", auth)).json()
+      ).entry.id
+
+      const res = await fetch(`${BASE_URL}/api/guestbook/${id}`)
+      assert.strictEqual(res.status, 200)
+      const entry = /** @type {any} */ (await res.json())
+      assert.strictEqual(entry.id, id)
+      assert.strictEqual(entry.message, "hello from afar")
+    })
+
+    it("hides an untrusted author's pending entry from others but shows it to the author", async () => {
+      const author = signIn({ trusted: 0, name: "Pending Pat" })
+      const id = /** @type {any} */ (
+        await (await post("/api/guestbook", "awaiting review", author.auth)).json()
+      ).entry.id
+
+      // Anonymous: pending content is not an existence oracle → 404.
+      const anon = await fetch(`${BASE_URL}/api/guestbook/${id}`)
+      assert.strictEqual(anon.status, 404)
+
+      // The author sees their own pending entry.
+      const ownRes = await accountFetch(`/api/guestbook/${id}`, { method: "GET" }, author.auth)
+      assert.strictEqual(ownRes.status, 200)
+      const own = /** @type {any} */ (await ownRes.json())
+      assert.strictEqual(own.id, id)
+    })
+
+    it("404s for a missing or soft-deleted entry", async () => {
+      const missing = await fetch(`${BASE_URL}/api/guestbook/99999`)
+      assert.strictEqual(missing.status, 404)
+
+      const { auth } = signIn({ trusted: 1 })
+      const id = /** @type {any} */ (
+        await (await post("/api/guestbook", "soon gone", auth)).json()
+      ).entry.id
+      await accountFetch(`/api/guestbook/${id}`, { method: "DELETE" }, auth)
+
+      const res = await fetch(`${BASE_URL}/api/guestbook/${id}`)
+      assert.strictEqual(res.status, 404)
+    })
+  })
 })

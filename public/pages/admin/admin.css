@@ -882,6 +882,15 @@ tr:hover td {
   color: var(--color-text-muted);
 }
 
+/* Success banner carrying an inline "Undo" for a reversible moderation action. */
+.notification-undo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
 /* Whole-backlog approve bar (unfiltered pending view only) */
 .mod-approve-all-bar {
   display: flex;
@@ -1078,6 +1087,39 @@ tr:hover td {
   border-radius: var(--radius-sm);
   background: var(--color-input-bg, var(--color-card-bg));
   color: var(--color-text);
+}
+
+.curated-caption.is-error {
+  border-color: var(--color-danger, #c0392b);
+}
+
+/* Quiet per-row "saved" flash after a caption blur-save (no global banner). */
+.curated-caption.is-saved {
+  animation: curated-caption-saved 1.1s ease-out;
+}
+
+@keyframes curated-caption-saved {
+  0% {
+    border-color: var(--color-success);
+    box-shadow: 0 0 0 2px var(--color-success);
+  }
+  100% {
+    border-color: var(--color-border);
+    box-shadow: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .curated-caption.is-saved {
+    animation: none;
+  }
+}
+
+.curated-caption-error {
+  display: block;
+  margin-top: var(--spacing-2xs);
+  font-size: var(--text-xs);
+  color: var(--color-danger, #c0392b);
 }
 
 .curated-actions {

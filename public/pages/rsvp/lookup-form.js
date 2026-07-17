@@ -10,7 +10,7 @@ import {
   getErrorMessage,
   api,
 } from "../utils.js"
-import { showResult, setButtonLoading } from "./utils.js"
+import { showResult, setButtonLoading, getConfig } from "./utils.js"
 import {
   isPetitionPending,
   setPetitionPending,
@@ -19,6 +19,10 @@ import {
 
 /** @type {Types.LookupFormState | null} */
 let state = null
+
+/** Resolves when /api/config has been applied (form shape finalized). */
+let configReady = /** @type {Promise<void>} */ (Promise.resolve())
+let configResolved = false
 
 /** @type {Types.lookupGuest} */
 async function lookupGuest(name, contact) {
@@ -52,6 +56,16 @@ async function handleLookupSubmit(e) {
 
   const { elements, onShowPetitionForm } = state
   if (elements.submit.disabled) return
+
+  // Config may still be loading on a slow connection. Show the button working
+  // and wait for the form's final shape (name/email reveal) before validating —
+  // a dead tap on a silently-disabled button reads as a broken form.
+  if (!configResolved) {
+    setButtonLoading(elements.submit, true)
+    await configReady
+    if (!state) return
+    setButtonLoading(elements.submit, false)
+  }
 
   const name = elements.name.value.trim() || null
   const contact = elements.contact.value.trim()
@@ -92,9 +106,13 @@ async function handleLookupSubmit(e) {
 
     if (data.found && data.redirectCode) {
       // Brief acknowledgment before the navigation so the redirect doesn't feel
-      // like an unexplained page jump.
+      // like an unexplained page jump. Defer the navigation a beat so the message
+      // actually paints (assigning href synchronously navigates before render).
       showLookupResult("Found you! Taking you to your RSVP…", false)
-      window.location.href = "/rsvp?code=" + data.redirectCode
+      const code = data.redirectCode
+      setTimeout(() => {
+        window.location.href = "/rsvp?code=" + code
+      }, 500)
       return
     }
 
@@ -117,11 +135,6 @@ export function hideLookupSection() {
   if (state) {
     state.elements.section.hidden = true
   }
-}
-
-/** @type {Types.getConfig} */
-function getConfig() {
-  return api("/api/config")
 }
 
 /** Reveal the name field and make it required (server may require it). */
@@ -177,12 +190,14 @@ export async function initLookupForm(onShowPetitionForm) {
 
   getFormElement("lookup-form").addEventListener("submit", handleLookupSubmit)
 
-  // Block submit until config resolves so the form can't be sent in its
-  // pre-config shape (name hidden while the server requires it). handleLookupSubmit
-  // early-returns while submit.disabled is true.
-  state.elements.submit.disabled = true
-  await fetchConfig()
-  if (state) state.elements.submit.disabled = false
+  // Kick off config but keep the button live: a submit before config resolves
+  // waits on `configReady` (with a button spinner) rather than dead-tapping a
+  // disabled button. This still guarantees the form's final shape (name/email
+  // reveal) is applied before we validate.
+  configResolved = false
+  configReady = fetchConfig().finally(() => {
+    configResolved = true
+  })
 
   // A returning petitioner shouldn't have to re-file to learn their request is
   // still pending. petition-form.js sets the flag; a successful invite load or a

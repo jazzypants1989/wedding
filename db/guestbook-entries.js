@@ -57,6 +57,24 @@ export function getGuestbookFeed({ callerId = null, before = null, limit }) {
     LIMIT ${limit}`.all()
 }
 
+/** @type {Types.getGuestbookFeedEntryById} */
+export function getGuestbookFeedEntryById(id, callerId = null) {
+  // Same columns + visibility gate as getGuestbookFeed, narrowed to one id, so
+  // a ?entry= deep link resolves to a full feed row (or undefined if the caller
+  // may not see it — never confirm unmoderated content by id-guessing).
+  const ownPending =
+    callerId !== null
+      ? sql`OR (e.status = 'pending' AND e.account_id = ${callerId})`
+      : sql.empty
+  const isOwn = callerId !== null ? sql`(e.account_id = ${callerId})` : sql`0`
+  return sql`SELECT e.id, e.account_id, e.message, e.status, e.created_at,
+      a.name AS author_name, a.trusted AS author_trusted, ${isOwn} AS is_own
+    FROM guestbook_entries e
+    JOIN accounts a ON a.id = e.account_id
+    WHERE e.id = ${id} AND e.deleted_at IS NULL
+      AND (e.status = 'approved' ${ownPending})`.get()
+}
+
 /** @type {Types.softDeleteGuestbookEntry} */
 export function softDeleteGuestbookEntry(id, accountId) {
   const result = sql`UPDATE guestbook_entries SET deleted_at = ${now()}

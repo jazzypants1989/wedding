@@ -50,6 +50,26 @@ export function formatRelative(iso) {
   return ""
 }
 
+let tickerStarted = false
+
+/**
+ * Periodically re-render every on-page relative time so a feed left open ages
+ * naturally ("just now" → "2 minutes ago") instead of freezing at render time.
+ * Idempotent (safe to call from multiple modules); paused while the tab is
+ * hidden, with one immediate catch-up refresh when it becomes visible again.
+ * @param {number} [intervalMs]
+ */
+export function startRelativeTimeTicker(intervalMs = 60000) {
+  if (tickerStarted) return
+  tickerStarted = true
+  setInterval(() => {
+    if (document.visibilityState === "visible") upgradeTimes(document)
+  }, intervalMs)
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") upgradeTimes(document)
+  })
+}
+
 /** @type {Types.upgradeTimes} */
 export function upgradeTimes(root = document) {
   root.querySelectorAll("time[datetime]").forEach((el) => {

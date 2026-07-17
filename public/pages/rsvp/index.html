@@ -125,7 +125,7 @@
             </div>
             <button type="submit" class="btn btn-primary" id="lookup-submit">Find My Invitation</button>
           </form>
-          <div id="lookup-result" class="alert" hidden></div>
+          <div id="lookup-result" class="alert" role="status" hidden></div>
         </div>
 
         <!-- Petition Form (shown when guest not found) -->
@@ -189,6 +189,7 @@
             <select id="party-size" name="actual_party_size" required>
               <!-- Options populated dynamically based on guest's allowed party size -->
             </select>
+            <p id="party-size-note" class="form-hint" role="status" hidden></p>
           </div>
 
           <div class="form-group">

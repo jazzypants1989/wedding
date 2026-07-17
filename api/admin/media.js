@@ -5,14 +5,13 @@
  *  All routes are {admin:true}. */
 /** @import * as Types from './types.js' */
 
-import fs from "node:fs"
 import { sendJson, parseBody } from "../../core/http.js"
 import { log, AUDIT_ACTIONS } from "../../core/utils.js"
 import { getClientIp } from "../../core/rate-limit.js"
 import { validateId, ValidationError, NotFoundError, ConflictError } from "../../core/validation.js"
 import { LIMITS } from "../../types.js"
 import { withTransaction } from "../../db/utils.js"
-import { itemDir } from "../../core/media-storage.js"
+import { quarantineItemDir } from "../../core/media-storage.js"
 import {
   getMediaById,
   getOfficialMediaIds,
@@ -130,9 +129,11 @@ export async function remove(req, res, { params, session }) {
   const row = getMediaById(idResult.value)
   if (!row || row.deleted_at) throw new NotFoundError("Media")
 
-  // Soft-delete the row (kept for audit) and unlink its variant files — same
-  // shape as the guest self-delete in api/media.js remove().
-  fs.rmSync(itemDir(row.file_key), { recursive: true, force: true })
+  // Soft-delete the row (kept for audit) and MOVE its files to quarantine
+  // rather than hard-deleting — the ✕ sits inline in a dense reorder grid, so a
+  // mis-click must be hand-recoverable (same posture as an admin Reject; the
+  // daily sweep purges quarantine after MEDIA_QUARANTINE_TTL_DAYS).
+  quarantineItemDir(row.file_key)
   softDeleteMedia(idResult.value)
 
   log({

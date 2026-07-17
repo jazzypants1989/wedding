@@ -459,6 +459,16 @@ export function getGuestbookFeed(
   options: GuestbookFeedOptions,
 ): GuestbookFeedRow[]
 
+/**
+ * A single feed row by id, gated by the same visibility rules as the feed
+ * (approved, or the caller's own pending). Undefined when missing/deleted or
+ * not visible to this caller. Powers the ?entry= deep link.
+ */
+export function getGuestbookFeedEntryById(
+  id: number,
+  callerId?: number | null,
+): GuestbookFeedRow | undefined
+
 /** Soft-delete an entry only if it belongs to accountId. Returns true if a row changed. */
 export function softDeleteGuestbookEntry(
   id: number,

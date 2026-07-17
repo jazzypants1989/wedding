@@ -11,6 +11,7 @@ import {
   closeModal,
   showError,
   showSuccess,
+  showUndo,
   showLoading,
   showLoadError,
 } from "./utils.js"
@@ -549,9 +550,9 @@ function openConfirm(action, items, onComplete) {
   if (action === "reject") {
     const desc = single
       ? single.content_type === "media"
-        ? "Reject this item? It comes off the site for good; its files are set aside out of sight on the server in case of a mistake."
+        ? "Reject this item? It comes off the site; its files are set aside out of sight on the server (not deleted), so a mistake stays recoverable."
         : "Reject this item? It won't be published (the author keeps their account)."
-      : `Reject ${items.length} selected items? They come off the site for good; photo and video files are set aside out of sight in case of a mistake.`
+      : `Reject ${items.length} selected items? They come off the site; photo and video files are set aside out of sight (not deleted), so a mistake stays recoverable.`
     openConfirmDialog({
       title: "Reject",
       desc,
@@ -614,6 +615,7 @@ async function runModeration(action, items, releasePending, reason = "") {
         parts.push(`released ${res.released} more item${res.released === 1 ? "" : "s"}`)
       if (parts.length) showSuccess(parts.join(" · "))
     }
+    maybeOfferUndo(action, it, res)
   } else {
     const res = /** @type {Types.ModerationBulkResponse} */ (
       await api("/api/admin/moderation/bulk", {
@@ -635,6 +637,42 @@ async function runModeration(action, items, releasePending, reason = "") {
     }
   }
   await loadQueue()
+}
+
+/**
+ * After a single reversible action, offer a short "Undo". Reject is excluded (its
+ * files were quarantined — hand-recoverable, not a one-tap undo), and so are
+ * approvals that carried side effects (auto-trust / backlog release) that undo
+ * can't cleanly walk back. The reversal target is the item's prior status.
+ * @param {"approve" | "reject" | "hide"} action
+ * @param {Types.ModerationItem} item
+ * @param {Types.ModerationActionResponse} res
+ */
+function maybeOfferUndo(action, item, res) {
+  const to = res.previousStatus
+  const reversible =
+    (action === "approve" || action === "hide") &&
+    !res.autoTrusted &&
+    !res.released &&
+    (to === "pending" || to === "approved" || to === "hidden")
+  if (!reversible) return
+  const label =
+    action === "hide" ? "Hidden" : to === "hidden" ? "Republished" : "Approved"
+  showUndo(label, () => void undoAction(item, /** @type {string} */ (to)))
+}
+
+/** @param {Types.ModerationItem} item @param {string} to */
+async function undoAction(item, to) {
+  try {
+    await api(`/api/admin/moderation/${item.content_type}/${item.id}/undo`, {
+      method: "POST",
+      body: JSON.stringify({ to }),
+    })
+    showSuccess("Undone")
+    await loadQueue()
+  } catch (err) {
+    showError(getErrorMessage(err))
+  }
 }
 
 // ---- detail modal ---------------------------------------------------------
