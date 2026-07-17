@@ -205,17 +205,24 @@ const DEFAULT_API_TIMEOUT = 30000
  * Map an HTTP error into guest-friendly copy (2.7): soften 5xx (which carry
  * terse or no message) and rate limits, but keep the server's specific message
  * for 4xx validation errors ("Invalid invite code" etc.), which reads fine.
- * @param {number} status @param {unknown} serverMessage @returns {string}
+ * @param {number} status @param {unknown} serverMessage @param {unknown} [code]
+ * @returns {string}
  */
-function friendlyMessage(status, serverMessage) {
+function friendlyMessage(status, serverMessage, code) {
   if (status >= 500) {
     return "Something went wrong on our end — please try again in a moment."
+  }
+  // A stale double-submit token (long-idle tab). The failing response set a
+  // fresh cookie, so a plain retry works — say that instead of the raw
+  // "Invalid CSRF token". Keyed on the server's machine code, not its copy.
+  if (status === 403 && code === "CSRF") {
+    return "Your session refreshed — please try that again."
   }
   if (typeof serverMessage === "string" && serverMessage) return serverMessage
   if (status === 429) {
     return "You're doing that a little too fast — please wait a moment and try again."
   }
-  return `Request failed (${status})`
+  return `That didn't go through (error ${status}) — please refresh the page and try again.`
 }
 
 /** @type {Types.api} */
@@ -268,7 +275,7 @@ export async function api(endpoint, options = {}) {
       data = await res.json()
     } catch (parseError) {
       if (!res.ok) {
-        throw new Error("Request failed with status " + res.status)
+        throw new Error(friendlyMessage(res.status, null))
       }
       data = {}
     }
@@ -277,7 +284,7 @@ export async function api(endpoint, options = {}) {
       if (res.status === 401 && options.onUnauthorized) {
         options.onUnauthorized()
       }
-      throw new Error(friendlyMessage(res.status, data.error))
+      throw new Error(friendlyMessage(res.status, data.error, data.code))
     }
 
     return data
@@ -289,4 +296,25 @@ export async function api(endpoint, options = {}) {
   } finally {
     clearTimeout(timeoutId)
   }
+}
+
+/** @type {Types.stripQueryParam} */
+export function stripQueryParam(basePath, key) {
+  const params = new URLSearchParams(location.search)
+  params.delete(key)
+  // Use toString() truthiness rather than URLSearchParams.size (Chrome 113+ /
+  // Safari 17+ only) — on older browsers .size is undefined and every remaining
+  // param would be silently dropped.
+  const qs = params.toString()
+  history.replaceState(null, "", qs ? `${basePath}?${qs}` : basePath)
+}
+
+/** @type {Types.setLoadMoreState} */
+export function setLoadMoreState(btn, mode) {
+  // The guest feeds' load-more button doubles as the infinite-scroll sentinel.
+  // On a load error it becomes a visible "Try again" (its click handler re-arms
+  // auto-loading, so a failed first paint isn't a dead end); on success it
+  // resets to "Load more" and the caller decides visibility.
+  btn.textContent = mode === "retry" ? "Try again" : "Load more"
+  if (mode === "retry") btn.hidden = false
 }

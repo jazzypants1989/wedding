@@ -8,6 +8,7 @@ import {
   showError,
   showSuccess,
   showLoading,
+  showLoadError,
   openModal,
   closeModal,
 } from "./utils.js"
@@ -80,7 +81,7 @@ export async function loadGuests() {
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") return
     console.error("Failed to load guests:", err)
-    showError("Failed to load guests. Please refresh the page.")
+    showLoadError(getElement("guests-tbody"), 6, "Couldn't load the guest list.", loadGuests)
   }
 }
 

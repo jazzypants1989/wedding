@@ -9,7 +9,8 @@ import { loadSession } from "../../components/guest-session.js"
 import { initGuestIdentity } from "../../components/guest-identity.js"
 import { initReactionBars } from "../../components/reaction-bar.js"
 import { initCommentThreads } from "../../components/comment-thread.js"
-import { api, getElement, getButtonElement } from "../utils.js"
+import { api, getElement, getButtonElement, stripQueryParam } from "../utils.js"
+import { showToast } from "../../components/toast.js"
 import {
   initGrid,
   showSection,
@@ -163,7 +164,10 @@ async function openItemById(id) {
     ensureItemLoaded(item)
     openLightbox(item.section, item.id)
   } catch {
-    // 404 / not visible — leave the grid as-is.
+    // 404 / not visible — the grid stays, but a shared link deserves a word
+    // (and the dead ?item param shouldn't survive into copied URLs).
+    showToast("That photo isn't available anymore.")
+    stripQueryParam("/gallery", "item")
   }
 }
 

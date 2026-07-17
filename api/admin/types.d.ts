@@ -240,6 +240,15 @@ export function listPetitions(
 ): Promise<void>
 
 /**
+ * GET /api/admin/petitions/counts — pending/approved/denied counts only (the
+ * badge poll used to fetch the full pending list just to read one number).
+ */
+export function petitionCountsHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void>
+
+/**
  * Approve petition handler.
  * @example
  * await approvePetition(req, res, routeInfo);
@@ -281,6 +290,14 @@ export function moderationCountsHandler(
 
 /** POST /api/admin/moderation/bulk — { action, items:[{type,id}] } in one txn. */
 export function moderationBulkHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** POST /api/admin/moderation/approve-all — approve the entire pending backlog
+ * (not just the client's loaded page) in one transaction. */
+export function moderationApproveAllHandler(
   req: IncomingMessage,
   res: ServerResponse,
   routeInfo: AuthenticatedRouteInfo,
@@ -425,6 +442,12 @@ export function getPetitionById(id: number): Petition | undefined
  * const petition = getPetitionByEmail('john@example.com');
  */
 export function getPetitionByEmail(email: string): Petition | undefined
+
+/**
+ * Get the most recent petition for an email regardless of status (used to tell
+ * a returning guest whether their request is pending/denied, not just pending).
+ */
+export function getLatestPetitionByEmail(email: string): Petition | undefined
 
 /**
  * Get all petitions with optional status filter.

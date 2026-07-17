@@ -13,6 +13,7 @@ import {
 } from "../utils.js"
 import { hideLookupSection } from "./lookup-form.js"
 import { showResult, setButtonLoading } from "./utils.js"
+import { setPetitionPending } from "./petition-flag.js"
 
 /** @type {Types.submitPetition} */
 async function submitPetition(payload) {
@@ -89,6 +90,9 @@ async function handlePetitionSubmit(e) {
     const data = await submitPetition(payload)
     getFormElement("petition-form").hidden = true
     showPetitionResult(data.message, false)
+    // Remember the submission so a return visit says "still under review"
+    // instead of making the guest re-fill the form to discover the 409.
+    setPetitionPending()
   } catch (err) {
     console.error("Petition error:", err)
     showPetitionResult(getErrorMessage(err), true)

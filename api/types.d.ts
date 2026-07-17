@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
-import type { RSVP, RSVPWithGuest, Stats } from "./types.js"
+import type { RSVP, RSVPWithGuest, Stats, PetitionStatus } from "./types.js"
 import type { RouteInfo, AccountRouteInfo } from "../core/types.js"
 
 /** @file health.js - Types for health check endpoint */
@@ -27,11 +27,16 @@ export function submit(req: IncomingMessage, res: ServerResponse): Promise<void>
 /** @file lookup.js - Types for guest lookup and petition endpoints */
 
 /**
- * Send not found response.
+ * Send not found response, optionally carrying the caller's prior petition
+ * status so the client can show accurate copy (pending/denied/none).
  * @example
  * notFoundResponse(res);
+ * notFoundResponse(res, "denied");
  */
-export function notFoundResponse(res: ServerResponse): void
+export function notFoundResponse(
+  res: ServerResponse,
+  petitionStatus?: PetitionStatus | null,
+): void
 
 /**
  * Lookup guest handler.

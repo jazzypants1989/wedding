@@ -8,7 +8,7 @@
 /** @import * as Components from '../../components/types.js' */
 
 import { state } from "./state.js"
-import { api, openModal, closeModal, showSuccess, showLoading } from "./utils.js"
+import { api, openModal, closeModal, showSuccess, showLoading, showLoadError } from "./utils.js"
 import {
   html,
   getElement,
@@ -41,7 +41,12 @@ export async function loadGalleryAdmin() {
     renderGrid()
   } catch (err) {
     console.error("Failed to load official gallery:", err)
-    showGalleryError("Failed to load the official gallery. Please refresh the page.")
+    showLoadError(
+      getElement("curated-grid"),
+      1,
+      "Couldn't load the official gallery.",
+      loadGalleryAdmin,
+    )
   }
 }
 
@@ -71,7 +76,9 @@ function itemMarkup(item, index) {
   return html`
     <div class="curated-item" data-id="${item.id}">
       <div class="curated-thumb-wrap">
-        <span class="curated-pos">${index + 1}</span>
+        <input type="number" class="curated-pos" data-id="${item.id}"
+          value="${index + 1}" min="1" max="${total}" inputmode="numeric"
+          aria-label="Position — type a number to move this photo there" />
         ${thumb}
       </div>
       <input type="text" class="curated-caption" data-id="${item.id}"
@@ -103,16 +110,34 @@ function showGalleryError(msg) {
 
 // ---- reorder --------------------------------------------------------------
 
+/** Current index of a curated item, or -1. @param {number} id @returns {number} */
+function curatedIndex(id) {
+  return state.currentCurated.findIndex((i) => i.id === id)
+}
+
 /** @param {number} id @param {"top" | "up" | "down"} dir */
 function move(id, dir) {
-  const items = state.currentCurated
-  const idx = items.findIndex((i) => i.id === id)
+  const idx = curatedIndex(id)
   if (idx === -1) return
-  const target = dir === "top" ? 0 : dir === "up" ? idx - 1 : idx + 1
-  if (target < 0 || target >= items.length || target === idx) return
+  moveTo(id, dir === "top" ? 0 : dir === "up" ? idx - 1 : idx + 1)
+}
 
+/**
+ * Move an item to an absolute index (the typed position number — up/down
+ * buttons alone made "position 40 → 3" a 37-click job).
+ * @param {number} id @param {number} target
+ */
+function moveTo(id, target) {
+  const items = state.currentCurated
+  const idx = curatedIndex(id)
+  if (idx === -1) return
+  const clamped = Math.max(0, Math.min(items.length - 1, target))
+  if (clamped === idx) {
+    renderGrid() // reset a no-op / out-of-range entry back to the real number
+    return
+  }
   const [it] = items.splice(idx, 1)
-  items.splice(target, 0, it)
+  items.splice(clamped, 0, it)
   renderGrid()
   scheduleReorder()
 }
@@ -131,8 +156,28 @@ async function saveOrder() {
     })
     showSuccess("Order saved ✓")
   } catch (err) {
-    showGalleryError("Couldn't save the new order — reloading the current order.")
-    loadGalleryAdmin()
+    // Most likely the official set changed under us (a promote from the
+    // moderation tab, a concurrent save). Refresh and RE-APPLY the attempted
+    // order to the new set instead of discarding the couple's sequencing.
+    try {
+      const data = /** @type {GlobalTypes.MediaListResponse} */ (
+        await api("/api/media?section=official&limit=500")
+      )
+      const rank = new Map(ids.map((id, i) => [id, i]))
+      // Unknown (new) items sort to the end, keeping their server order.
+      const rankOf = (/** @type {number} */ id) => rank.get(id) ?? Number.MAX_SAFE_INTEGER
+      const fresh = data.items.slice().sort((a, b) => rankOf(a.id) - rankOf(b.id))
+      await api("/api/admin/media/reorder", {
+        method: "POST",
+        body: JSON.stringify({ ids: fresh.map((i) => i.id) }),
+      })
+      state.currentCurated = fresh
+      renderGrid()
+      showSuccess("Order saved ✓ (the list had changed — your order was re-applied)")
+    } catch {
+      showGalleryError("Couldn't save the new order — reloading the current order.")
+      loadGalleryAdmin()
+    }
   }
 }
 
@@ -208,9 +253,27 @@ function handleGridClick(e) {
 function handleGridBlur(e) {
   const target = e.target
   if (!(target instanceof HTMLInputElement)) return
-  if (!target.classList.contains("curated-caption")) return
   const id = parseInt(target.dataset.id || "", 10)
   if (Number.isNaN(id)) return
+  if (target.classList.contains("curated-pos")) {
+    const n = parseInt(target.value, 10)
+    if (Number.isNaN(n)) {
+      renderGrid() // restore the real number over a cleared/garbage entry
+      return
+    }
+    const idx = curatedIndex(id)
+    if (idx === -1) return
+    if (n - 1 === idx) {
+      // Position unchanged — don't call moveTo (its renderGrid would rebuild
+      // the whole grid and wipe uncommitted caption edits in sibling rows).
+      // Just normalize this one input (e.g. "03" → "3").
+      target.value = String(idx + 1)
+      return
+    }
+    moveTo(id, n - 1)
+    return
+  }
+  if (!target.classList.contains("curated-caption")) return
   const item = state.getCuratedById(id)
   const current = item ? item.caption || "" : ""
   if (target.value.trim() === current.trim()) return
@@ -222,7 +285,12 @@ function handleGridKeydown(e) {
   if (e.key !== "Enter") return
   const target = e.target
   if (!(target instanceof HTMLInputElement)) return
-  if (!target.classList.contains("curated-caption")) return
+  if (
+    !target.classList.contains("curated-caption") &&
+    !target.classList.contains("curated-pos")
+  ) {
+    return
+  }
   e.preventDefault()
   target.blur() // commit via the focusout handler
 }
@@ -269,12 +337,15 @@ function onUploadChange(item) {
 function renderUploadTray() {
   const items = queue.getItems()
   const active = queue.activeCount()
+  const failed = items.filter((i) => i.state === "failed").length
   getElement("gallery-upload-summary").textContent =
     items.length === 0
       ? ""
       : active > 0
         ? `Uploading ${items.length - active + 1} of ${items.length}…`
-        : "Uploads complete"
+        : failed > 0
+          ? `${failed} upload${failed === 1 ? "" : "s"} failed`
+          : "Uploads complete"
   getElement("gallery-upload-list").innerHTML = html`${items.map(uploadRow)}`
 }
 
@@ -336,8 +407,17 @@ function handleUploadListClick(e) {
   if (!(target instanceof Element)) return
   const btn = target.closest("[data-action]")
   if (!(btn instanceof HTMLElement) || !btn.dataset.id) return
-  if (btn.dataset.action === "retry") queue.retry(btn.dataset.id)
-  else if (btn.dataset.action === "remove") {
+  if (btn.dataset.action === "retry") {
+    const item = queue.getItems().find((i) => String(i.id) === btn.dataset.id)
+    if (item && item.errorStatus === 401) {
+      // The admin session expired mid-upload. Replaying the XHR with the dead
+      // cookie just 401s forever — the admin has no in-page auth sheet, so send
+      // them through the full re-login instead of a doomed retry.
+      state.onAuthRequired()
+      return
+    }
+    queue.retry(btn.dataset.id)
+  } else if (btn.dataset.action === "remove") {
     queue.remove(btn.dataset.id)
     renderUploadTray()
   }

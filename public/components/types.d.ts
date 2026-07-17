@@ -114,6 +114,10 @@ export function initAuthSheet(): void
 /** Open the auth sheet, remembering `trigger` for focus return + success sparkle. */
 export function openAuthSheet(trigger?: HTMLElement | null): void
 
+/** Open the auth sheet directly on the email-recovery panel (e.g. after
+ * following an expired magic link), optionally with an explanatory alert. */
+export function openAuthRecovery(message?: string): void
+
 /** @file media-processing.js - Client media processing contract (Phase 3 §5) */
 
 /** One requested image size: a variant name, a long-edge cap, and encode quality. */
@@ -177,6 +181,8 @@ export interface UploadQueueItem {
   error: string | null
   /** Failed for a retryable reason (network) vs terminal (bad format / too big). */
   retryable: boolean
+  /** HTTP status behind the failure (0 = network), for status-specific recovery. */
+  errorStatus: number | null
   /** Object URL for the tray preview (revoked on removal). */
   previewUrl: string | null
   /** Server media id, set after POST /api/media. */
@@ -322,3 +328,6 @@ export interface ToastOptions {
 
 /** Show a transient, auto-dismissing message (paints above the modal lightbox). */
 export function showToast(message: string, opts?: ToastOptions): void
+
+/** Announce a message on the page's shared SR-only polite live region. */
+export function announcePolite(message: string): void

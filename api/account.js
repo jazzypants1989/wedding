@@ -283,14 +283,15 @@ export async function recoverConsume(req, res, { params }) {
       ? consumeRecoveryToken(hashToken(token))
       : null
 
-  // Unknown / already-used / expired → 4xx (single-use is enforced atomically in
+  // Unknown / already-used / expired (single-use is enforced atomically in
   // consumeRecoveryToken). Also reject if the account was deleted after minting.
+  // A browser follows this link straight from an email, so answer with a
+  // redirect into the app (which offers "request a new link"), not JSON.
   const account = accountId !== null ? getAccountById(accountId) : undefined
   if (!account) {
-    return sendJson(res, 400, {
-      error: "This sign-in link is invalid or has expired. Please request a new one.",
-      code: "INVALID_TOKEN",
-    })
+    res.writeHead(302, { Location: "/guestbook?recover=expired" })
+    res.end()
+    return
   }
 
   const session = createAccountSession(account.id)

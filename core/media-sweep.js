@@ -12,15 +12,17 @@ import {
   hardDeleteMedia,
   getAllMediaFileKeys,
   getFinalizedMediaForIntegrity,
+  softDeleteMediaByFileKey,
 } from "../db/media.js"
 import {
   TMP_DIR,
   MEDIA_DIR,
   QUARANTINE_DIR,
   itemDir,
+  quarantineItemDir,
   variantExistsOnDisk,
 } from "./media-storage.js"
-import { MEDIA_LIMITS, expectedVariants } from "../types.js"
+import { MEDIA_LIMITS, MEDIA_STORAGE, expectedVariants } from "../types.js"
 
 const HOURS = MEDIA_LIMITS.ABANDONED_UPLOAD_MAX_AGE_MS / 3_600_000
 
@@ -72,6 +74,7 @@ export function cleanAbandonedUploads() {
 export function runMediaIntegrityPass() {
   let quarantined = 0
   let missingVariants = 0
+  let purged = 0
 
   // A. Files with no DB row → quarantine (never auto-hard-delete). Because rows
   //    are only ever soft-deleted, a directory with no matching row is genuine
@@ -97,13 +100,45 @@ export function runMediaIntegrityPass() {
     for (const key of keys) {
       if (knownKeys.has(key)) continue
       try {
-        fs.mkdirSync(QUARANTINE_DIR, { recursive: true })
-        fs.renameSync(path.join(prefixPath, key), path.join(QUARANTINE_DIR, key))
+        if (key.slice(0, 2) === prefix) {
+          // Normal layout: itemDir(key) resolves to prefixPath/key, so the shared
+          // helper (with its collision-suffix guard) can move it.
+          quarantineItemDir(key)
+        } else {
+          // Misplaced dir under a non-matching prefix — the helper would look in
+          // the wrong place, so move it by hand.
+          fs.mkdirSync(QUARANTINE_DIR, { recursive: true })
+          fs.renameSync(path.join(prefixPath, key), path.join(QUARANTINE_DIR, key))
+        }
         quarantined++
         console.warn(`media integrity: quarantined orphan directory ${key}`)
       } catch {
         // Best-effort; log-and-continue.
       }
+    }
+  }
+
+  // C. Purge quarantined items older than the TTL and reconcile quota. Rejected
+  //    (and orphan) items sit in quarantine/ on the data volume and count against
+  //    the byte caps until deleted here; soft-delete the matching row so the sums
+  //    drop it once its bytes are actually gone.
+  const ttlMs = MEDIA_STORAGE.QUARANTINE_TTL_MS
+  /** @type {string[]} */
+  let quarantineEntries = []
+  try {
+    quarantineEntries = fs.readdirSync(QUARANTINE_DIR)
+  } catch {
+    quarantineEntries = []
+  }
+  for (const name of quarantineEntries) {
+    const p = path.join(QUARANTINE_DIR, name)
+    try {
+      if (nowMs() - fs.statSync(p).mtimeMs <= ttlMs) continue
+      fs.rmSync(p, { recursive: true, force: true })
+      softDeleteMediaByFileKey(fileKeyFromQuarantineName(name))
+      purged++
+    } catch {
+      // Best-effort; log-and-continue.
     }
   }
 
@@ -123,10 +158,28 @@ export function runMediaIntegrityPass() {
     }
   }
 
-  if (quarantined > 0 || missingVariants > 0) {
-    console.warn(`media integrity pass: ${quarantined} quarantined, ${missingVariants} missing variant(s)`)
+  if (quarantined > 0 || missingVariants > 0 || purged > 0) {
+    console.warn(
+      `media integrity pass: ${quarantined} quarantined, ${purged} purged, ${missingVariants} missing variant(s)`,
+    )
   }
-  return { quarantined, missingVariants }
+  return { quarantined, missingVariants, purged }
+}
+
+/** Recover the file_key from a quarantine dir name, dropping the "-<epochms>"
+ *  collision suffix quarantineItemDir may add. file_keys are 32-char hex (no
+ *  hyphens), so a trailing all-digit segment after a hyphen is that suffix.
+ *  @param {string} name @returns {string} */
+function fileKeyFromQuarantineName(name) {
+  const dash = name.lastIndexOf("-")
+  if (dash <= 0) return name
+  const suffix = name.slice(dash + 1)
+  if (suffix.length === 0) return name
+  for (let i = 0; i < suffix.length; i++) {
+    const c = suffix.charCodeAt(i)
+    if (c < 48 || c > 57) return name // not all-digits → part of the key
+  }
+  return name.slice(0, dash)
 }
 
 /** @type {Types.runMediaMaintenance} */

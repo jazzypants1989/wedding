@@ -55,7 +55,9 @@ Range/206 + the GPS-blanked variant; spot-check that the served bytes carry no c
 Beyond the health endpoint, there's no alerting. Decide and wire up: an uptime/health check that
 pages someone on failure, a disk-headroom alert (before `MEDIA_MIN_FREE_BYTES` starts pausing
 uploads), and a place errors surface. Cheap insurance for an unattended box during the window it
-matters most.
+matters most. *(2026-07 UX pass: the moderation digest now retries ~hourly after a failed send
+instead of silently skipping an interval, and the admin dashboard polls badge counts every 3
+minutes — but external uptime/disk alerting is still unaddressed.)*
 
 ### Consolidate the two deploy paths 🟢
 
@@ -72,6 +74,11 @@ The daily media sweep (`core/media-sweep.js`) moves DB-orphaned files into
 auto-hard-deletes** — it's a safety net, not a self-emptying trash. So it grows unbounded; someone
 must periodically inspect and `rm -rf data/uploads/quarantine/*` once satisfied nothing there is
 wanted, so it doesn't silently eat the disk headroom `MEDIA_MIN_FREE_BYTES` guards.
+
+*Update (2026-07 UX pass):* **admin-rejected media now also moves here** instead of being
+`rm -rf`'d (`quarantineItemDir` in `core/media-storage.js`, used by `api/admin/moderation.js`),
+so a mis-clicked Reject is hand-recoverable until quarantine is emptied. Expect more volume in
+this directory than before — same manual-emptying doctrine applies.
 
 ---
 
@@ -152,9 +159,9 @@ together:
   cross-page, same-browser-only import dance (`effect-config.js`). Needs a
   friendly control surface and a connection from the theme choice to its implied
   effects.
-- **`.env` error copy in Send Invites** ("Set RESEND_API_KEY in .env",
-  `invites.js`) and "server logs" guidance expose deploy internals to a
-  non-technical couple. Reword for the couple; point elsewhere for the operator.
+- ~~**`.env` error copy in Send Invites**~~ *Done (2026-07 UX pass):* reworded for the
+  couple ("Email sending isn't set up yet — whoever runs the server…", `invites.js`).
+  The setup wizard's "server logs" guidance is still open.
 - **Admin password self-service reset.** The login screen has no "forgot
   password" path (`admin/index.html`); recovery today means editing env config.
 - **CSV template download.** Import lists the required columns

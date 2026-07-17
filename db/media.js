@@ -178,6 +178,16 @@ export function softDeleteContentMediaByFileKey(fileKey) {
   return result.changes > 0
 }
 
+/** @type {Types.softDeleteMediaByFileKey} */
+export function softDeleteMediaByFileKey(fileKey) {
+  // Reconciles the byte sums when the sweep purges a rejected item's quarantined
+  // files: the bytes are gone from disk, so drop the row from the sums (which
+  // filter deleted_at IS NULL).
+  const result = sql`UPDATE media SET deleted_at = ${now()}
+    WHERE file_key = ${fileKey} AND deleted_at IS NULL`.run()
+  return result.changes > 0
+}
+
 /** @type {Types.hardDeleteMedia} */
 export function hardDeleteMedia(id) {
   // Only for abandoned 'uploading' rows the sweep removes — they never went
@@ -195,12 +205,14 @@ export function countPendingMedia() {
 
 /** @type {Types.sumOriginalBytes} */
 export function sumOriginalBytes() {
-  // Global disk guard. Excludes soft-deleted and rejected rows (their files are
-  // unlinked); 'uploading' rows count their declared bytes so in-flight uploads
-  // press against the cap. hidden rows keep their files, so they count.
+  // Global disk guard. Counts every row whose files are still on the data volume:
+  // 'uploading' presses its declared bytes so in-flight uploads count; hidden and
+  // *rejected* rows keep their files (rejected → quarantine/, same disk) so they
+  // count too. Only soft-deleted rows (self-delete rmSync, or a swept quarantine
+  // dir) are excluded — their bytes are genuinely gone.
   /** @type {import('./types.js').SumResult | undefined} */
   const result = sql`SELECT COALESCE(SUM(original_bytes), 0) AS total FROM media
-    WHERE deleted_at IS NULL AND status != 'rejected'`.get()
+    WHERE deleted_at IS NULL`.get()
   return result ? result.total : 0
 }
 
@@ -208,7 +220,7 @@ export function sumOriginalBytes() {
 export function sumOriginalBytesForAccount(accountId) {
   /** @type {import('./types.js').SumResult | undefined} */
   const result = sql`SELECT COALESCE(SUM(original_bytes), 0) AS total FROM media
-    WHERE account_id = ${accountId} AND deleted_at IS NULL AND status != 'rejected'`.get()
+    WHERE account_id = ${accountId} AND deleted_at IS NULL`.get()
   return result ? result.total : 0
 }
 

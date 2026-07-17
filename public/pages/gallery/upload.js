@@ -5,7 +5,7 @@
 /** @import * as Components from "../../components/types.js" */
 
 import { html, getCoupleName, getElement, getInputElement } from "../utils.js"
-import { requireAccount, session } from "../../components/guest-session.js"
+import { requireAccount, session, loadSession } from "../../components/guest-session.js"
 import { fireConfetti } from "../../components/celebrate.js"
 import { showNote } from "../../components/notice.js"
 import { createUploadQueue } from "../../components/media-uploader.js"
@@ -59,7 +59,10 @@ export function initUpload() {
     if (!(btn instanceof HTMLElement)) return
     const id = btn.dataset.id
     if (!id) return
-    if (btn.dataset.action === "retry") queue.retry(id)
+    // Retry re-enters the write path, so it re-checks sign-in: a 401 failure
+    // (expired session) marks the row retryable, and this gate opens the auth
+    // sheet before the retry replays.
+    if (btn.dataset.action === "retry") requireAccount(() => queue.retry(id))
     else if (btn.dataset.action === "remove") {
       queue.remove(id)
       renderTray()
@@ -88,6 +91,12 @@ function onItemChange(item) {
     prepended.add(item.id)
     prependItem(toListItem(item))
     if (item.state === "pending") showPendingNote()
+  }
+  // A 401 means the session died server-side while local state still says
+  // signed-in. Re-sync so the identity UI tells the truth and the row's Retry
+  // (gated by requireAccount) opens the auth sheet instead of failing again.
+  if (item.state === "failed" && item.errorStatus === 401 && session.account) {
+    void loadSession()
   }
   renderTray()
 }
@@ -125,11 +134,22 @@ function renderTray() {
   tray.hidden = false
 
   const active = queue.activeCount()
+  const failed = items.filter((i) => i.state === "failed").length
+  // The summary is the tray's only live region, so it must carry failures too —
+  // otherwise a queue that ends entirely in errors still announces "complete".
   const summary =
     active > 0
       ? `Uploading ${items.length - active + 1} of ${items.length}…`
-      : "Uploads complete"
-  getElement("upload-tray-summary").textContent = summary
+      : failed > 0
+        ? `${failed} upload${failed === 1 ? "" : "s"} failed`
+        : "Uploads complete"
+  const summaryEl = getElement("upload-tray-summary")
+  // The summary is the tray's only live region; skip identical reassignment,
+  // which replaces the text node and can re-announce it.
+  if (summaryEl.textContent !== summary) summaryEl.textContent = summary
+
+  // With nothing active the button only clears finished rows — say so.
+  getElement("upload-cancel-all").textContent = active > 0 ? "Cancel all" : "Clear"
 
   // Reconcile rows in place (create/update/remove) rather than replacing the
   // list wholesale, so a caption input being typed into survives other items'

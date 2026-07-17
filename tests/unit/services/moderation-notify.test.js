@@ -137,7 +137,7 @@ describe("maybeSendModerationDigest", () => {
     assert.ok(stamped && new Date(stamped).getTime() >= before, "timestamp advanced")
   })
 
-  it("still advances the timestamp when the send fails (retries next-day, not next-hour)", async () => {
+  it("backdates the timestamp when the send fails so the next sweep retries soon", async () => {
     const account = makeAccount()
     makeEntry(account, "pending")
     const email = makeEmailStub({ sendSuccess: false })
@@ -149,10 +149,19 @@ describe("maybeSendModerationDigest", () => {
     assert.strictEqual(result.reason, "send_failed")
     assert.strictEqual(email.sent.length, 1, "a send was attempted")
 
+    // The stamp exists (double-send guard) but sits backdated: the digest
+    // becomes due again ~an hour out, not a full interval later.
     const stamped = getAppState(DIGEST_KEY)
-    assert.ok(
-      stamped && new Date(stamped).getTime() >= before,
-      "timestamp is set even though the send failed",
-    )
+    assert.ok(stamped, "timestamp is set even though the send failed")
+    const dueAgainMs =
+      new Date(stamped).getTime() + MODERATION_NOTIFY.DIGEST_INTERVAL_MS - before
+    assert.ok(dueAgainMs <= 61 * 60 * 1000, "retry is due within ~an hour")
+    assert.ok(dueAgainMs > 0, "but not immediately (no tight retry loop)")
+
+    // A retry with a working transport then sends.
+    const workingEmail = makeEmailStub({ sendSuccess: true })
+    setAppState(DIGEST_KEY, new Date(Date.now() - MODERATION_NOTIFY.DIGEST_INTERVAL_MS - 1000).toISOString())
+    const retry = await maybeSendModerationDigest({ email: workingEmail })
+    assert.strictEqual(retry.sent, true)
   })
 })

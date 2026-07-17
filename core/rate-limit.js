@@ -120,6 +120,12 @@ const limiters = {
     max: RATE_LIMITS.LOOKUP.max,
   }),
 
+  petition: createLimiter({
+    name: "petition",
+    windowMs: RATE_LIMITS.PETITION.windowMs,
+    max: RATE_LIMITS.PETITION.max,
+  }),
+
   adminLogin: createLimiter({
     name: "adminLogin",
     windowMs: RATE_LIMITS.ADMIN_LOGIN.windowMs,

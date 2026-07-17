@@ -104,18 +104,24 @@
       <div id="rsvp-error" class="rsvp-error form-state" hidden>
         <p id="rsvp-error-message" role="alert">Unable to load your invitation.</p>
 
-        <!-- Lookup Form -->
+        <!-- Lookup Form. The static markup matches the default feature flags
+             (phone-only, no name field) so nothing shifts after first paint;
+             lookup-form.js progressively reveals what config enables. -->
         <div id="rsvp-lookup" class="rsvp-lookup">
-          <p>Lost your invite link? Enter your name and contact info and we'll look it up for you.</p>
+          <p id="petition-pending-note" class="alert alert-success" role="status" hidden>
+            You've already sent us a request — it's still under review, and we'll
+            get back to you by email. (Heard back? Use the link we sent you.)
+          </p>
+          <p>Don't have your invite link handy? We can find your invitation.</p>
           <form id="lookup-form" class="lookup-form">
-            <div class="form-group" id="lookup-name-group">
+            <div class="form-group" id="lookup-name-group" hidden>
               <label for="lookup-name">Your Name (as on your invitation)</label>
-              <input type="text" id="lookup-name" name="name" required placeholder="John Smith">
+              <input type="text" id="lookup-name" name="name" placeholder="John Smith">
             </div>
             <div class="form-group">
-              <label for="lookup-contact" id="lookup-contact-label">Phone or Email</label>
-              <input type="text" id="lookup-contact" name="contact" required
-                placeholder="(555) 123-4567 or you@email.com">
+              <label for="lookup-contact" id="lookup-contact-label">Phone Number</label>
+              <input type="tel" id="lookup-contact" name="contact" required
+                placeholder="(555) 123-4567">
             </div>
             <button type="submit" class="btn btn-primary" id="lookup-submit">Find My Invitation</button>
           </form>

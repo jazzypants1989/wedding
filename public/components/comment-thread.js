@@ -11,6 +11,10 @@
 import { html, api, getErrorMessage } from "../pages/utils.js"
 import { requireAccount } from "./guest-session.js"
 import { formatRelative, upgradeTimes } from "./relative-time.js"
+import { announcePolite } from "./announce.js"
+
+/** Max comment length — mirrors the server limit; drives the counter + maxlength. */
+const COMMENT_MAXLENGTH = 500
 
 /** @type {Types.renderCommentThread} */
 export function renderCommentThread(targetType, targetId, count = 0) {
@@ -40,7 +44,7 @@ function onInput(e) {
   const form = input.closest("[data-comment-form]")
   const counter = form && form.querySelector("[data-comment-counter]")
   if (counter instanceof HTMLElement) {
-    counter.textContent = `${input.value.length}/500`
+    counter.textContent = `${input.value.length}/${COMMENT_MAXLENGTH}`
   }
 }
 
@@ -77,9 +81,9 @@ function renderComment(c) {
 function composerMarkup() {
   return html`
     <form class="comment-composer" data-comment-form>
-      <textarea class="comment-input" data-comment-input rows="2" maxlength="500"
+      <textarea class="comment-input" data-comment-input rows="2" maxlength="${COMMENT_MAXLENGTH}"
         placeholder="Add a comment…" aria-label="Add a comment"></textarea>
-      <span class="char-counter" data-comment-counter aria-hidden="true">0/500</span>
+      <span class="char-counter" data-comment-counter aria-hidden="true">0/${COMMENT_MAXLENGTH}</span>
       <button type="submit" class="btn btn-small comment-submit">Post</button>
     </form>
     <p class="comment-error" data-comment-error hidden></p>`
@@ -137,10 +141,16 @@ async function loadComments(thread) {
     const data = /** @type {Types.CommentListResponse} */ (
       await api(`/api/${targetType}/${targetId}/comments`)
     )
+    // The empty line keeps a zero-comment expand from reading as a no-op
+    // (just a bare text box); appendComment removes it on the first post.
     body.innerHTML = html`
       <ul class="comment-list" data-comment-list>
         ${data.comments.map(renderComment)}
       </ul>
+      ${data.comments.length === 0
+        ? html`<p class="comment-empty" data-comment-empty>
+            No comments yet — say something nice ✨</p>`
+        : ""}
       ${composerMarkup()}`
     upgradeTimes(body)
     thread.dataset.loaded = "true"
@@ -187,8 +197,17 @@ async function postComment(thread, input, message) {
       })
     )
     input.value = ""
+    // Let the existing input handler (onInput) reset the "N/500" counter.
+    input.dispatchEvent(new Event("input", { bubbles: true }))
     appendComment(thread, data.comment)
     updateCount(thread)
+    // The appended node is silent to screen readers — say what happened
+    // (pending comments look posted to their author but aren't public yet).
+    announcePolite(
+      data.comment.status === "pending"
+        ? "Comment sent — the couple will approve it soon"
+        : "Comment posted",
+    )
   } catch (err) {
     showError(thread, getErrorMessage(err))
   }
@@ -196,6 +215,8 @@ async function postComment(thread, input, message) {
 
 /** @param {HTMLElement} thread @param {Types.CommentListItem} comment */
 function appendComment(thread, comment) {
+  const empty = thread.querySelector("[data-comment-empty]")
+  if (empty) empty.remove()
   const list = thread.querySelector("[data-comment-list]")
   if (!(list instanceof HTMLElement)) return
   const wrapper = document.createElement("template")

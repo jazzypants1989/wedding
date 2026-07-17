@@ -80,7 +80,7 @@ export function hideLookupSection(): void
  */
 export function initLookupForm(
   onShowPetitionForm?: ShowPetitionFormCallback | null,
-): void
+): Promise<void>
 
 export interface ConfigResponse {
   features?: {
@@ -218,7 +218,7 @@ export interface RsvpFormState {
  * @example
  * showError('Invalid code');
  */
-export function showError(message: string): void
+export function showError(message: string, neutral?: boolean): void
 
 /**
  * Show success state. Confetti only fires when the guest is attending; a decline

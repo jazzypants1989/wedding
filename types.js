@@ -125,6 +125,9 @@ export const MODERATION_NOTIFY = Object.freeze({
 export const RATE_LIMITS = Object.freeze({
   RSVP: { windowMs: 60 * 1000, max: 10 }, // 10 per minute
   LOOKUP: { windowMs: 60 * 1000, max: 3 }, // 3 per minute (strict)
+  // Own bucket: a guest whose lookups struck out shouldn't arrive at the
+  // petition form already rate-limited (lookup retries used to eat this budget).
+  PETITION: { windowMs: 60 * 1000, max: 3 }, // 3 per minute
   ADMIN_LOGIN: { windowMs: 60 * 1000, max: 3 }, // 3 per minute
   ADMIN_INVITE: { windowMs: 60 * 60 * 1000, max: 100 }, // 100 per hour
   ACCOUNT_REGISTER: { windowMs: 60 * 60 * 1000, max: 10 }, // 10 per hour per IP (invite-code oracle guard)
@@ -178,6 +181,11 @@ export const MEDIA_STORAGE = Object.freeze({
   MIN_FREE_BYTES: envBytes("MEDIA_MIN_FREE_BYTES", 5 * 1024 * 1024 * 1024), // 5GB headroom
   MAX_TOTAL_BYTES: envBytes("MEDIA_MAX_TOTAL_BYTES", 45 * 1024 * 1024 * 1024), // 45GB total originals
   UNTRUSTED_QUOTA_BYTES: envBytes("MEDIA_UNTRUSTED_QUOTA_BYTES", 250 * 1024 * 1024), // 250MB per untrusted account
+  // Rejected media is set aside in quarantine/ (mis-click recovery) but still
+  // counts against the caps above until this window elapses, when the daily
+  // sweep deletes it and drops the row from the byte sums.
+  QUARANTINE_TTL_MS:
+    envBytes("MEDIA_QUARANTINE_TTL_DAYS", 7) * 24 * 60 * 60 * 1000,
 })
 
 // Responsive width ladder for content-section images (e.g. dress-code figures).
@@ -213,6 +221,13 @@ export function expectedVariants(kind, section, needsDisplay) {
 export const PAGINATION = Object.freeze({
   DEFAULT_PAGE_SIZE: 50,
   MAX_PAGE_SIZE: 100,
+})
+
+export const MODERATION = Object.freeze({
+  // Hard ceiling on one approve-all sweep — far above any realistic queue. When
+  // a backlog exceeds this, the handler returns a `remaining` count so the
+  // client can keep sweeping until drained.
+  APPROVE_ALL_MAX: 5000,
 })
 
 export const BRAND = Object.freeze({

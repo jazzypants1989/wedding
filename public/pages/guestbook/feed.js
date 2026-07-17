@@ -10,6 +10,7 @@ import {
   getButtonElement,
   getTextAreaElement,
   getErrorMessage,
+  setLoadMoreState,
 } from "../utils.js"
 import { requireAccount } from "../../components/guest-session.js"
 import { fireConfetti, miniSparkle, setButtonLoading } from "../../components/celebrate.js"
@@ -134,6 +135,7 @@ function hideError() {
 async function loadPage(isAuto) {
   if (loading || reachedEnd) return
   loading = true
+  hideError()
   const btn = getButtonElement("gb-loadmore")
   // Spinner only on the empty first paint; later pages have the Load-more button.
   const firstPaint = getElement("gb-feed").childElementCount === 0
@@ -149,6 +151,7 @@ async function loadPage(isAuto) {
     )
     addEntries(data.entries, false)
     nextCursor = data.nextCursor
+    setLoadMoreState(btn, "reset")
     if (nextCursor === null) {
       reachedEnd = true
       btn.hidden = true
@@ -158,6 +161,7 @@ async function loadPage(isAuto) {
     if (isAuto) autoFetches += 1
   } catch (err) {
     showError(getErrorMessage(err))
+    setLoadMoreState(btn, "retry")
   } finally {
     loading = false
     if (firstPaint) loadingEl.hidden = true

@@ -67,6 +67,16 @@ export function validateCsrf(
   session: { csrf_token?: string } | null | undefined,
 ): boolean
 
+/**
+ * Log a CSRF double-submit failure and send a 403 carrying a machine-readable
+ * `code: "CSRF"` so the client shows friendly copy without sniffing the message.
+ */
+export function sendCsrfError(
+  req: IncomingMessage,
+  res: ServerResponse,
+  kind: "admin" | "guest",
+): void
+
 export interface RouteInfo {
   params: Record<string, string>
 }
@@ -283,7 +293,7 @@ export function isValidEmail(email: string | null | undefined): boolean
 
 /** @file Types for audit logging */
 
-interface AuditEvent {
+export interface AuditEvent {
   action: string
   adminId?: string
   ip?: string
@@ -318,6 +328,8 @@ interface AuditActions {
 }
 
 export function log(event: AuditEvent): void
+/** Write many audit events in a single file append (bulk moderation actions). */
+export function logBatch(events: AuditEvent[]): void
 export function cleanOldLogs(): void
 export const AUDIT_ACTIONS: AuditActions
 
@@ -354,6 +366,7 @@ export interface CreateLimiterOptions {
 export interface Limiters {
   rsvp: RateLimiter
   lookup: RateLimiter
+  petition: RateLimiter
   adminLogin: RateLimiter
   adminInvite: RateLimiter
   accountRegister: RateLimiter
@@ -623,6 +636,10 @@ export function itemDir(fileKey: string): string
 /** Absolute path for a variant file: {itemDir}/{variant}.{ext}. */
 export function variantDiskPath(fileKey: string, variant: string, ext: string): string
 
+/** Move an item's directory into quarantine/ (recoverable by hand) instead of
+ * deleting it. No-op when the directory doesn't exist. */
+export function quarantineItemDir(fileKey: string): void
+
 /** Content-Type for a storage extension (jpg -> image/jpeg, etc.). */
 export function contentTypeForExt(ext: string): string
 
@@ -665,7 +682,11 @@ export function serveMedia(req: IncomingMessage, res: ServerResponse): void
 export function cleanAbandonedUploads(): { rowsDeleted: number; tmpDeleted: number }
 
 /** Daily integrity pass: quarantine orphan files, log missing variants. */
-export function runMediaIntegrityPass(): { quarantined: number; missingVariants: number }
+export function runMediaIntegrityPass(): {
+  quarantined: number
+  missingVariants: number
+  purged: number
+}
 
 /** Hourly maintenance entry point (runs the integrity pass every 24th tick). */
 export function runMediaMaintenance(): void

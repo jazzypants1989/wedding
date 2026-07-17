@@ -19,6 +19,9 @@ import { log, AUDIT_ACTIONS } from "../core/utils.js"
 
 const DIGEST_STATE_KEY = "moderation_last_digest_at"
 
+/** How soon after a failed send the next sweep may retry (backdated stamp). */
+const RETRY_DELAY_MS = 60 * 60 * 1000
+
 /** @type {Types.maybeSendModerationDigest} */
 export async function maybeSendModerationDigest({
   email = defaultEmailService,
@@ -37,9 +40,10 @@ export async function maybeSendModerationDigest({
     }
   }
 
-  // Stamp the timestamp BEFORE sending: if the send fails we wait until the next
-  // interval rather than retrying every hour (the badge covers the gap). This is
-  // deliberate per the spec.
+  // Stamp the timestamp BEFORE sending so overlapping calls can't double-send.
+  // A failed send re-stamps backdated (below) so the next sweep retries in
+  // ~an hour — a silently dropped digest used to mean the couple got nothing
+  // for a whole interval with no signal.
   setAppState(DIGEST_STATE_KEY, new Date().toISOString())
 
   const oldestCreatedAt = getOldestPendingGuestbookAt()
@@ -49,6 +53,12 @@ export async function maybeSendModerationDigest({
   })
 
   const result = await email.sendEmail({ to: recipient, subject, text, html })
+
+  if (!result.success) {
+    const retryAt =
+      Date.now() - MODERATION_NOTIFY.DIGEST_INTERVAL_MS + RETRY_DELAY_MS
+    setAppState(DIGEST_STATE_KEY, new Date(retryAt).toISOString())
+  }
 
   log({
     action: AUDIT_ACTIONS.MODERATION_EMAIL_SENT,

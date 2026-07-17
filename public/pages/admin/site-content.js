@@ -588,6 +588,11 @@ function collectForm() {
 }
 
 export async function loadSiteContent() {
+  // Never clobber unsaved edits still sitting in the form. This is what makes
+  // a session-expiry mid-edit survivable: the 401 → login swap leaves the form
+  // DOM intact, and re-entering this tab after re-login would otherwise
+  // repopulate from the server and silently discard everything.
+  if (isSiteContentDirty()) return
   try {
     const data = await api("/api/admin/site-content")
     const response = /** @type {Types.SiteContentResponse} */ (data)

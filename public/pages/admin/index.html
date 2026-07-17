@@ -263,6 +263,11 @@
             <button type="button" id="mod-bulk-reject" class="btn btn-danger btn-sm">Reject selected</button>
           </div>
 
+          <div id="mod-approve-all-bar" class="mod-approve-all-bar" hidden>
+            <button type="button" id="mod-approve-all" class="btn btn-primary btn-sm">Approve all pending</button>
+            <span class="text-muted">Publishes the entire pending backlog, not just this page.</span>
+          </div>
+
           <div class="table-container">
             <table id="moderation-table">
               <thead>
@@ -290,6 +295,11 @@
 
         <!-- Accounts sub-view -->
         <div id="mod-view-accounts" class="card" hidden>
+          <p class="text-muted card-text">
+            Trusted guests post straight to the site; untrusted guests' posts wait
+            for your approval. Approving someone's post trusts them automatically,
+            so you'll see people here marked trusted whom you never clicked Trust for.
+          </p>
           <div class="card-header flex-between">
             <h2>Guest Accounts</h2>
             <div class="header-buttons">
@@ -861,6 +871,10 @@
     <div id="moderation-detail-actions" class="modal-actions modal-actions-wrap">
       <!-- Populated by JS: the actions available for this item's status -->
     </div>
+    <p class="mod-detail-keys text-muted hide-mobile" aria-hidden="true">
+      Keyboard: <kbd>←</kbd>/<kbd>→</kbd> previous/next &middot; <kbd>A</kbd> approve
+      &middot; <kbd>R</kbd> reject &middot; <kbd>H</kbd> hide
+    </p>
   </dialog>
 
   <!-- Generic moderation confirm dialog (approve / reject / hide / trust / etc.) -->

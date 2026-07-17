@@ -64,6 +64,25 @@ export function clearNotification() {
   banner.hidden = true
 }
 
+/** @type {Types.showLoadError} */
+export function showLoadError(el, colspan, message, retry) {
+  // Inline failure state with its own retry — the transient banner alone
+  // auto-dismisses and leaves the view stuck on a spinner with no way back.
+  const content = html`<div class="load-error">
+    <span>${message}</span>
+    <button type="button" class="btn btn-secondary btn-sm" data-load-retry>Try again</button>
+  </div>`
+  if (el instanceof HTMLTableSectionElement) {
+    el.innerHTML = html`<tr>
+      <td colspan="${colspan || 1}">${content}</td>
+    </tr>`
+  } else {
+    el.innerHTML = content
+  }
+  const btn = el.querySelector("[data-load-retry]")
+  if (btn) btn.addEventListener("click", () => retry(), { once: true })
+}
+
 /** @type {Types.openModal} */
 export function openModal(dialog, trigger) {
   if (!(dialog instanceof HTMLDialogElement)) {

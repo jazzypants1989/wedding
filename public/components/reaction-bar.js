@@ -11,6 +11,7 @@ import { html, api, getErrorMessage } from "../pages/utils.js"
 import { requireAccount } from "./guest-session.js"
 import { miniSparkle } from "./celebrate.js"
 import { showToast } from "./toast.js"
+import { announcePolite } from "./announce.js"
 
 /** Stable reaction key → display glyph. Must stay in sync with REACTION_EMOJI. */
 export const REACTION_GLYPHS = Object.freeze({
@@ -94,6 +95,15 @@ async function toggle(btn, bar, targetType, targetId, emoji) {
       })
     )
     reconcile(bar, res, emoji)
+    // The pill's visual count change is silent to screen readers (aria-pressed
+    // flips, but the new count is never spoken) — announce the outcome.
+    const plain = emoji.replaceAll("_", " ")
+    const total = res.counts[emoji] ?? 0
+    announcePolite(
+      res.active
+        ? `Reacted with ${plain} — ${total} total`
+        : `Removed your ${plain} reaction`,
+    )
   } catch (err) {
     // Roll back to the pre-toggle state; the server is the source of truth.
     setPill(btn, wasPressed, wasCount)

@@ -26,6 +26,8 @@ export interface LookupResponse {
   redirectCode?: string
   message?: string
   canPetition?: boolean
+  /** Prior petition status for the caller's email, when not found. */
+  petitionStatus?: "pending" | "approved" | "denied" | null
 }
 
 export interface RSVPSubmitResponse {
@@ -257,3 +259,21 @@ export function countDigits(str: string): number
  * detectContactType("john.doe") // "unknown"
  */
 export function detectContactType(input: string): ContactType
+
+/**
+ * Remove a query param from the current URL and replaceState to the result.
+ * Uses URLSearchParams.toString() (universally supported) rather than .size.
+ * @example
+ * stripQueryParam("/gallery", "item") // /gallery?section=official&item=9 -> /gallery?section=official
+ */
+export function stripQueryParam(basePath: string, key: string): void
+
+/**
+ * Drive a guest feed's load-more button (which doubles as the infinite-scroll
+ * sentinel) through its load states. "retry" makes it a visible "Try again";
+ * "reset" restores "Load more" (caller decides visibility).
+ */
+export function setLoadMoreState(
+  btn: HTMLButtonElement,
+  mode: "retry" | "reset",
+): void

@@ -120,13 +120,19 @@ export async function post(req, res, { params }) {
     success: true,
     message:
       body.attending && actualPartySize
-        ? `Thank you! We're excited to see you and ${
-            actualPartySize > 1
-              ? `your ${actualPartySize - 1} guest(s)`
-              : "just you"
-          }!`
+        ? `Thank you! We're excited to see you and ${companionPhrase(actualPartySize)}!`
         : "We're sorry you can't make it. Thank you for letting us know!",
   })
+}
+
+/**
+ * Human phrasing for who's coming, given the party size (self included).
+ * @param {number} partySize @returns {string}
+ */
+function companionPhrase(partySize) {
+  if (partySize === 2) return "your guest"
+  if (partySize > 2) return `your ${partySize - 1} guests`
+  return "just you"
 }
 
 /** @type {Types.getRsvpByGuestId} */

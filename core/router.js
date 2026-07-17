@@ -224,6 +224,7 @@ route("POST", "/api/admin/invite/send", invites.send, { admin: true })
 
 // Admin petition routes
 route("GET", "/api/admin/petitions", petitions.list, { admin: true })
+route("GET", "/api/admin/petitions/counts", petitions.counts, { admin: true })
 route("POST", "/api/admin/petitions/:id/approve", petitions.approve, { admin: true })
 route("POST", "/api/admin/petitions/:id/deny", petitions.deny, { admin: true })
 
@@ -232,6 +233,7 @@ route("POST", "/api/admin/petitions/:id/deny", petitions.deny, { admin: true })
 route("GET", "/api/admin/moderation/queue", moderation.queue, { admin: true })
 route("GET", "/api/admin/moderation/counts", moderation.counts, { admin: true })
 route("POST", "/api/admin/moderation/bulk", moderation.bulk, { admin: true })
+route("POST", "/api/admin/moderation/approve-all", moderation.approveAllPending, { admin: true })
 route("POST", "/api/admin/moderation/:type/:id/approve", moderation.approve, { admin: true })
 route("POST", "/api/admin/moderation/:type/:id/reject", moderation.reject, { admin: true })
 route("POST", "/api/admin/moderation/:type/:id/hide", moderation.hide, { admin: true })

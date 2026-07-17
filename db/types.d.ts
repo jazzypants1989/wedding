@@ -599,6 +599,11 @@ export function softDeleteMedia(id: number): boolean
  *  touch a gallery row. Returns true if a row was soft-deleted. */
 export function softDeleteContentMediaByFileKey(fileKey: string): boolean
 
+/** Soft-delete any media row by file_key (used by the quarantine-purge sweep to
+ *  drop a rejected row from the byte sums once its files are deleted). Returns
+ *  true if a row was soft-deleted. */
+export function softDeleteMediaByFileKey(fileKey: string): boolean
+
 /** Hard-delete an abandoned 'uploading' row (sweep only). */
 export function hardDeleteMedia(id: number): void
 

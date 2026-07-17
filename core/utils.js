@@ -58,18 +58,9 @@ export function cleanOldLogs() {
   }
 }
 
-/** @type {Types.log} */
-export function log({
-  action,
-  adminId,
-  ip,
-  resourceType,
-  resourceId,
-  details,
-}) {
-  ensureLogDir()
-
-  const entry = {
+/** @param {Types.AuditEvent} event */
+function buildLogEntry({ action, adminId, ip, resourceType, resourceId, details }) {
+  return {
     timestamp: new Date().toISOString(),
     action,
     // Store only an 8-char prefix of the session token: enough to correlate an
@@ -81,14 +72,30 @@ export function log({
     resourceId: resourceId || null,
     details: details || null,
   }
+}
 
-  const line = JSON.stringify(entry) + "\n"
-
-  fs.appendFile(getLogFilename(), line, (err) => {
+/** @param {string} data */
+function appendLog(data) {
+  fs.appendFile(getLogFilename(), data, (err) => {
     if (err) {
       console.error("Failed to write audit log:", err.message)
     }
   })
+}
+
+/** @type {Types.log} */
+export function log(event) {
+  ensureLogDir()
+  appendLog(JSON.stringify(buildLogEntry(event)) + "\n")
+}
+
+/** @type {Types.logBatch} */
+export function logBatch(events) {
+  if (events.length === 0) return
+  ensureLogDir()
+  // One append for the whole batch — a 5000-item approve-all used to fire 5000
+  // separate appendFile opens against the same daily file.
+  appendLog(events.map((e) => JSON.stringify(buildLogEntry(e)) + "\n").join(""))
 }
 
 export const AUDIT_ACTIONS = Object.freeze({

@@ -59,6 +59,27 @@ export function variantDiskPath(fileKey, variant, ext) {
   return path.join(itemDir(fileKey), variant + "." + ext)
 }
 
+/** @type {Types.quarantineItemDir} */
+export function quarantineItemDir(fileKey) {
+  const src = itemDir(fileKey)
+  if (!fs.existsSync(src)) return
+  fs.mkdirSync(QUARANTINE_DIR, { recursive: true })
+  let dest = path.join(QUARANTINE_DIR, fileKey)
+  // A prior quarantine of the same key (re-reject after manual restore) would
+  // make the rename fail — pick a suffixed name instead of throwing.
+  if (fs.existsSync(dest)) dest = dest + "-" + Date.now()
+  fs.renameSync(src, dest)
+  // Stamp the quarantine time so the sweep's TTL measures from now: renameSync
+  // preserves the dir's mtime (original upload time), which would otherwise let
+  // a long-ago-uploaded item be purged the instant it's rejected.
+  try {
+    const t = new Date()
+    fs.utimesSync(dest, t, t)
+  } catch {
+    // Best-effort; a missed stamp only shortens this item's recovery window.
+  }
+}
+
 /** @type {Types.contentTypeForExt} */
 export function contentTypeForExt(ext) {
   return CONTENT_TYPE_BY_EXT[ext] ?? "application/octet-stream"

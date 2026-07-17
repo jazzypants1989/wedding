@@ -28,20 +28,27 @@ import * as email from "../../services/email.js"
 
 import { sql } from "../../db/sql.js"
 
+/** @returns {{ pending: number, approved: number, denied: number }} */
+function petitionCounts() {
+  return {
+    pending: countPetitions({ status: "pending" }),
+    approved: countPetitions({ status: "approved" }),
+    denied: countPetitions({ status: "denied" }),
+  }
+}
+
 /** @type {Types.listPetitions} */
 export async function list(req, res) {
   const urlObj = new URL(req.url ?? "/", `http://${req.headers.host}`)
   const statusParam = urlObj.searchParams.get("status")
   const status = isPetitionStatus(statusParam) ? statusParam : undefined
 
-  const petitions = getAllPetitions({ status })
-  const counts = {
-    pending: countPetitions({ status: "pending" }),
-    approved: countPetitions({ status: "approved" }),
-    denied: countPetitions({ status: "denied" }),
-  }
+  return sendJson(res, 200, { petitions: getAllPetitions({ status }), counts: petitionCounts() })
+}
 
-  return sendJson(res, 200, { petitions, counts })
+/** @type {Types.petitionCountsHandler} */
+export async function counts(req, res) {
+  return sendJson(res, 200, petitionCounts())
 }
 
 /** @type {Types.ParamsHandler} */
@@ -217,6 +224,12 @@ export function getPetitionById(id) {
 /** @type {Types.getPetitionByEmail} */
 export function getPetitionByEmail(email) {
   return sql`SELECT * FROM petitions WHERE email = ${normalizeEmail(email)} AND status = 'pending'`.get()
+}
+
+/** @type {Types.getLatestPetitionByEmail} */
+export function getLatestPetitionByEmail(email) {
+  return sql`SELECT * FROM petitions WHERE email = ${normalizeEmail(email)}
+    ORDER BY created_at DESC LIMIT 1`.get()
 }
 
 /** @type {Types.getAllPetitions} */

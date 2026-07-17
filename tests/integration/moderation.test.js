@@ -43,6 +43,12 @@ function serverItemDir(fileKey) {
   )
 }
 
+/** Quarantine destination for a rejected item (mirrors core/media-storage). */
+/** @param {string} fileKey */
+function serverQuarantineDir(fileKey) {
+  return path.join(path.dirname(TEST_DB_PATH), "uploads", "quarantine", fileKey)
+}
+
 /** @type {DatabaseSync} */
 let db
 
@@ -293,6 +299,29 @@ describe("bulk actions", () => {
     })
     assert.strictEqual(res.status, 400)
   })
+
+  it("approve-all drains the entire pending backlog (beyond one page) with auto-trust", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const stranger = signIn({ trusted: 0, name: "DrainMe" })
+    const ids = []
+    for (let i = 0; i < 3; i += 1) ids.push(seedEntry(stranger.accountId))
+    const media = seedMedia(stranger.accountId)
+
+    const res = await asAdmin("/api/admin/moderation/approve-all", { method: "POST" })
+    assert.strictEqual(res.status, 200)
+    const body = await json(res)
+    // Other tests' leftovers may also be pending — assert at-least, plus ours.
+    assert.ok(body.changed >= 4, `approved at least our 4 items (got ${body.changed})`)
+    // A single sweep drained everything here, so nothing is left pending.
+    assert.strictEqual(body.remaining, 0)
+    for (const id of ids) assert.strictEqual(statusOf("guestbook_entries", id), "approved")
+    assert.strictEqual(statusOf("media", media.id), "approved")
+    assert.strictEqual(isTrusted(stranger.accountId), 1)
+
+    // The queue is actually drained.
+    const counts = await json(await asAdmin("/api/admin/moderation/counts"))
+    assert.strictEqual(counts.total, 0)
+  })
 })
 
 describe("auto-trust on approval", () => {
@@ -367,8 +396,8 @@ describe("auto-trust on approval", () => {
   })
 })
 
-describe("media reject unlinks files", () => {
-  it("rejecting a media item removes its variant files but keeps the row", async (t) => {
+describe("media reject quarantines files", () => {
+  it("rejecting a media item moves its files to quarantine but keeps the row", async (t) => {
     if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
     const stranger = signIn({ trusted: 0, name: "PhotoStranger" })
 
@@ -410,9 +439,27 @@ describe("media reject unlinks files", () => {
 
     const rej = await asAdmin(`/api/admin/moderation/media/${create.id}/reject`, { method: "POST" })
     assert.strictEqual(rej.status, 200)
-    // Files gone; row kept with status rejected.
-    assert.ok(!fs.existsSync(dir), "item directory unlinked after reject")
+    // Files out of the serving tree but parked in quarantine (recoverable by
+    // hand — reject must not be one mis-click from permanent loss); row kept.
+    assert.ok(!fs.existsSync(dir), "item directory out of media/ after reject")
+    assert.ok(
+      fs.existsSync(serverQuarantineDir(create.fileKey)),
+      "item directory moved to quarantine/ after reject",
+    )
     assert.strictEqual(statusOf("media", create.id), "rejected")
+
+    // The bytes are parked in quarantine/ (same disk), so a rejected row still
+    // counts toward the account's quota until the sweep purges it — otherwise
+    // reject-and-reupload would be an unbounded quota bypass.
+    const sum = /** @type {{ total: number }} */ (
+      db
+        .prepare(
+          `SELECT COALESCE(SUM(original_bytes), 0) AS total FROM media
+           WHERE account_id = ? AND deleted_at IS NULL`,
+        )
+        .get(stranger.accountId)
+    )
+    assert.ok(sum.total > 0, "rejected item's bytes still count toward quota")
   })
 })
 
@@ -758,12 +805,14 @@ describe("account recovery (magic link)", () => {
     const me = await json(await fetch(`${BASE_URL}/api/account/me`, { headers: { Cookie: cookieHeader } }))
     assert.strictEqual(me.account.id, acct.accountId)
 
-    // Single-use: the same token now 4xx.
+    // Single-use: the same token is now dead → redirected to the expired-link
+    // landing (a browser follows these from email, so no JSON error).
     const reuse = await fetch(`${BASE_URL}/api/account/recover/${token}`, { redirect: "manual" })
-    assert.strictEqual(reuse.status, 400)
+    assert.strictEqual(reuse.status, 302)
+    assert.strictEqual(reuse.headers.get("location"), "/guestbook?recover=expired")
   })
 
-  it("GET /recover/:token rejects an expired token with 400", async () => {
+  it("GET /recover/:token redirects an expired token to the expired-link landing", async () => {
     const acct = signIn({ name: "Expired", contactEmail: "exp@example.com" })
     const token = crypto.randomBytes(32).toString("hex")
     db.prepare(
@@ -772,11 +821,13 @@ describe("account recovery (magic link)", () => {
     ).run(hashToken(token), acct.accountId, new Date(Date.now() - 1000).toISOString())
 
     const res = await fetch(`${BASE_URL}/api/account/recover/${token}`, { redirect: "manual" })
-    assert.strictEqual(res.status, 400)
+    assert.strictEqual(res.status, 302)
+    assert.strictEqual(res.headers.get("location"), "/guestbook?recover=expired")
   })
 
-  it("GET /recover/:token rejects an unknown token with 400", async () => {
+  it("GET /recover/:token redirects an unknown token to the expired-link landing", async () => {
     const res = await fetch(`${BASE_URL}/api/account/recover/deadbeef`, { redirect: "manual" })
-    assert.strictEqual(res.status, 400)
+    assert.strictEqual(res.status, 302)
+    assert.strictEqual(res.headers.get("location"), "/guestbook?recover=expired")
   })
 })

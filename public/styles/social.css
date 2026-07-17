@@ -562,6 +562,7 @@
 }
 
 .comment-loading,
+.comment-empty,
 .comment-error {
   color: var(--color-text-muted);
   font-size: var(--text-sm);

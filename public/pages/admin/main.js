@@ -1,7 +1,7 @@
 /** @file Admin dashboard main entry point */
 /** @import * as Types from './types.js' */
 
-import { initModals } from "./utils.js"
+import { initModals, showSuccess } from "./utils.js"
 import { initAuth, checkSession } from "./auth.js"
 import { initGuests, loadGuests, loadStats } from "./guests.js"
 import { loadRsvps } from "./rsvps.js"
@@ -17,12 +17,41 @@ import { initEffectConfig, loadEffectConfig } from "./effect-config.js"
 import { initConfirmDialog } from "./confirm.js"
 import { initThemeToggle } from "../../components/theme-toggle.js"
 
+/** Badge-refresh cadence — fresh enough to notice new guest posts while the
+ * dashboard sits open, cheap enough to leave running. */
+const BADGE_POLL_MS = 3 * 60 * 1000
+/** @type {ReturnType<typeof setInterval> | undefined} */
+let badgePollTimer
+
 /** @type {Types.onLoginSuccess} */
 function onLoginSuccess() {
   loadStats()
   loadGuests()
   loadPetitionCount()
-  loadModerationCount()
+  // Landing on the dashboard says whether work is waiting — the badge alone is
+  // easy to miss, and login lands on the Guests tab.
+  void loadModerationCount().then((total) => {
+    if (total > 0) {
+      showSuccess(
+        `${total} item${total === 1 ? "" : "s"} waiting for review in the Moderation tab.`,
+      )
+    }
+  })
+  // Badges used to load once per login and go stale while the tab sat open —
+  // incoming photos/comments never bumped them until a manual reload.
+  clearInterval(badgePollTimer)
+  badgePollTimer = setInterval(() => {
+    if (document.hidden) return
+    loadModerationCount()
+    loadPetitionCount()
+  }, BADGE_POLL_MS)
+}
+
+/** Stop the badge poll — armed on login, torn down on logout/expiry so it can't
+ * keep 401ing (and wiping the password field) after the session ends. */
+function stopBadgePolling() {
+  clearInterval(badgePollTimer)
+  badgePollTimer = undefined
 }
 
 /** @type {Types.switchTab} */
@@ -114,7 +143,7 @@ function initTabs() {
 /** @type {Types.init} */
 function init() {
   initModals()
-  initAuth(onLoginSuccess)
+  initAuth(onLoginSuccess, stopBadgePolling)
   initGuests()
   initTabs()
   initInvites()

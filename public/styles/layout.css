@@ -7,6 +7,13 @@
   padding: 0;
 }
 
+/* Keep the hidden attribute authoritative: class-level display rules
+   (.btn, .status-badge, …) otherwise override the UA's [hidden] rule and
+   hidden elements stay visible. */
+[hidden] {
+  display: none !important;
+}
+
 html {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -202,6 +209,14 @@ button {
 .hero-image {
   width: 100%;
   margin-bottom: -15%;
+}
+
+/* Content pages (rsvp/guestbook/gallery) cap the hero so the page's actual
+   content is visible in the first viewport. */
+.hero-small .hero-image {
+  max-height: 200px;
+  object-fit: cover;
+  object-position: center bottom;
 }
 
 .couple-names {
@@ -509,6 +524,10 @@ main {
 
   .hero {
     padding-top: 0;
+  }
+
+  .hero-small .hero-image {
+    max-height: 300px;
   }
 
   .couple-photo {

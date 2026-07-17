@@ -278,7 +278,7 @@ async function handleInviteNext() {
       !moduleState.config.email.configured
     ) {
       errorEl.textContent =
-        "Email is not configured. Set RESEND_API_KEY in .env"
+        "Email sending isn't set up yet — whoever runs the server needs to add the email service key (RESEND_API_KEY). You can use manual SMS in the meantime."
       errorEl.hidden = false
       return
     }
@@ -289,7 +289,7 @@ async function handleInviteNext() {
       !moduleState.config.sms.configured
     ) {
       errorEl.textContent =
-        "SMS is not configured. Set Twilio credentials in .env"
+        "Text messaging isn't set up yet — whoever runs the server needs to add the Twilio credentials. The Manual SMS tab works without them."
       errorEl.hidden = false
       return
     }

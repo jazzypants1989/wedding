@@ -13,6 +13,7 @@ import {
 } from "../utils.js"
 import { fireConfetti, setButtonLoading } from "./utils.js"
 import { miniSparkle } from "../../components/celebrate.js"
+import { clearPetitionPending } from "./petition-flag.js"
 
 /** @type {Types.RsvpFormState} */
 const state = { inviteCode: null, guestData: null }
@@ -31,16 +32,29 @@ function submitRsvp(code, payload) {
 }
 
 /** @type {Types.showError} */
-function showError(message) {
+function showError(message, neutral = false) {
   getElement("rsvp-loading").hidden = true
   getFormElement("rsvp-form").hidden = true
   getElement("rsvp-success").hidden = true
   const errorEl = getElement("rsvp-error")
   errorEl.hidden = false
-  getElement("rsvp-error-message").textContent = message
+  const messageEl = getElement("rsvp-error-message")
+  messageEl.textContent = message
+  // Neutral copy (e.g. "find your invitation") shouldn't render as a red alert;
+  // real errors stay red.
+  messageEl.classList.toggle("rsvp-message-neutral", neutral)
   requestAnimationFrame(() => {
     errorEl.classList.add("form-state-visible")
   })
+}
+
+/**
+ * The same panel as showError (it hosts the lookup + petition forms), but with
+ * neutral copy/styling: guests who click "RSVP" in the nav have no code and
+ * shouldn't be greeted by a red alert.
+ */
+function showFindInvitation() {
+  showError("Have an invite link? It takes you straight to your RSVP.", true)
 }
 
 /** @type {Types.showSuccess} */
@@ -270,16 +284,21 @@ export async function initRsvpForm() {
       return
     }
   } catch {
-    // Config unavailable — fall through to the normal form (fail open).
+    // Config unavailable — trust the mode the server templated into this very
+    // page. Failing open here would offer a live, confetti-firing RSVP form
+    // for a wedding that already happened.
+    if (document.body.dataset.mode === "post") {
+      showClosed()
+      return
+    }
   }
 
   const params = new URLSearchParams(window.location.search)
   state.inviteCode = params.get("code")
 
   if (!state.inviteCode) {
-    showError(
-      "No invite code provided. Please use the link from your invitation.",
-    )
+    // A nav click, not a broken link — greet with the lookup, not an error.
+    showFindInvitation()
     return
   }
 
@@ -294,6 +313,8 @@ export async function initRsvpForm() {
     } catch {
       // localStorage unavailable (private mode / disabled) — prefill is a nicety.
     }
+    // A working invite code means any earlier petition got resolved.
+    clearPetitionPending()
     showForm(data)
   } catch (err) {
     showError(getErrorMessage(err))

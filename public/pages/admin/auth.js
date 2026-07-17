@@ -19,6 +19,11 @@ const logoutBtn = getElement("logout-btn")
 /** @type {Types.VoidCallback} */
 let onLoginSuccess = () => {}
 
+/** Runs whenever we drop to the login screen (logout, expiry, 401) — lets the
+ * dashboard tear down anything armed for a logged-in session (e.g. badge polling). */
+/** @type {Types.VoidCallback} */
+let onLoggedOut = () => {}
+
 /** @type {Types.getCookie} */
 function getCookie(name) {
   const cookies = document.cookie
@@ -35,6 +40,10 @@ function getCookie(name) {
 
 /** @type {Types.showLogin} */
 export function showLogin() {
+  // Every path to the login screen funnels through here — tear down any
+  // logged-in-session timers first so they stop firing 401s (a live badge poll
+  // would otherwise keep wiping the password field the admin is retyping).
+  onLoggedOut()
   loginSection.hidden = false
   dashboardSection.classList.remove("active")
   getInputElement("password").value = ""
@@ -123,8 +132,9 @@ async function handleLoginSubmit(e) {
 }
 
 /** @type {Types.initAuth} */
-export function initAuth(loginCallback) {
+export function initAuth(loginCallback, logoutCallback = () => {}) {
   onLoginSuccess = loginCallback
+  onLoggedOut = logoutCallback
   state.onAuthRequired = showLogin
   loginForm.addEventListener("submit", handleLoginSubmit)
 

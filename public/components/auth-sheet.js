@@ -106,6 +106,9 @@ const SHEET_MARKUP = html`
         Join the celebration
       </button>
     </form>
+    <button type="button" class="auth-link" id="auth-open-recover-link">
+      Been here before? Sign back in by email
+    </button>
     <button type="button" class="auth-link" id="auth-back">Back</button>
   </div>
 
@@ -412,13 +415,18 @@ export function initAuthSheet() {
     getInputElement("auth-code").focus()
   })
 
-  getElement("auth-recover-link").addEventListener("click", () => {
+  const toRecoverPanel = () => {
     hideAlert(getElement("auth-alert-recover"))
     getElement("auth-recover-done").hidden = true
     getElement("auth-recover-form").hidden = false
     showPanel("recover")
     getInputElement("auth-recover-email").focus()
-  })
+  }
+  getElement("auth-recover-link").addEventListener("click", toRecoverPanel)
+  // The open (no-code) path silently creates a fresh account on every
+  // registration, orphaning earlier posts — so returning open-path guests get
+  // their own way back into the account they already have.
+  getElement("auth-open-recover-link").addEventListener("click", toRecoverPanel)
   getElement("auth-recover-back").addEventListener("click", () => {
     showPanel("code")
     getInputElement("auth-code").focus()
@@ -450,6 +458,14 @@ export function initAuthSheet() {
       e.clientX <= rect.left + rect.width
     if (!inside) dialog.close()
   })
+}
+
+/** @type {Types.openAuthRecovery} */
+export function openAuthRecovery(message) {
+  openAuthSheet(null) // resetSheet() inside lands on the code panel; move on
+  showPanel("recover")
+  if (message) showAlert(getElement("auth-alert-recover"), message)
+  getInputElement("auth-recover-email").focus()
 }
 
 /** @type {Types.openAuthSheet} */

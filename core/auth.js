@@ -43,6 +43,19 @@ function verifyPassword(password, stored) {
   return crypto.timingSafeEqual(hash, derived)
 }
 
+/** @type {Types.sendCsrfError} */
+function sendCsrfError(req, res, kind) {
+  log({
+    action: AUDIT_ACTIONS.CSRF_FAILURE,
+    ip: getClientIp(req),
+    details:
+      kind === "guest"
+        ? { method: req.method, url: req.url, kind: "guest" }
+        : { method: req.method, url: req.url },
+  })
+  return sendJson(res, 403, { error: "Invalid CSRF token", code: "CSRF" })
+}
+
 /** @type {Types.parseCookies} */
 function parseCookies(cookieHeader) {
   /** @type {Record<string, string>} */
@@ -187,12 +200,7 @@ export function withAdmin(handler) {
 
     if (req.method && ["POST", "PUT", "DELETE", "PATCH"].includes(req.method)) {
       if (!validateCsrf(req, session)) {
-        log({
-          action: AUDIT_ACTIONS.CSRF_FAILURE,
-          ip: getClientIp(req),
-          details: { method: req.method, url: req.url },
-        })
-        return sendJson(res, 403, { error: "Invalid CSRF token" })
+        return sendCsrfError(req, res, "admin")
       }
     }
 
@@ -234,12 +242,7 @@ export function withAccount(handler) {
 
     if (req.method && ["POST", "PUT", "DELETE", "PATCH"].includes(req.method)) {
       if (!validateCsrf(req, session)) {
-        log({
-          action: AUDIT_ACTIONS.CSRF_FAILURE,
-          ip: getClientIp(req),
-          details: { method: req.method, url: req.url, kind: "guest" },
-        })
-        return sendJson(res, 403, { error: "Invalid CSRF token" })
+        return sendCsrfError(req, res, "guest")
       }
     }
 
@@ -279,12 +282,7 @@ export function withAccountOrAdmin(handler) {
     if (guestSession) {
       updateAccountSessionActivity(guestToken)
       if (isMutation && !validateCsrf(req, guestSession)) {
-        log({
-          action: AUDIT_ACTIONS.CSRF_FAILURE,
-          ip: getClientIp(req),
-          details: { method: req.method, url: req.url, kind: "guest" },
-        })
-        return sendJson(res, 403, { error: "Invalid CSRF token" })
+        return sendCsrfError(req, res, "guest")
       }
       let updated = guestSession
       if (guestSession.csrf_rotated_at) {
@@ -315,12 +313,7 @@ export function withAccountOrAdmin(handler) {
     if (adminSession) {
       updateSessionActivity(adminToken)
       if (isMutation && !validateCsrf(req, adminSession)) {
-        log({
-          action: AUDIT_ACTIONS.CSRF_FAILURE,
-          ip: getClientIp(req),
-          details: { method: req.method, url: req.url },
-        })
-        return sendJson(res, 403, { error: "Invalid CSRF token" })
+        return sendCsrfError(req, res, "admin")
       }
       let updated = adminSession
       if (adminSession.csrf_rotated_at) {

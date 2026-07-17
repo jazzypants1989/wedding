@@ -4,9 +4,8 @@
 /** @import * as Types from './types.js' */
 /** @import * as GlobalTypes from '../../types.js' */
 
-import fs from "node:fs"
 import { sendJson, parseBody, sanitize } from "../../core/http.js"
-import { log, AUDIT_ACTIONS } from "../../core/utils.js"
+import { log, logBatch, AUDIT_ACTIONS } from "../../core/utils.js"
 import { getClientIp } from "../../core/rate-limit.js"
 import {
   validateId,
@@ -14,8 +13,8 @@ import {
   NotFoundError,
   ConflictError,
 } from "../../core/validation.js"
-import { itemDir } from "../../core/media-storage.js"
-import { PAGINATION, CONTENT_STATUS, CONTENT_STATUS_VALUES } from "../../types.js"
+import { quarantineItemDir } from "../../core/media-storage.js"
+import { PAGINATION, MODERATION, CONTENT_STATUS, CONTENT_STATUS_VALUES } from "../../types.js"
 import { withTransaction } from "../../db/utils.js"
 import {
   getGuestbookEntryById,
@@ -190,9 +189,11 @@ export async function counts(req, res) {
  * @param {'approve' | 'reject' | 'hide'} action
  * @param {number} id
  * @param {boolean} releasePending Approve-and-release the author's whole backlog.
+ * @param {Map<number, boolean>} [trustCache] Per-batch author-trust cache, so a
+ *   bulk approve doesn't re-query the same author's account for every item.
  * @returns {{ row: ModeratableRow, wasHidden: boolean, autoTrusted: boolean, released: number } | null}
  */
-function applyTransition(target, action, id, releasePending) {
+function applyTransition(target, action, id, releasePending, trustCache) {
   const row = target.getRow(id)
   if (!row) return null
   const wasHidden = row.status === CONTENT_STATUS.HIDDEN
@@ -203,19 +204,27 @@ function applyTransition(target, action, id, releasePending) {
   let autoTrusted = false
   let released = 0
   if (action === "approve" && row.account_id !== null) {
+    const accountId = row.account_id
     // Auto-trust fires only on a genuine first approval (pending → approved),
     // never on unhide (hidden → approved): unhiding must not silently re-trust
     // an author the admin previously untrusted, and the approve confirm dialog
     // only names the trust effect for pending items (owner decision 2026-07-08).
     if (!wasHidden) {
-      const account = getAccountById(row.account_id)
-      if (account && !account.trusted) {
-        setAccountTrusted(row.account_id, true)
+      let trusted = trustCache?.get(accountId)
+      if (trusted === undefined) {
+        const account = getAccountById(accountId)
+        // Missing account → treat as trusted (nothing to promote).
+        trusted = account ? !!account.trusted : true
+        if (trustCache) trustCache.set(accountId, trusted)
+      }
+      if (!trusted) {
+        setAccountTrusted(accountId, true)
         autoTrusted = true
+        if (trustCache) trustCache.set(accountId, true)
       }
     }
     if (releasePending) {
-      released = approvePendingForAccount(row.account_id)
+      released = approvePendingForAccount(accountId)
     }
   }
   return { row, wasHidden, autoTrusted, released }
@@ -227,6 +236,42 @@ function auditActionFor(action, wasHidden) {
   if (action === "reject") return AUDIT_ACTIONS.MODERATION_REJECT
   if (action === "hide") return AUDIT_ACTIONS.MODERATION_HIDE
   return wasHidden ? AUDIT_ACTIONS.MODERATION_UNHIDE : AUDIT_ACTIONS.MODERATION_APPROVE
+}
+
+/**
+ * @typedef {{ item: { type: ModeratableType, id: number },
+ *   outcome: ReturnType<typeof applyTransition> }} TransitionResult
+ */
+
+/**
+ * Tally a batch's committed transitions and write one batched audit log (one
+ * entry per changed item — documented granularity). Shared by bulk() and
+ * approveAllPending().
+ * @param {TransitionResult[]} results
+ * @param {{ action: 'approve' | 'reject', req: import('node:http').IncomingMessage, session?: { token?: string } }} ctx
+ * @returns {{ changed: number, trusted: number }}
+ */
+function tallyAndAudit(results, { action, req, session }) {
+  const ip = getClientIp(req)
+  /** @type {import('../../core/types.js').AuditEvent[]} */
+  const entries = []
+  let changed = 0
+  let trusted = 0
+  for (const { item, outcome } of results) {
+    if (!outcome) continue
+    changed++
+    if (outcome.autoTrusted) trusted++
+    entries.push({
+      action: auditActionFor(action, outcome.wasHidden),
+      adminId: session?.token,
+      ip,
+      resourceType: item.type,
+      resourceId: item.id,
+      details: outcome.autoTrusted ? { autoTrusted: outcome.row.account_id } : undefined,
+    })
+  }
+  logBatch(entries)
+  return { changed, trusted }
 }
 
 /**
@@ -269,10 +314,12 @@ async function moderate(req, res, { params, session }, action) {
     )
   }
 
-  // Terminal state: a rejected media item's files come off disk (row kept for
-  // audit). Done after commit so a rolled-back transaction never orphans files.
+  // Terminal state: a rejected media item's files move to quarantine/ (row kept
+  // for audit) — recoverable by hand until quarantine is emptied, so one
+  // mis-click on the Reject button beside Approve isn't permanent loss. Done
+  // after commit so a rolled-back transaction never orphans files.
   if (action === "reject" && target.unlink && outcome.row.file_key) {
-    fs.rmSync(itemDir(outcome.row.file_key), { recursive: true, force: true })
+    quarantineItemDir(outcome.row.file_key)
   }
 
   /** @type {Record<string, unknown>} */
@@ -348,42 +395,65 @@ export async function bulk(req, res, { session }) {
   // items already in a terminal or otherwise invalid state are skipped (their
   // applyTransition returns null) while the rest still commit, so `changed` may
   // be < items.length. Auto-trust rides along on approve.
+  /** @type {Map<number, boolean>} */
+  const trustCache = new Map()
   const results = withTransaction(() =>
     items.map((item) => {
       const target = MODERATABLE[item.type]
-      const outcome = applyTransition(target, action, item.id, false)
+      const outcome = applyTransition(target, action, item.id, false, trustCache)
       return { item, outcome }
     }),
   )
 
-  // Files for rejected media come off disk after commit.
+  // Files for rejected media move to quarantine/ after commit (see moderate()).
   if (action === "reject") {
     for (const { item, outcome } of results) {
       if (outcome && MODERATABLE[item.type].unlink && outcome.row.file_key) {
-        fs.rmSync(itemDir(outcome.row.file_key), { recursive: true, force: true })
+        quarantineItemDir(outcome.row.file_key)
       }
     }
   }
 
-  const ip = getClientIp(req)
-  let changed = 0
-  let trusted = 0
-  for (const { item, outcome } of results) {
-    if (!outcome) continue
-    changed++
-    if (outcome.autoTrusted) trusted++
-    // One audit entry per item (documented granularity — matches the bulk test).
-    log({
-      action: auditActionFor(action, outcome.wasHidden),
-      adminId: session?.token,
-      ip,
-      resourceType: item.type,
-      resourceId: item.id,
-      details: outcome.autoTrusted ? { autoTrusted: outcome.row.account_id } : undefined,
-    })
-  }
+  const { changed, trusted } = tallyAndAudit(results, { action, req, session })
 
   // `trusted` surfaces the standing side effect of a bulk approve (each newly
   // trusted author's future posts skip review) so the client can disclose it.
   return sendJson(res, 200, { success: true, changed, total: items.length, trusted })
+}
+
+/** @type {Types.moderationApproveAllHandler} */
+export async function approveAllPending(req, res, { session }) {
+  // The whole pending backlog, not just the client's loaded page: the "yes,
+  // publish everything" path for a couple facing hundreds of uploads. Same
+  // per-item transition as bulk(), so auto-trust and audit ride along.
+  const rows = /** @type {{ content_type: string, id: number }[]} */ (
+    getModerationQueue({
+      status: CONTENT_STATUS.PENDING,
+      limit: MODERATION.APPROVE_ALL_MAX,
+      offset: 0,
+    })
+  )
+  /** @type {{ type: ModeratableType, id: number }[]} */
+  const items = rows.map((row) => ({
+    type: /** @type {ModeratableType} */ (row.content_type),
+    id: row.id,
+  }))
+
+  /** @type {Map<number, boolean>} */
+  const trustCache = new Map()
+  const results = withTransaction(() =>
+    items.map((item) => ({
+      item,
+      outcome: applyTransition(MODERATABLE[item.type], "approve", item.id, false, trustCache),
+    })),
+  )
+
+  const { changed, trusted } = tallyAndAudit(results, { action: "approve", req, session })
+
+  // If the backlog exceeded APPROVE_ALL_MAX, tell the client how many are still
+  // pending so it can keep sweeping (and toast honestly) instead of the old
+  // silent truncation that reported "Approved 5000" with work left.
+  const remaining = getModerationCounts().total
+
+  return sendJson(res, 200, { success: true, changed, trusted, remaining })
 }

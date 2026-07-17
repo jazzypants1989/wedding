@@ -3,7 +3,14 @@
  *  re-rendering. See docs/post-wedding/04-gallery.md §4. */
 /** @import * as Types from "./types.js" */
 
-import { html, api, getElement, getButtonElement, getErrorMessage } from "../utils.js"
+import {
+  html,
+  api,
+  getElement,
+  getButtonElement,
+  getErrorMessage,
+  setLoadMoreState,
+} from "../utils.js"
 import { upgradeTimes } from "../../components/relative-time.js"
 
 const BATCH_SIZE = 100
@@ -153,6 +160,7 @@ export async function loadMore(section) {
     return data.items.length
   } catch (err) {
     showError(getErrorMessage(err))
+    setLoadMoreState(getButtonElement("gallery-loadmore"), "retry")
     return 0
   } finally {
     s.loading = false
@@ -383,6 +391,7 @@ function updateCount(section) {
 function updateLoadMore(section) {
   const s = sections[section]
   const btn = getButtonElement("gallery-loadmore")
+  setLoadMoreState(btn, "reset")
   // Offer the manual button once auto-loading has paused and there's more.
   btn.hidden = s.reachedEnd || s.autoFetches < MAX_AUTO_BATCHES
 }

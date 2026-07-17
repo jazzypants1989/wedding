@@ -8,7 +8,11 @@ import {
   updateGuestInvitedAt,
 } from "./guests/data.js"
 import { searchGuestsByName } from "../db/utils.js"
-import { getPetitionByEmail, createPetition } from "./admin/petitions.js"
+import {
+  getPetitionByEmail,
+  getLatestPetitionByEmail,
+  createPetition,
+} from "./admin/petitions.js"
 import { sendJson, parseBody, checkRateLimit } from "../core/http.js"
 import { limiters, getClientIp } from "../core/rate-limit.js"
 import {
@@ -21,10 +25,13 @@ import { LIMITS, FEATURES } from "../types.js"
 import { log, AUDIT_ACTIONS } from "../core/utils.js"
 
 /** @type {Types.notFoundResponse} */
-function notFoundResponse(res) {
+function notFoundResponse(res, petitionStatus = null) {
   return sendJson(res, 200, {
     found: false,
     canPetition: true,
+    // Lets a returning petitioner see the truth (pending/denied/none) instead of
+    // a client-side flag that only ever cleared on a successful invite load.
+    petitionStatus,
     message:
       "We couldn't find you on our guest list. If you believe this is a mistake, you can request an invitation below.",
   })
@@ -108,7 +115,13 @@ export async function lookup(req, res) {
   }
 
   if (!guest) {
-    return notFoundResponse(res)
+    // Surface any prior petition's status so a returning guest sees accurate
+    // copy (a denied petitioner isn't stuck on "still under review", and can
+    // re-file). Petitions are keyed by email.
+    const priorPetition = emailResult.value
+      ? getLatestPetitionByEmail(emailResult.value)
+      : null
+    return notFoundResponse(res, priorPetition ? priorPetition.status : null)
   }
 
   updateGuestInvitedAt(guest.id)
@@ -122,7 +135,9 @@ export async function lookup(req, res) {
 /** @type {Types.petition} */
 export async function petition(req, res) {
   const clientIp = getClientIp(req)
-  if (checkRateLimit(res, limiters.lookup, clientIp)) return
+  // Own bucket (not limiters.lookup): failed lookups precede most petitions,
+  // and sharing the 3/min budget used to 429 guests mid-petition.
+  if (checkRateLimit(res, limiters.petition, clientIp)) return
 
   const body = await parseBody(req)
 

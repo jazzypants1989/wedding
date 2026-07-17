@@ -1,7 +1,7 @@
 /** @file RSVP list display module */
 /** @import * as Types from './types.js' */
 
-import { api, showError, showLoading } from "./utils.js"
+import { api, showLoading, showLoadError } from "./utils.js"
 import { html, formatDate, getElement } from "../utils.js"
 
 /** @type {WeakMap<Element, AbortController>} */
@@ -130,6 +130,6 @@ export async function loadRsvps() {
     renderRsvps(response.rsvps)
   } catch (err) {
     console.error("Failed to load RSVPs:", err)
-    showError("Failed to load RSVPs. Please refresh the page.")
+    showLoadError(getElement("rsvps-tbody"), 7, "Couldn't load the RSVPs.", loadRsvps)
   }
 }

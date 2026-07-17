@@ -108,6 +108,19 @@
       </div>
     </section>
 
+    <!-- Memories sits above the registry so that in post mode (where it is
+         the page's main call to action) guests reach the gallery/guestbook
+         buttons without scrolling past the registry frame. Pre mode hides it
+         entirely ([data-mode] CSS), so pre-wedding order is unchanged. -->
+    <section id="memories" class="content-section text-center">
+      <h2>{{memories.title}}</h2>
+      <p>{{memories.body}}</p>
+      <p>
+        <a href="/gallery" class="btn btn-primary">See the photos</a>
+        <a href="/guestbook" class="btn btn-secondary">Sign our guestbook</a>
+      </p>
+    </section>
+
     <section id="registry" class="content-section text-center">
       <h2>{{registry.title}}</h2>
       <p>{{registry.body}}</p>
@@ -120,15 +133,6 @@
           title="Honeyfund registry for {{couple.first}}" class="registry-frame" id="registry-frame" hidden></iframe>
 
       </div>
-    </section>
-
-    <section id="memories" class="content-section text-center">
-      <h2>{{memories.title}}</h2>
-      <p>{{memories.body}}</p>
-      <p>
-        <a href="/gallery" class="btn btn-primary">See the photos</a>
-        <a href="/guestbook" class="btn btn-secondary">Sign our guestbook</a>
-      </p>
     </section>
 
     <section class="event-details text-center">

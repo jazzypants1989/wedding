@@ -260,8 +260,14 @@ describe("media upload session", () => {
   it("enforces the untrusted per-account quota with 507", async () => {
     const { auth } = signIn({ trusted: 0, name: "Quota" })
     // _media-port.js sets MEDIA_UNTRUSTED_QUOTA_BYTES=1MB; 2MB exceeds it.
-    const { res } = await createSession({ kind: "image", originalBytes: 2 * 1024 * 1024 }, auth)
+    const { res, data } = await createSession(
+      { kind: "image", originalBytes: 2 * 1024 * 1024 },
+      auth,
+    )
     assert.strictEqual(res.status, 507)
+    // Personal quota gets distinct copy/code from the site-wide disk guards —
+    // the client surfaces this message verbatim.
+    assert.strictEqual(data.code, "UPLOAD_QUOTA_EXCEEDED")
   })
 
   it("rejects a PUT without Content-Length (411)", async () => {

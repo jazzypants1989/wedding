@@ -872,15 +872,49 @@ tr:hover td {
   margin-right: auto;
 }
 
+/* Inline load-failure state with retry (showLoadError) */
+.load-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-lg);
+  color: var(--color-text-muted);
+}
+
+/* Whole-backlog approve bar (unfiltered pending view only) */
+.mod-approve-all-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+  font-size: var(--text-sm);
+}
+
+/* Keyboard-shortcut hint in the detail modal */
+.mod-detail-keys {
+  margin-top: var(--spacing-sm);
+  font-size: var(--text-xs);
+}
+
+.mod-detail-keys kbd {
+  padding: 0 var(--spacing-xs);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-faint);
+  font-family: inherit;
+}
+
 .mod-check-col {
   width: 1%;
   white-space: nowrap;
 }
 
-/* Preview cell — 56px media thumb or truncated text */
+/* Preview cell — media thumb (large enough to actually judge a photo without
+   opening the detail modal) or truncated text */
 .mod-thumb {
-  width: 56px;
-  height: 56px;
+  width: 96px;
+  height: 96px;
   object-fit: cover;
   border-radius: var(--radius-sm);
   background: var(--color-primary-faint);
@@ -1008,17 +1042,32 @@ tr:hover td {
   display: block;
 }
 
+/* Position badge is an editable number input: type a position to move there. */
 .curated-pos {
   position: absolute;
   top: var(--spacing-2xs);
   left: var(--spacing-2xs);
-  min-width: 1.5em;
+  width: 3em;
   padding: 0 var(--spacing-2xs);
   text-align: center;
   background: rgba(0, 0, 0, 0.6);
   color: #fff;
+  border: none;
   border-radius: var(--radius-full);
   font-size: var(--text-xs);
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.curated-pos::-webkit-outer-spin-button,
+.curated-pos::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.curated-pos:focus {
+  outline: 2px solid var(--color-primary);
+  background: rgba(0, 0, 0, 0.8);
 }
 
 .curated-caption {

@@ -1,211 +1,225 @@
-# Product Roadmap — Reusable Wedding-Site Platform
+# TODO — Code-Review Findings (uncommitted work, branch `track-1-content-as-data`)
 
-**North star:** turn this one couple's site into a self-hostable, no-code wedding-site
-platform. A non-coder should be able to `docker run` the image, open a setup wizard, fill in
-their names / schedule / registry, pick a look, and have a complete site — never touching
-source. Everything below is a step toward that.
-
-The foundation already exists: `content.js` is the single source of truth, all web-facing copy
-is server-templated (`core/static.js`), and the full `SiteContent` is runtime-editable via an
-`app_state` override (`core/site-content.js` + the admin "Site content" tab), stored **sparse**
-so a saved site keeps tracking future default edits. The four tracks below build the rest.
-
-Severity/effort tags: 🔴 large · 🟡 medium · 🟢 small.
+Findings from a multi-agent review of the uncommitted diff (51 files + new
+`public/components/announce.js`). Every item below was independently verified against the
+actual code (all CONFIRMED). Ordered most-severe first within each section.
 
 ---
 
-## Track 1 — Finish content-as-data: migrate the remaining landing prose ✅
+## Correctness bugs
 
-**Phase 1a — text migration: ✅ DONE.** All hardcoded landing copy now lives in `SiteContent`
-and is admin-editable: schedule, dress-code prose, registry body + frame-note, memories, every
-section heading, and the footer event heading (was: only couple/date/location/registry-url/nav/
-welcome). Rendering is byte-identical to the old static HTML (verified). Landed:
-`schedule`/`dressCode`/`registry.{title,body,frameNote}`/`memories`/`footer.eventHeading` +
-`SiteContentScheduleItem`/`SiteContentImage` in `types.d.ts` + `content.js`; `renderSchedule` /
-`renderDressCodeImages` next to `renderNav` in `core/static.js`; `reqSchedule`/`reqDressCode`/
-`reqContentImage` validators in `api/admin/site-content.js`; a repeatable schedule-item card
-editor in the admin **Site content** tab; integration coverage for the new validators + rendering.
+### 1. Rejecting media no longer frees quota-counted disk space
 
-Key facts that shaped it (for anyone extending):
-- **Mode visibility is pure CSS** (`components.css` `[data-mode]`): pre hides `#memories`, post
-  hides `#schedule`/`#dress-code`. So the new fields are **mode-agnostic single values** — the CSS
-  keeps gating. Only the existing welcome `copy.pre/post` stays mode-aware.
-- Repeating structures render via `{{schedule.items}}` / `{{dressCode.images}}` block-tokens
-  (function-rendered like `{{nav.*}}`), not scalar tokens. Everything is `escapeHtml`'d.
-- **`SiteContentImage` is an origin-agnostic descriptor** (`{ src, srcset?, sizes?, alt,
-  caption?, width?, height? }`): defaults point at the static `/images/*` assets with their
-  hand-authored srcset; a media-backed descriptor points at `/media/{file_key}/…`. The renderer
-  never branches on origin.
+`db/media.js:203`, `core/media-storage.js` (`quarantineItemDir`), `api/media.js:148-161`
 
-**Phase 1b — dress-code images through the media pipeline: ✅ DONE.** Admin-uploaded dress-code
-images now go through the existing media pipeline, gated by a new **`section='content'`**
-(the `add_content_ladder` schema migration widens the section-CHECK triggers). A **responsive
-width ladder** (`w400`/`w800`/`w1600`) is **scoped to `section='content'` uploads only** — the
-guest gallery keeps `display`+`thumb` to contain storage. The Site-content tab has a dress-code
-image manager (add/remove/reorder/edit) reusing the `media-uploader` component; on finalize it
-appends a `file_key`-based `SiteContentImage` descriptor with a computed ladder `srcset` and
-admin-entered alt/caption. Landed across: `types.js` (section enum, ladder caps, shared
-`expectedVariants`), `db/schema.js`, `db/media.js` (BYTES_COLUMN), `api/media.js`
-(create-session/VARIANT_SPEC/finalize gates), `core/media-storage.js`, `core/media-serve.js`,
-`core/media-sweep.js`, `public/components/media-{processing,uploader}.js`, and the admin
-Site-content tab (HTML/JS/CSS). Integration coverage for the section exclusion + section-gated
-finalize + render round-trip.
+Reject used to `fs.rmSync` the item directory; it now moves files to `quarantine/` on the
+**same disk**. But `sumOriginalBytes` / `sumOriginalBytesForAccount` both filter
+`status != 'rejected'` on the premise the bytes are gone.
 
-**Correction to the original plan:** `content` is **NOT** "excluded from the gallery for free."
-The public feed (`GET /api/media?section=…`) validates the section param only against
-`isMediaSection()`, so adding `content` to the enum made it publicly listable. Exclusion required
-three explicit gates: clamp the public `list` section to `guest|official`; exclude `content` in
-`getMediaFeedRowById` (kills the public id deep-link *and* comment/reaction targeting in one
-filter); and exclude it in the moderation media branch. Byte-serving by `file_key` stays public
-by design — that's how the landing page loads the figures.
-*Note:* this couple's current images are ≤800px, so `display`+`thumb` would already reproduce
-their srcset — the ladder was built (per user decision) for future large uploads / the no-code product.
+- Failure: untrusted account uploads 250MB → admin rejects (quota sum drops to 0, bytes stay
+  on disk) → uploads another 250MB → repeat. `MEDIA_MAX_TOTAL_BYTES` and the per-account
+  quota no longer bound real disk usage; only the `MEDIA_MIN_FREE_BYTES` statfs check remains.
+- Fix options: count quarantined bytes in the sums, or sweep/delete quarantine on a schedule,
+  or delete-on-reject and reserve quarantine for the sweep's orphan path.
 
-**Not a security fix:** `copy.welcomeIntro` is injected raw (`RAW_TOKENS`) on purpose so the
-couple can use inline `<em>`. Under the trust model (single deployment, two co-admins who are
-the couple, no untrusted input) that's safe — do **not** add HTML-sanitization there. All *new*
-fields are escaped by default (nothing new in `RAW_TOKENS`).
+### 2. Lookup form dead-ends guests when /api/config fails and `ENABLE_NAME_LOOKUP=true`
 
-**Why first:** Track 4 (no-code onboarding) can't capture "all site copy" until all site copy is
-data. Phase 1a unblocks it.
+`public/pages/rsvp/lookup-form.js:124`, `public/pages/rsvp/index.html`, `api/lookup.js:42-47`
 
----
+The static form was narrowed to the flags-off default (`#lookup-name-group` ships `hidden`,
+name no longer `required`, contact is `type=tel`); `fetchConfig()` only widens on success and
+swallows errors.
 
-## Track 2 — Themeable effects: from one identity to a selectable set 🔴
+- Failure: config fetch fails (network blip / 429) on a deployment with the flag on → the name
+  field stays hidden, the client guard `if (!name && !elements.nameGroup.hidden)` passes
+  because the group is hidden → server 400 "Name is required" for a field the guest cannot see.
+- Fix: keep the static form permissive and narrow only on a successful config response (the
+  pre-diff behavior), or block submit until config resolves.
 
-The effect system is a clean registry (`EFFECT_DEFINITIONS` in `public/effects/main.js` +
-per-effect `EFFECT_CONFIGS` + `EFFECT_PALETTE` in `config.js`) but it's hardwired to this
-wedding's "disco-mermaid" look: `startEffects` (main.js:43) iterates the full effect list
-unconditionally. Generalize into ~3 shippable **themes**, each bundling an effect subset + a
-palette, with disco-mermaid as *one* option rather than the baked-in default.
+### 3. Admin badge poll never stops after logout/expiry — and wipes the password field
 
-**Approach:**
-1. New `public/effects/themes.js`: `EFFECT_THEMES = [{ id, label, effectIds: [...], palette }]`.
-   `EFFECT_DEFINITIONS` stays the full registry of *available* factories; a theme selects a
-   subset by id.
-2. `startEffects` resolves the active theme's `effectIds` → factories (from `EFFECT_DEFINITIONS`)
-   instead of the hardcoded list.
-3. Palette per theme: extend the CSS-token approach already in place (`--effect-brand[-dark]` in
-   `tokens.css`, read by `config.js` + `celebrate.js`). A theme sets brand/accent tokens at boot;
-   the JS palette (`EFFECT_PALETTE`) derives from them. **Caveat (verified): the palette is only
-   *partially* token-derived today.** Only `EFFECT_PALETTE.brand` comes from a token;
-   `gold/white/blush/pink/sky/purple` are hardcoded literals, and many `EFFECT_CONFIGS` color
-   arrays are raw `rgba(...)` strings (disco, reflections, spotlight). A real per-theme palette
-   requires **de-hardcoding these into token-driven values first** — this is the bulk of the
-   palette work, not "set two tokens at boot."
-4. Make the active theme part of `SiteContent` (`theme: "mermaid-disco"`) so it's admin-selectable
-   and captured by onboarding (Track 4). Default in `content.js`.
-5. Author **≥2 more themes** beyond disco-mermaid — e.g. an *elegant/minimal* set (calm: sparkle
-   dividers, name shimmer, subtle parallax) and a *none/quiet* set (no ambient effects). Curate
-   effect subsets + palettes; verify each reads cleanly in light and dark.
+`public/pages/admin/main.js:43`, `public/pages/admin/auth.js:40,131-139`
 
-**Already de-personalized (no action):** brand color is token-sourced; the studio's `Mermaid`/
-`Disco` labels are effect *type* names; `name-shimmer.js`'s `.couple-names` binding is
-content-templated. The real work here is the theme abstraction + authoring the alternates.
+The 3-minute `setInterval` armed in `onLoginSuccess` is only cleared on re-login — never on
+logout or session expiry.
 
----
+- Failure: after logout or the 30-min idle timeout with the tab open, every poll 401s →
+  `api()`'s onUnauthorized runs `clearNotification()` + `showLogin()`, which does
+  `getInputElement("password").value = ""` — erasing a password the admin is mid-typing,
+  every 3 minutes, forever.
+- Also (efficiency): `loadPetitionCount()` fetches the **full** pending-petitions list from
+  `/api/admin/petitions?status=pending` just to read `counts.pending`; the moderation badge
+  already has a counts-only endpoint (`/api/admin/moderation/counts`) to copy.
+- Fix: own the timer in the auth lifecycle (stop on `showLogin()`/logout), and add a
+  counts-only petitions endpoint or param.
 
-## Track 3 — Studio: live preview + promote-to-defaults 🟡
+### 4. `approveFast` mishandles hidden items (two facets)
 
-The effect studio (`/studio`, dev-only, prod-gated) tunes an in-memory config and only offers a
-"Copy values" button (`studio.js:420`) that dumps a literal to the clipboard for manual paste
-into `config.js`. Close both loops.
+`public/pages/admin/moderation.js:321,334,339,497,747`, `api/admin/moderation.js:206-209`
 
-**3a — Live preview (per-browser, cheap):**
-- Add `getEffectiveConfig(id)` = deep-merge of a `localStorage` override over `getDefaultConfig(id)`
-  (`config.js`). `startEffects` (main.js:53) calls `getEffectiveConfig` instead of
-  `getDefaultConfig`. The studio writes the tuned config to that `localStorage` key on change, so
-  the tuner's *own* browser sees tuned values on the real pages — no rebuild.
-- Studio buttons: "Save to my browser" + "Reset" alongside the existing "Copy values".
+- **No confirm for unhide (trusted authors):** replacing `openConfirm("approve", [item])` with
+  `approveFast(item)` removed the confirmation not just for pending items but also for
+  republishing deliberately-hidden content — a mis-click (or stray `A` keypress in the detail
+  modal, which allows status `hidden`) instantly republishes it. Hide still confirms; unhide
+  doesn't.
+- **False promise for untrusted authors:** the confirm says "Approve this item and trust
+  {name}? Their future posts will go live instantly", but `applyTransition` guards auto-trust
+  with `!wasHidden` — unhiding never trusts, so the admin is told something the server won't
+  do. (The server comment even assumes the client only names the trust effect for pending
+  items.)
+- Fix: in `approveFast`, treat `status === 'hidden'` as its own path — confirm the unhide and
+  drop the trust wording.
 
-**3b — Promote to defaults (everyone sees it):** two options —
-- **(Recommended) `app_state` override**, mirroring `site_content`: an `effect_config` key resolved
-  server-side, edited from an admin "Effects" tab, served to the client. Consistent with the
-  existing content-override architecture and directly reusable by the no-code product (admins tune
-  effects without touching source). Effects read effective config = defaults ⊕ `app_state` override.
-- **(Alternative) dev-only save endpoint** (non-production-gated) that rewrites `EFFECT_CONFIGS` in
-  `config.js` — simpler mentally, but writes source and only helps a developer, not a self-hoster.
+### 5. Upload-tray failures are no longer announced; summary says "Uploads complete" on failure
 
-Recommend the `app_state` route: it turns studio tuning into a real product feature and reuses the
-override + resolve + cache-evict machinery already built for site content.
+`public/pages/gallery/index.html:123`, `public/pages/gallery/upload.js:137-140,253`,
+`public/components/media-uploader.js:341-343`
 
-**Pre-step worth doing first — generalize the override store.** `core/site-content.js` is a
-bespoke resolver hardcoded to the `site_content` key. Both 3b (`effect_config`) and Track 4 (the
-admin hash) want the *same* override + diff + resolve + cache-evict machinery. The helpers
-(`deepMerge`, `diffFromDefaults`) are already exported and generic — they just default their base
-to `CONTENT_DEFAULTS`. Extracting a `createOverrideStore(key, defaults, onChanged)` factory turns
-three copy-pasted resolvers into one and directly serves the no-code product. Cheap, high-leverage.
+`aria-live="polite"` moved from the whole tray to only the summary span, so per-row failure
+text ("⚠ Not a supported format", "⚠ File too large") is outside any live region. And
+`activeCount()` counts only queued/processing/uploading, so failed items drop active to 0 and
+the summary announces "Uploads complete" even when every item failed.
 
----
+- Fix: make the summary failure-aware ("2 uploads failed") and/or announce row failures via
+  the live region.
 
-## Track 4 — No-code onboarding wizard + shipped container ✅ (capstone; one deferred step)
+### 6. First `announcePolite()` on a page is never spoken
 
-The payoff. A non-coder self-hoster runs the container, opens a setup wizard, and produces a
-complete site entirely through forms. Depends on Tracks 1–3 (all copy is data, theme is
-selectable, effects are tunable via `app_state`).
+`public/components/announce.js:19`
 
-**Status — landed:** steps 1, 2, 3, 5 and the email/SMS boundary below are all done
-(`core/setup.js`, `api/setup.js`, `public/pages/setup/*`, `core/wedding-facts.js`,
-`core/auth.js` `getAdminHash`, `docs/self-host.md`, `Dockerfile`). The admin hash moved to
-`app_state` (read at request time, env fallback kept), first-run boots into a token-gated
-`/setup` wizard, and invites/SMS sign with the *effective* couple. **Only step 4 —
-de-personalizing the shipped `content.js` defaults — remains, and it's deliberately deferred
-(owner decision) to avoid regressing the live wedding page; see DEFERRED.md.**
+The live region is created, appended, and populated in the same synchronous task on first use.
+Screen readers only announce *changes* to a region already in the accessibility tree, so the
+first announcement (a guest's first reaction toggle / first comment — the exact events this
+was built for) is dropped by VoiceOver/NVDA.
 
-**Approach:**
-1. **Replace the CLI admin-password setup.** Today `scripts/setup-admin.js` prompts on the
-   terminal, hashes with scrypt, writes `ADMIN_PASSWORD_HASH=` into `.env`, and needs a **server
-   restart** to take effect — a file-write + restart model a containerized no-code flow can't use.
-   Move the admin hash into `app_state` (the same runtime-override store as `site_content`): the
-   web wizard sets/changes the password live, no file, no restart. Reuse the existing scrypt
-   hashing + `validatePasswordStrength` (lift them out of `setup-admin.js` into a shared module;
-   note `hashPassword` lives in `core/auth.js` but isn't exported, and `validatePasswordStrength`
-   exists only in `setup-admin.js`). The CLI script stays only as an optional fallback for
-   advanced/headless setups (and as a way to generate a hash for CI — see DEFERRED "admin tests
-   skip in CI").
-   **⚠ Behavioral change, not just a new key:** `SERVER.adminPasswordHash` is *frozen at boot*
-   from `process.env` (`types.js`), and the login path reads that snapshot (`api/admin/sessions.js`).
-   Moving the hash to `app_state` means login must read it at **request time**, not from the boot
-   snapshot — rewire those consumers, keeping the env var as a fallback for backward compat.
-2. **First-run detection:** no admin hash in `app_state`/env *and* no `site_content` override →
-   route to a web `/setup` wizard; gate it so it disables itself once setup completes.
-   **⚠ First-run security:** an open `/setup` on a public container URL is an admin-takeover race —
-   whoever hits it first claims the site. Solve it the way self-hosted apps do: print a **one-time
-   setup token** to stdout/logs on first boot (the Jenkins `initialAdminPassword` pattern) and
-   require it to complete setup. Design this in, don't discover it in production.
-3. **Wizard steps** (each writes a sparse `app_state` override): set admin password → couple/date/
-   location → schedule + dress code → registry → **theme pick** (Track 2) → nav → review & finish.
-4. **De-personalize the shipped defaults:** `content.js` defaults should become *generic sample
-   copy*, not "Jordana & Jesse". This couple's real content moves into a seed/override (or an
-   `app_state` export). A fresh install then starts neutral and is filled entirely via the wizard.
-   *(This is a deliberate cut-over — do it as the last step so nothing regresses meanwhile.)*
-5. **Ship a runnable image:** the `Dockerfile` exists; publish a tagged image + a short
-   "self-host in 5 minutes" doc (`docker run …` → open `/setup`). Keep the zero-dependency,
-   Node-22-native constraints.
+- Fix: insert the region empty at module init (or on first call), then set `textContent` in a
+  later task (`setTimeout`/`requestAnimationFrame` chain).
 
-**Boundary — and a correctness bug in waiting:** email/SMS constants (`types.js` `WEDDING` /
-`EMAIL_SUBJECTS`) are boot-resolved from `content.js` **defaults**, not the effective override.
-For *this* couple that's harmless, but an onboarded self-hoster who sets their names via the
-wizard would still send invites/SMS signed with the shipped sample couple's name. So for the
-no-code product this isn't optional polish — wire these to the resolved (effective) content at
-this stage.
+### 7. No-op blur on a curated position input rebuilds the whole admin grid
+
+`public/pages/admin/gallery-admin.js:131-134,257-263`
+
+`handleGridBlur` calls `moveTo` on every position-input focusout without checking whether the
+value changed, and `moveTo` calls `renderGrid()` even when `clamped === idx`. The old `move()`
+early-returned on no-ops.
+
+- Failure: tabbing through a position input, then clicking another photo's caption → the blur
+  triggers a full `grid.innerHTML` rebuild that wipes uncommitted caption edits in other rows
+  and eats the click. Up to 500 items re-created per no-op blur.
+- Fix: bail out (or just reset `target.value`) when the position is unchanged.
+
+### 8. Admin uploader offers a Retry that can never succeed after session expiry
+
+`public/components/media-uploader.js:194`, `public/pages/admin/gallery-admin.js:397`,
+`public/pages/gallery/upload.js:65`
+
+401 upload failures are now marked retryable, and the guest tray gained a `requireAccount`
+gate to compensate — but the admin official-photos tray calls `queue.retry()` bare. The XHR
+path bypasses `api()`'s 401→login handling.
+
+- Failure: admin session expires mid-upload → row shows "Please sign in again to upload" with
+  a Retry button that replays the upload with the dead cookie, failing identically forever.
+- Fix: gate the admin retry on a session check, or route the uploader's 401 through the same
+  onAuthRequired path.
+
+### 9. `URLSearchParams.size` drops query params on older browsers (duplicated snippet)
+
+`public/pages/gallery/main.js:172`, `public/pages/guestbook/main.js:31`
+
+`params.size ? \`/gallery?${params}\` : "/gallery"` — `.size` needs Chrome 113+ / Safari 17+ /
+Firefox 112+; on older browsers it's `undefined` → falsy → all remaining params are discarded.
+
+- Failure: Safari 16, dead shared link `/gallery?section=official&item=99` → URL rewritten to
+  bare `/gallery`, losing `section=official`.
+- Fix: use `params.toString()` truthiness, and hoist the strip-param+`replaceState` dance into
+  one shared `stripQueryParam(name, basePath)` helper in `public/pages/utils.js` (it's
+  duplicated character-for-character across both files).
+
+### 10. `petitionPending` flag is never cleared for denied petitioners
+
+`public/pages/rsvp/petition-form.js:95` (set), `public/pages/rsvp/lookup-form.js:160` (read),
+`public/pages/rsvp/rsvp-form.js:321` (only clear)
+
+The only clear path is a successful invite-code load — which a denied petitioner never gets.
+
+- Failure: petition denied → guest forever sees "You've already sent us a request — it's still
+  under review", discouraging the re-petition the server would accept (the duplicate check
+  only matches `status='pending'`).
+- Fix: derive the notice from server truth (e.g. return petition status from `/api/lookup`),
+  or at minimum expire the flag and hoist the magic string (spread across three files) into a
+  shared constant.
 
 ---
 
-## Sequencing
+## Robustness / efficiency
 
-```
-Track 1a ✅ ── Track 1b ✅ (media) ─┐
-Track 2 ✅ (themes) ────────────────┼──► Track 4 ✅ (no-code wizard + container)
-override-store ✅ → Track 3b ✅ ────┘        └─ only de-personalization deferred
-```
+### 11. `approveAllPending` does per-row work at 5000-row scale
 
-- **Tracks 1–3 and the override-store generalization have all landed.** Track 4 (the capstone)
-  is functionally complete: admin hash in `app_state`, first-run token-gated `/setup` wizard,
-  effective-content-driven email/SMS, and a runnable container + self-host doc.
-- **The single remaining roadmap item is de-personalizing the shipped `content.js` defaults**
-  (Track 4 step 4), which is deliberately deferred — see DEFERRED.md "De-personalize the shipped
-  content defaults" and "Local registry / honeyfund".
-- Historical context (already done): Track 2's palette was only partially token-derived; it was
-  de-hardcoded during the theme work. The override-store factory now backs both `site_content`
-  and `effect_config`.
+`api/admin/moderation.js:393-431`, `db/moderation.js:59,72`, `core/utils.js:24,87`
+
+- Fetches **full** queue rows (`SELECT *` over a 3-table UNION with ORDER BY) when it only
+  needs `content_type` + `id`.
+- Runs `applyTransition` per row (~3 statements each, up to ~15k queries) inside one
+  synchronous `withTransaction`, blocking the event loop; re-fetches the same account row for
+  every item by the same author. `db/moderation.js` already has the set-based pattern
+  (`bulkTransitionForAccount`).
+- Emits one `log()` per row — each an `fs.existsSync` + separate `fs.appendFile` to the same
+  daily file (5000 FS appends for one request). Batch the lines into one append.
+- `APPROVE_ALL_MAX = 5000` is handler-local (not in `types.js` LIMITS) and truncates
+  **silently**: response is only `{success, changed, trusted}`, so the UI toasts
+  "Approved 5000" with items still pending. Loop until drained or return a `remaining` count.
+- The post-transaction tally-and-audit loop (lines 414-429) is a near-verbatim copy of
+  `bulk()`'s (lines 369-385) — extract a shared helper.
+
+### 12. `media-sweep` doesn't use the new `quarantineItemDir()` and lacks its collision guard
+
+`core/media-sweep.js:98-105`, `core/media-storage.js:63-71`
+
+The sweep still hand-rolls `mkdirSync` + `renameSync` into `quarantine/` without the
+name-collision suffix guard the new helper has. A colliding orphan's rename throws inside the
+best-effort `try/catch` and is silently skipped — every pass, until quarantine is emptied.
+Call `quarantineItemDir()` from the sweep.
+
+### 13. Friendly CSRF message sniffs human-readable server copy
+
+`public/pages/utils.js:217`, `core/auth.js:195,242,287,323`
+
+The client branch is `status === 403 && serverMessage.includes("CSRF")`; the server has four
+copy-pasted `sendJson(res, 403, { error: "Invalid CSRF token" })` sites and no machine code.
+Any rewording silently kills the friendly message. Extract one 403-CSRF helper in
+`core/auth.js` that also sends `code: "CSRF"`, and branch on the code client-side.
+
+---
+
+## Cleanup / simplification
+
+### 14. `syncCounter()` hardcodes a fifth "0/500" literal
+
+`public/components/comment-thread.js:196,216` — after clearing `input.value`, dispatch
+`input.dispatchEvent(new Event("input", { bubbles: true }))` so the existing counter handler
+(line 44) updates it, and delete `syncCounter`. The 500 limit currently lives in four literals
+in this file.
+
+### 15. `showFindInvitation()` copy-pastes `showError()`'s body
+
+`public/pages/rsvp/rsvp-form.js:53-66` vs `:34-48` — identical show/hide choreography +
+`requestAnimationFrame` reveal, differing only in message and the `rsvp-message-neutral`
+class. Make it `showError(msg)` + a class toggle, or `showError(msg, { neutral })`.
+
+### 16. Guest "Try again" load-error pattern hand-rolled twice
+
+`public/pages/guestbook/feed.js:153,166-167` and `public/pages/gallery/grid.js:158-161,392` —
+the same relabel/reveal/reset dance, while this same diff gave the admin side a shared
+`showLoadError` helper. Add one shared helper for the guest feeds in `public/pages/utils.js`.
+
+### 17. `gallery-admin.js` small cleanups
+
+- `:114-131` — `move()` runs `findIndex` + `-1` guard, then `moveTo()` repeats the identical
+  lookup on the same array; make `moveTo` the single locator.
+- `:165-166` — `rank.has(a.id) ? Number(rank.get(a.id)) : Number.MAX_SAFE_INTEGER` (twice)
+  reduces to `rank.get(a.id) ?? Number.MAX_SAFE_INTEGER` (Map values are already numbers).
+
+### 18. Party-size message is a ternary nested inside a template literal inside a ternary
+
+`api/rsvp.js:121-130` — extract a tiny `companionPhrase(n)` helper (outputs for n=1 "just
+you", n=2 "your guest", n>2 "your N-1 guests" must be preserved exactly).

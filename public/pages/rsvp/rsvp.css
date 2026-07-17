@@ -1,16 +1,5 @@
 /* ============ RSVP Page Styles ============ */
-
-.hero-small .hero-image {
-  max-height: 200px;
-  object-fit: cover;
-  object-position: center bottom;
-}
-
-@media (min-width: 768px) {
-  .hero-small .hero-image {
-    max-height: 300px;
-  }
-}
+/* (.hero-small sizing moved to layout.css — shared with guestbook/gallery) */
 
 .home-link {
   text-decoration: none;
@@ -39,6 +28,11 @@
 .rsvp-error-message {
   color: var(--color-danger);
   margin-bottom: var(--spacing-lg);
+}
+
+/* No-code nav visits reuse the error panel for the lookup form — sans alarm. */
+.rsvp-error-message.rsvp-message-neutral {
+  color: var(--color-text);
 }
 
 .rsvp-lookup {

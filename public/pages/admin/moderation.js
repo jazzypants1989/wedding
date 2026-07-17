@@ -12,6 +12,7 @@ import {
   showError,
   showSuccess,
   showLoading,
+  showLoadError,
 } from "./utils.js"
 import {
   html,
@@ -71,8 +72,10 @@ export async function loadModerationCount() {
       await api("/api/admin/moderation/counts")
     )
     updateModerationBadge(data.total)
+    return data.total
   } catch (err) {
     // Non-critical — the tab still loads on demand.
+    return 0
   }
 }
 
@@ -145,10 +148,23 @@ async function loadQueue(append = false) {
     updateLoadMore()
     updateBulkBar()
     getElement("mod-account-filter-note").hidden = accountFilter === null
+    // Whole-backlog approve: only on the unfiltered pending view, so "all"
+    // can't read as "all photos" while a type filter is active.
+    getElement("mod-approve-all-bar").hidden = !(
+      status === "pending" &&
+      !type &&
+      accountFilter === null &&
+      state.currentModeration.length > 0
+    )
     await loadModerationCount()
   } catch (err) {
     console.error("Failed to load moderation queue:", err)
-    showError("Failed to load the moderation queue. Please refresh the page.")
+    showLoadError(
+      getElement("moderation-tbody"),
+      6,
+      "Couldn't load the moderation queue.",
+      () => loadQueue(),
+    )
   } finally {
     queueLoading = false
   }
@@ -302,9 +318,37 @@ function handleQueueClick(e) {
 
   const action = btn.getAttribute("data-action")
   if (action === "detail") openDetail(item)
-  else if (action === "approve") openConfirm("approve", [item])
+  else if (action === "approve") void approveFast(item)
   else if (action === "reject") openConfirm("reject", [item])
   else if (action === "hide") openConfirm("hide", [item])
+}
+
+/**
+ * Approve without a confirm when it carries no side effects (author already
+ * trusted, or the couple's own upload) — at wedding scale a modal per photo is
+ * punishing. The *first* approve for an untrusted author keeps the confirm: it
+ * also trusts them and offers releasing their backlog.
+ * @param {Types.ModerationItem} item @param {() => void} [onComplete]
+ */
+async function approveFast(item, onComplete) {
+  // Republishing a hidden item is never a routine fast-approve: the server won't
+  // auto-trust an unhide, and a stray "A" keypress shouldn't silently un-hide
+  // deliberately-hidden content — so it always confirms (with unhide wording).
+  // An untrusted author's *first* approval also confirms (it trusts them and
+  // offers releasing their backlog).
+  if (
+    item.status === "hidden" ||
+    (item.author_trusted === false && item.account_id !== null)
+  ) {
+    openConfirm("approve", [item], onComplete)
+    return
+  }
+  try {
+    await runModeration("approve", [item], false)
+    if (onComplete) onComplete()
+  } catch (err) {
+    showError(getErrorMessage(err))
+  }
 }
 
 /** @param {Event} e */
@@ -361,6 +405,44 @@ function handleBulkReject() {
   if (items.length) openConfirm("reject", items)
 }
 
+function handleApproveAll() {
+  openConfirmDialog({
+    title: "Approve all pending",
+    desc:
+      "Approve every pending item — including ones not loaded on this page? " +
+      "Untrusted authors will be trusted, so their future posts go live without review.",
+    confirmLabel: "Approve all",
+    danger: false,
+    showRelease: false,
+    run: async () => {
+      let totalChanged = 0
+      let totalTrusted = 0
+      let remaining = 0
+      // Drain the whole backlog: the server caps one sweep at APPROVE_ALL_MAX and
+      // returns how many are still pending, so keep sweeping until it's empty.
+      do {
+        const res = /** @type {{ changed: number, trusted: number, remaining: number }} */ (
+          await api("/api/admin/moderation/approve-all", { method: "POST" })
+        )
+        totalChanged += res.changed
+        totalTrusted += res.trusted
+        remaining = res.remaining
+        // If a sweep moved nothing yet items remain (all un-actionable), stop
+        // rather than spin forever.
+        if (res.changed === 0) break
+      } while (remaining > 0)
+
+      const parts = [`Approved ${totalChanged}`]
+      if (totalTrusted) {
+        parts.push(`trusted ${totalTrusted} new author${totalTrusted === 1 ? "" : "s"}`)
+      }
+      if (remaining > 0) parts.push(`${remaining} still pending`)
+      showSuccess(parts.join(" · "))
+      await loadQueue()
+    },
+  })
+}
+
 // ---- confirm dialog -------------------------------------------------------
 
 /**
@@ -401,6 +483,28 @@ async function handleConfirm() {
 }
 
 /**
+ * Bulk-approve confirm copy: auto-trust is the one standing consequence of
+ * approval, so name exactly who it will apply to instead of a generic warning.
+ * @param {Types.ModerationItem[]} items @returns {string}
+ */
+function bulkApproveDesc(items) {
+  const names = [
+    ...new Set(
+      items
+        .filter((i) => i.author_trusted === false && i.account_id !== null)
+        .map((i) => i.author_name || "Unknown"),
+    ),
+  ]
+  if (names.length === 0) return `Approve ${items.length} selected items?`
+  const shown = names.slice(0, 5).join(", ")
+  const more = names.length > 5 ? ` and ${names.length - 5} more` : ""
+  return (
+    `Approve ${items.length} selected items? This also trusts ${shown}${more} — ` +
+    "their future posts will go live without review."
+  )
+}
+
+/**
  * @param {"approve" | "reject" | "hide"} action
  * @param {Types.ModerationItem[]} items
  * @param {() => void} [onComplete] Runs after a successful confirm (review-mode advance).
@@ -409,19 +513,28 @@ function openConfirm(action, items, onComplete) {
   const single = items.length === 1 ? items[0] : null
 
   if (action === "approve") {
+    // Unhide (hidden → approved) never trusts the author server-side, so don't
+    // promise it. Only a genuine first approval (pending) carries the trust +
+    // backlog-release effects.
+    const isUnhide = !!single && single.status === "hidden"
     const untrusted =
-      single && single.author_trusted === false && single.account_id !== null
+      !!single &&
+      single.status === "pending" &&
+      single.author_trusted === false &&
+      single.account_id !== null
     const desc = single
-      ? untrusted
-        ? `Approve this item and trust ${single.author_name}? Their future posts will go live instantly.`
-        : "Approve this item? It will appear publicly."
-      : `Approve ${items.length} selected items? Any untrusted authors will be trusted so their future posts go live instantly.`
+      ? isUnhide
+        ? "Republish this item? It will be visible on the site again."
+        : untrusted
+          ? `Approve this item and trust ${single.author_name}? Their future posts will go live instantly.`
+          : "Approve this item? It will appear publicly."
+      : bulkApproveDesc(items)
     openConfirmDialog({
-      title: "Approve",
+      title: isUnhide ? "Republish" : "Approve",
       desc,
-      confirmLabel: "Approve",
+      confirmLabel: isUnhide ? "Republish" : "Approve",
       danger: false,
-      showRelease: !!(single && single.account_id !== null),
+      showRelease: !!(single && single.account_id !== null && single.status === "pending"),
       run: async () => {
         const releasePending = single
           ? getInputElement("mod-confirm-release").checked
@@ -436,9 +549,9 @@ function openConfirm(action, items, onComplete) {
   if (action === "reject") {
     const desc = single
       ? single.content_type === "media"
-        ? "Reject this item? Its files are removed from the server (the record is kept for audit)."
+        ? "Reject this item? It comes off the site for good; its files are set aside out of sight on the server in case of a mistake."
         : "Reject this item? It won't be published (the author keeps their account)."
-      : `Reject ${items.length} selected items? Rejected photos and videos have their files removed.`
+      : `Reject ${items.length} selected items? They come off the site for good; photo and video files are set aside out of sight in case of a mistake.`
     openConfirmDialog({
       title: "Reject",
       desc,
@@ -646,29 +759,36 @@ function handleDetailActions(e) {
   if (!(target instanceof Element)) return
   const btn = target.closest("button[data-action]")
   if (!btn) return
+  runDetailAction(btn.getAttribute("data-action") || "")
+}
+
+/**
+ * Run a detail-modal action (from a button click or a keyboard shortcut). The
+ * status guards make stray shortcut presses no-ops instead of invalid
+ * transitions. Review-mode: after acting, reopen the modal on the item that
+ * slid into this slot (the acted one left the queue) so the couple keeps
+ * draining without reopening rows. The queue is empty → stays closed.
+ * @param {string} action
+ */
+function runDetailAction(action) {
   const item = detailItem
   if (!item) return
-
-  const action = btn.getAttribute("data-action")
   const dialog = getDialogElement("moderation-modal")
-  // Review-mode: after acting, reopen the modal on the item that slid into this
-  // slot (the acted one left the queue) so the couple keeps draining without
-  // reopening rows. The queue is empty → stays closed.
   const resumeAt = detailIndex
   const advance = () => reopenReview(resumeAt)
-  if (action === "approve") {
+  if (action === "approve" && (item.status === "pending" || item.status === "hidden")) {
     closeModal(dialog)
-    openConfirm("approve", [item], advance)
-  } else if (action === "reject") {
+    void approveFast(item, advance)
+  } else if (action === "reject" && item.status === "pending") {
     closeModal(dialog)
     openConfirm("reject", [item], advance)
-  } else if (action === "hide") {
+  } else if (action === "hide" && item.status === "approved") {
     closeModal(dialog)
     openConfirm("hide", [item], advance)
   } else if (action === "trust" && item.account_id !== null) {
     closeModal(dialog)
     openTrustConfirm(item.account_id, item.author_name || "this account", "trust")
-  } else if (action === "promote") {
+  } else if (action === "promote" && item.content_type === "media" && item.status === "approved") {
     closeModal(dialog)
     openPromoteConfirm(item)
   }
@@ -713,7 +833,12 @@ async function loadAccounts() {
     renderAccounts(data.accounts)
   } catch (err) {
     console.error("Failed to load accounts:", err)
-    showError("Failed to load accounts. Please refresh the page.")
+    showLoadError(
+      getElement("accounts-tbody"),
+      6,
+      "Couldn't load the guest accounts.",
+      loadAccounts,
+    )
   }
 }
 
@@ -864,11 +989,32 @@ export function initModeration() {
   })
 
   getElement("accounts-tbody").addEventListener("click", handleAccountsClick)
+  getButtonElement("mod-approve-all").addEventListener("click", handleApproveAll)
   getButtonElement("mod-detail-prev").addEventListener("click", () => stepDetail(-1))
   getButtonElement("mod-detail-next").addEventListener("click", () => stepDetail(1))
   getElement("moderation-detail-actions").addEventListener(
     "click",
     handleDetailActions,
   )
+  // Keyboard review: arrows page, letters act — draining a wedding-sized queue
+  // shouldn't need a mouse round-trip per photo. Guards in runDetailAction make
+  // invalid-for-this-status presses no-ops.
+  getDialogElement("moderation-modal").addEventListener("keydown", (e) => {
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+    if (e.metaKey || e.ctrlKey || e.altKey) return
+    if (e.key === "ArrowLeft") {
+      e.preventDefault()
+      stepDetail(-1)
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault()
+      stepDetail(1)
+    } else if (e.key === "a" || e.key === "A") {
+      runDetailAction("approve")
+    } else if (e.key === "r" || e.key === "R") {
+      runDetailAction("reject")
+    } else if (e.key === "h" || e.key === "H") {
+      runDetailAction("hide")
+    }
+  })
   getButtonElement("mod-confirm-btn").addEventListener("click", handleConfirm)
 }

@@ -115,10 +115,12 @@
   <!-- Mobile upload FAB (guest section only; appears after scrolling past header). -->
   <button type="button" class="upload-fab" id="upload-fab" aria-label="Add photos and videos" hidden>+</button>
 
-  <!-- Upload tray (fixed bottom card; shown while a queue is active). -->
-  <aside class="upload-tray" id="upload-tray" aria-live="polite" hidden>
+  <!-- Upload tray (fixed bottom card; shown while a queue is active).
+       aria-live sits on the summary line only — a live region around the
+       whole tray would announce every per-row progress-percent rewrite. -->
+  <aside class="upload-tray" id="upload-tray" hidden>
     <div class="upload-tray-head">
-      <span id="upload-tray-summary">Uploading…</span>
+      <span id="upload-tray-summary" aria-live="polite">Uploading…</span>
       <button type="button" class="upload-tray-cancel" id="upload-cancel-all">Cancel all</button>
     </div>
     <ul class="upload-tray-list" id="upload-tray-list"></ul>

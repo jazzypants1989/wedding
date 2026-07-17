@@ -6,9 +6,9 @@ import {
   api,
   openModal,
   closeModal,
-  showError,
   showSuccess,
   showLoading,
+  showLoadError,
 } from "./utils.js"
 import { loadGuests, loadStats } from "./guests.js"
 import { loadBlocklist } from "./blocklist.js"
@@ -54,16 +54,23 @@ export async function loadPetitions() {
     updatePetitionBadge(response.counts.pending)
   } catch (err) {
     console.error("Failed to load petitions:", err)
-    showError("Failed to load invitation requests. Please refresh the page.")
+    showLoadError(
+      getElement("petitions-tbody"),
+      6,
+      "Couldn't load the invitation requests.",
+      loadPetitions,
+    )
   }
 }
 
 /** @type {Types.loadPetitionCount} */
 export async function loadPetitionCount() {
   try {
-    const data = await api("/api/admin/petitions?status=pending")
-    const response = /** @type {Types.PetitionsWithCountsResponse} */ (data)
-    updatePetitionBadge(response.counts.pending)
+    // Counts-only endpoint — the badge needs one number, not the full pending list.
+    const counts = /** @type {Types.PetitionCounts} */ (
+      await api("/api/admin/petitions/counts")
+    )
+    updatePetitionBadge(counts.pending)
   } catch (err) {
     // Ignore - non-critical
   }

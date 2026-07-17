@@ -286,6 +286,29 @@ describe("API Integration Tests", async () => {
       // Should succeed (200) - either found guest or returned appropriate response
       assert.strictEqual(res.status, 200)
     })
+
+    it("POST /api/lookup surfaces a prior petition's status (server truth)", async () => {
+      await rateLimitDelay()
+      const email = `denied-lookup-${Date.now()}@example.com`
+      createTestPetition(db, { email, status: "denied" })
+      const res = await fetch(`${BASE_URL}/api/lookup`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Forwarded-For": "10.0.0.9",
+        },
+        body: JSON.stringify({ email }),
+      })
+
+      assert.strictEqual(res.status, 200)
+      const data = /** @type {ApiData<{ found: boolean, petitionStatus?: string | null }>} */ (
+        await res.json()
+      )
+      // No guest match, but the lookup relays the denied petition so the client
+      // can clear its stale "still under review" note and let them re-file.
+      assert.strictEqual(data.found, false)
+      assert.strictEqual(data.petitionStatus, "denied")
+    })
   })
 
   // ==================== Petition Endpoint ====================
@@ -653,6 +676,22 @@ describe("API Integration Tests", async () => {
 
       const data = /** @type {ApiData<PetitionListResponse>} */ (await res.json())
       assert.ok(Array.isArray(data.petitions))
+    })
+
+    it("GET /api/admin/petitions/counts returns counts only", async (t) => {
+      if (!auth) return t.skip("TEST_ADMIN_PASSWORD not set")
+
+      const res = await adminFetch("/api/admin/petitions/counts", {}, auth)
+      assert.strictEqual(res.status, 200)
+
+      const data = /** @type {ApiData<{ pending: number, approved: number, denied: number, petitions?: unknown }>} */ (
+        await res.json()
+      )
+      assert.strictEqual(typeof data.pending, "number")
+      assert.strictEqual(typeof data.approved, "number")
+      assert.strictEqual(typeof data.denied, "number")
+      // Counts-only: it must NOT ship the full list the badge poll used to fetch.
+      assert.strictEqual(data.petitions, undefined)
     })
 
     it("GET /api/admin/blocklist returns blocklist", async (t) => {

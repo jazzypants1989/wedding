@@ -301,6 +301,9 @@ function wireSwipe(stage) {
 
   stage.addEventListener("pointerdown", (e) => {
     if (e.pointerType === "mouse") return
+    // A touch that starts on the video (native controls / scrubber) is the
+    // player's — swiping here would yank the guest off the video mid-scrub.
+    if (e.target instanceof HTMLElement && e.target.closest("video")) return
     dragging = true
     startX = e.clientX
     startT = e.timeStamp

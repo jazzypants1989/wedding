@@ -155,10 +155,16 @@ function passesDiskGuard(res, declaredBytes, principal) {
   }
   // Untrusted-account quota: open registration is instant, so a stranger with
   // the URL must not be able to fill the disk. Trusted accounts + admin skip it.
+  // Distinct copy from the disk guards above — "storage is full" would tell a
+  // guest the site is broken when only their personal allowance ran out.
   if (!principal.trusted && principal.accountId !== null) {
     const used = sumOriginalBytesForAccount(principal.accountId)
     if (used + declaredBytes > MEDIA_STORAGE.UNTRUSTED_QUOTA_BYTES) {
-      send507()
+      sendJson(res, 507, {
+        error:
+          "You've reached your upload limit for now — more space opens up once the couple approves your photos",
+        code: "UPLOAD_QUOTA_EXCEEDED",
+      })
       return false
     }
   }

@@ -188,7 +188,10 @@ export function createUploadQueue(callbacks = {}, options = {}) {
     } catch (err) {
       if (item.state === "canceled") return // remove() already handled it
       const status = err instanceof UploadError ? err.status : 0
-      fail(item, uploadMessage(err, item.kind), !isTerminal(status))
+      // 401 is terminal for the transport (no point re-PUTting with a dead
+      // session) but recoverable for the guest: the row keeps its Retry
+      // button, and the tray gates that retry behind sign-in.
+      fail(item, uploadMessage(err, item.kind), !isTerminal(status) || status === 401, status)
     }
   }
 
@@ -239,9 +242,9 @@ export function createUploadQueue(callbacks = {}, options = {}) {
     update(item, { progress: Math.min(1, loaded / item.bytesTotal) })
   }
 
-  /** @param {InternalItem} item @param {string} message @param {boolean} retryable */
-  function fail(item, message, retryable) {
-    update(item, { state: "failed", error: message, retryable })
+  /** @param {InternalItem} item @param {string} message @param {boolean} retryable @param {number | null} [status] */
+  function fail(item, message, retryable, status = null) {
+    update(item, { state: "failed", error: message, retryable, errorStatus: status })
   }
 
   // ---- public API ----
@@ -260,6 +263,7 @@ export function createUploadQueue(callbacks = {}, options = {}) {
           progress: 0,
           error: null,
           retryable: false,
+          errorStatus: null,
           previewUrl: null,
           serverId: null,
           fileKey: null,
@@ -305,6 +309,7 @@ export function createUploadQueue(callbacks = {}, options = {}) {
         state: "queued",
         error: null,
         retryable: false,
+        errorStatus: null,
         progress: 0,
         ready: false,
         serverId: null,
@@ -535,7 +540,9 @@ function uploadMessage(err, kind) {
       return `File too large (max ${maxMb} MB)`
     }
     if (err.status === 415) return "Not a supported format"
-    if (err.status === 507) return "Storage is full — please try later"
+    // 507 copy differs by cause (site storage vs. personal quota) — the
+    // server's message is already guest-friendly, so pass it through.
+    if (err.status === 507) return err.message || "Storage is full — please try later"
     if (err.status === 401) return "Please sign in again to upload"
   }
   return "Upload failed — check connection"

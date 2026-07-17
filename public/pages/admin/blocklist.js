@@ -6,9 +6,9 @@ import {
   api,
   openModal,
   closeModal,
-  showError,
   showSuccess,
   showLoading,
+  showLoadError,
 } from "./utils.js"
 import {
   html,
@@ -34,7 +34,12 @@ export async function loadBlocklist() {
     renderBlocklist(response.blocklist)
   } catch (err) {
     console.error("Failed to load blocklist:", err)
-    showError("Failed to load blocklist. Please refresh the page.")
+    showLoadError(
+      getElement("blocklist-tbody"),
+      5,
+      "Couldn't load the blocklist.",
+      loadBlocklist,
+    )
   }
 }
 

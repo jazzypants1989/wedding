@@ -89,10 +89,16 @@ export function handleLoginSubmit(e: SubmitEvent): Promise<void>
 /**
  * Initialize authentication handlers.
  * Sets up login form submission and logout button.
+ * @param loginCallback Runs after a successful login / session check.
+ * @param logoutCallback Runs whenever the login screen is shown (logout, expiry,
+ *   401) — use it to tear down logged-in-session timers.
  * @example
- * initAuth(() => { loadAllData(); });
+ * initAuth(() => { loadAllData(); }, () => { stopBadgePolling(); });
  */
-export function initAuth(loginCallback: VoidCallback): void
+export function initAuth(
+  loginCallback: VoidCallback,
+  logoutCallback?: VoidCallback,
+): void
 
 /** @file state.js - Types for shared admin dashboard state */
 
@@ -191,7 +197,7 @@ export interface AccountsResponse {
 export function loadModeration(): Promise<void>
 
 /** Refresh the Moderation tab badge from the counts endpoint. */
-export function loadModerationCount(): Promise<void>
+export function loadModerationCount(): Promise<number>
 
 /** Set the Moderation tab badge value/visibility. */
 export function updateModerationBadge(count: number): void
@@ -756,6 +762,16 @@ export function clearNotification(): void
  * showLoading(getElement('guests-tbody'), 6);
  */
 export function showLoading(el: HTMLElement, colspan?: number): void
+
+/** Inline load-failure state with a "Try again" button (replaces the target's
+ * content; table bodies get a spanning row). The transient banner alone leaves
+ * a failed view stuck on its spinner. */
+export function showLoadError(
+  el: HTMLElement,
+  colspan: number,
+  message: string,
+  retry: () => void,
+): void
 
 /**
  * Open a modal dialog with optional focus return support.

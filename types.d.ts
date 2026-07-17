@@ -84,6 +84,7 @@ export const MEDIA_STORAGE: {
   readonly MIN_FREE_BYTES: number
   readonly MAX_TOTAL_BYTES: number
   readonly UNTRUSTED_QUOTA_BYTES: number
+  readonly QUARANTINE_TTL_MS: number
 }
 
 export const MODERATION_NOTIFY: {
@@ -120,6 +121,7 @@ export const LIMITS: {
 export const RATE_LIMITS: {
   readonly RSVP: { readonly windowMs: number; readonly max: number }
   readonly LOOKUP: { readonly windowMs: number; readonly max: number }
+  readonly PETITION: { readonly windowMs: number; readonly max: number }
   readonly ADMIN_LOGIN: { readonly windowMs: number; readonly max: number }
   readonly ADMIN_INVITE: { readonly windowMs: number; readonly max: number }
   readonly ACCOUNT_REGISTER: { readonly windowMs: number; readonly max: number }
@@ -141,6 +143,10 @@ export const REQUEST_LIMITS: {
 export const PAGINATION: {
   readonly DEFAULT_PAGE_SIZE: number
   readonly MAX_PAGE_SIZE: number
+}
+
+export const MODERATION: {
+  readonly APPROVE_ALL_MAX: number
 }
 
 export const BRAND: {
