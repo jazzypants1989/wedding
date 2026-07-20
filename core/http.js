@@ -12,6 +12,10 @@ export function addSecurityHeaders(headers) {
   if (process.env.NODE_ENV === "production") {
     headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
   }
+  // Keep secret-bearing URLs (e.g. thank-you card tokens travel in the path)
+  // out of cross-origin Referer headers, while still sending the bare origin
+  // to same-origin/other requests so normal navigation analytics keep working.
+  headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
   return headers
 }
 

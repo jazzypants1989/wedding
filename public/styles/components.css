@@ -382,6 +382,154 @@ dialog.modal-lg {
   }
 }
 
+/* ============ One-shots: champagne pop + heart burst ============ */
+/* Fired by celebrate.js (champagnePop / heartBurst). Self-removing on
+   animationend; stilled by the global reduced-motion reset (and gated in JS). */
+.cork-streak {
+  position: fixed;
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #fff3b0, #ffcf40);
+  box-shadow: 0 0 6px 1px rgba(255, 215, 0, 0.7);
+  pointer-events: none;
+  animation: cork-streak-fly 0.7s ease-out forwards;
+  will-change: transform, opacity;
+}
+
+@keyframes cork-streak-fly {
+  0% {
+    transform: translate(-50%, -50%) scaleY(0.4);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(
+        calc(-50% + var(--pop-tx, 0px)),
+        calc(-50% + var(--pop-ty, -120px))
+      )
+      scaleY(1);
+    opacity: 0;
+  }
+}
+
+.fizz-spark {
+  position: fixed;
+  border-radius: 50%;
+  background: var(--spark-color, #ffd700);
+  box-shadow: 0 0 4px 1px currentColor;
+  pointer-events: none;
+  animation: fizz-spark-fly 0.9s ease-out forwards;
+  will-change: transform, opacity;
+}
+
+/* Gravity arc: each spark overshoots its resting height at ~55% then settles
+   back down to its final position, instead of traveling a straight radial
+   line — reads as a toss caught by gravity rather than a laser dot. */
+@keyframes fizz-spark-fly {
+  0% {
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 1;
+  }
+  20% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  55% {
+    transform: translate(
+        calc(-50% + var(--spark-tx, 0px) * 0.7),
+        calc(-50% + var(--spark-ty, -80px) * 1.25)
+      )
+      scale(0.85);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(
+        calc(-50% + var(--spark-tx, 0px)),
+        calc(-50% + var(--spark-ty, -80px))
+      )
+      scale(0.3);
+    opacity: 0;
+  }
+}
+
+/* Impact flash — a single expanding ring fired with the cork streak so the
+   pop reads as a burst of light. mix-blend-mode: screen keeps it additive
+   over whatever's beneath (works in both light/dark). */
+.pop-flash {
+  position: fixed;
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--pop-flash-color, #fff3b0), transparent 70%);
+  mix-blend-mode: screen;
+  pointer-events: none;
+  animation: pop-flash-expand 150ms ease-out forwards;
+  will-change: transform, opacity;
+}
+
+@keyframes pop-flash-expand {
+  0% {
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0;
+  }
+}
+
+.burst-heart {
+  position: fixed;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(0);
+  animation: burst-heart-fly 1s ease-out forwards;
+  will-change: transform, opacity;
+}
+
+.burst-heart-shape {
+  position: relative;
+  transform: rotate(-45deg);
+}
+
+.burst-heart-shape::before,
+.burst-heart-shape::after {
+  content: "";
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background-color: inherit;
+}
+
+.burst-heart-shape::before {
+  top: -50%;
+  left: 0;
+}
+
+.burst-heart-shape::after {
+  top: 0;
+  left: 50%;
+}
+
+@keyframes burst-heart-fly {
+  0% {
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 0;
+  }
+  20% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(
+        calc(-50% + var(--burst-tx, 0px)),
+        calc(-50% + var(--burst-ty, -60px))
+      )
+      scale(0.7);
+    opacity: 0;
+  }
+}
+
 /* ============ Toast (transient cross-surface feedback) ============ */
 
 .toast {

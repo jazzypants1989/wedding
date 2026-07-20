@@ -254,6 +254,18 @@ export function validateInviteCode(value) {
   return { valid: true, value: trimmed }
 }
 
+/** @type {Types.validateCardToken} */
+export function validateCardToken(value) {
+  // Thank-you card tokens share the invite code's exact shape (8-char alnum,
+  // generateInviteCode()) — delegate rather than duplicate the no-regex
+  // character scan, just with a token-specific error message.
+  const result = validateInviteCode(value)
+  if (!result.valid) {
+    return { valid: false, error: "Invalid card token" }
+  }
+  return result
+}
+
 /** @type {Types.validateServiceConfigured} */
 export function validateServiceConfigured(type) {
   if (type === COMMUNICATION_TYPE.SMS) {

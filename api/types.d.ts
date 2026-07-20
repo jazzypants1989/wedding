@@ -269,3 +269,88 @@ export function remove(
   res: ServerResponse,
   routeInfo: AccountOrAdminRouteInfo,
 ): Promise<void>
+
+/** @file thank-you.js - Types for public digital thank-you card endpoints
+ *  (Phase 3). Token is the auth for get/reply — no account required; amount/
+ *  gift data is never returned here (admin-only, a later phase). */
+
+import type { MediaKind, ThankYouCardForGuest } from "./types.js"
+
+/** A resolved media item on a public card response — just enough for the
+ *  card page to build /media/:file_key/:variant URLs. */
+export interface ThankYouCardMediaItem {
+  file_key: string
+  kind: MediaKind
+  width: number | null
+  height: number | null
+  needs_display: boolean
+}
+
+/** The recipient's reply, when present. */
+export interface ThankYouCardReplyView {
+  emoji: string | null
+  message: string | null
+  replied_at: string
+}
+
+/** GET /api/thank-you/:token response — scoped to what the card page needs.
+ *  NEVER includes gift/amount data. */
+export interface PublicThankYouCardResponse {
+  recipient_name: string
+  message: string
+  theme: string
+  effects_config: Record<string, unknown> | null
+  media: ThankYouCardMediaItem[]
+  reply: ThankYouCardReplyView | null
+  viewed_at: string | null
+  /** True only for the primary (reply-capable) token; false for the read-only
+   *  share token. */
+  canReply: boolean
+  /** The raw read-only share token, present ONLY on the primary access path (so
+   *  the page can build the forward link). Never sent to a share-token viewer. */
+  shareToken?: string
+}
+
+/** POST /api/thank-you/:token/reply response. */
+export interface ThankYouReplyResponse {
+  success: true
+  reply: ThankYouCardReplyView
+}
+
+/** GET /api/thank-you/mine response — signed-in "card waiting" banner data. */
+export interface MyThankYouCardsResponse {
+  cards: ThankYouCardForGuest[]
+}
+
+/** POST /api/thank-you/:token/opened response — engagement-timeline beacon. */
+export interface ThankYouOpenedResponse {
+  viewed_at: string | null
+  view_count: number
+}
+
+/** GET /api/thank-you/:token — public, token-authed; read-only (never mutates).
+ *  Named thankYouGet (not `get`) — api/types.d.ts is one flat namespace across
+ *  every api/*.js module, and rsvp.js already owns the bare `get`. */
+export function thankYouGet(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: RouteInfo,
+): Promise<void>
+
+/** POST /api/thank-you/:token/opened — envelope-open beacon: first open flips
+ *  sent->viewed; every open bumps view_count/last_viewed_at. */
+export function thankYouOpened(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: RouteInfo,
+): Promise<void>
+
+/** POST /api/thank-you/:token/reply — one-tap emoji + optional short message; appends. */
+export function thankYouReply(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: RouteInfo,
+): Promise<void>
+
+/** GET /api/thank-you/mine — signed-in "card waiting" banner surfacing; never 401s. */
+export function thankYouMine(req: IncomingMessage, res: ServerResponse): Promise<void>

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en" data-effect-theme="classic">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Card preview</title>
+  <meta name="robots" content="noindex">
+  <!-- Live-preview shell for the admin thank-you composer. Renders purely from
+       postMessage (no token, no fetch, no auth). It is embedded same-origin in
+       an <iframe>; core/static.js grants it SAMEORIGIN framing. -->
+  <link rel="stylesheet" href="/styles/tokens.css">
+  <link rel="stylesheet" href="/styles/layout.css">
+  <link rel="stylesheet" href="/styles/components.css">
+  <link rel="stylesheet" href="/pages/thanks/thanks.css">
+  <link rel="stylesheet" href="/styles/effects.css" media="print" id="effects-css">
+  <script src="/components/theme-init.js"></script>
+</head>
+
+<body class="tc-preview" data-mode="preview">
+  <main class="tc-section">
+    <!-- Default: fully-revealed composition preview (data-stage="complete"). The
+         envelope/controls exist so "▶ Play reveal" (E1) can run the real
+         choreography by resetting the scene to sealed. -->
+    <div id="tc-scene" class="tc-scene" data-stage="complete">
+      <button type="button" class="tc-envelope" id="tc-envelope" aria-label="Open the card" tabindex="-1">
+        <span class="tc-flap" aria-hidden="true"></span>
+        <span class="tc-envelope-body" aria-hidden="true"></span>
+        <span class="tc-envelope-name" aria-hidden="true"></span>
+        <span class="tc-seal" aria-hidden="true">💌</span>
+        <span class="tc-open-hint">Open</span>
+      </button>
+
+      <article id="tc-card" class="tc-card" tabindex="-1" aria-label="Card preview">
+        <p class="tc-greeting">Dear <span id="tc-recipient">friend</span>,</p>
+        <div id="tc-message" class="tc-message"></div>
+        <p id="tc-signoff" class="tc-signoff" hidden><span id="tc-signoff-text" class="tc-signoff-text"></span></p>
+        <div id="tc-photos" class="tc-photos" hidden></div>
+        <div id="tc-reply" class="tc-reply"></div>
+      </article>
+    </div>
+  </main>
+
+  <script type="module" src="/pages/thanks-preview/main.js"></script>
+</body>
+
+</html>

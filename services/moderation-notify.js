@@ -13,6 +13,7 @@ import {
   getModerationCounts,
   getOldestPendingGuestbookAt,
 } from "../db/guestbook-entries.js"
+import { countUnreadReplies } from "../db/thank-you-cards.js"
 import { getAppState, setAppState } from "../db/utils.js"
 import { MODERATION_NOTIFY, SERVER } from "../types.js"
 import { log, AUDIT_ACTIONS } from "../core/utils.js"
@@ -30,7 +31,13 @@ export async function maybeSendModerationDigest({
   if (!email.isConfigured()) return { sent: false, reason: "not_configured" }
 
   const counts = getModerationCounts()
-  if (counts.total <= 0) return { sent: false, reason: "no_pending" }
+  // Unread thank-you replies alone (no pending moderation items) still count
+  // as "something to send" — the couple should hear about a reply even on an
+  // otherwise-quiet moderation day.
+  const unreadThankYouReplies = countUnreadReplies()
+  if (counts.total <= 0 && unreadThankYouReplies <= 0) {
+    return { sent: false, reason: "no_pending" }
+  }
 
   const last = getAppState(DIGEST_STATE_KEY)
   if (last) {
@@ -50,6 +57,7 @@ export async function maybeSendModerationDigest({
   const { subject, text, html } = getModerationDigestEmail({
     counts,
     oldestCreatedAt,
+    unreadThankYouReplies,
   })
 
   const result = await email.sendEmail({ to: recipient, subject, text, html })
@@ -63,12 +71,13 @@ export async function maybeSendModerationDigest({
   log({
     action: AUDIT_ACTIONS.MODERATION_EMAIL_SENT,
     resourceType: "moderation_digest",
-    details: { total: counts.total, success: result.success },
+    details: { total: counts.total, unreadThankYouReplies, success: result.success },
   })
 
   return {
     sent: result.success,
     reason: result.success ? "sent" : "send_failed",
     counts,
+    unreadThankYouReplies,
   }
 }

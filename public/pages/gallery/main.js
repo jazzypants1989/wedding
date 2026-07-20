@@ -10,6 +10,7 @@ import { initGuestIdentity } from "../../components/guest-identity.js"
 import { initReactionBars } from "../../components/reaction-bar.js"
 import { initCommentThreads } from "../../components/comment-thread.js"
 import { startRelativeTimeTicker } from "../../components/relative-time.js"
+import { initThanksBanner } from "../../components/thanks-banner.js"
 import { api, getElement, getButtonElement, stripQueryParam } from "../utils.js"
 import { showToast } from "../../components/toast.js"
 import {
@@ -44,6 +45,8 @@ async function boot() {
   await loadSession()
   // Show "Posting as {name} · Not you?" once we know who's signed in.
   initGuestIdentity()
+  // Surface any waiting thank-you card for the signed-in guest.
+  void initThanksBanner()
 
   initGrid({ onOpen: openFromCell })
   initLightbox({

@@ -13,7 +13,9 @@ import {
 } from "../../public/effects/themes.js"
 import { getEffectiveConfig, getDefaultConfig, EFFECT_CONFIGS } from "../../public/effects/config.js"
 import { EFFECT_DEFINITIONS } from "../../public/effects/registry.js"
+import { LABELS } from "../../public/effects/control-meta.js"
 import { THEME_IDS } from "../../api/admin/site-content.js"
+import { THANK_YOU_THEME_VALUES } from "../../types.js"
 import { CONTENT } from "../../content.js"
 
 test("resolveTheme returns the matching theme, else the default", () => {
@@ -176,6 +178,33 @@ test("the effect registry and EFFECT_CONFIGS cover exactly the same ids", () => 
   const registryIds = EFFECT_DEFINITIONS.map((d) => d.id).sort()
   const configIds = Object.keys(EFFECT_CONFIGS).sort()
   assert.deepEqual(registryIds, configIds)
+})
+
+test("the backend card-theme allowlist matches the shipped EFFECT_THEMES ids exactly", () => {
+  // types.js keeps THANK_YOU_THEME_VALUES as a hand-maintained literal (the
+  // backend can't import the browser themes module). It's the source of truth
+  // the card composer/validator use, so it must be a set-equal mirror of the
+  // real EFFECT_THEMES — a drift either way ships a theme one layer can't render
+  // or accept.
+  const themeIds = EFFECT_THEMES.map((t) => t.id).sort()
+  const cardValues = [...THANK_YOU_THEME_VALUES].sort()
+  assert.deepEqual(cardValues, themeIds)
+})
+
+test("every registered effect id has a human LABELS entry in control-meta.js", () => {
+  // The composer's effect editor (and the studio) render LABELS[id]; a registered
+  // effect with no label would surface its raw id in the UI.
+  for (const def of EFFECT_DEFINITIONS) {
+    assert.equal(
+      typeof (/** @type {Record<string, string>} */ (LABELS)[def.id]),
+      "string",
+      `effect "${def.id}" has a LABELS entry`,
+    )
+    assert.ok(
+      (/** @type {Record<string, string>} */ (LABELS)[def.id]).length > 0,
+      `effect "${def.id}" label is non-empty`,
+    )
+  }
 })
 
 test("the shipped default theme id agrees across every source of truth", () => {

@@ -202,3 +202,56 @@ describe("serveStatic", () => {
     assert.ok(res.state.headers["Content-Type"]?.toString().includes("image/png"))
   })
 })
+
+describe("thank-you framing headers (path-scoped relaxation)", () => {
+  /** Serve an HTML page route and return its recorded response state. @param {string} url */
+  async function servePage(url) {
+    const req = mockReq({ url })
+    const res = mockRes()
+    const handled = await serveStatic(
+      /** @type {import('node:http').IncomingMessage} */ (/** @type {unknown} */ (req)),
+      /** @type {import('node:http').ServerResponse} */ (/** @type {unknown} */ (res)),
+    )
+    return { handled, state: res.state }
+  }
+
+  it("relaxes framing for /thanks-preview only (SAMEORIGIN + frame-ancestors 'self')", async () => {
+    const { handled, state } = await servePage("/thanks-preview")
+    assert.strictEqual(handled, true)
+    assert.strictEqual(state.statusCode, 200)
+    assert.strictEqual(state.headers["X-Frame-Options"], "SAMEORIGIN")
+    const csp = String(state.headers["Content-Security-Policy"])
+    assert.ok(csp.includes("frame-ancestors 'self'"), "preview CSP allows same-origin framing")
+    assert.ok(!csp.includes("frame-ancestors 'none'"), "preview is not DENY-framed")
+  })
+
+  it("keeps /thanks fully framing-locked (DENY + frame-ancestors 'none')", async () => {
+    // Explicit: proves the first-path-segment keying ('thanks-preview') does NOT
+    // leak the relaxation to the sibling '/thanks' reveal page.
+    const { handled, state } = await servePage("/thanks")
+    assert.strictEqual(handled, true)
+    assert.strictEqual(state.statusCode, 200)
+    assert.strictEqual(state.headers["X-Frame-Options"], "DENY")
+    const csp = String(state.headers["Content-Security-Policy"])
+    assert.ok(csp.includes("frame-ancestors 'none'"), "/thanks CSP is DENY-framed")
+  })
+
+  it("keeps the home page framing-locked (DENY + frame-ancestors 'none')", async () => {
+    const { handled, state } = await servePage("/")
+    assert.strictEqual(handled, true)
+    assert.strictEqual(state.statusCode, 200)
+    assert.strictEqual(state.headers["X-Frame-Options"], "DENY")
+    const csp = String(state.headers["Content-Security-Policy"])
+    assert.ok(csp.includes("frame-ancestors 'none'"), "home CSP is DENY-framed")
+  })
+
+  it("serves the /thanks reveal stage markup (envelope, card, message)", async () => {
+    const { handled, state } = await servePage("/thanks")
+    assert.strictEqual(handled, true)
+    assert.strictEqual(state.statusCode, 200)
+    const body = state.body?.toString() || ""
+    assert.ok(body.includes("tc-envelope"), "carries the .tc-envelope stage element")
+    assert.ok(body.includes("tc-card"), "carries the .tc-card stage element")
+    assert.ok(body.includes('id="tc-message"'), "carries the #tc-message target")
+  })
+})

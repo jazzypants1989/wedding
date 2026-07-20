@@ -1,0 +1,917 @@
+/* ============ Digital thank-you card page ============
+   The guest-facing showpiece. All reveal choreography is CSS, driven by the
+   `data-stage` attribute reveal.js writes onto `.tc-scene`. The :not() chains
+   express "from this stage onward" (stages only move forward), so a state set at
+   an early stage persists through the later ones without snapping back.
+
+   Paper palette comes from --tc-paper / --tc-ink / --tc-accent / --tc-envelope,
+   set inline by card-themes.js (authoritative) with the [data-card-theme] blocks
+   at the bottom as a no-JS fallback. A prefers-reduced-motion branch swaps every
+   transform for a gentle opacity crossfade and keeps the palette. */
+
+.tc-section {
+  max-width: var(--container-content);
+  margin: var(--spacing-xl) auto;
+  /* Keep clear of notch / rounded-corner cutouts on landscape phones. */
+  padding: 0 var(--spacing-md);
+  padding-right: max(var(--spacing-md), env(safe-area-inset-right));
+  padding-left: max(var(--spacing-md), env(safe-area-inset-left));
+}
+
+/* ---- loading + fallback ---- */
+
+.tc-loading {
+  text-align: center;
+  padding: var(--spacing-xl) 0;
+  color: var(--color-text-muted);
+}
+
+.tc-fallback {
+  text-align: center;
+  padding: var(--spacing-xl) var(--spacing-md);
+}
+
+.tc-fallback h2 {
+  margin-bottom: var(--spacing-md);
+}
+
+.tc-fallback-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+  justify-content: center;
+  margin-top: var(--spacing-lg);
+}
+
+/* ---- scene: envelope + card share one grid cell so the card "emerges" ---- */
+
+.tc-scene {
+  max-width: var(--container-md);
+  margin: 0 auto;
+  display: grid;
+  justify-items: center;
+}
+
+.tc-envelope,
+.tc-card {
+  grid-column: 1;
+  grid-row: 1;
+  width: 100%;
+}
+
+.tc-controls {
+  grid-column: 1;
+  grid-row: 2;
+  margin-top: var(--spacing-lg);
+  display: flex;
+  gap: var(--spacing-lg);
+  justify-content: center;
+}
+
+/* ---- envelope ---- */
+
+.tc-envelope {
+  position: relative;
+  justify-self: center;
+  align-self: center;
+  width: 280px;
+  max-width: 80vw;
+  height: 186px;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  border-radius: var(--radius-md);
+  background: var(--tc-envelope, #b85c66);
+  box-shadow: var(--shadow-lg);
+  z-index: 2;
+  transition: opacity 0.5s ease, transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.tc-scene[data-stage="sealed"] .tc-envelope {
+  animation: tc-breathe 3.2s ease-in-out infinite;
+}
+
+.tc-envelope:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 4px;
+}
+
+/* The inner pocket line — a subtle lighter chevron suggesting the paper edges. */
+.tc-envelope-body {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--tc-envelope, #b85c66) 88%, white) 0%,
+    var(--tc-envelope, #b85c66) 60%
+  );
+}
+
+/* The recipient's first name, addressed on the envelope front in the display
+   hand. Sits on the body below the flap tip (z below flap/seal). Length-aware:
+   --tc-name-len (set by card-render) scales the type down for long names, with
+   an ellipsis as the final safety valve. Decorative — the accessible recipient
+   name lives in the card greeting. */
+.tc-envelope-name {
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  top: 112px;
+  z-index: 2;
+  text-align: center;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: clamp(0.95rem, calc(2rem - var(--tc-name-len, 6) * 0.055rem), 1.9rem);
+  line-height: 1;
+  letter-spacing: 0.01em;
+  color: color-mix(in srgb, white 90%, var(--tc-envelope, #b85c66));
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+/* Triangular flap, hinged at the top. rotateX flips it open on `opening`. */
+.tc-flap {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  border-left: 140px solid transparent;
+  border-right: 140px solid transparent;
+  border-top: 93px solid color-mix(in srgb, var(--tc-envelope, #b85c66) 78%, black);
+  transform-origin: top center;
+  transform: rotateX(0deg);
+  transition: transform 0.65s ease;
+  backface-visibility: hidden;
+  z-index: 3;
+}
+
+/* Cap the flap width on narrow screens (envelope is max 80vw). */
+@media (max-width: 360px) {
+  .tc-flap {
+    border-left-width: 40vw;
+    border-right-width: 40vw;
+  }
+}
+
+.tc-seal {
+  position: absolute;
+  top: 34px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 2.2rem;
+  z-index: 4;
+  transition:
+    opacity 0.4s ease,
+    transform 0.4s ease;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.25));
+}
+
+/* The hairline crack that splits the wax when the seal breaks (F2). */
+.tc-seal::before {
+  content: "";
+  position: absolute;
+  top: 8%;
+  left: 50%;
+  width: 2px;
+  height: 84%;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--tc-envelope, #b85c66) 45%, black);
+  opacity: 0;
+  transform: scaleY(0) rotate(4deg);
+  transform-origin: top center;
+}
+
+/* Wax-seal monogram: when card-render can derive the couple's initials, the
+   generic glyph becomes a stamped-wax medallion (radial-gradient wax dome in the
+   theme accent, embossed initials). Falls back to the 💌 glyph otherwise. The
+   crack (::before) and the break/shrink beats still apply — it's still .tc-seal. */
+.tc-seal-monogram {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-style: normal;
+  letter-spacing: 0.01em;
+  color: color-mix(in srgb, white 84%, var(--tc-accent, #b85c66));
+  background: radial-gradient(
+    circle at 34% 30%,
+    color-mix(in srgb, var(--tc-accent, #b85c66) 55%, white) 0%,
+    var(--tc-accent, #b85c66) 44%,
+    color-mix(in srgb, var(--tc-accent, #b85c66) 68%, black) 100%
+  );
+  box-shadow:
+    inset 0 2px 3px rgba(255, 255, 255, 0.35),
+    inset 0 -3px 5px rgba(0, 0, 0, 0.3),
+    0 2px 4px rgba(0, 0, 0, 0.3);
+  /* Replace the glyph's drop-shadow — the medallion carries its own shadow. */
+  filter: none;
+}
+
+.tc-open-hint {
+  position: absolute;
+  bottom: -2.2rem;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+}
+
+.tc-scene[data-stage="sealed"] .tc-open-hint {
+  animation: tc-hint-pulse 2.4s ease-in-out infinite;
+}
+
+/* Flap opens the moment we leave `sealed`. */
+.tc-scene:not([data-stage="sealed"]) .tc-flap {
+  transform: rotateX(-168deg);
+}
+
+.tc-scene:not([data-stage="sealed"]) .tc-seal {
+  opacity: 0;
+}
+
+/* Break-the-seal beat: on `opening` the seal shrinks and the crack draws through
+   it BEFORE it fades — the wax gives way just ahead of the flap swinging up.
+   Placed after the generic fade rule so its delayed opacity wins (equal
+   specificity → source order). */
+.tc-scene[data-stage="opening"] .tc-seal {
+  opacity: 0;
+  transform: translateX(-50%) scale(0.68);
+  transition:
+    transform 0.35s cubic-bezier(0.34, 1.2, 0.64, 1),
+    opacity 0.3s ease 0.3s;
+}
+
+.tc-scene[data-stage="opening"] .tc-seal::before {
+  opacity: 0.85;
+  transform: scaleY(1) rotate(4deg);
+  transition:
+    transform 0.28s ease,
+    opacity 0.16s ease;
+}
+
+.tc-scene:not([data-stage="sealed"]) .tc-open-hint {
+  opacity: 0;
+}
+
+/* From `unfolding` onward the envelope has done its job — fade + drop away. */
+.tc-scene:not([data-stage="sealed"]):not([data-stage="opening"]) .tc-envelope {
+  opacity: 0;
+  transform: translateY(28px) scale(0.9);
+  pointer-events: none;
+}
+
+/* ---- card paper ---- */
+
+.tc-card {
+  position: relative;
+  z-index: 1;
+  background: var(--tc-paper, var(--color-card-bg));
+  color: var(--tc-ink, var(--color-text));
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-xl) var(--spacing-lg);
+  box-shadow: var(--shadow-lg);
+  transform-origin: top center;
+  opacity: 0;
+  /* Tucked down behind the envelope pocket; lifts out with a slight overshoot
+     during `unfolding` so it reads as a card being drawn from an envelope (F3). */
+  transform: translateY(52px) scaleY(0.6);
+  transition:
+    opacity 0.5s ease 0.05s,
+    transform 0.75s cubic-bezier(0.22, 1.15, 0.4, 1);
+}
+
+.tc-card:focus-visible {
+  outline: 3px solid var(--tc-accent, var(--color-primary));
+  outline-offset: 4px;
+}
+
+.tc-scene:not([data-stage="sealed"]):not([data-stage="opening"]) .tc-card {
+  opacity: 1;
+  transform: translateY(0) scaleY(1);
+}
+
+.tc-greeting {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  margin-bottom: var(--spacing-md);
+  color: var(--tc-ink, var(--color-text));
+}
+
+/* ---- message word cascade ---- */
+
+.tc-message {
+  font-size: 1.15rem;
+  line-height: 1.7;
+}
+
+.tc-word {
+  display: inline-block;
+  opacity: 0;
+  /* A tiny drop + hand-laid rotation that settles to 0 as the word fades in. */
+  transform: translateY(6px) rotate(var(--tc-word-rot, 0deg));
+  transition:
+    opacity 0.5s ease,
+    transform 0.5s ease;
+  /* Pre-multiplied in card-render.js so the whole cascade caps at ~1.5s. */
+  transition-delay: var(--tc-word-delay, 0ms);
+}
+
+.tc-scene:not([data-stage="sealed"]):not([data-stage="opening"]):not([data-stage="unfolding"]) .tc-word {
+  opacity: 1;
+  transform: none;
+}
+
+/* Skip / complete: every word is already home, so reveal them instantly. */
+.tc-scene[data-stage="complete"] .tc-word {
+  transition-delay: 0s;
+}
+
+/* ---- polaroid stack ---- */
+
+.tc-photos {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-xl);
+  /* Rotated tiles bleed past the row edges; clip only the x-axis so a fanned or
+     hover-lifted polaroid can never push horizontal scroll onto the page, while
+     the drop-in / shadow still shows on the y-axis. (Fixes the scroll bug.) */
+  overflow-x: clip;
+  padding: var(--spacing-sm) var(--spacing-xs);
+}
+
+.tc-polaroid {
+  --rot: 0deg;
+  --tc-straight: 1;
+  position: relative;
+  width: 158px;
+  background: #fff;
+  padding: 10px 10px 34px;
+  border-radius: 3px;
+  box-shadow: var(--shadow-md);
+  opacity: 0;
+  transform: rotate(var(--rot)) translateY(-22px);
+  /* Develop: land blurred + desaturated, then sharpen to full colour (F4). */
+  filter: blur(7px) saturate(0.35);
+  transition:
+    opacity 0.5s ease,
+    transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1),
+    filter 0.8s ease;
+  transition-delay: calc(var(--i, 0) * 90ms);
+}
+
+.tc-scene:not([data-stage="sealed"]):not([data-stage="opening"]):not([data-stage="unfolding"]):not([data-stage="message"]) .tc-polaroid {
+  opacity: 1;
+  transform: rotate(calc(var(--rot) * var(--tc-straight, 1)));
+  filter: none;
+}
+
+/* Desktop: hovering a tile straightens it and floats it above the fan. */
+@media (hover: hover) and (pointer: fine) {
+  .tc-polaroid:hover {
+    --tc-straight: 0;
+    z-index: 5;
+  }
+}
+
+/* Mobile: a real overlapping fan instead of a wrapping grid. Negative margins
+   pull the (already per-tile-rotated) polaroids into a hand-held spread; the
+   x-axis clip on .tc-photos keeps it from ever overflowing the viewport. */
+@media (max-width: 480px) {
+  .tc-photos {
+    gap: 0;
+    row-gap: var(--spacing-md);
+  }
+  .tc-polaroid {
+    width: 132px;
+    margin-left: -30px;
+    margin-right: -30px;
+  }
+  /* Don't let the outermost tiles in a row pull past the container edge. */
+  .tc-polaroid:first-child {
+    margin-left: 0;
+  }
+  .tc-polaroid:last-child {
+    margin-right: 0;
+  }
+}
+
+.tc-polaroid-media {
+  display: block;
+  width: 100%;
+  height: 138px;
+  object-fit: cover;
+  background: var(--color-border);
+  border-radius: 1px;
+}
+
+.tc-polaroid-placeholder {
+  display: grid;
+  place-items: center;
+}
+
+.tc-polaroid-placeholder::before {
+  content: "📷";
+  font-size: 2rem;
+  opacity: 0.5;
+}
+
+.tc-polaroid-caption {
+  height: 14px;
+}
+
+/* ---- sign-off flourish (fades in after the message cascade) ---- */
+
+.tc-signoff {
+  margin-top: var(--spacing-lg);
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  color: var(--tc-ink, var(--color-text));
+  opacity: 0;
+  transform: translateY(8px);
+  transition:
+    opacity 0.6s ease,
+    transform 0.6s ease;
+}
+
+.tc-signoff-text {
+  position: relative;
+  display: inline-block;
+  padding-bottom: 5px;
+}
+
+/* A self-drawing accent underline that sweeps out under the couple's name. */
+.tc-signoff-text::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 0;
+  background: var(--tc-accent, var(--color-primary));
+  border-radius: 2px;
+  transition: width 0.8s ease 0.35s;
+}
+
+/* Revealed from `photos` onward — i.e. once the words have finished. */
+.tc-scene:not([data-stage="sealed"]):not([data-stage="opening"]):not([data-stage="unfolding"]):not([data-stage="message"]) .tc-signoff {
+  opacity: 1;
+  transform: none;
+}
+
+.tc-scene:not([data-stage="sealed"]):not([data-stage="opening"]):not([data-stage="unfolding"]):not([data-stage="message"]) .tc-signoff-text::after {
+  width: 100%;
+}
+
+/* ---- reply (only from the `reply` stage onward) ---- */
+
+.tc-reply {
+  margin-top: var(--spacing-xl);
+  padding-top: var(--spacing-lg);
+  border-top: 1px dashed color-mix(in srgb, var(--tc-ink, var(--color-text)) 25%, transparent);
+  opacity: 0;
+  transform: translateY(12px);
+  transition:
+    opacity 0.5s ease,
+    transform 0.5s ease;
+}
+
+.tc-scene[data-stage="reply"] .tc-reply,
+.tc-scene[data-stage="complete"] .tc-reply {
+  opacity: 1;
+  transform: none;
+}
+
+.tc-reply-title {
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  margin-bottom: var(--spacing-md);
+  color: var(--tc-ink, var(--color-text));
+}
+
+.tc-emoji-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.tc-emoji {
+  font-size: 1.5rem;
+  line-height: 1;
+  /* ≥44px tap target (a11y) — a comfortable thumb hit on phones. */
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 2px solid transparent;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--tc-accent, var(--color-primary)) 12%, transparent);
+  cursor: pointer;
+  transition:
+    transform var(--duration-fast),
+    border-color var(--duration-fast),
+    background var(--duration-fast);
+}
+
+.tc-emoji:hover {
+  transform: scale(1.12);
+}
+
+.tc-emoji-on {
+  border-color: var(--tc-accent, var(--color-primary));
+  background: color-mix(in srgb, var(--tc-accent, var(--color-primary)) 24%, transparent);
+  transform: scale(1.1);
+}
+
+.tc-emoji:focus-visible {
+  outline: 3px solid var(--tc-accent, var(--color-primary));
+  outline-offset: 2px;
+}
+
+.tc-reply-label {
+  display: block;
+  margin-bottom: var(--spacing-xs);
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+}
+
+.tc-reply-text {
+  width: 100%;
+  font: inherit;
+  color: var(--color-text);
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-white);
+  resize: vertical;
+}
+
+.tc-reply-counter {
+  display: block;
+  text-align: right;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  margin-top: var(--spacing-2xs);
+}
+
+.tc-reply-error {
+  color: var(--color-danger);
+  margin: var(--spacing-xs) 0;
+}
+
+.tc-reply-send {
+  margin-top: var(--spacing-md);
+}
+
+.tc-reply-echo {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: 1.1rem;
+  margin-bottom: var(--spacing-md);
+}
+
+.tc-reply-echo-emoji {
+  font-size: 1.8rem;
+}
+
+.tc-reply-echo-text {
+  font-style: italic;
+}
+
+.tc-reply-edit {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--tc-accent, var(--color-primary));
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
+
+/* ---- controls ---- */
+
+.tc-skip,
+.tc-replay,
+.tc-share,
+.tc-keepsake {
+  background: none;
+  border: none;
+  padding: var(--spacing-xs);
+  font: inherit;
+  color: var(--color-text-muted);
+  text-decoration: underline;
+  cursor: pointer;
+  display: none;
+}
+
+.tc-scene[data-stage="opening"] .tc-skip,
+.tc-scene[data-stage="unfolding"] .tc-skip,
+.tc-scene[data-stage="message"] .tc-skip,
+.tc-scene[data-stage="photos"] .tc-skip,
+.tc-scene[data-stage="ambient"] .tc-skip,
+.tc-scene[data-stage="reply"] .tc-skip {
+  display: inline;
+}
+
+.tc-scene[data-stage="complete"] .tc-replay,
+.tc-scene[data-stage="complete"] .tc-share,
+.tc-scene[data-stage="complete"] .tc-keepsake {
+  display: inline;
+}
+
+/* ---- seal-break + fly-emoji one-shots (celebrate.js sealBreak / flyEmoji) ----
+   These live here (not components.css) because they're only ever fired from the
+   thanks page. JS gates them on reduced motion, so no CSS reset is needed. Pieces
+   are position:fixed with their origin written to left/top in px. */
+
+.tc-seal-half {
+  position: fixed;
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -13px;
+  background: radial-gradient(
+    circle at 40% 35%,
+    color-mix(in srgb, var(--seal-color, #b85c66) 60%, white) 0%,
+    var(--seal-color, #b85c66) 55%,
+    color-mix(in srgb, var(--seal-color, #b85c66) 70%, black) 100%
+  );
+  pointer-events: none;
+  will-change: transform, opacity;
+  animation: tc-seal-half-fall 0.7s ease-in forwards;
+}
+
+.tc-seal-half-l {
+  clip-path: polygon(0 0, 50% 0, 50% 100%, 0 100%);
+}
+.tc-seal-half-r {
+  clip-path: polygon(50% 0, 100% 0, 100% 100%, 50% 100%);
+}
+
+@keyframes tc-seal-half-fall {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--half-tx, 0px), 64px) rotate(var(--half-rot, 40deg));
+  }
+}
+
+.tc-seal-shard {
+  position: fixed;
+  border-radius: 2px;
+  background: var(--seal-color, #b85c66);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  will-change: transform, opacity;
+  animation: tc-seal-shard-fly 0.9s ease-out forwards;
+}
+
+/* Gravity arc: the shard overshoots then settles below where it started. */
+@keyframes tc-seal-shard-fly {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(0.6);
+  }
+  20% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  55% {
+    opacity: 1;
+    transform: translate(
+        calc(-50% + var(--shard-tx, 0px) * 0.75),
+        calc(-50% + var(--shard-ty, 0px) * 1.2 + 24px)
+      )
+      scale(0.9);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(
+        calc(-50% + var(--shard-tx, 0px)),
+        calc(-50% + var(--shard-ty, 0px) + 60px)
+      )
+      scale(0.5);
+  }
+}
+
+.tc-fly-emoji {
+  position: fixed;
+  font-size: 2rem;
+  line-height: 1;
+  pointer-events: none;
+  z-index: 1000;
+  transform: translate(-50%, -50%) scale(0.6);
+  will-change: transform, opacity;
+  animation: tc-fly-emoji-rise 0.95s cubic-bezier(0.3, 0.8, 0.35, 1) forwards;
+}
+
+/* A little pop upward, then a curve into the card body. */
+@keyframes tc-fly-emoji-rise {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.6);
+  }
+  18% {
+    opacity: 1;
+    transform: translate(
+        calc(-50% + var(--fly-tx, 0px) * 0.15),
+        calc(-50% + var(--fly-ty, 0px) * 0.15 - 12px)
+      )
+      scale(1.15);
+  }
+  75% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(
+        calc(-50% + var(--fly-tx, 0px)),
+        calc(-50% + var(--fly-ty, 0px))
+      )
+      scale(1.35);
+  }
+}
+
+/* ---- idle keyframes ---- */
+
+@keyframes tc-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.03);
+  }
+}
+
+@keyframes tc-hint-pulse {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ============ per-card-theme paper palettes (no-JS fallback) ============
+   card-themes.js sets these inline (authoritative); these blocks keep the page
+   composed if the script is slow, and document the intended values. Must stay in
+   sync with CARD_THEMES. */
+
+:root[data-card-theme="mermaid-disco"] {
+  --tc-paper: #f7f4ff;
+  --tc-ink: #3a2f5c;
+  --tc-accent: #7c6cd6;
+  --tc-envelope: #6a5acd;
+}
+:root[data-card-theme="romantic"] {
+  --tc-paper: #fff5f5;
+  --tc-ink: #7a3a44;
+  --tc-accent: #c67880;
+  --tc-envelope: #b85c66;
+}
+:root[data-card-theme="elegant"] {
+  --tc-paper: #fdfaf2;
+  --tc-ink: #5f4a26;
+  --tc-accent: #c6a06e;
+  --tc-envelope: #a9800f;
+}
+:root[data-card-theme="classic"] {
+  --tc-paper: #faf9f7;
+  --tc-ink: #403a46;
+  --tc-accent: #8c8290;
+  --tc-envelope: #726b78;
+}
+:root[data-card-theme="celestial"] {
+  --tc-paper: #f4f4ff;
+  --tc-ink: #2f2960;
+  --tc-accent: #7c6cd6;
+  --tc-envelope: #4a3f8f;
+}
+:root[data-card-theme="garden"] {
+  --tc-paper: #f6fbf1;
+  --tc-ink: #3c5228;
+  --tc-accent: #7aa060;
+  --tc-envelope: #5c7a40;
+}
+:root[data-card-theme="winter"] {
+  --tc-paper: #f4faff;
+  --tc-ink: #2f4a62;
+  --tc-accent: #78a0c4;
+  --tc-envelope: #4a6a90;
+}
+:root[data-card-theme="coastal"] {
+  --tc-paper: #f1fbfa;
+  --tc-ink: #1f5250;
+  --tc-accent: #4aaaa8;
+  --tc-envelope: #2c6f6d;
+}
+:root[data-card-theme="celebration"] {
+  --tc-paper: #fffdf4;
+  --tc-ink: #6a4e18;
+  --tc-accent: #d6a84e;
+  --tc-envelope: #b0862e;
+}
+:root[data-card-theme="gratitude"] {
+  --tc-paper: #fff6f8;
+  --tc-ink: #7a3a4e;
+  --tc-accent: #d27890;
+  --tc-envelope: #b85c74;
+}
+
+/* ============ reduced motion: calm crossfades, no flip, palette preserved ============ */
+
+@media (prefers-reduced-motion: reduce) {
+  .tc-scene[data-stage="sealed"] .tc-envelope,
+  .tc-scene[data-stage="sealed"] .tc-open-hint {
+    animation: none;
+  }
+
+  /* No 3D flip — the flap just holds; the envelope fades to the card. */
+  .tc-flap {
+    transition: opacity 0.3s ease;
+  }
+  .tc-scene:not([data-stage="sealed"]) .tc-flap {
+    transform: rotateX(0deg);
+    opacity: 0;
+  }
+
+  .tc-envelope {
+    transition: opacity 0.4s ease;
+  }
+  .tc-scene:not([data-stage="sealed"]):not([data-stage="opening"]) .tc-envelope {
+    transform: none;
+  }
+
+  /* No seal shrink / crack — the wax just fades. */
+  .tc-scene[data-stage="opening"] .tc-seal {
+    transform: translateX(-50%);
+    transition: opacity 0.3s ease;
+  }
+  .tc-seal::before {
+    display: none;
+  }
+
+  .tc-card {
+    transform: none;
+    transition: opacity 0.4s ease;
+  }
+  .tc-scene:not([data-stage="sealed"]):not([data-stage="opening"]) .tc-card {
+    transform: none;
+  }
+
+  .tc-word {
+    transform: none;
+    transition: opacity 0.3s ease;
+    transition-delay: 0s;
+  }
+
+  .tc-polaroid {
+    transform: rotate(0deg);
+    filter: none;
+    transition: opacity 0.3s ease;
+    transition-delay: 0s;
+  }
+  .tc-scene:not([data-stage="sealed"]):not([data-stage="opening"]):not([data-stage="unfolding"]):not([data-stage="message"]) .tc-polaroid {
+    transform: rotate(0deg);
+  }
+
+  /* Sign-off: plain crossfade, underline shown at once (no self-draw). */
+  .tc-signoff {
+    transform: none;
+    transition: opacity 0.3s ease;
+  }
+  .tc-signoff-text::after {
+    transition: none;
+  }
+
+  .tc-reply {
+    transform: none;
+    transition: opacity 0.3s ease;
+  }
+
+  .tc-emoji:hover,
+  .tc-emoji-on {
+    transform: none;
+  }
+}

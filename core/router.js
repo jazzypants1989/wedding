@@ -7,6 +7,7 @@ import * as health from "../api/health.js"
 import * as config from "../api/config.js"
 import * as rsvp from "../api/rsvp.js"
 import * as lookup from "../api/lookup.js"
+import * as thankYou from "../api/thank-you.js"
 import * as sessions from "../api/admin/sessions.js"
 import {
   stats,
@@ -22,6 +23,7 @@ import { importCSV } from "../api/guests/import.js"
 import * as rsvps from "../api/admin/rsvps.js"
 import * as invites from "../api/admin/invites.js"
 import * as petitions from "../api/admin/petitions.js"
+import * as adminThankYou from "../api/admin/thank-you.js"
 import * as blocklist from "../api/admin/blocklist.js"
 import * as manualSms from "../api/admin/manual-sms.js"
 import * as account from "../api/account.js"
@@ -155,6 +157,14 @@ route("POST", "/api/rsvp/:code", rsvp.post, { errorHandling: true })
 route("POST", "/api/lookup", lookup.lookup, { errorHandling: true })
 route("POST", "/api/petition", lookup.petition, { errorHandling: true })
 
+// Public digital thank-you cards (Phase 3). Token is the auth for get/reply —
+// no account required. Literal `mine` MUST precede the `:token` param route
+// so it isn't captured as a token value.
+route("GET", "/api/thank-you/mine", thankYou.mine, { errorHandling: true })
+route("GET", "/api/thank-you/:token", thankYou.get, { errorHandling: true })
+route("POST", "/api/thank-you/:token/opened", thankYou.opened, { errorHandling: true })
+route("POST", "/api/thank-you/:token/reply", thankYou.reply, { errorHandling: true })
+
 // Guest account routes (public: register is an invite-code oracle guarded by its
 // own rate limiter; logout/me are cheap and never 401)
 route("POST", "/api/account/register", account.register, { errorHandling: true })
@@ -213,6 +223,9 @@ route("POST", "/api/admin/guests/import", importCSV, { admin: true })
 route("PUT", "/api/admin/guests/:id", update, { admin: true })
 route("DELETE", "/api/admin/guests/:id", remove, { admin: true })
 route("POST", "/api/admin/guests/:id/restore", restore, { admin: true })
+// Guest "story" sidecar for the thank-you composer + guest detail panel
+// (implemented in api/admin/thank-you.js — it already aggregates gifts/cards).
+route("GET", "/api/admin/guests/:id/story", adminThankYou.guestStory, { admin: true })
 
 // Admin RSVP routes
 route("GET", "/api/admin/rsvps", rsvps.list, { admin: true })
@@ -228,6 +241,36 @@ route("GET", "/api/admin/petitions", petitions.list, { admin: true })
 route("GET", "/api/admin/petitions/counts", petitions.counts, { admin: true })
 route("POST", "/api/admin/petitions/:id/approve", petitions.approve, { admin: true })
 route("POST", "/api/admin/petitions/:id/deny", petitions.deny, { admin: true })
+
+// Admin gift log routes (Phase 5). The literal `:id/physical-card` suffix
+// disambiguates from the bare `/:id` PUT/DELETE.
+route("GET", "/api/admin/gifts", adminThankYou.listGifts, { admin: true })
+route("POST", "/api/admin/gifts", adminThankYou.createGift, { admin: true })
+route("PUT", "/api/admin/gifts/:id", adminThankYou.updateGift, { admin: true })
+route("DELETE", "/api/admin/gifts/:id", adminThankYou.deleteGift, { admin: true })
+route("POST", "/api/admin/gifts/:id/physical-card", adminThankYou.togglePhysicalCard, { admin: true })
+
+// Admin digital thank-you card routes (Phase 5/6): CRUD (draft-only edits) +
+// delivery (config/preview/send mirror admin/invite) + counts (tab badge) +
+// reply-seen (unread badge ack). CRITICAL: literal segments (`config`,
+// `preview`, `send`, `counts`) MUST precede the `:id` param routes below so
+// they aren't captured as an id value.
+route("GET", "/api/admin/thank-you/config", adminThankYou.sendConfig, { admin: true })
+route("POST", "/api/admin/thank-you/config", adminThankYou.setConfig, { admin: true })
+route("POST", "/api/admin/thank-you/preview", adminThankYou.sendPreview, { admin: true })
+route("POST", "/api/admin/thank-you/send", adminThankYou.send, { admin: true })
+route("GET", "/api/admin/thank-you/counts", adminThankYou.counts, { admin: true })
+// Clear-reply lever. The literal `cards` segment keeps this distinct from the
+// bare `/:id/*` card routes below; history rows are retained (surface-only wipe).
+route("POST", "/api/admin/thank-you/cards/:id/clear-reply", adminThankYou.clearReply, { admin: true })
+route("GET", "/api/admin/thank-you", adminThankYou.listCards, { admin: true })
+route("POST", "/api/admin/thank-you", adminThankYou.createCard, { admin: true })
+route("GET", "/api/admin/thank-you/:id", adminThankYou.getCard, { admin: true })
+route("PUT", "/api/admin/thank-you/:id", adminThankYou.updateCard, { admin: true })
+route("DELETE", "/api/admin/thank-you/:id", adminThankYou.deleteCard, { admin: true })
+route("POST", "/api/admin/thank-you/:id/mark-sent", adminThankYou.markSentManual, { admin: true })
+route("POST", "/api/admin/thank-you/:id/resend", adminThankYou.resendCard, { admin: true })
+route("POST", "/api/admin/thank-you/:id/reply-seen", adminThankYou.markReplySeen, { admin: true })
 
 // Admin moderation routes (guestbook-only in Phase 2; :type is validated against
 // a fixed allowlist in the handler — never interpolated into SQL)

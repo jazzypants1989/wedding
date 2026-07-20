@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en" data-effect-theme="{{effectTheme}}">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>A thank-you card - {{couple.display}}</title>
+  <meta name="description" content="A little thank-you from {{couple.first}}.">
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#eee6dc" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1a1614" media="(prefers-color-scheme: dark)">
+  <link rel="icon" type="image/png" href="/images/favicon.png">
+  <link rel="apple-touch-icon" href="/images/favicon.png">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="{{couple.display}}'s Wedding">
+  <meta property="og:description" content="{{weddingDate}} in {{location}}">
+  <meta property="og:image" content="{{ogImage}}">
+  <meta property="og:url" content="{{ogUrl}}">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{{couple.display}}'s Wedding">
+  <meta name="twitter:description" content="{{weddingDate}} in {{location}}">
+  <meta name="twitter:image" content="{{ogImage}}">
+  <link rel="preload" as="font" type="font/woff2" href="/fonts/dm-serif-display-latin.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="/fonts/jost-latin.woff2" crossorigin>
+  <link rel="stylesheet" href="/styles/tokens.css">
+  <link rel="stylesheet" href="/styles/layout.css">
+  <link rel="stylesheet" href="/styles/components.css">
+  <link rel="stylesheet" href="/styles/social.css">
+  <link rel="stylesheet" href="/pages/thanks/thanks.css">
+  <link rel="stylesheet" href="/styles/effects.css" media="print" id="effects-css">
+  <script src="/components/theme-init.js"></script>
+</head>
+
+<body data-mode="{{mode}}">
+  <a href="#main-content" class="skip-link">Skip to content</a>
+
+  <header class="site-header text-center">
+    <h1 class="couple-names"><a href="/" class="home-link">{{couple.display}}</a></h1>
+    <p class="wedding-info">{{weddingDate}} &bull; {{location}}</p>
+  </header>
+
+  <nav class="desktop-nav" aria-label="Main navigation">
+    <ul class="nav-list">{{nav.desktop}}</ul>
+  </nav>
+
+  <button class="theme-toggle desktop-theme-toggle" type="button" aria-label="Switch to dark mode"><span
+      class="theme-icon-sun" aria-hidden="true"></span><span class="theme-icon-moon" aria-hidden="true"></span></button>
+
+  <div class="mobile-nav-wrapper" id="mobile-nav-wrapper">
+    <button class="hamburger-button flex-center" id="hamburger-button" aria-expanded="false"
+      aria-label="Open navigation menu">
+      <div class="hamburger-icon" id="hamburger-icon">
+        <span class="hamburger-line"></span>
+        <span class="hamburger-line"></span>
+        <span class="hamburger-line"></span>
+        <span class="hamburger-line"></span>
+      </div>
+      <span class="sr-only">Menu</span>
+    </button>
+
+    <nav class="mobile-nav" id="mobile-nav" aria-label="Mobile navigation">
+      <ul class="nav-list">{{nav.mobile}}</ul>
+    </nav>
+
+    <span class="mobile-logo">{{couple.monogram}}</span>
+  </div>
+
+  <noscript>
+    <div style="max-width: 600px; margin: 2rem auto; padding: 1rem; text-align: center;">
+      <h2>JavaScript Required</h2>
+      <p>Opening your thank-you card needs JavaScript. Please enable it and reload the page.</p>
+    </div>
+  </noscript>
+
+  <main id="main-content">
+    <section class="tc-section">
+      <!-- Loading -->
+      <div id="tc-loading" class="tc-loading" aria-live="polite" aria-busy="true">
+        <p>Opening your card&hellip;</p>
+      </div>
+
+      <!-- Warm fallback: an expired / unknown / not-yet-sent / mistyped link.
+           role="status" + tabindex so it's announced and focused when shown. -->
+      <div id="tc-error" class="tc-fallback" role="status" tabindex="-1" hidden>
+        <h2>We couldn't open this card — double-check the link, or reach out to us. 💗</h2>
+        <p>But there's still so much to see — wander through our photos or leave us a note in the guestbook.</p>
+        <div class="tc-fallback-actions">
+          <a href="/gallery" class="btn btn-primary">See the photos</a>
+          <a href="/" class="btn btn-secondary">Back to home</a>
+        </div>
+      </div>
+
+      <!-- The card scene: envelope → card. data-stage is driven by reveal.js. -->
+      <div id="tc-scene" class="tc-scene" data-stage="sealed" hidden>
+        <button type="button" class="tc-envelope" id="tc-envelope" aria-label="Open your thank-you card">
+          <span class="tc-flap" aria-hidden="true"></span>
+          <span class="tc-envelope-body" aria-hidden="true"></span>
+          <span class="tc-envelope-name" aria-hidden="true"></span>
+          <span class="tc-seal" aria-hidden="true">💌</span>
+          <span class="tc-open-hint">Open</span>
+        </button>
+
+        <article id="tc-card" class="tc-card" tabindex="-1" aria-label="Your thank-you card">
+          <p class="tc-greeting">Dear <span id="tc-recipient"></span>,</p>
+          <div id="tc-message" class="tc-message"></div>
+          <p id="tc-signoff" class="tc-signoff" hidden><span id="tc-signoff-text" class="tc-signoff-text"></span></p>
+          <div id="tc-photos" class="tc-photos" hidden></div>
+          <div id="tc-reply" class="tc-reply"></div>
+        </article>
+
+        <div class="tc-controls">
+          <button type="button" class="tc-skip" id="tc-skip">Skip &raquo;</button>
+          <button type="button" class="tc-replay" id="tc-replay">Replay &#8635;</button>
+          <button type="button" class="tc-share" id="tc-share">Share this card &#8599;</button>
+          <button type="button" class="tc-keepsake" id="tc-keepsake">Save keepsake &#128444;</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <nav class="footer-nav" aria-label="Footer navigation">
+    <ul class="nav-list">{{nav.footer}}</ul>
+  </nav>
+
+  <footer class="site-footer">
+    <picture>
+      <source media="(min-width: 768px)" srcset="/images/bottom-desktop-768w.webp 768w, /images/bottom-desktop-1440w.webp 1440w, /images/bottom-desktop.webp 2880w" sizes="100vw">
+      <img src="/images/bottom-mobile.webp" srcset="/images/bottom-mobile-414w.webp 414w, /images/bottom-mobile.webp 828w" sizes="100vw" alt="" loading="lazy" width="828" height="363">
+    </picture>
+  </footer>
+
+  <script type="module" src="/pages/thanks/main.js"></script>
+</body>
+
+</html>

@@ -1414,3 +1414,640 @@ tr:hover td {
 .dc-upload-row.is-error .dc-upload-state {
   color: var(--color-danger);
 }
+
+/* ============ Thank-you cards tab ============ */
+
+/* Digital-card status chips (reuse the pending palette as a neutral base). */
+.status-none {
+  --_badge-bg: var(--color-status-archived-bg);
+  --_badge-text: var(--color-status-archived-text);
+}
+.status-draft {
+  --_badge-bg: var(--color-status-pending-bg);
+  --_badge-text: var(--color-status-pending-text);
+}
+.status-sent {
+  --_badge-bg: var(--color-status-invited-bg);
+  --_badge-text: var(--color-status-invited-text);
+}
+.status-viewed {
+  --_badge-bg: var(--color-status-responded-bg);
+  --_badge-text: var(--color-status-responded-text);
+}
+
+.tc-check-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: var(--text-sm);
+}
+
+.tc-reply-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-card-bg);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  cursor: pointer;
+  max-width: 16rem;
+  text-align: left;
+}
+.tc-reply-cell.is-unread {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 25%, transparent);
+  font-weight: 600;
+}
+.tc-reply-emoji {
+  font-size: 1.1rem;
+}
+.tc-reply-excerpt {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- composer (master/detail editor) ---- */
+.tc-composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--spacing-lg);
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .tc-composer {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tc-readonly-field {
+  margin: 0;
+  padding: var(--spacing-sm);
+  background: var(--color-bg-subtle, var(--color-card-bg));
+  border-radius: var(--radius-md);
+  font-weight: 500;
+}
+
+.tc-composer-preview {
+  position: sticky;
+  top: var(--spacing-md);
+}
+.tc-preview-devicebar {
+  display: flex;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-sm);
+}
+.tc-preview-devicebar .btn.active {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  border-color: var(--color-primary);
+}
+.tc-preview-wrap {
+  width: 100%;
+}
+.tc-preview-wrap.device-mobile {
+  max-width: 390px;
+}
+.tc-preview-wrap.device-desktop {
+  max-width: 100%;
+}
+.tc-preview-frame {
+  width: 100%;
+  height: 640px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-card-bg);
+}
+/* Sandboxed email preview in the send wizard (4c). */
+.tysend-email-preview {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin-top: var(--spacing-sm);
+}
+.tysend-email-frame {
+  width: 100%;
+  height: 460px;
+  border: 0;
+  background: #fff;
+}
+.tc-delivery-hint {
+  display: block;
+  margin-top: var(--spacing-2xs);
+}
+
+/* ---- effect stack ---- */
+.tc-effect-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.tc-effect-row {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm);
+}
+.tc-effect-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  cursor: pointer;
+  font-weight: 500;
+}
+.tc-effect-controls {
+  margin-top: var(--spacing-sm);
+}
+.tc-effect-add {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+}
+.tc-effect-add select {
+  flex: 1;
+}
+
+/* Generic per-parameter controls (buildControl output — the admin page doesn't
+   load studio.css, so the essentials live here too). */
+.tc-effect-controls .control {
+  margin-bottom: var(--spacing-sm);
+}
+.tc-effect-controls .control-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.tc-effect-controls .control label {
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+.tc-effect-controls .readout {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
+  color: var(--color-primary);
+}
+.tc-effect-controls .control-inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.tc-effect-controls .control-inputs input[type="range"] {
+  flex: 1;
+  accent-color: var(--color-primary);
+}
+.tc-effect-controls .num-field,
+.tc-effect-controls .text-field,
+.tc-effect-controls .select-field,
+.tc-effect-controls .color-field {
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 3px 6px;
+  border-radius: 5px;
+  border: 1px solid var(--color-border);
+  background: var(--color-white);
+  color: var(--color-text);
+}
+.tc-effect-controls .num-field {
+  width: 68px;
+}
+.tc-effect-controls .text-field,
+.tc-effect-controls .select-field {
+  width: 100%;
+  margin-top: 4px;
+}
+.tc-effect-controls .range-inputs {
+  flex-wrap: wrap;
+}
+.tc-effect-controls .range-tag {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+.tc-effect-controls .color-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 5px;
+}
+.tc-effect-controls .color-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.tc-effect-controls .swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+.tc-effect-controls .color-field {
+  flex: 1;
+}
+.tc-effect-controls .control-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ---- photo strip + picker ---- */
+.tc-photo-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+}
+.tc-photo-chip {
+  position: relative;
+  width: 84px;
+}
+.tc-photo-thumb {
+  width: 84px;
+  height: 84px;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  display: block;
+}
+.tc-photo-chip-actions {
+  display: flex;
+  justify-content: center;
+  gap: 2px;
+  margin-top: 2px;
+}
+.tc-photo-chip-actions .btn {
+  padding: 2px 6px;
+}
+
+.tc-picker-toggle {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+.tc-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: var(--spacing-sm);
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.tc-picker-item {
+  position: relative;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: var(--radius-md);
+  background: none;
+  cursor: pointer;
+  aspect-ratio: 1;
+}
+.tc-picker-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  display: block;
+}
+.tc-picker-item.is-selected {
+  border-color: var(--color-primary);
+}
+.tc-picker-check {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+}
+
+.tc-copy-link-row {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+}
+.tc-link-field {
+  flex: 1;
+  font-family: monospace;
+  font-size: 0.85rem;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+/* ---- amount privacy glyph ---- */
+.tc-lock {
+  font-size: 0.8em;
+  cursor: help;
+}
+
+/* ---- status chips summary (D2) ---- */
+.tc-status-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin: 0 0 var(--spacing-md);
+}
+.tc-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--spacing-2xs);
+  padding: var(--spacing-2xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  background: var(--color-bg-subtle, var(--color-card-bg));
+}
+.tc-chip strong {
+  color: var(--color-text);
+  font-size: var(--text-base);
+}
+
+/* ---- progress ring "N of M thanked" (task 1) ---- */
+.tc-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+.tc-progress-ring {
+  flex: 0 0 auto;
+}
+.tc-progress-track {
+  stroke: var(--color-border);
+}
+.tc-progress-value {
+  stroke: var(--color-primary);
+  transition: stroke-dashoffset 0.5s ease;
+}
+.tc-progress-label {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+.tc-progress-label strong {
+  color: var(--color-text);
+  font-size: var(--text-base);
+}
+
+/* ---- "next guest" queue prompt (task 3) ---- */
+.tc-queue-prompt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 35%, var(--color-border));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+}
+.tc-queue-text {
+  font-size: var(--text-sm);
+  color: var(--color-text);
+}
+.tc-queue-dismiss {
+  margin-left: auto;
+  padding: 0 var(--spacing-xs);
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: var(--text-base);
+  line-height: 1;
+  color: var(--color-text-muted);
+}
+.tc-queue-dismiss:hover {
+  color: var(--color-text);
+}
+
+/* ---- engagement timeline (D2) ---- */
+.tc-timeline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2xs) var(--spacing-xs);
+  font-size: var(--text-xs);
+}
+.tc-tl-step {
+  white-space: nowrap;
+}
+.tc-tl-step.is-done {
+  color: var(--color-text);
+}
+.tc-tl-step.is-dim {
+  color: var(--color-text-muted);
+  opacity: 0.65;
+}
+.tc-tl-sep {
+  color: var(--color-text-muted);
+  opacity: 0.5;
+}
+
+/* ---- reveal row + play button (E1) ---- */
+.tc-reveal-row {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+.tc-reveal-row select {
+  flex: 1;
+}
+
+/* ---- preview unavailable note (E2) ---- */
+.tc-preview-note {
+  margin-top: var(--spacing-sm);
+  text-align: center;
+  font-style: italic;
+}
+
+/* ---- manual "copy the message" block (C3) ---- */
+.tc-manual-message {
+  width: 100%;
+  margin-top: var(--spacing-sm);
+  padding: var(--spacing-sm);
+  font-size: var(--text-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  resize: vertical;
+}
+
+/* ---- card detail modal: timeline + reply thread (D2) ---- */
+.tc-detail-timeline {
+  margin-bottom: var(--spacing-md);
+}
+.tc-reply-thread {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.tc-reply-item {
+  display: flex;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-subtle, var(--color-card-bg));
+}
+.tc-reply-item-emoji {
+  font-size: 1.4rem;
+  line-height: 1;
+}
+.tc-reply-item-body {
+  flex: 1;
+}
+.tc-reply-item-time {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  margin-top: var(--spacing-2xs);
+}
+
+/* ---- reply badge pip (task 1) ---- */
+.tab-badge-reply {
+  background: var(--color-primary);
+}
+
+/* ---- tab toolbar: name search + reply-ping toggle (tasks 2/6) ---- */
+.tc-tab-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+.tc-name-search {
+  flex: 1 1 16rem;
+  min-width: 0;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font: inherit;
+}
+.tc-replyping {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+/* ---- clickable status-filter chips (task 2) ---- */
+.tc-chip-filter {
+  cursor: pointer;
+  font: inherit;
+}
+.tc-chip-filter.is-active {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  color: var(--color-text);
+}
+.tc-chip-filter.is-unread {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+.tc-chip-filter.is-unread.is-active {
+  background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+}
+
+/* ---- guest picker (write a card, task 3) ---- */
+.tc-guest-picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+.tc-guest-picker-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  cursor: pointer;
+  font: inherit;
+  color: var(--color-text);
+}
+.tc-guest-picker-item:hover,
+.tc-guest-picker-item:focus {
+  background: var(--color-bg-subtle, var(--color-card-bg));
+}
+.tc-guest-picker-empty {
+  padding: var(--spacing-md);
+}
+
+/* ---- composer guest-story sidecar (task 7) ---- */
+.tc-story {
+  margin-top: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-bg-subtle, var(--color-card-bg));
+}
+.tc-story-summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+.tc-story-body {
+  margin-top: var(--spacing-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+.tc-story-block h4 {
+  margin: 0 0 var(--spacing-2xs);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+.tc-story-quote {
+  font-style: italic;
+  margin: 0 0 var(--spacing-xs);
+}
+.tc-story-list {
+  margin: 0;
+  padding-left: var(--spacing-md);
+  font-size: var(--text-sm);
+}
+.tc-story-thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-xs);
+}
+.tc-story-thumb {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+
+/* ---- guest-detail thank-you summary (task 8) ---- */
+.guest-thankyou-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin: var(--spacing-md) 0;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-subtle, var(--color-card-bg));
+  font-size: var(--text-sm);
+}
+.guest-thankyou-label {
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+.guest-thankyou-text {
+  flex: 1 1 12rem;
+}

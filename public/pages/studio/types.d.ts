@@ -1,20 +1,9 @@
 /** @file Types for the effect studio dev tool */
 import type { EffectInstance } from "../../effects/types.js"
 
-/** Slider/number bounds (and enum options) for a single config parameter. */
-export interface ControlHint {
-  min?: number
-  max?: number
-  step?: number
-  options?: string[]
-}
-
-/** Resolved numeric slider bounds. */
-export interface NumericBounds {
-  min: number
-  max: number
-  step: number
-}
+// Control metadata types now live with the shared control machinery
+// (public/effects/control-meta.js) so the card composer can reuse them.
+export type { ControlHint, NumericBounds } from "../../effects/types.js"
 
 export type EffectFactory = (
   config?: Record<string, unknown>,
@@ -55,3 +44,44 @@ export type seedFromOverride = (
   defaults: Record<string, unknown>,
   partial: ConfigPartial,
 ) => Record<string, unknown>
+
+// ---- Sound lab (sound-lab.js) — dev-only WebAudio decision prototype --------
+
+/** How a cue's tuning slider is rendered and formatted. */
+export interface SoundParam {
+  /** Key into the cue's live `values` map. */
+  key: string
+  /** Human label shown next to the slider. */
+  label: string
+  min: number
+  max: number
+  step: number
+  /** Default value (also the starting live value). */
+  value: number
+  /** Readout unit: "Hz" → rounded integer, "s" → 3dp, otherwise 2dp. */
+  unit: "Hz" | "s" | "level"
+}
+
+/**
+ * A pure synth voice: schedules an audio cue on `dest` starting at `when`
+ * (an AudioContext currentTime-relative timestamp). Never touches globals so
+ * these functions can be lifted into the thanks page unchanged.
+ */
+export type SoundSynth = (
+  ctx: AudioContext,
+  dest: AudioNode,
+  params: Record<string, number>,
+  when: number,
+) => void
+
+/** One auditionable reveal cue in the sound lab. */
+export interface SoundCue {
+  id: string
+  label: string
+  /** Where this cue lands in the "play sequence" arc, in seconds. */
+  offset: number
+  play: SoundSynth
+  params: SoundParam[]
+  /** Live, slider-driven parameter values (seeded from each param's default). */
+  values: Record<string, number>
+}

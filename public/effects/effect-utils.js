@@ -27,6 +27,11 @@ export function randomBetween(min, max) {
   return min + Math.random() * (max - min)
 }
 
+/** @type {Types.cappedCount} */
+export function cappedCount(desired, max) {
+  return Math.min(desired, max)
+}
+
 /** @type {Types.cancellableDelay} */
 export function cancellableDelay(ms, signal) {
   return new Promise(function (resolve, reject) {

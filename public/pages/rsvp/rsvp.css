@@ -23,6 +23,11 @@
 .rsvp-success {
   text-align: center;
   padding: var(--spacing-xl) 0;
+  /* Sit above the brief champagne-fizz ambient layer (a full-viewport
+     .effect-layer at --z-effect-layer) started on a "yes", so the confirmation
+     reads in front of the bubbles rather than through them. */
+  position: relative;
+  z-index: calc(var(--z-effect-layer) + 1);
 }
 
 .rsvp-error-message {

@@ -19,6 +19,7 @@
     "doctor": "node scripts/doctor.js",
     "setup": "node scripts/setup-admin.js",
     "seed": "node scripts/seed-preview.js",
+    "seed:demo": "node scripts/seed-demo.js",
     "export": "node scripts/export-archive.js",
     "deploy": "node scripts/deploy.js"
   },

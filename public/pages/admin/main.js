@@ -12,6 +12,12 @@ import { initBlocklist, loadBlocklist } from "./blocklist.js"
 import { initManualSms } from "./manual-sms.js"
 import { initModeration, loadModeration, loadModerationCount } from "./moderation.js"
 import { initGalleryAdmin, loadGalleryAdmin } from "./gallery-admin.js"
+import {
+  initThankYous,
+  loadThankYous,
+  loadThankYouCount,
+  isThankYousDirty,
+} from "./thank-you.js"
 import { initSiteContent, loadSiteContent, isSiteContentDirty } from "./site-content.js"
 import { initEffectConfig, loadEffectConfig } from "./effect-config.js"
 import { initConfirmDialog } from "./confirm.js"
@@ -28,6 +34,7 @@ function onLoginSuccess() {
   loadStats()
   loadGuests()
   loadPetitionCount()
+  loadThankYouCount()
   // Landing on the dashboard says whether work is waiting — the badge alone is
   // easy to miss, and login lands on the Guests tab.
   void loadModerationCount().then((total) => {
@@ -44,7 +51,27 @@ function onLoginSuccess() {
     if (document.hidden) return
     loadModerationCount()
     loadPetitionCount()
+    loadThankYouCount()
   }, BADGE_POLL_MS)
+
+  // Deep-link support: /admin#thankyous (the digest email link) or any hash
+  // matching a tab id opens that tab on load. (C8)
+  const hashTab = tabIdFromHash()
+  if (hashTab) switchTab(hashTab)
+}
+
+/** The tab id named by the current location.hash, if it matches a real tab.
+ *  No regex — strip the leading "#" and match against each tab's data-tab.
+ *  @returns {string | null} */
+function tabIdFromHash() {
+  const hash = location.hash
+  const raw = hash.startsWith("#") ? hash.slice(1) : hash
+  if (!raw) return null
+  const tabs = document.querySelectorAll('[role="tab"]')
+  for (const tab of tabs) {
+    if (tab instanceof HTMLElement && tab.dataset.tab === raw) return raw
+  }
+  return null
 }
 
 /** Stop the badge poll — armed on login, torn down on logout/expiry so it can't
@@ -69,6 +96,18 @@ function switchTab(tabId) {
     }
   }
 
+  // Same guard for an open, edited thank-you card composer.
+  const tyPanel = document.getElementById("tab-thankyous")
+  if (tabId !== "thankyous" && tyPanel && !tyPanel.hidden && isThankYousDirty()) {
+    if (
+      !window.confirm(
+        "You have unsaved changes to this thank-you card. Leave without saving?",
+      )
+    ) {
+      return
+    }
+  }
+
   document.querySelectorAll('[role="tab"]').forEach((tab) => {
     if (!(tab instanceof HTMLElement)) return
     const isSelected = tab.dataset.tab === tabId
@@ -84,6 +123,12 @@ function switchTab(tabId) {
     panel.classList.toggle("active", isActive)
   })
 
+  // Keep the URL hash in sync so the tab is deep-linkable / refresh-stable,
+  // without spamming history entries. (C8)
+  if (tabId && location.hash.slice(1) !== tabId) {
+    history.replaceState(null, "", "#" + tabId)
+  }
+
   if (tabId === "rsvps") {
     loadRsvps()
   } else if (tabId === "petitions") {
@@ -94,6 +139,8 @@ function switchTab(tabId) {
     loadModeration()
   } else if (tabId === "gallery") {
     loadGalleryAdmin()
+  } else if (tabId === "thankyous") {
+    loadThankYous()
   } else if (tabId === "site-content") {
     loadSiteContent()
   } else if (tabId === "effects") {
@@ -153,6 +200,7 @@ function init() {
   initManualSms()
   initModeration()
   initGalleryAdmin()
+  initThankYous()
   initSiteContent()
   initEffectConfig()
   initConfirmDialog()

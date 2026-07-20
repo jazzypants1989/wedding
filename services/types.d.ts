@@ -95,10 +95,43 @@ export function getDefaultInviteEmail(
   inviteUrl: string,
 ): InviteEmailData
 
+/**
+ * Get the digital thank-you card email (subject/text/html). Never includes
+ * gift/amount data — the email only carries the card link.
+ * @example
+ * const email = getThankYouCardEmail('John', 'https://example.com/thanks?card=abc12345');
+ */
+export function getThankYouCardEmail(
+  guestName: string,
+  cardUrl: string,
+): InviteEmailData
+
+/** Input for the opt-in first-reply ping email to the couple. */
+export interface ThankYouReplyPingInput {
+  guestName: string
+  /** REACTION_EMOJI key of the reply, or null (message-only reply). */
+  emoji: string | null
+  /** The reply message, or null (emoji-only reply). */
+  message: string | null
+}
+
+/**
+ * Build the opt-in "a guest replied to your card" ping email (subject/text/html).
+ * Warm + short; carries an emoji glyph, a truncated message preview, and a link
+ * to the admin dashboard. Never includes gift/amount data.
+ */
+export function getThankYouReplyPingEmail(
+  input: ThankYouReplyPingInput,
+): InviteEmailData
+
 /** Input for the moderation digest email. */
 export interface ModerationDigestInput {
   counts: ModerationCounts
   oldestCreatedAt: string | null
+  /** Unread thank-you card replies (db/thank-you-cards.js#countUnreadReplies).
+   *  Not part of ModerationCounts (nothing to moderate, just unread) but folds
+   *  into the same ~daily digest email as an extra line item. Defaults to 0. */
+  unreadThankYouReplies?: number
 }
 
 /**
@@ -130,6 +163,7 @@ export interface MaybeSendDigestResult {
   sent: boolean
   reason: DigestReason
   counts?: ModerationCounts
+  unreadThankYouReplies?: number
 }
 
 /**
@@ -293,4 +327,14 @@ export function sendSMS(to: string, body: string): Promise<SendSMSResult>
 export function getDefaultInviteMessage(
   guestName: string,
   inviteUrl: string,
+): string
+
+/**
+ * Get default digital thank-you card message.
+ * @example
+ * const msg = getDefaultThankYouMessage('John', 'https://example.com/thanks?card=abc12345');
+ */
+export function getDefaultThankYouMessage(
+  guestName: string,
+  cardUrl: string,
 ): string

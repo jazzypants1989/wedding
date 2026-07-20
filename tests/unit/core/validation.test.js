@@ -5,6 +5,7 @@ import {
   validateEmail,
   validatePhone,
   validateInviteCode,
+  validateCardToken,
   validateId,
   validateIdArray,
 } from "../../../core/validation.js"
@@ -216,6 +217,56 @@ describe("validateInviteCode", () => {
   it("rejects null", () => {
     const result = validateInviteCode(null)
     assert.strictEqual(result.valid, false)
+  })
+})
+
+describe("validateCardToken", () => {
+  it("accepts valid 8-char alphanumeric", () => {
+    const result = validateCardToken("ABcd1234")
+    assert.strictEqual(result.valid, true)
+    assert.strictEqual(result.value, "ABcd1234")
+  })
+
+  it("trims whitespace", () => {
+    const result = validateCardToken("  ABcd1234  ")
+    assert.strictEqual(result.valid, true)
+    assert.strictEqual(result.value, "ABcd1234")
+  })
+
+  it("rejects too short", () => {
+    const result = validateCardToken("ABC1234")
+    assert.strictEqual(result.valid, false)
+  })
+
+  it("rejects too long", () => {
+    const result = validateCardToken("ABcd12345")
+    assert.strictEqual(result.valid, false)
+  })
+
+  it("rejects special characters", () => {
+    const result = validateCardToken("ABcd123!")
+    assert.strictEqual(result.valid, false)
+  })
+
+  it("rejects spaces", () => {
+    const result = validateCardToken("AB cd1234")
+    assert.strictEqual(result.valid, false)
+  })
+
+  it("rejects null", () => {
+    const result = validateCardToken(null)
+    assert.strictEqual(result.valid, false)
+  })
+
+  it("rejects non-string input", () => {
+    const result = validateCardToken(12345678)
+    assert.strictEqual(result.valid, false)
+  })
+
+  it("uses a card-specific error message, not the invite-code one", () => {
+    const result = validateCardToken("bad")
+    assert.strictEqual(result.valid, false)
+    if (!result.valid) assert.strictEqual(result.error, "Invalid card token")
   })
 })
 

@@ -41,11 +41,56 @@ export function toggleTheme(): void
 /** Toggle a button's disabled state + `.btn-loading` spinner class. */
 export function setButtonLoading(btn: HTMLButtonElement, isLoading: boolean): void
 
-/** Burst confetti from the top of the viewport. No-ops under reduced motion. */
-export function fireConfetti(): void
+/** Burst confetti from the top of the viewport. No-ops under reduced motion.
+ *  `accent` (e.g. a card's resolved `--tc-accent`) leads the color palette,
+ *  blended with the base tones; omitted → exact default palette/behavior. */
+export function fireConfetti(accent?: string): void
 
 /** Small sparkle burst centred on `element`. No-ops under reduced motion. */
 export function miniSparkle(element: HTMLElement): void
+
+/** Break a wax seal at `originEl`: two halves rotate + fall apart plus a spray
+ *  of small wax shards flung outward with a gravity arc. `accent` (e.g. a card's
+ *  `--tc-accent`) colours the wax; omitted → the brand tone. No-ops under
+ *  reduced motion. */
+export function sealBreak(originEl?: HTMLElement | null, accent?: string): void
+
+/** Send a single emoji `glyph` flying from `originEl` up into `targetEl` (the
+ *  card body) — a small, warm confirmation. No-ops under reduced motion or when
+ *  any argument is missing. */
+export function flyEmoji(glyph: string, originEl: HTMLElement, targetEl: HTMLElement): void
+
+/** Quick cork-pop burst — a streak + radiating gold fizz spray from `originEl`
+ *  (or the bottom-centre of the viewport), plus an impact flash at the origin.
+ *  No-ops under reduced motion. `accent` leads the fizz spark palette and
+ *  tints the flash; omitted → exact default palette/behavior. */
+export function champagnePop(originEl?: HTMLElement | null, accent?: string): void
+
+/** Radial burst of small hearts from `originEl` (or the viewport centre),
+ *  biased upward with distance-ring stagger. No-ops under reduced motion.
+ *  `accent` leads the heart color palette; omitted → exact default
+ *  palette/behavior. */
+export function heartBurst(originEl?: HTMLElement | null, accent?: string): void
+
+/** @file effect-controls.js - Types for the generic per-parameter controls */
+
+import type { ControlHint } from "../effects/types.js"
+
+/** Injected context for a control: which effect it belongs to, how to resolve
+ *  a param's hint, and where to report edits. Keeps builders free of any
+ *  module-global state so multiple consumers (studio, card composer) coexist. */
+export interface ControlBuildContext {
+  effectId: string
+  getHint: (effectId: string, param: string) => ControlHint | undefined
+  onChange: (key: string, value: unknown) => void
+}
+
+/** Build the control for one config entry, dispatching on its value type. */
+export function buildControl(
+  key: string,
+  value: unknown,
+  ctx: ControlBuildContext,
+): HTMLElement
 
 /** @file relative-time.js - Types for relative time formatting */
 
@@ -336,3 +381,22 @@ export function showToast(message: string, opts?: ToastOptions): void
 
 /** Announce a message on the page's shared SR-only polite live region. */
 export function announcePolite(message: string): void
+
+/** @file thanks-banner.js - Types for the signed-in "card waiting" banner */
+
+/** One card in the GET /api/thank-you/mine response. */
+export interface MyThankYouCard {
+  token: string
+  sent_at: string | null
+  viewed_at: string | null
+  theme: string
+  has_photos: boolean
+  replied: boolean
+}
+
+/**
+ * After loadSession(), surface a dismissible banner if the signed-in guest has
+ * an un-viewed thank-you card that isn't locally dismissed. No-op when signed
+ * out, when there's nothing waiting, or when #main-content is absent.
+ */
+export function initThanksBanner(): Promise<void>

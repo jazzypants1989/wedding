@@ -72,32 +72,46 @@ const INLINE_CSS_STYLE = '<style>' + inlineCssContent + '</style>'
 const INLINE_CSS_HASH = crypto.createHash("sha256").update(inlineCssContent).digest("base64")
 const CSS_LINK_TAGS = INLINE_CSS_PATHS.map(url => '<link rel="stylesheet" href="' + url + '">')
 
-const CSP_DIRECTIVES = [
-  "style-src 'self' 'sha256-" + INLINE_CSS_HASH + "'",
-  // blob: + media-src for upload-tray previews (URL.createObjectURL) and video
-  // poster extraction (Phase 3 media pipeline).
-  "img-src 'self' data: blob:",
-  "media-src 'self' blob:",
-  "font-src 'self'",
-  "connect-src 'self'",
-  "frame-src https://www.honeyfund.com",
-  "frame-ancestors 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-]
+// `frame-src` gains 'self' so the admin composer may embed the same-origin
+// thank-you card live-preview (/thanks-preview) iframe; the couple's registry
+// iframe (honeyfund) is the only cross-origin frame. `frameAncestors` is
+// 'none' for every page except FRAMEABLE_SAMEORIGIN_PAGES (see below), which
+// emit 'self' so that same preview page can be framed by /admin.
+/** @param {string} frameAncestors @returns {string[]} */
+function cspDirectives(frameAncestors) {
+  return [
+    "style-src 'self' 'sha256-" + INLINE_CSS_HASH + "'",
+    // blob: + media-src for upload-tray previews (URL.createObjectURL) and video
+    // poster extraction (Phase 3 media pipeline).
+    "img-src 'self' data: blob:",
+    "media-src 'self' blob:",
+    "font-src 'self'",
+    "connect-src 'self'",
+    "frame-src 'self' https://www.honeyfund.com",
+    "frame-ancestors " + frameAncestors,
+    "base-uri 'self'",
+    "form-action 'self'",
+  ]
+}
 
-const HASH_CSP = [
-  "default-src 'self'",
-  "script-src 'self' 'sha256-" + THEME_INIT_HASH + "'",
-  ...CSP_DIRECTIVES,
-].join("; ")
+/** @param {string} frameAncestors @returns {string} */
+function hashCsp(frameAncestors) {
+  return [
+    "default-src 'self'",
+    "script-src 'self' 'sha256-" + THEME_INIT_HASH + "'",
+    ...cspDirectives(frameAncestors),
+  ].join("; ")
+}
 
-/** @param {string} nonce */
-function buildNonceCsp(nonce) {
+const HASH_CSP = hashCsp("'none'")
+const HASH_CSP_FRAMEABLE = hashCsp("'self'")
+
+/** @param {string} nonce @param {string} frameAncestors */
+function buildNonceCsp(nonce, frameAncestors) {
   return [
     "default-src 'self'",
     "script-src 'self' 'nonce-" + nonce + "'",
-    ...CSP_DIRECTIVES,
+    ...cspDirectives(frameAncestors),
   ].join("; ")
 }
 
@@ -106,6 +120,13 @@ const COMPRESSIBLE_EXTS = new Set([".html", ".css", ".js", ".mjs", ".json", ".sv
 // Dev-only page routes (first path segment) — 404'd in production so internal
 // tooling isn't publicly routable on the live site. They still serve in dev.
 const DEV_ONLY_PAGES = new Set(["studio"])
+
+// Pages (first path segment) that may be framed by a same-origin document:
+// they emit `X-Frame-Options: SAMEORIGIN` + `frame-ancestors 'self'` instead of
+// the global DENY / 'none'. Only the thank-you card live-preview page, which the
+// admin composer embeds in an iframe. It serves in production (the real composer
+// uses it) — deliberately NOT in DEV_ONLY_PAGES.
+const FRAMEABLE_SAMEORIGIN_PAGES = new Set(["thanks-preview"])
 
 /** @type {Map<string, number>} urlPath → mtime, for cache-busting query params */
 const versionMap = new Map()
@@ -465,8 +486,15 @@ export async function serveStatic(req, res) {
   const nonce = SERVER.cspNonce && ext === ".html" ? crypto.randomBytes(16).toString("base64") : ""
 
   if (ext === ".html") {
-    headers["Content-Security-Policy"] = SERVER.cspNonce ? buildNonceCsp(nonce) : HASH_CSP
-    headers["X-Frame-Options"] = "DENY"
+    // Relax framing for the thank-you preview page only (path-keyed; the query
+    // string was already stripped above), so /admin can embed it same-origin.
+    const frameable = FRAMEABLE_SAMEORIGIN_PAGES.has(urlPath.split("/")[1])
+    headers["Content-Security-Policy"] = SERVER.cspNonce
+      ? buildNonceCsp(nonce, frameable ? "'self'" : "'none'")
+      : frameable
+        ? HASH_CSP_FRAMEABLE
+        : HASH_CSP
+    headers["X-Frame-Options"] = frameable ? "SAMEORIGIN" : "DENY"
     headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
 

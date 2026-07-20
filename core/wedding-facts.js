@@ -35,5 +35,6 @@ export function getEmailSubjects() {
   return {
     invite: `You're Invited! ${names}'s Wedding`,
     reminder: `Reminder: RSVP for ${names}'s Wedding`,
+    thankYou: `A thank-you from ${names}`,
   }
 }

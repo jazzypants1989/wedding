@@ -79,11 +79,17 @@ function getDefaultInviteMessage(guestName, inviteUrl) {
   return `Hi ${guestName}! You're invited to ${getWeddingFacts().coupleNames}'s wedding! Please RSVP at: ${inviteUrl}`
 }
 
+/** @type {Types.getDefaultThankYouMessage} */
+function getDefaultThankYouMessage(guestName, cardUrl) {
+  return `Hi ${guestName}! ${getWeddingFacts().coupleNames} left you a little thank-you: ${cardUrl}`
+}
+
 const { isConfigured, sendSMS } = defaultService
 export {
   createSMSService,
   isConfigured,
   sendSMS,
   getDefaultInviteMessage,
+  getDefaultThankYouMessage,
   isRetryableError,
 }

@@ -116,6 +116,32 @@ export const EFFECT_CONFIG_SPECS = {
     sizeRange: range(), wobbleRange: range(),
   },
   caustics: { intensity: num(), speed: num(), layerCount: count() },
+  lanterns: {
+    lanternCount: count(), riseDurationRange: range(), delayRange: range(),
+    sizeRange: range(), swayRange: range(), colors: colors(),
+  },
+  ribbons: {
+    ribbonCount: count(), unfurlDurationRange: range(), delayRange: range(),
+    widthRange: range(), colors: colors(),
+  },
+  fizz: {
+    streamCount: count(), bubblesPerStream: count(), riseDurationRange: range(),
+    delayRange: range(), sizeRange: range(), colors: colors(),
+  },
+  frameglint: {
+    sweepIntervalMs: num(), sweepDurationMs: num(), angle: num(), intensity: num(),
+  },
+  confettidrift: {
+    pieceCount: count(), fallDurationRange: range(), delayRange: range(),
+    sizeRange: range(), spinRange: range(), colors: colors(),
+  },
+  inksparkle: {
+    glyphCount: count(), driftDurationRange: range(), delayRange: range(),
+    sizeRange: range(), glyphs: colors(), colors: colors(),
+  },
+  tiltdepth: {
+    selector: str(), maxTilt: num(0, 90), depth: num(0, 1000),
+  },
 }
 
 /** Derived id → set of valid keys (back-compat + the drift key-parity check).

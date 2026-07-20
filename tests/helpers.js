@@ -492,4 +492,16 @@ export function cleanupTestData(db) {
   } catch (e) {
     // Tables might not exist in old databases
   }
+
+  // Digital thank-you cards (Phase 1+): FK to guests isn't enforced on this
+  // helper's own connection (no foreign_keys pragma here), so clear these
+  // explicitly before/alongside the guest wipe above rather than relying on
+  // ON DELETE CASCADE.
+  try {
+    db.prepare(`DELETE FROM thank_you_card_replies`).run()
+    db.prepare(`DELETE FROM thank_you_cards`).run()
+    db.prepare(`DELETE FROM gifts`).run()
+  } catch (e) {
+    // Tables might not exist in old databases
+  }
 }

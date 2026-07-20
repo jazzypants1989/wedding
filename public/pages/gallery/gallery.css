@@ -562,3 +562,38 @@
     background-image: none;
   }
 }
+
+/* ============ Official photo glint (reuses the frame-glint effect) ============ */
+/* One specular sweep when an official photo is hovered or keyboard-focused: the
+   same gradient + @keyframes frame-glint the frame-glint effect (effects.css)
+   uses on thank-you polaroids, here triggered by :hover / :focus-visible instead
+   of a JS timer, so it fires once per interaction and never loops. Scoped to the
+   official grid; guest photos are left alone. */
+#grid-official .media-cell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0;
+  background: linear-gradient(
+    22deg,
+    transparent 42%,
+    rgba(255, 255, 255, 0.5) 50%,
+    transparent 58%
+  );
+  background-size: 250% 250%;
+  background-position: 0% 0%;
+  mix-blend-mode: screen;
+}
+
+#grid-official .media-cell:hover::after,
+#grid-official .media-cell:focus-visible::after {
+  animation: frame-glint 1200ms ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #grid-official .media-cell::after {
+    display: none;
+  }
+}

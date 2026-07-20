@@ -73,6 +73,39 @@ export const COMMUNICATION_STATUS = Object.freeze({
   FAILED: "failed",
 })
 
+// Digital thank-you cards (Phase 1). Reply is stored as columns on the card
+// (reply_emoji/reply_message/replied_at), not the polymorphic `reactions`
+// table — recipients authenticate by token and may have no account.
+export const THANK_YOU_CARD_STATUS = Object.freeze({
+  DRAFT: "draft",
+  SENT: "sent",
+  VIEWED: "viewed",
+})
+
+export const THANK_YOU_SENT_VIA = Object.freeze({
+  EMAIL: "email",
+  SMS: "sms",
+  MANUAL: "manual",
+  LINK: "link", // "copy link" delivery — marked sent without an email/SMS send
+})
+
+// Card theme allowlist — single source of truth shared with the visuals
+// planner's EFFECT_THEMES (public/effects/themes.js). Kept as a plain literal
+// list here (not imported from public/) so the backend has no dependency on
+// frontend modules; a Phase 7 test asserts the two stay in sync.
+export const THANK_YOU_THEME_VALUES = Object.freeze([
+  "mermaid-disco",
+  "romantic",
+  "elegant",
+  "classic",
+  "celestial",
+  "garden",
+  "winter",
+  "coastal",
+  "celebration",
+  "gratitude",
+])
+
 export const SESSION = Object.freeze({
   DURATION_MS: 24 * 60 * 60 * 1000, // 24 hours absolute max
   IDLE_TIMEOUT_MS: 30 * 60 * 1000, // 30 minutes idle timeout
@@ -98,6 +131,17 @@ export const LIMITS = Object.freeze({
   ACCOUNT_NAME_MAX_LENGTH: 100,
   GUESTBOOK_MESSAGE_MAX_LENGTH: 2000,
   COMMENT_MAX_LENGTH: 500,
+  THANK_YOU_MESSAGE_MAX_LENGTH: 2000,
+  THANK_YOU_REPLY_MAX_LENGTH: 500,
+  THANK_YOU_MEDIA_MAX_KEYS: 12,
+  // effects_config is opaque JSON text (backend never parses its shape beyond
+  // JSON.parse validity); size is capped so a card row can't carry unbounded
+  // JSON. Enforced at admin write-time (api/admin/thank-you.js, Phase 3).
+  THANK_YOU_EFFECTS_CONFIG_MAX_BYTES: 16384,
+  // Gift amount is free-form admin-only text ("$100", "KitchenAid mixer", a
+  // blank) — never summed, never shown on the card. Short cap just guards
+  // against pasting something absurd into the field.
+  GIFT_AMOUNT_MAX_LENGTH: 100,
 })
 
 export const GUEST_STATUS_VALUES = Object.values(GUEST_STATUS)
@@ -109,6 +153,8 @@ export const MEDIA_KIND_VALUES = Object.values(MEDIA_KIND)
 export const MEDIA_SECTION_VALUES = Object.values(MEDIA_SECTION)
 export const TARGET_TYPE_VALUES = Object.values(TARGET_TYPE)
 export const REACTION_EMOJI_VALUES = Object.values(REACTION_EMOJI)
+export const THANK_YOU_CARD_STATUS_VALUES = Object.values(THANK_YOU_CARD_STATUS)
+export const THANK_YOU_SENT_VIA_VALUES = Object.values(THANK_YOU_SENT_VIA)
 
 // Moderation digest cadence (owner decision 2026-07-06: digest-only). ~daily,
 // generous of the hourly-tick drift so a run is never skipped by a few minutes.
@@ -139,6 +185,9 @@ export const RATE_LIMITS = Object.freeze({
   COMMENT_POST: { windowMs: 60 * 60 * 1000, max: 60 }, // 60 comments/hour, keyed per account
   REACTION_TOGGLE: { windowMs: 60 * 1000, max: 30 }, // 30 toggles/min, keyed per account
   SETUP: { windowMs: 60 * 60 * 1000, max: 20 }, // 20 first-run setup attempts/hour per IP
+  THANK_YOU: { windowMs: 60 * 1000, max: 20 }, // 20/min per IP — public GET /api/thank-you/:token
+  THANK_YOU_REPLY: { windowMs: 60 * 60 * 1000, max: 10 }, // 10 replies/hour per IP (token is the auth)
+  ADMIN_THANK_YOU: { windowMs: 60 * 60 * 1000, max: 100 }, // 100/hour, keyed on admin session token
 })
 
 export const REQUEST_LIMITS = Object.freeze({
@@ -295,7 +344,25 @@ export function isReactionEmoji(value) {
   return typeof value === "string" && /** @type {readonly string[]} */ (REACTION_EMOJI_VALUES).includes(value)
 }
 
+/** @type {Types.isThankYouCardStatus} */
+export function isThankYouCardStatus(value) {
+  return typeof value === "string" && /** @type {readonly string[]} */ (THANK_YOU_CARD_STATUS_VALUES).includes(value)
+}
+
+/** @type {Types.isThankYouSentVia} */
+export function isThankYouSentVia(value) {
+  return typeof value === "string" && /** @type {readonly string[]} */ (THANK_YOU_SENT_VIA_VALUES).includes(value)
+}
+
 const SERVER_PORT = process.env.PORT || 3000
+
+/** Public base URL with any trailing slash(es) stripped once, so callers can
+ *  safely concatenate `${baseUrl}/thanks` etc. without producing `//thanks`
+ *  in emailed/SMS links. No regex — trim slashes with string methods. */
+let NORMALIZED_BASE_URL = process.env.BASE_URL || `http://localhost:${SERVER_PORT}`
+while (NORMALIZED_BASE_URL.endsWith("/")) {
+  NORMALIZED_BASE_URL = NORMALIZED_BASE_URL.slice(0, -1)
+}
 
 /** Server/runtime configuration derived from the environment.
  *  Grouped into one frozen object (mirroring FEATURES above) instead of loose
@@ -307,8 +374,9 @@ export const SERVER = Object.freeze({
   port: SERVER_PORT,
   /** Scrypt hash of the admin password (set by `npm run setup`). */
   adminPasswordHash: process.env.ADMIN_PASSWORD_HASH,
-  /** Public base URL used in invite links and cookie Secure detection. */
-  baseUrl: process.env.BASE_URL || `http://localhost:${SERVER_PORT}`,
+  /** Public base URL used in invite links and cookie Secure detection
+   *  (trailing slashes stripped — see NORMALIZED_BASE_URL above). */
+  baseUrl: NORMALIZED_BASE_URL,
   /** Reply-to / contact email surfaced to guests. */
   contactEmail: process.env.CONTACT_EMAIL || "contact@example.com",
   /** Reverse-proxy IPs whose X-Forwarded-For header we trust. */

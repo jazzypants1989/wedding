@@ -191,6 +191,24 @@ const limiters = {
     windowMs: RATE_LIMITS.SETUP.windowMs,
     max: RATE_LIMITS.SETUP.max,
   }),
+
+  thankYou: createLimiter({
+    name: "thankYou",
+    windowMs: RATE_LIMITS.THANK_YOU.windowMs,
+    max: RATE_LIMITS.THANK_YOU.max,
+  }),
+
+  thankYouReply: createLimiter({
+    name: "thankYouReply",
+    windowMs: RATE_LIMITS.THANK_YOU_REPLY.windowMs,
+    max: RATE_LIMITS.THANK_YOU_REPLY.max,
+  }),
+
+  adminThankYou: createLimiter({
+    name: "adminThankYou",
+    windowMs: RATE_LIMITS.ADMIN_THANK_YOU.windowMs,
+    max: RATE_LIMITS.ADMIN_THANK_YOU.max,
+  }),
 }
 
 /** @type {Types.clearAllStores} */

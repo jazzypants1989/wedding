@@ -22,6 +22,32 @@ export const COMMUNICATION_STATUS: {
   readonly FAILED: "failed"
 }
 
+export const THANK_YOU_CARD_STATUS: {
+  readonly DRAFT: "draft"
+  readonly SENT: "sent"
+  readonly VIEWED: "viewed"
+}
+
+export const THANK_YOU_SENT_VIA: {
+  readonly EMAIL: "email"
+  readonly SMS: "sms"
+  readonly MANUAL: "manual"
+  readonly LINK: "link"
+}
+
+export const THANK_YOU_THEME_VALUES: readonly [
+  "mermaid-disco",
+  "romantic",
+  "elegant",
+  "classic",
+  "celestial",
+  "garden",
+  "winter",
+  "coastal",
+  "celebration",
+  "gratitude",
+]
+
 export const CONTENT_STATUS: {
   readonly PENDING: "pending"
   readonly APPROVED: "approved"
@@ -116,6 +142,11 @@ export const LIMITS: {
   readonly ACCOUNT_NAME_MAX_LENGTH: number
   readonly GUESTBOOK_MESSAGE_MAX_LENGTH: number
   readonly COMMENT_MAX_LENGTH: number
+  readonly THANK_YOU_MESSAGE_MAX_LENGTH: number
+  readonly THANK_YOU_REPLY_MAX_LENGTH: number
+  readonly THANK_YOU_MEDIA_MAX_KEYS: number
+  readonly THANK_YOU_EFFECTS_CONFIG_MAX_BYTES: number
+  readonly GIFT_AMOUNT_MAX_LENGTH: number
 }
 
 export const RATE_LIMITS: {
@@ -133,6 +164,9 @@ export const RATE_LIMITS: {
   readonly COMMENT_POST: { readonly windowMs: number; readonly max: number }
   readonly REACTION_TOGGLE: { readonly windowMs: number; readonly max: number }
   readonly SETUP: { readonly windowMs: number; readonly max: number }
+  readonly THANK_YOU: { readonly windowMs: number; readonly max: number }
+  readonly THANK_YOU_REPLY: { readonly windowMs: number; readonly max: number }
+  readonly ADMIN_THANK_YOU: { readonly windowMs: number; readonly max: number }
 }
 
 export const REQUEST_LIMITS: {
@@ -176,6 +210,8 @@ export const REACTION_EMOJI_VALUES: readonly [
   "cheers",
   "fire",
 ]
+export const THANK_YOU_CARD_STATUS_VALUES: readonly ["draft", "sent", "viewed"]
+export const THANK_YOU_SENT_VIA_VALUES: readonly ["email", "sms", "manual", "link"]
 
 export type GuestStatus = "pending" | "invited" | "responded"
 export type PetitionStatus = "pending" | "approved" | "denied"
@@ -193,6 +229,19 @@ export type ReactionEmoji =
   | "heart_eyes"
   | "cheers"
   | "fire"
+export type ThankYouCardStatus = "draft" | "sent" | "viewed"
+export type ThankYouSentVia = "email" | "sms" | "manual" | "link"
+export type ThankYouTheme =
+  | "mermaid-disco"
+  | "romantic"
+  | "elegant"
+  | "classic"
+  | "celestial"
+  | "garden"
+  | "winter"
+  | "coastal"
+  | "celebration"
+  | "gratitude"
 
 export function isGuestStatus(value: unknown): value is GuestStatus
 export function isPetitionStatus(value: unknown): value is PetitionStatus
@@ -203,6 +252,8 @@ export function isMediaKind(value: unknown): value is MediaKind
 export function isMediaSection(value: unknown): value is MediaSection
 export function isTargetType(value: unknown): value is TargetType
 export function isReactionEmoji(value: unknown): value is ReactionEmoji
+export function isThankYouCardStatus(value: unknown): value is ThankYouCardStatus
+export function isThankYouSentVia(value: unknown): value is ThankYouSentVia
 
 /** One rung of the content-image responsive width ladder. */
 export interface ContentLadderVariant {
@@ -575,6 +626,101 @@ export interface Communication {
   message_preview: string | null
   error_message: string | null
   sent_at: string
+}
+
+// --- Digital thank-you cards (Phase 1) ---
+
+/** A gift-log row (the giver's guest_id, what they gave, admin-only amount). */
+export interface Gift {
+  id: number
+  guest_id: number
+  description: string | null
+  /** Free-form, admin-only, NEVER surfaced on the card or any public endpoint. */
+  amount: string | null
+  notes: string | null
+  received_at: string | null
+  physical_card_sent: 0 | 1
+  physical_card_sent_at: string | null
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+}
+
+/** Admin gift-log row: joined giver name + the most recent linked card's status
+ *  (a gift may be re-composed, so this is the latest attempt, not a history). */
+export interface GiftWithGuest extends Gift {
+  guest_name: string
+  digital_card_status: ThankYouCardStatus | null
+}
+
+/** A digital thank-you card. `token` is the magic-link auth (8-char, unique).
+ *  `effects_config`/`media_keys` are opaque JSON text columns (parsed by the
+ *  API layer, never by the DB layer). `reply_*` are simple columns rather than
+ *  the polymorphic `reactions` table — recipients authenticate by token and
+ *  may have no account. `reply_seen_at` tracks admin having seen the reply
+ *  (unread badge/digest gate), independent of the guest-facing `viewed_at`. */
+export interface ThankYouCard {
+  id: number
+  token: string
+  /** Read-only public share credential (8-char alnum, unique). Resolves the card
+   *  for a non-reply viewer; never echoed to a share-token access path. */
+  share_token: string
+  guest_id: number
+  gift_id: number | null
+  message: string
+  theme: string
+  effects_config: string | null
+  media_keys: string | null
+  status: ThankYouCardStatus
+  sent_via: ThankYouSentVia | null
+  sent_at: string | null
+  viewed_at: string | null
+  /** Total number of envelope-open beacon hits (every open, not just the first). */
+  view_count: number
+  /** Timestamp of the most recent envelope open (beacon), independent of viewed_at. */
+  last_viewed_at: string | null
+  reply_emoji: ReactionEmoji | null
+  reply_message: string | null
+  replied_at: string | null
+  reply_seen_at: string | null
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+}
+
+/** One append-only entry in a card's reply history (thank_you_card_replies).
+ *  The card row keeps the latest reply in its reply_* columns for badge/digest
+ *  compatibility; this is the full thread, oldest-first when listed. */
+export interface ThankYouCardReply {
+  id: number
+  card_id: number
+  emoji: ReactionEmoji | null
+  message: string | null
+  created_at: string
+}
+
+/** Admin list/detail row: joined recipient guest name. */
+export interface ThankYouCardWithGuest extends ThankYouCard {
+  guest_name: string
+}
+
+/** Public token-auth surface row: joined recipient name, never the gift amount. */
+export interface PublicThankYouCard extends ThankYouCard {
+  recipient_name: string
+}
+
+/** Minimal shape for the signed-in guest "card waiting" banner surfacing.
+ *  Amount-free by construction — the banner only needs open/reply state and
+ *  enough theme/media hints to compose its copy. */
+export interface ThankYouCardForGuest {
+  token: string
+  sent_at: string | null
+  viewed_at: string | null
+  theme: string
+  /** True when the card has at least one media key (drives "with N photos" copy). */
+  has_photos: boolean
+  /** True when the recipient has replied at least once. */
+  replied: boolean
 }
 
 export interface Stats {

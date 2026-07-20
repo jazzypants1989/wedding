@@ -124,6 +124,34 @@ export const EFFECT_THEMES = [
       caustics: { intensity: 45 },
     },
   },
+  {
+    id: "celebration",
+    label: "Celebration",
+    // Warm-gold jubilation: champagne fizz, rising paper lanterns, light dust.
+    effectIds: ["fizz", "lanterns", "dust", "namespark", "dividers"],
+    configs: {
+      namespark: { shimmerColor: "gold" },
+      dividers: { dotDensity: 14, color: 0.7 },
+      fizz: { streamCount: 4 },
+      lanterns: { lanternCount: 8 },
+      dust: { density: 20 },
+    },
+  },
+  {
+    id: "gratitude",
+    label: "Gratitude",
+    // Tender rose thank-you: drifting petals, edge ribbons, rising hearts.
+    effectIds: ["petals", "ribbons", "hearts", "namespark", "dividers"],
+    configs: {
+      namespark: { shimmerColor: "pink" },
+      dividers: { dotDensity: 12, color: 0.7 },
+      // No color override: the petals default (config.js) already reads the
+      // --fx-rose-* tokens, which retint for light/dark automatically — a
+      // hardcoded hex list here would fight that and go stale on retheme.
+      petals: { petalCount: 14 },
+      hearts: { heartCount: 12 },
+    },
+  },
 ]
 
 /** @type {Types.resolveTheme} */

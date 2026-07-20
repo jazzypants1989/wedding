@@ -73,12 +73,55 @@ export function randomFrom<T>(arr: T[]): T
 export function randomBetween(min: number, max: number): number
 
 /**
+ * Clamp a desired element count to an absolute ceiling, so a stray config
+ * override can't spawn thousands of animated (will-change'd) nodes and hang
+ * low-end phones. Mobile scaling still applies before this cap.
+ * @example
+ * const count = cappedCount(isMobile() ? n / 2 : n, 120);
+ */
+export function cappedCount(desired: number, max: number): number
+
+/**
  * Return a Promise that resolves after the given delay, or rejects
  * with an AbortError when the signal fires.
  * @example
  * await cancellableDelay(300, controller.signal);
  */
 export function cancellableDelay(ms: number, signal: AbortSignal): Promise<void>
+
+/** @file control-meta.js - Types for the generic per-parameter control metadata */
+
+/** Slider/number bounds (and enum options) for a single config parameter. */
+export interface ControlHint {
+  min?: number
+  max?: number
+  step?: number
+  options?: string[]
+  /**
+   * Rendering hint for control shapes the value type alone can't disambiguate.
+   * `"glyphs"` marks a `string[]` whose entries are text glyphs/emoji (not
+   * colors), so the UI renders plain text chips instead of color swatches.
+   */
+  kind?: "glyphs"
+}
+
+/** Resolved numeric slider bounds. */
+export interface NumericBounds {
+  min: number
+  max: number
+  step: number
+}
+
+/**
+ * Resolve the control hint for an effect+param, or undefined when none is set.
+ */
+export function getHint(effectId: string, param: string): ControlHint | undefined
+
+/**
+ * Resolve numeric slider bounds from a hint, or heuristically from the current
+ * value when no hint exists (keeps unknown params usable).
+ */
+export function numericBounds(value: number, hint?: ControlHint): NumericBounds
 
 /** @file config.js - Types for effect configuration defaults */
 
@@ -318,6 +361,18 @@ export const OVERRIDE_STORAGE_KEY: string
  * const cfg = getEffectiveConfig('parallaxsparkles');
  */
 export function getEffectiveConfig(id: string): Record<string, unknown> | null
+
+/**
+ * Deep-merge `override` onto a clone of `base`, returning a new object (neither
+ * input is mutated). Plain objects recurse; arrays/scalars replace wholesale;
+ * prototype-pollution keys are skipped.
+ * @example
+ * const cfg = mergeConfig(getDefaultConfig("petals"), { petalCount: 30 });
+ */
+export function mergeConfig(
+  base: Record<string, unknown>,
+  override: Record<string, unknown>,
+): Record<string, unknown>
 
 /** @file themes.js - Types for the effect theme registry */
 
@@ -739,3 +794,114 @@ export function createFrostShimmer(config?: FrostShimmerConfig): EffectInstance
 /** @file bubbles-rising.js - Types for rising underwater bubbles */
 /** Create translucent bubbles floating up with a lateral wobble. */
 export function createBubblesRising(config?: BubblesRisingConfig): EffectInstance
+
+/** Default config for the lantern-rise effect. */
+export interface LanternRiseConfig {
+  lanternCount?: number
+  riseDurationRange?: [number, number]
+  delayRange?: [number, number]
+  sizeRange?: [number, number]
+  swayRange?: [number, number]
+  colors?: string[]
+}
+
+/** Default config for the ribbon-curl effect. */
+export interface RibbonCurlConfig {
+  ribbonCount?: number
+  unfurlDurationRange?: [number, number]
+  delayRange?: [number, number]
+  widthRange?: [number, number]
+  colors?: string[]
+}
+
+/** Default config for the champagne-fizz effect. */
+export interface ChampagneFizzConfig {
+  streamCount?: number
+  bubblesPerStream?: number
+  riseDurationRange?: [number, number]
+  delayRange?: [number, number]
+  sizeRange?: [number, number]
+  colors?: string[]
+}
+
+/** Default config for the frame-glint effect. */
+export interface FrameGlintConfig {
+  sweepIntervalMs?: number
+  sweepDurationMs?: number
+  angle?: number
+  intensity?: number
+}
+
+/** Default config for the confetti-drift effect. */
+export interface ConfettiDriftConfig {
+  pieceCount?: number
+  fallDurationRange?: [number, number]
+  delayRange?: [number, number]
+  sizeRange?: [number, number]
+  spinRange?: [number, number]
+  colors?: string[]
+}
+
+/** Default config for the ink-sparkle effect. */
+export interface InkSparkleConfig {
+  glyphCount?: number
+  driftDurationRange?: [number, number]
+  delayRange?: [number, number]
+  sizeRange?: [number, number]
+  glyphs?: string[]
+  colors?: string[]
+}
+
+/** @file lantern-rise.js - Types for rising paper lanterns */
+/** Create warm paper lanterns rising with a glow, gentle sway, and flicker. */
+export function createLanternRise(config?: LanternRiseConfig): EffectInstance
+
+/** @file ribbon-curl.js - Types for silk ribbons unfurling down page edges */
+/** Create glossy ribbons unfurling down the left/right page edges only. */
+export function createRibbonCurl(config?: RibbonCurlConfig): EffectInstance
+
+/** @file champagne-fizz.js - Types for rising champagne bubble streams */
+/** Create fine champagne bubble streams rising in a few tight columns. */
+export function createChampagneFizz(config?: ChampagneFizzConfig): EffectInstance
+
+/** @file frame-glint.js - Types for the periodic specular sweep on framed elements */
+/** Create a periodic diagonal light sweep across `.tc-polaroid` elements. */
+export function createFrameGlint(config?: FrameGlintConfig): EffectInstance
+
+/** @file confetti-drift.js - Types for gently tumbling ambient confetti */
+/** Create a calm, continuous fall of tumbling paper confetti. */
+export function createConfettiDrift(config?: ConfettiDriftConfig): EffectInstance
+
+/** @file ink-sparkle.js - Types for drifting calligraphy-glyph sparkles */
+/** Create drifting calligraphy-glyph sparkles that fade along a curved path. */
+export function createInkSparkle(config?: InkSparkleConfig): EffectInstance
+
+/** Default config for the tilt-depth (pointer/gyroscope parallax) effect. */
+export interface TiltDepthConfig {
+  /** CSS selector for the elements to tilt. First match is the primary (rotates);
+   *  the rest are secondaries (parallax translate). */
+  selector?: string
+  /** Maximum rotateX/rotateY magnitude, in degrees. */
+  maxTilt?: number
+  /** Parallax translate magnitude for secondary targets, in px. */
+  depth?: number
+}
+
+/** @file tilt-depth.js - Types for pointer/gyroscope parallax tilt */
+/**
+ * Create a gentle pointer/gyroscope parallax tilt on the matched elements.
+ * Damped easing toward the pointer/tilt target; no-ops under reduced motion.
+ * @example
+ * const tilt = createTiltDepth({ selector: ".lightbox-media", maxTilt: 5 });
+ * tilt.start();
+ */
+export function createTiltDepth(config?: TiltDepthConfig): EffectInstance
+
+/**
+ * Request DeviceOrientation permission from within a user gesture (iOS 13+).
+ * Pages must call this inside their own tap/click handler — the effect cannot
+ * prompt on its own. Resolves true when granted or when no permission is needed.
+ * @example
+ * button.addEventListener("click", () => { void requestTiltPermission(); });
+ */
+export function requestTiltPermission(): Promise<boolean>

@@ -122,6 +122,112 @@ ${coupleFirstNames}`
   return { subject, text, html }
 }
 
+/** @type {Types.getThankYouCardEmail} */
+function getThankYouCardEmail(guestName, cardUrl) {
+  const { coupleFirstNames } = getWeddingFacts()
+  const subject = getEmailSubjects().thankYou
+
+  const text = `Hi ${guestName},
+
+We wanted to say thank you — it means so much to us. We put together a little
+keepsake for you:
+
+${cardUrl}
+
+With so much love,
+${coupleFirstNames}`
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: Georgia, serif; color: ${
+      BRAND.PRIMARY_COLOR
+    }; max-width: 600px; margin: 0 auto; padding: 20px; }
+    h1 { font-size: 24px; margin-bottom: 20px; }
+    p { line-height: 1.6; margin-bottom: 16px; }
+    .btn { display: inline-block; background: ${
+      BRAND.PRIMARY_COLOR
+    }; color: #fff; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin: 20px 0; }
+    .footer { margin-top: 40px; font-size: 14px; color: #666; }
+  </style>
+</head>
+<body>
+  <h1>A little thank-you 💌</h1>
+  <p>Hi ${escapeHtml(guestName)},</p>
+  <p>We wanted to say thank you — it means so much to us. We put together a little keepsake for you.</p>
+  <p><a href="${escapeHtml(cardUrl)}" class="btn">Open your card</a></p>
+  <p>Or copy this link: ${escapeHtml(cardUrl)}</p>
+  <p class="footer">With so much love,<br>${escapeHtml(coupleFirstNames)}</p>
+</body>
+</html>`
+
+  return { subject, text, html }
+}
+
+/** Display glyphs for the REACTION_EMOJI keys (email-friendly). */
+const REPLY_EMOJI_GLYPHS = Object.freeze({
+  heart: "❤️",
+  clap: "👏",
+  laugh: "😄",
+  heart_eyes: "😍",
+  cheers: "🥂",
+  fire: "🔥",
+})
+
+/** @type {Types.getThankYouReplyPingEmail} */
+function getThankYouReplyPingEmail({ guestName, emoji, message }) {
+  const { coupleFirstNames } = getWeddingFacts()
+  const adminUrl = `${SERVER.baseUrl}/admin`
+  const glyph = emoji ? REPLY_EMOJI_GLYPHS[/** @type {keyof typeof REPLY_EMOJI_GLYPHS} */ (emoji)] : ""
+
+  // Short warm preview of the reply message (couples get the full text in the
+  // dashboard); cap so a long note doesn't bloat the notification.
+  const preview =
+    message && message.length > 140 ? message.slice(0, 140) + "…" : message || ""
+
+  const subject = `💌 ${guestName} just replied to your thank-you card`
+
+  const reactionLine = glyph ? `They sent ${glyph}` : "They sent a reply"
+  const messageLine = preview ? `\n\n“${preview}”` : ""
+
+  const text = `Hi ${coupleFirstNames},
+
+${guestName} just replied to your thank-you card. ${reactionLine}.${messageLine}
+
+See it in your dashboard: ${adminUrl}`
+
+  const htmlPreview = preview
+    ? `<blockquote style="margin:16px 0;padding-left:16px;border-left:3px solid ${BRAND.PRIMARY_COLOR};color:#444;">${escapeHtml(preview)}</blockquote>`
+    : ""
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: Georgia, serif; color: ${BRAND.PRIMARY_COLOR}; max-width: 600px; margin: 0 auto; padding: 20px; }
+    h1 { font-size: 22px; margin-bottom: 16px; }
+    p { line-height: 1.6; margin-bottom: 16px; }
+    .btn { display: inline-block; background: ${BRAND.PRIMARY_COLOR}; color: #fff; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin: 20px 0; }
+    .footer { margin-top: 40px; font-size: 14px; color: #666; }
+  </style>
+</head>
+<body>
+  <h1>💌 A reply just landed</h1>
+  <p>Hi ${escapeHtml(coupleFirstNames)},</p>
+  <p>${escapeHtml(guestName)} just replied to your thank-you card. ${escapeHtml(reactionLine)}.</p>${htmlPreview}
+  <p><a href="${escapeHtml(adminUrl)}" class="btn">See the reply</a></p>
+  <p class="footer">You're receiving this because instant reply pings are on for your wedding site.</p>
+</body>
+</html>`
+
+  return { subject, text, html }
+}
+
 /**
  * Human-readable age of the oldest pending item, e.g. "3 days" or "2 hours".
  * @param {string | null} iso
@@ -138,11 +244,28 @@ function formatAge(iso) {
 }
 
 /** @type {Types.getModerationDigestEmail} */
-function getModerationDigestEmail({ counts, oldestCreatedAt }) {
-  const noun = counts.total === 1 ? "item" : "items"
-  const subject = `Wedding site: ${counts.total} ${noun} awaiting review`
+function getModerationDigestEmail({ counts, oldestCreatedAt, unreadThankYouReplies = 0 }) {
+  // Unread thank-you replies are NOT "awaiting review" (nothing to moderate —
+  // just unread), so they get their own line + CTA rather than being folded
+  // into the moderation count/subject. They still ride the same ~daily digest
+  // so the couple gets one email, not two. See services/moderation-notify.js.
+  const reviewTotal = counts.total
+  const noun = reviewTotal === 1 ? "item" : "items"
+  const replyNoun = unreadThankYouReplies === 1 ? "reply" : "replies"
   const adminUrl = `${SERVER.baseUrl}/admin`
+  const repliesUrl = `${SERVER.baseUrl}/admin#thankyous`
   const age = formatAge(oldestCreatedAt)
+
+  // Subject reflects both signals without conflating the counts: the review
+  // number is moderation-only; replies are called out separately.
+  let subject
+  if (reviewTotal > 0 && unreadThankYouReplies > 0) {
+    subject = `Wedding site: ${reviewTotal} ${noun} to review + ${unreadThankYouReplies} card ${replyNoun} 💌`
+  } else if (reviewTotal > 0) {
+    subject = `Wedding site: ${reviewTotal} ${noun} awaiting review`
+  } else {
+    subject = `Wedding site: ${unreadThankYouReplies} new card ${replyNoun} 💌`
+  }
 
   /** @type {string[]} */
   const rows = []
@@ -152,19 +275,56 @@ function getModerationDigestEmail({ counts, oldestCreatedAt }) {
 
   const { coupleFirstNames } = getWeddingFacts()
 
-  const text = `Hi ${coupleFirstNames},
+  // Reply line (its own section, separate from the moderation queue).
+  const replyLine =
+    unreadThankYouReplies > 0
+      ? `${unreadThankYouReplies} new card ${replyNoun} 💌`
+      : null
 
-You have ${counts.total} ${noun} awaiting review on your wedding site.
-
-${rows.join("\n")}
-
-The oldest has been waiting ${age}.
-
-Review them here: ${adminUrl}`
+  /** @type {string[]} */
+  const textParts = [`Hi ${coupleFirstNames},`, ""]
+  if (reviewTotal > 0) {
+    textParts.push(
+      `You have ${reviewTotal} ${noun} awaiting review on your wedding site.`,
+      "",
+      rows.join("\n"),
+      "",
+      `The oldest has been waiting ${age}.`,
+      "",
+      `Review them here: ${adminUrl}`,
+    )
+  }
+  if (replyLine) {
+    if (reviewTotal > 0) textParts.push("")
+    textParts.push(replyLine, "", `See your replies here: ${repliesUrl}`)
+  }
+  const text = textParts.join("\n")
 
   const listHtml = rows
     .map((line) => `<li>${escapeHtml(line)}</li>`)
     .join("\n      ")
+
+  // Heading leads with whichever signal is present (moderation first if any).
+  const heading =
+    reviewTotal > 0
+      ? `${escapeHtml(String(reviewTotal))} ${noun} awaiting review`
+      : `${escapeHtml(String(unreadThankYouReplies))} new card ${replyNoun} 💌`
+
+  const moderationBlock =
+    reviewTotal > 0
+      ? `
+  <ul>
+      ${listHtml}
+  </ul>
+  <p>The oldest has been waiting ${escapeHtml(age)}.</p>
+  <p><a href="${escapeHtml(adminUrl)}" class="btn">Review now</a></p>`
+      : ""
+
+  const replyBlock = replyLine
+    ? `
+  <p>${escapeHtml(replyLine)}</p>
+  <p><a href="${escapeHtml(repliesUrl)}" class="btn">See replies</a></p>`
+    : ""
 
   const html = `
 <!DOCTYPE html>
@@ -181,14 +341,9 @@ Review them here: ${adminUrl}`
   </style>
 </head>
 <body>
-  <h1>${escapeHtml(String(counts.total))} ${noun} awaiting review</h1>
-  <p>Hi ${escapeHtml(coupleFirstNames)},</p>
-  <ul>
-      ${listHtml}
-  </ul>
-  <p>The oldest has been waiting ${escapeHtml(age)}.</p>
-  <p><a href="${escapeHtml(adminUrl)}" class="btn">Review now</a></p>
-  <p class="footer">You're receiving this because there are items pending moderation on your wedding site.</p>
+  <h1>${heading}</h1>
+  <p>Hi ${escapeHtml(coupleFirstNames)},</p>${moderationBlock}${replyBlock}
+  <p class="footer">You're receiving this because there are items pending on your wedding site.</p>
 </body>
 </html>`
 
@@ -202,5 +357,7 @@ export {
   sendEmail,
   getDefaultInviteEmail,
   getModerationDigestEmail,
+  getThankYouCardEmail,
+  getThankYouReplyPingEmail,
   isRetryableError,
 }

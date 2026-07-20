@@ -14,6 +14,8 @@ import { formatRelative } from "../../components/relative-time.js"
 import { renderReactionBar } from "../../components/reaction-bar.js"
 import { renderCommentThread } from "../../components/comment-thread.js"
 import { showToast } from "../../components/toast.js"
+import { createTiltDepth } from "../../effects/tilt-depth.js"
+import { prefersReducedMotion } from "../../effects/effect-utils.js"
 
 const SWIPE_COMMIT_FRACTION = 0.25
 const SWIPE_COMMIT_VELOCITY = 0.3 // px/ms
@@ -27,6 +29,25 @@ let index = -1
 let opener = /** @type {HTMLElement | null} */ (null)
 /** Reply-to address for the "Report this photo" mailto; loaded from /api/config. */
 let contactEmail = ""
+
+/** Gentle pointer/gyroscope tilt on the open photo. Started on open, stopped on
+ *  close; the effect re-scans when its target <img> is swapped out on nav.
+ *  @type {import("../../effects/types.js").EffectInstance | null} */
+let tilt = null
+
+/** Start the lightbox tilt (once). No-op under reduced motion. */
+function startTilt() {
+  if (tilt || prefersReducedMotion()) return
+  tilt = createTiltDepth({ selector: ".lightbox-media", maxTilt: 5, depth: 8 })
+  tilt.start()
+}
+
+function stopTilt() {
+  if (tilt) {
+    tilt.stop()
+    tilt = null
+  }
+}
 
 /** Fetch the couple's contact address once so Report has a real recipient. */
 async function loadContactEmail() {
@@ -63,6 +84,7 @@ export function initLightbox(src) {
 
   // Native <dialog> closes on Esc → keep our state + URL in sync.
   dialog.addEventListener("close", () => {
+    stopTilt()
     pauseVideo()
     const openId = index !== -1 ? source.getItems(section)[index]?.id : null
     if (index !== -1) {
@@ -107,6 +129,7 @@ export function openLightbox(sec, id) {
   source.onChange(section, id)
   const dialog = getDialogElement("lightbox")
   if (!dialog.open) dialog.showModal()
+  startTilt()
 }
 
 /** @type {Types.openLightboxItem} */

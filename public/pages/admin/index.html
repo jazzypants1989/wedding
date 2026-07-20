@@ -99,6 +99,13 @@
         </button>
         <button class="tab-btn" data-tab="gallery" role="tab" id="tab-btn-gallery" aria-selected="false"
           aria-controls="tab-gallery" tabindex="-1">Gallery</button>
+        <button class="tab-btn" data-tab="thankyous" role="tab" id="tab-btn-thankyous" aria-selected="false"
+          aria-controls="tab-thankyous" tabindex="-1">
+          Thank yous
+          <span id="thankyous-badge" class="tab-badge" hidden aria-label="draft cards">0</span>
+          <span id="thankyous-reply-badge" class="tab-badge tab-badge-reply" hidden
+            aria-label="unread replies">&#9829;&nbsp;0</span>
+        </button>
         <button class="tab-btn" data-tab="blocklist" role="tab" id="tab-btn-blocklist" aria-selected="false"
           aria-controls="tab-blocklist" tabindex="-1">Blocklist</button>
         <button class="tab-btn" data-tab="site-content" role="tab" id="tab-btn-site-content" aria-selected="false"
@@ -594,8 +601,290 @@
           </form>
         </div>
       </div>
+
+      <div id="tab-thankyous" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-thankyous" hidden>
+        <p id="thankyous-error" class="form-error" role="alert" hidden></p>
+
+        <!-- LIST VIEW: gift log + card list -->
+        <div id="thankyous-list">
+          <!-- Progress ring "N of M thanked" (task 1) + post-save "next guest" queue (task 3) -->
+          <div id="tc-progress" class="tc-progress" role="status" aria-live="polite" hidden></div>
+          <div id="tc-queue-prompt" class="tc-queue-prompt" role="status" hidden></div>
+          <div class="tc-tab-toolbar">
+            <input type="search" id="tc-name-search" class="tc-name-search"
+              placeholder="Filter by guest name…" aria-label="Filter gifts and cards by guest name" />
+            <label class="tc-check-label tc-replyping">
+              <input type="checkbox" id="tc-replyping-toggle" />
+              <span>Email me the moment a card gets its first reply</span>
+            </label>
+          </div>
+          <div class="card">
+            <div class="card-header flex-between">
+              <h2>Gifts</h2>
+              <button type="button" id="gift-add-btn" class="btn btn-primary btn-sm">Add gift</button>
+            </div>
+            <p class="text-muted card-text">
+              The gift log tracks who gave what. The amount is admin-only — it never appears on a card or any
+              guest-facing page.
+            </p>
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Guest</th>
+                    <th scope="col" class="hide-mobile">Description</th>
+                    <th scope="col" class="hide-mobile">Amount
+                      <span class="tc-lock" title="Only you can see this — never shown to guests"
+                        aria-label="Only you can see this — never shown to guests">🔒</span></th>
+                    <th scope="col" class="hide-mobile">Received</th>
+                    <th scope="col">Physical card</th>
+                    <th scope="col">Digital card</th>
+                    <th scope="col">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="gifts-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header flex-between">
+              <h2>Thank-you cards</h2>
+              <button type="button" id="tc-write-card-btn" class="btn btn-primary btn-sm">Write a card</button>
+            </div>
+            <div id="tc-status-chips" class="tc-status-chips" role="group"
+              aria-label="Filter cards by status"></div>
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Recipient</th>
+                    <th scope="col">Status</th>
+                    <th scope="col" class="hide-mobile">Sent via</th>
+                    <th scope="col" class="hide-mobile">Timeline</th>
+                    <th scope="col">Reply</th>
+                    <th scope="col">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="cards-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- EDITOR VIEW: composer + live preview (swaps in-panel) -->
+        <div id="thankyous-editor" hidden>
+          <div class="card-header flex-between">
+            <button type="button" id="tc-editor-back" class="btn btn-secondary btn-sm">&larr; Back</button>
+            <button type="button" id="tc-editor-save" class="btn btn-primary">Save card</button>
+          </div>
+          <p id="tc-editor-error" class="form-error" role="alert" hidden></p>
+
+          <div class="tc-composer">
+            <div class="tc-composer-form">
+              <div class="form-group">
+                <label>Recipient</label>
+                <p id="tc-editor-recipient" class="tc-readonly-field"></p>
+              </div>
+              <div class="form-group">
+                <label>Linked gift</label>
+                <p id="tc-editor-gift" class="tc-readonly-field"></p>
+              </div>
+              <div class="form-group">
+                <label for="tc-editor-template">Start from a template</label>
+                <select id="tc-editor-template" aria-label="Start from a message template"></select>
+              </div>
+              <div class="form-group">
+                <label for="tc-editor-message">Message</label>
+                <textarea id="tc-editor-message" rows="5" maxlength="2000"
+                  placeholder="Write your thank-you… use {name} to insert the recipient's name."></textarea>
+                <small id="tc-message-counter" class="text-muted" aria-hidden="true"></small>
+              </div>
+
+              <details id="tc-story-panel" class="tc-story" hidden>
+                <summary class="tc-story-summary">Their story</summary>
+                <div id="tc-story-body" class="tc-story-body"></div>
+              </details>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="tc-editor-theme">Theme</label>
+                  <select id="tc-editor-theme"></select>
+                </div>
+                <div class="form-group">
+                  <label for="tc-editor-reveal">Reveal moment</label>
+                  <div class="tc-reveal-row">
+                    <select id="tc-editor-reveal">
+                      <option value="confetti">Confetti burst</option>
+                      <option value="hearts">Heart burst</option>
+                      <option value="champagne">Champagne pop</option>
+                      <option value="none">None (quiet)</option>
+                    </select>
+                    <button type="button" id="tc-play-reveal-btn" class="btn btn-secondary btn-sm"
+                      title="Play the full reveal in the preview">▶ Play reveal</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label>Effects</label>
+                <div id="tc-effect-stack" class="tc-effect-stack"></div>
+                <div class="tc-effect-add">
+                  <select id="tc-effect-add-select" aria-label="Add an effect"></select>
+                  <button type="button" id="tc-effect-add-btn" class="btn btn-secondary btn-sm">Add effect</button>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label>Photos <span id="tc-photo-count" class="text-muted">0/12</span></label>
+                <button type="button" id="tc-photos-btn" class="btn btn-secondary btn-sm">Choose photos</button>
+                <div id="tc-photo-strip" class="tc-photo-strip"></div>
+              </div>
+            </div>
+
+            <div class="tc-composer-preview">
+              <div class="tc-preview-devicebar" role="group" aria-label="Preview width">
+                <button type="button" id="tc-preview-mobile" class="btn btn-secondary btn-sm active"
+                  aria-pressed="true">Mobile</button>
+                <button type="button" id="tc-preview-desktop" class="btn btn-secondary btn-sm"
+                  aria-pressed="false">Desktop</button>
+              </div>
+              <div id="tc-preview-wrap" class="tc-preview-wrap device-mobile">
+                <iframe id="tc-preview-frame" src="/thanks-preview" title="Card preview"
+                  class="tc-preview-frame"></iframe>
+              </div>
+              <p id="tc-preview-unavailable" class="text-muted tc-preview-note" hidden>
+                Preview unavailable — try reopening the card.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
     </main>
   </div>
+
+  <dialog id="gift-modal" aria-labelledby="gift-modal-title">
+    <div class="modal-header flex-between">
+      <h2 id="gift-modal-title">Add gift</h2>
+      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
+    </div>
+    <form id="gift-form">
+      <input type="hidden" id="gift-id">
+      <div class="form-group">
+        <label for="gift-guest">Guest *</label>
+        <select id="gift-guest" required></select>
+      </div>
+      <div class="form-group">
+        <label for="gift-description">Description</label>
+        <input type="text" id="gift-description" maxlength="1000" placeholder="e.g. Honeymoon dinner fund">
+      </div>
+      <div class="form-group">
+        <label for="gift-amount">Amount <span class="text-muted">(optional — never shown to the guest)</span></label>
+        <input type="text" id="gift-amount" maxlength="100" placeholder="e.g. $150">
+      </div>
+      <div class="form-group">
+        <label for="gift-received">Received</label>
+        <input type="text" id="gift-received" maxlength="32" placeholder="e.g. 2026-06-14">
+      </div>
+      <div class="form-group">
+        <label for="gift-notes">Notes</label>
+        <textarea id="gift-notes" rows="2" maxlength="1000"></textarea>
+      </div>
+      <p id="gift-form-error" class="form-error" role="alert" hidden></p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
+        <button type="submit" id="gift-save-btn" class="btn btn-primary">Save gift</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="photo-picker-modal" class="modal-lg" aria-labelledby="photo-picker-title">
+    <div class="modal-header flex-between">
+      <h2 id="photo-picker-title">Choose photos</h2>
+      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
+    </div>
+    <div class="tc-picker-toggle" role="tablist" aria-label="Photo section">
+      <button type="button" id="picker-section-official" class="sub-toggle-pill active" role="tab"
+        aria-selected="true">Official</button>
+      <button type="button" id="picker-section-guest" class="sub-toggle-pill" role="tab"
+        aria-selected="false">Guest (approved)</button>
+    </div>
+    <p id="picker-count" class="text-muted"></p>
+    <div id="photo-picker-grid" class="tc-picker-grid"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
+      <button type="button" id="picker-confirm-btn" class="btn btn-primary">Use selected</button>
+    </div>
+  </dialog>
+
+  <dialog id="thankyou-send-modal" class="modal-lg" aria-labelledby="thankyou-send-title">
+    <div class="modal-header flex-between">
+      <h2 id="thankyou-send-title">Send thank-you card</h2>
+      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
+    </div>
+
+    <div id="tysend-step-config">
+      <p id="tysend-recipient-summary"></p>
+      <fieldset class="form-group">
+        <legend>How would you like to send it?</legend>
+        <label class="radio-row"><input type="radio" name="tysend-channel" value="email" checked>
+          Email <span id="tysend-email-status" class="text-muted"></span></label>
+        <label class="radio-row"><input type="radio" name="tysend-channel" value="sms">
+          Text message <span id="tysend-sms-status" class="text-muted"></span></label>
+        <label class="radio-row"><input type="radio" name="tysend-channel" value="manual">
+          Copy the message myself</label>
+      </fieldset>
+      <div class="form-group" id="tysend-message-group">
+        <label for="tysend-message">Custom message <span class="text-muted">(optional — {name} and {url})</span></label>
+        <textarea id="tysend-message" rows="3" placeholder="Leave blank to send the default message"></textarea>
+        <small class="tc-delivery-hint text-muted">This is the email/SMS that delivers the link — not the
+          card itself. {name} and {url} are filled in automatically.</small>
+        <small class="text-muted">Default message — edit above to customize:</small>
+        <pre id="tysend-default-preview" class="invite-default-preview"></pre>
+      </div>
+    </div>
+
+    <div id="tysend-step-preview" hidden>
+      <div id="tysend-preview-content"></div>
+    </div>
+
+    <div id="tysend-step-results" hidden>
+      <div id="tysend-results-content"></div>
+    </div>
+
+    <p id="tysend-error" class="form-error" role="alert" hidden></p>
+    <div class="modal-actions">
+      <button type="button" id="tysend-back-btn" class="btn btn-secondary" hidden>Back</button>
+      <button type="button" id="tysend-next-btn" class="btn btn-primary">Preview</button>
+    </div>
+  </dialog>
+
+  <dialog id="thankyou-detail-modal" class="modal-lg" aria-labelledby="thankyou-detail-title">
+    <div class="modal-header flex-between">
+      <h2 id="thankyou-detail-title">Card details</h2>
+      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
+    </div>
+    <div id="thankyou-detail-body"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" data-close-modal>Close</button>
+    </div>
+  </dialog>
+
+  <dialog id="tc-guest-picker-modal" aria-labelledby="tc-guest-picker-title">
+    <div class="modal-header flex-between">
+      <h2 id="tc-guest-picker-title">Write a card</h2>
+      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
+    </div>
+    <p class="text-muted">Pick a guest to write a card for — no gift required.</p>
+    <div class="form-group">
+      <label for="tc-guest-picker-search">Guest</label>
+      <input type="search" id="tc-guest-picker-search" placeholder="Search by name…"
+        aria-label="Search guests by name" autocomplete="off" />
+    </div>
+    <ul id="tc-guest-picker-list" class="tc-guest-picker-list"></ul>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
+    </div>
+  </dialog>
 
   <dialog id="guest-modal" aria-labelledby="guest-modal-title">
     <div class="modal-header flex-between">
@@ -637,6 +926,7 @@
         <label for="guest-notes">Notes</label>
         <textarea id="guest-notes" name="notes" rows="3" maxlength="1000"></textarea>
       </div>
+      <div id="guest-thankyou-summary" class="guest-thankyou-summary" hidden></div>
       <div id="guest-form-error" class="alert alert-error" role="alert" hidden></div>
       <div class="modal-actions">
         <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>

@@ -284,6 +284,20 @@
   --fx-cool-1: light-dark(#2c6f6d, #bfeae8);
   --fx-cool-2: light-dark(#3a8f8c, #a8dedb);
 }
+:root[data-effect-theme="celebration"] {
+  --effect-brand: rgb(214, 168, 78);
+  --effect-brand-dark: #8a6a2e;
+  /* Warmer gold particle tint. */
+  --fx-gold-1: light-dark(#a9760f, #ffe27a);
+  --fx-gold-2: light-dark(#8c6410, #fff0a0);
+}
+:root[data-effect-theme="gratitude"] {
+  --effect-brand: rgb(210, 120, 140);
+  --effect-brand-dark: #8a3a54;
+  /* Softer rose particle tint. */
+  --fx-rose-1: light-dark(#c85a78, #ffa6ba);
+  --fx-rose-2: light-dark(#c06a86, #ffc8d4);
+}
 
 /* ============ Utilities ============ */
 

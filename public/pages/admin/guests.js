@@ -26,6 +26,7 @@ import {
   getErrorMessage,
   getTextAreaElement,
 } from "../utils.js"
+import { formatRelative } from "../../components/relative-time.js"
 
 /** @type {Types.GuestModuleState} */
 const moduleState = { deleteId: null, restoreId: null, searchTimeout: undefined }
@@ -229,6 +230,7 @@ function openAddGuestModal() {
   getFormElement("guest-form").reset()
   getInputElement("guest-id").value = ""
   getElement("guest-form-error").hidden = true
+  getElement("guest-thankyou-summary").hidden = true
   openModal(getDialogElement("guest-modal"))
 }
 
@@ -246,6 +248,66 @@ export function editGuest(id) {
   getTextAreaElement("guest-notes").value = guest.notes || ""
   getElement("guest-form-error").hidden = true
   openModal(getDialogElement("guest-modal"))
+  void loadGuestThankYouSummary(guest.id)
+}
+
+/** Fetch the guest's gift/card story and render a compact thank-you line in the
+ *  edit modal, with a jump to the Thank-yous tab. Silent on 404/error (task 8).
+ *  @param {number} guestId */
+async function loadGuestThankYouSummary(guestId) {
+  const el = getElement("guest-thankyou-summary")
+  el.hidden = true
+  el.innerHTML = ""
+  try {
+    const story = /** @type {Types.GuestStory} */ (
+      await api(`/api/admin/guests/${guestId}/story`)
+    )
+    // Guard the async race — the admin may have closed/reopened another guest.
+    if (getInputElement("guest-id").value !== String(guestId)) return
+    renderGuestThankYouSummary(story)
+  } catch {
+    // No story / endpoint absent → leave it hidden.
+  }
+}
+
+/** @param {Types.GuestStory} story */
+function renderGuestThankYouSummary(story) {
+  const el = getElement("guest-thankyou-summary")
+  const gift = story.gifts && story.gifts[0]
+  const card = story.cards && story.cards[0]
+  if (!gift && !card) {
+    el.hidden = true
+    return
+  }
+  /** @type {string[]} */
+  const parts = []
+  if (gift) parts.push(`Gift: ${gift.description || "(logged)"}`)
+  if (card) {
+    let s = "Card: "
+    if (card.status === "draft") {
+      s += "draft"
+    } else {
+      const bits = []
+      if (card.sentAt) bits.push(`sent ${formatRelative(card.sentAt)}`)
+      if (card.viewedAt) bits.push("viewed")
+      if (card.repliedAt) bits.push("replied 💗")
+      s += bits.length ? bits.join(" · ") : card.status
+    }
+    parts.push(s)
+  }
+  el.innerHTML = html`
+    <span class="guest-thankyou-label">Thank-you</span>
+    <span class="guest-thankyou-text">${parts.join(" · ")}</span>
+    <button type="button" id="guest-open-thankyous" class="btn btn-secondary btn-sm">
+      Open in Thank-yous
+    </button>
+  `
+  el.hidden = false
+  getButtonElement("guest-open-thankyous").addEventListener("click", () => {
+    closeModal(getDialogElement("guest-modal"))
+    const tab = document.getElementById("tab-btn-thankyous")
+    if (tab instanceof HTMLElement) tab.click()
+  })
 }
 
 /** @type {Types.confirmDeleteGuest} */

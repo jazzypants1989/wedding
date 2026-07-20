@@ -31,6 +31,8 @@ export const state = {
   currentModeration: [],
   currentAccounts: [],
   currentCurated: [],
+  currentGifts: [],
+  currentCards: [],
 
   onAuthRequired: () => {},
   getGuestById(id) {
@@ -47,5 +49,11 @@ export const state = {
   },
   getCuratedById(id) {
     return this.currentCurated.find((c) => c.id === id) || null
+  },
+  getGiftById(id) {
+    return this.currentGifts.find((g) => g.id === id) || null
+  },
+  getCardById(id) {
+    return this.currentCards.find((c) => c.id === id) || null
   },
 }

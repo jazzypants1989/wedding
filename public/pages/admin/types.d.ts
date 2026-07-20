@@ -11,7 +11,12 @@ import type {
   SiteContentNavLink,
   SiteContentScheduleItem,
   SiteContentImage,
+  GiftWithGuest,
+  ThankYouCardWithGuest,
+  ThankYouCard,
+  ThankYouCardReply,
 } from "../../../types.js"
+import type { CardEffectEntry, ThankYouMediaItem } from "../thanks/types.js"
 
 export type { SiteContent, SiteContentNavLink, SiteContentScheduleItem, SiteContentImage }
 
@@ -112,12 +117,16 @@ export interface AdminState {
   currentModeration: ModerationItem[]
   currentAccounts: AccountRow[]
   currentCurated: MediaListItem[]
+  currentGifts: GiftWithGuest[]
+  currentCards: ThankYouCardWithGuest[]
   onAuthRequired: () => void
   getGuestById: (id: number) => Guest | null
   getBlockedEntryById: (id: number) => BlocklistEntry | null
   getPetitionById: (id: number) => Petition | null
   getAccountById: (id: number) => AccountRow | null
   getCuratedById: (id: number) => MediaListItem | null
+  getGiftById: (id: number) => GiftWithGuest | null
+  getCardById: (id: number) => ThankYouCardWithGuest | null
 }
 
 /** @file moderation.js - Types for the admin Moderation tab (Phase 6: full queue) */
@@ -1101,3 +1110,197 @@ export function switchViewMode(mode: string): void
  * initManualSms();
  */
 export function initManualSms(): void
+
+/** @file thank-you.js — Types for the admin "Thank yous" tab (gift log, card
+ *  list, composer with live iframe preview, send wizard). */
+
+/** GET /api/admin/gifts */
+export interface GiftsResponse {
+  gifts: GiftWithGuest[]
+}
+
+/** GET /api/admin/thank-you */
+export interface CardsResponse {
+  cards: ThankYouCardWithGuest[]
+}
+
+/** GET /api/admin/thank-you/counts */
+export interface ThankYouCounts {
+  unreadReplies: number
+  drafts: number
+}
+
+/** Per-channel availability + default template for the send wizard. */
+export interface ThankYouSendChannel {
+  configured: boolean
+  defaultMessage: string
+}
+
+/** GET /api/admin/thank-you/config */
+export interface ThankYouSendConfig {
+  email: ThankYouSendChannel
+  sms: ThankYouSendChannel
+  /** When true, the admin is emailed the moment a card gets its first reply.
+   *  Optional/defensive: absent on older backends → treated as off. */
+  replyPingEnabled?: boolean
+}
+
+/** POST /api/admin/thank-you/preview response. */
+export interface ThankYouPreviewResponse {
+  type: string
+  recipient: {
+    id: number
+    name: string
+    contact: string | null
+    messagePreview?: string
+  }
+  /** Full branded email HTML for the email channel; null/absent for sms/manual
+   *  or older backends (falls back to the text messagePreview). */
+  emailHtml?: string | null
+  skipped: { reason: string } | null
+}
+
+/** One gift as projected by GET /api/admin/guests/:id/story. */
+export interface GuestStoryGift {
+  id: number
+  description: string | null
+  amount: string | null
+  receivedAt: string | null
+  physicalCardSent: boolean
+}
+
+/** One card as projected by GET /api/admin/guests/:id/story. */
+export interface GuestStoryCard {
+  id: number
+  status: string
+  sentAt: string | null
+  viewedAt: string | null
+  repliedAt: string | null
+  replySeen: boolean
+}
+
+/** GET /api/admin/guests/:id/story — everything we know about one guest's
+ *  relationship to the wedding, for the composer sidecar + guest-detail line. */
+export interface GuestStory {
+  guest: { id: number; name: string }
+  rsvpNote: string | null
+  guestbookEntry: { message: string; createdAt: string } | null
+  media: { fileKey: string; kind: string }[]
+  gifts: GuestStoryGift[]
+  cards: GuestStoryCard[]
+}
+
+/** Card status filter buckets for the list view (task 2). */
+export type ThankYouCardFilter = "all" | "draft" | "sent/unopened" | "viewed" | "unread"
+
+/** { success, card } from create/update/mark-sent. */
+export interface ThankYouCardResponse {
+  success: true
+  card?: ThankYouCard
+}
+
+/** A warm starter message for the composer's template picker (E4). Item-based
+ *  templates carry a `{gift}` slot; `giftFallback` fills it when the linked gift
+ *  has no description, so the sentence still reads naturally (task 2). */
+export interface ThankYouTemplate {
+  id: string
+  label: string
+  message: string
+  giftFallback?: string
+}
+
+/** GET /api/admin/thank-you/:id — a single card joined with its recipient name
+ *  plus the full reply thread (ascending). */
+export interface ThankYouCardDetail extends ThankYouCardWithGuest {
+  replies: ThankYouCardReply[]
+}
+
+/** GET /api/admin/thank-you/:id response envelope. */
+export interface ThankYouCardDetailResponse {
+  card: ThankYouCardDetail
+}
+
+/** POST /api/admin/thank-you/:id/resend response. `reset` re-drafts a sent-but-
+ *  unopened card (same token); `duplicate` clones an opened card to a fresh draft
+ *  (new id + token). */
+export interface ThankYouResendResponse {
+  mode: "reset" | "duplicate"
+  card: ThankYouCard
+}
+
+/** Seed passed to openEditor when opening the composer. */
+export interface OpenEditorInput {
+  cardId: number | null
+  guestId: number
+  giftId: number | null
+  recipientName: string
+  giftLabel: string
+  message: string
+  theme: string
+  reveal: string
+  effects: CardEffectEntry[]
+  mediaKeys: string[]
+  mediaItems: ThankYouMediaItem[]
+  isNew: boolean
+  customized: boolean
+}
+
+/** The card currently being composed. */
+export interface ThankYouDraft {
+  cardId: number | null
+  guestId: number
+  giftId: number | null
+  recipientName: string
+  message: string
+  theme: string
+  reveal: string
+  effects: CardEffectEntry[]
+  mediaKeys: string[]
+  mediaItems: ThankYouMediaItem[]
+}
+
+/** Send-wizard state (config → preview → results for one card). */
+export interface ThankYouWizardState {
+  cardId: number
+  recipientName: string
+  step: "config" | "preview" | "results"
+  config: ThankYouSendConfig | null
+}
+
+/** Photo-picker state. */
+export interface ThankYouPickerState {
+  section: "official" | "guest"
+  selected: Set<string>
+}
+
+/** The tab's module-level state. */
+export interface ThankYouModuleState {
+  view: "list" | "editor"
+  dirty: boolean
+  effectsCustomized: boolean
+  guestsLoaded: boolean
+  guestOptions: { id: number; name: string }[]
+  /** The site's active effect theme, cached for seeding new cards (E4). Null
+   *  until first loaded; falls back to the composer default. */
+  siteTheme: string | null
+  draft: ThankYouDraft | null
+  previewReady: boolean
+  pendingPush: boolean
+  wizard: ThankYouWizardState | null
+  picker: ThankYouPickerState
+  /** Active card status filter bucket (task 2). Persists across in-tab reloads. */
+  cardFilter: ThankYouCardFilter
+  /** Case-insensitive guest-name substring filtering both tables (task 2). */
+  nameQuery: string
+  /** Live-preview device width; mobile is the default (phone-first guests). */
+  previewDevice: "mobile" | "desktop"
+  /** Cached "email me on first reply" config toggle (task 6). */
+  replyPingEnabled: boolean
+  /** The open card recipient's story, for the composer sidecar (task 7). */
+  story: GuestStory | null
+}
+
+export function initThankYous(): void
+export function loadThankYous(): Promise<void>
+export function loadThankYouCount(): Promise<void>
+export function isThankYousDirty(): boolean

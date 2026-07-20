@@ -261,3 +261,54 @@
 .flash-err {
   color: var(--color-danger, red);
 }
+
+/* Sound lab — dev-only WebAudio prototype panel, mirrored on the right so it
+   sits opposite the effect panel without overlapping it. */
+.studio-panel-right {
+  left: auto;
+  right: 0;
+  border-right: none;
+  border-left: 1px solid var(--color-border);
+  box-shadow: -2px 0 20px rgba(0, 0, 0, 0.25);
+}
+
+.sound-master {
+  margin-bottom: 16px;
+}
+
+.sound-master .ctrl-btn {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+.sound-cue {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+.sound-cue-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.sound-cue-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.sound-cue .control {
+  margin-bottom: 8px;
+}
+
+.sound-cue .control:last-child {
+  margin-bottom: 0;
+}
+
+#sound-sequence-btn {
+  width: 100%;
+}

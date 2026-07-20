@@ -14,6 +14,8 @@ import {
 import { fireConfetti, setButtonLoading, getConfig } from "./utils.js"
 import { miniSparkle } from "../../components/celebrate.js"
 import { clearPetitionPending } from "./petition-flag.js"
+import { createChampagneFizz } from "../../effects/champagne-fizz.js"
+import { prefersReducedMotion } from "../../effects/effect-utils.js"
 
 /** @type {Types.RsvpFormState} */
 const state = { inviteCode: null, guestData: null }
@@ -81,7 +83,37 @@ function showSuccess(message, attending) {
 
   // Celebrate only a "yes" — a decline gets the same warm thank-you screen but no
   // confetti, which would read as tone-deaf when someone just said they can't come.
-  if (attending) fireConfetti()
+  if (attending) {
+    fireConfetti()
+    celebrateWithFizz()
+  }
+}
+
+/**
+ * A brief, low-density champagne-fizz ambient behind the "yes" confirmation,
+ * complementing the one-shot confetti. Auto-stops after ~7s and tears down on
+ * navigation. Skipped entirely under reduced motion.
+ */
+function celebrateWithFizz() {
+  if (prefersReducedMotion()) return
+  // effects.css ships deferred (media="print") on this page — flip it on so the
+  // fizz keyframes/layer actually render.
+  const link = document.getElementById("effects-css")
+  if (link instanceof HTMLLinkElement) link.media = "all"
+
+  const fizz = createChampagneFizz({ streamCount: 2, bubblesPerStream: 8 })
+  fizz.start()
+
+  let stopped = false
+  const stop = () => {
+    if (stopped) return
+    stopped = true
+    window.removeEventListener("pagehide", stop)
+    fizz.stop()
+  }
+  // Clean up if the guest navigates away before the timer fires.
+  window.addEventListener("pagehide", stop)
+  setTimeout(stop, 7000)
 }
 
 /** @type {Types.prefillForm} */

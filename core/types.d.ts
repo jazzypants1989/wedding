@@ -36,6 +36,7 @@ export interface WeddingFacts {
 export interface EmailSubjects {
   invite: string
   reminder: string
+  thankYou: string
 }
 
 export function getWeddingFacts(): WeddingFacts
@@ -325,6 +326,16 @@ interface AuditActions {
   readonly ACCOUNT_REGISTER: "ACCOUNT_REGISTER"
   readonly ACCOUNT_LOGIN: "ACCOUNT_LOGIN"
   readonly ACCOUNT_LOGOUT: "ACCOUNT_LOGOUT"
+  readonly GIFT_CREATE: "GIFT_CREATE"
+  readonly GIFT_UPDATE: "GIFT_UPDATE"
+  readonly GIFT_DELETE: "GIFT_DELETE"
+  readonly GIFT_PHYSICAL_TOGGLE: "GIFT_PHYSICAL_TOGGLE"
+  readonly THANK_YOU_CARD_CREATE: "THANK_YOU_CARD_CREATE"
+  readonly THANK_YOU_CARD_UPDATE: "THANK_YOU_CARD_UPDATE"
+  readonly THANK_YOU_CARD_DELETE: "THANK_YOU_CARD_DELETE"
+  readonly THANK_YOU_CARD_SEND: "THANK_YOU_CARD_SEND"
+  readonly THANK_YOU_CARD_RESEND: "THANK_YOU_CARD_RESEND"
+  readonly THANK_YOU_REPLY: "THANK_YOU_REPLY"
 }
 
 export function log(event: AuditEvent): void
@@ -374,6 +385,9 @@ export interface Limiters {
   contentDelete: RateLimiter
   mediaCreate: RateLimiter
   publicRead: RateLimiter
+  thankYou: RateLimiter
+  thankYouReply: RateLimiter
+  adminThankYou: RateLimiter
 }
 export const limiters: Limiters
 
@@ -467,6 +481,10 @@ export function validateIdArray(
 ): ValidationResult<number[]>
 
 export function validateInviteCode(value: unknown): ValidationResult<string>
+
+/** Thank-you card token — same 8-char alnum shape as an invite code, delegated
+ *  to validateInviteCode with a token-specific error message. */
+export function validateCardToken(value: unknown): ValidationResult<string>
 
 export function validateServiceConfigured(type: CommunicationType): {
   valid: boolean

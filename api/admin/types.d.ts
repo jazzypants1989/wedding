@@ -504,6 +504,204 @@ export function RSVPExportHandler(
 export const list: SyncHandler
 export const exportCSV: SyncHandler
 
+/** @file thank-you.js (admin) - Types for gift log + digital thank-you card
+ *  management + delivery endpoints (Phase 5/6). Named adminGift... /
+ *  adminThankYou... (this namespace is flat across every api/admin/*.js
+ *  module, and there's already a `list`/`create`/`send`/`config` bound
+ *  elsewhere above). */
+
+/** GET /api/admin/gifts — full gift log, joined guest name + latest linked
+ *  card status. */
+export function adminGiftsListHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void>
+
+/** POST /api/admin/gifts — { guest_id, description?, amount?, notes?, received_at? }. */
+export function adminGiftCreateHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** PUT /api/admin/gifts/:id — partial update of the same fields. */
+export function adminGiftUpdateHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** DELETE /api/admin/gifts/:id — soft-delete. */
+export function adminGiftDeleteHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** POST /api/admin/gifts/:id/physical-card — { sent: boolean }. */
+export function adminGiftPhysicalCardHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** GET /api/admin/thank-you — admin card list, joined guest name. */
+export function adminThankYouListHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void>
+
+/** GET /api/admin/thank-you/:id — single card, joined guest name. */
+export function adminThankYouGetHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** POST /api/admin/thank-you — create a draft card; validates guest exists,
+ *  message length, theme allowlist, effects_config JSON + byte cap,
+ *  media_keys resolvability + count cap. */
+export function adminThankYouCreateHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** PUT /api/admin/thank-you/:id — draft-only edit (409 once sent/viewed). */
+export function adminThankYouUpdateHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** DELETE /api/admin/thank-you/:id — soft-delete (any status). */
+export function adminThankYouDeleteHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** POST /api/admin/thank-you/:id/reply-seen — acknowledge the reply (clears
+ *  the unread badge/digest gate for this card). */
+export function adminThankYouReplySeenHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** GET /api/admin/thank-you/counts — { unreadReplies, drafts } for the tab badge. */
+export function adminThankYouCountsHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void>
+
+/** GET /api/admin/thank-you/config — channel availability + default templates +
+ *  the opt-in first-reply ping flag (replyPingEnabled). */
+export function adminThankYouConfigHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void>
+
+/** POST /api/admin/thank-you/config — { replyPingEnabled: boolean }; toggles the
+ *  opt-in instant first-reply ping (app_state flag). */
+export function adminThankYouSetConfigHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** POST /api/admin/thank-you/cards/:id/clear-reply — wipe the card's reply
+ *  surface columns (history rows retained). Returns the updated card. */
+export function adminThankYouClearReplyHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** A guest's approved content + gift/card ledger for the composer sidecar. */
+export interface GuestStoryResponse {
+  guest: { id: number; name: string }
+  rsvpNote: string | null
+  guestbookEntry: { message: string; createdAt: string } | null
+  media: Array<{ fileKey: string; kind: "image" | "video" }>
+  gifts: Array<{
+    id: number
+    description: string | null
+    amount: string | null
+    receivedAt: string | null
+    physicalCardSent: boolean
+  }>
+  cards: Array<{
+    id: number
+    status: string
+    sentAt: string | null
+    viewedAt: string | null
+    repliedAt: string | null
+    replySeen: boolean
+  }>
+}
+
+/** GET /api/admin/guests/:id/story — composer sidecar / guest detail panel. */
+export function adminThankYouGuestStoryHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** POST /api/admin/thank-you/preview — { cardId, type, customMessage? } →
+ *  resolved recipient + message preview (or a skip reason). */
+export function adminThankYouPreviewHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void>
+
+/** POST /api/admin/thank-you/send — { cardId, type, customMessage? }; draft-only
+ *  (409 once sent), rate-limited on the admin session token. */
+export function adminThankYouSendHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** POST /api/admin/thank-you/:id/mark-sent — { via?: 'manual' | 'link' };
+ *  copy-paste/copy-link delivery path (no communications-table log — that
+ *  table's type enum is email|sms only; the audit log is the record here). */
+export function adminThankYouMarkSentHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** POST /api/admin/thank-you/:id/resend — reset an unopened card to draft (same
+ *  token) → { mode: 'reset', card }, or clone an opened card to a fresh draft
+ *  (new token, original intact) → { mode: 'duplicate', card }. 409 for a draft. */
+export function adminThankYouResendHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+export const listGifts: SyncHandler
+export const createGift: AuthedHandler
+export const updateGift: AuthedHandler
+export const deleteGift: AuthedHandler
+export const togglePhysicalCard: AuthedHandler
+export const listCards: SyncHandler
+export const getCard: AuthedHandler
+export const createCard: AuthedHandler
+export const updateCard: AuthedHandler
+export const deleteCard: AuthedHandler
+export const markReplySeen: AuthedHandler
+export const clearReply: AuthedHandler
+export const guestStory: AuthedHandler
+export const counts: SyncHandler
+export const sendConfig: SyncHandler
+export const setConfig: AuthedHandler
+export const sendPreview: SyncHandler
+export const send: AuthedHandler
+export const markSentManual: AuthedHandler
+export const resendCard: AuthedHandler
+
 /**
  * Login handler.
  * @example

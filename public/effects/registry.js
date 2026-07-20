@@ -30,6 +30,13 @@ import { createSnowfall } from "./snowfall.js"
 import { createFrostShimmer } from "./frost-shimmer.js"
 import { createBubblesRising } from "./bubbles-rising.js"
 import { createCaustics } from "./caustics.js"
+import { createLanternRise } from "./lantern-rise.js"
+import { createRibbonCurl } from "./ribbon-curl.js"
+import { createChampagneFizz } from "./champagne-fizz.js"
+import { createFrameGlint } from "./frame-glint.js"
+import { createConfettiDrift } from "./confetti-drift.js"
+import { createInkSparkle } from "./ink-sparkle.js"
+import { createTiltDepth } from "./tilt-depth.js"
 
 /** Registry of every effect, mapping its ID to its factory. A theme selects a
  *  subset by id; unlisted ids never run.
@@ -57,4 +64,11 @@ export const EFFECT_DEFINITIONS = [
   { id: "frost", create: createFrostShimmer },
   { id: "bubbles", create: createBubblesRising },
   { id: "caustics", create: createCaustics },
+  { id: "lanterns", create: createLanternRise },
+  { id: "ribbons", create: createRibbonCurl },
+  { id: "fizz", create: createChampagneFizz },
+  { id: "frameglint", create: createFrameGlint },
+  { id: "confettidrift", create: createConfettiDrift },
+  { id: "inksparkle", create: createInkSparkle },
+  { id: "tiltdepth", create: createTiltDepth },
 ]

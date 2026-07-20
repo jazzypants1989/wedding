@@ -795,6 +795,181 @@ export function approvePendingForAccount(accountId: number): number
  *  soft-delete; reversible). Returns the total number of rows hidden. */
 export function hideApprovedContentForAccount(accountId: number): number
 
+/** @file gifts.js - Types for gift log database operations (Digital Thank-You Cards Phase 1) */
+
+import type { Gift, GiftWithGuest } from "../types.js"
+
+export interface CreateGiftInput {
+  guestId: number
+  description?: string | null
+  amount?: string | null
+  notes?: string | null
+  receivedAt?: string | null
+}
+
+/** Insert a gift and return the full row. */
+export function createGift(input: CreateGiftInput): Gift
+
+export function getGiftById(id: number): Gift | undefined
+
+/** Admin gift log: joined guest name + the most recent linked card's status. */
+export function listGifts(): GiftWithGuest[]
+
+export interface UpdateGiftFields {
+  description?: string | null
+  amount?: string | null
+  notes?: string | null
+  receivedAt?: string | null
+}
+
+/** Partial update. Returns true if a row changed (false if no fields given). */
+export function updateGift(id: number, fields: UpdateGiftFields): boolean
+
+/** Soft-delete a gift. Returns true if a row changed. */
+export function softDeleteGift(id: number): boolean
+
+/** Set/clear the physical-card-sent flag (stamps/clears physical_card_sent_at). */
+export function setPhysicalCardSent(id: number, sent: boolean): boolean
+
+/** @file thank-you-cards.js - Types for digital thank-you card database operations (Phase 1) */
+
+import type {
+  ThankYouCard,
+  ThankYouCardWithGuest,
+  ThankYouCardReply,
+  PublicThankYouCard,
+  ThankYouCardForGuest,
+  ThankYouSentVia,
+  ThankYouCardStatus,
+} from "../types.js"
+
+export interface CreateThankYouCardInput {
+  guestId: number
+  giftId?: number | null
+  message: string
+  theme: string
+  /** Opaque JSON value (backend never inspects its shape); undefined omits the column. */
+  effectsConfig?: unknown
+  /** Ordered media file_key list; undefined omits the column. */
+  mediaKeys?: string[]
+}
+
+/** Insert a draft card with a freshly generated unique token. */
+export function createThankYouCard(input: CreateThankYouCardInput): ThankYouCard
+
+export function getCardById(id: number): ThankYouCard | undefined
+export function getCardByToken(token: string): ThankYouCard | undefined
+
+/** Token-auth public surface: sent/viewed only, joined recipient name. */
+export function getPublicCardByToken(token: string): PublicThankYouCard | undefined
+
+/** Read-only share surface: resolves the same sent/viewed rows as
+ *  getPublicCardByToken but by the share_token column (no reply capability). */
+export function getPublicCardByShareToken(
+  shareToken: string,
+): PublicThankYouCard | undefined
+
+/** Admin list, joined guest name, newest first. */
+export function listCards(): ThankYouCardWithGuest[]
+
+export interface UpdateCardFields {
+  giftId?: number | null
+  message?: string
+  theme?: string
+  effectsConfig?: unknown
+  mediaKeys?: string[] | null
+}
+
+/** Partial draft-edit update. Returns true if a row changed. */
+export function updateCard(id: number, fields: UpdateCardFields): boolean
+
+/** draft -> sent. Returns true if a row changed (false if not currently draft). */
+export function markCardSent(id: number, sentVia: ThankYouSentVia): boolean
+
+/** Envelope-open beacon. One atomic UPDATE: bumps view_count/last_viewed_at on
+ *  every hit, and on the first open of a still-'sent' card also flips it to
+ *  'viewed' + stamps viewed_at. Returns undefined for a draft/unknown/deleted
+ *  token (so the endpoint 404s). */
+export function recordCardOpen(
+  token: string,
+): { viewed_at: string | null; view_count: number } | undefined
+
+/** Compensating reset for a failed send / resend of an unopened card: sent ->
+ *  draft (same token), clearing sent_via/sent_at. No-ops (returns false) once
+ *  viewed_at is set. */
+export function resetCardToDraft(id: number): boolean
+
+/** Clone a card's authored content into a fresh draft with a new token (resend
+ *  of an already-opened card). Returns the new card, or undefined if the source
+ *  is gone. */
+export function duplicateCardToDraft(id: number): ThankYouCard | undefined
+
+export interface SetCardReplyInput {
+  /** Reply emoji; null/undefined both mean "no emoji" for this reply. */
+  emoji?: string | null
+  /** Reply message; null/undefined both mean "no message" for this reply. */
+  message?: string | null
+}
+
+/** Record a recipient reply: appends to the reply history AND overwrites the
+ *  card's latest-reply columns to reflect exactly this reply (no silent merge).
+ *  Clears reply_seen_at so it re-surfaces as unread. Returns false for a
+ *  contentless reply (neither emoji nor message) or a non-sent/viewed card. */
+export function setCardReply(id: number, input: SetCardReplyInput): boolean
+
+/** Admin "clear reply" lever: wipe the card's latest-reply surface columns
+ *  (emoji/message/replied_at/reply_seen_at). The append-only reply history rows
+ *  are retained. Returns true if a row changed. */
+export function clearCardReply(id: number): boolean
+
+/** Full reply thread for a card, oldest first. */
+export function getCardReplies(cardId: number): ThankYouCardReply[]
+
+/** Soft-delete a card. Returns true if a row changed. */
+export function softDeleteCard(id: number): boolean
+
+/** Sent/viewed cards for a guest (banner surfacing), newest sent first. */
+export function getCardsForGuest(guestId: number): ThankYouCardForGuest[]
+
+/** Count of replied, not-yet-admin-seen, non-deleted cards (badge/digest). */
+export function countUnreadReplies(): number
+
+/** Mark a batch of replies as seen. Returns the number of rows changed. */
+export function markRepliesSeen(ids: number[]): number
+
+/** Whether the opt-in instant first-reply ping is enabled (app_state flag,
+ *  default false). */
+export function getReplyPingEnabled(): boolean
+
+/** Enable/disable the opt-in instant first-reply ping (app_state flag). */
+export function setReplyPingEnabled(enabled: boolean): void
+
+/** Aggregated guest content for the thank-you composer sidecar / detail panel.
+ *  Guestbook/media hang off the guest's linked account(s); a guest with no
+ *  account yields null/empty for those. */
+export interface GuestStoryData {
+  guestbookEntry: { message: string; createdAt: string } | null
+  media: Array<{ fileKey: string; kind: "image" | "video" }>
+  gifts: Array<{
+    id: number
+    description: string | null
+    amount: string | null
+    receivedAt: string | null
+    physicalCardSent: boolean
+  }>
+  cards: Array<{
+    id: number
+    status: ThankYouCardStatus
+    sentAt: string | null
+    viewedAt: string | null
+    repliedAt: string | null
+    replySeen: boolean
+  }>
+}
+
+/** Gather a guest's approved guestbook/media plus their gift + card ledger. */
+export function getGuestStory(guestId: number): GuestStoryData
+
 /** @file account-recovery.js - Account recovery tokens (Phase 6) */
 
 /** Store a single-use recovery token (hash only) with an expiry timestamp. */

@@ -303,6 +303,77 @@ export const EFFECT_CONFIGS = {
       layerCount: 3,
     },
   },
+
+  lanterns: {
+    defaults: {
+      lanternCount: 10,
+      riseDurationRange: [12, 22],
+      delayRange: [0, 10],
+      sizeRange: [16, 34],
+      swayRange: [20, 60],
+      colors: ["var(--fx-gold-1)", "var(--fx-warm-1)", "var(--fx-gold-2)", "var(--fx-gold-3)"],
+    },
+  },
+
+  ribbons: {
+    defaults: {
+      ribbonCount: 6,
+      unfurlDurationRange: [8, 16],
+      delayRange: [0, 6],
+      widthRange: [10, 22],
+      colors: ["var(--fx-rose-2)", "var(--fx-rose-1)", "var(--fx-warm-1)"],
+    },
+  },
+
+  fizz: {
+    defaults: {
+      streamCount: 3,
+      bubblesPerStream: 14,
+      riseDurationRange: [3, 7],
+      delayRange: [0, 5],
+      sizeRange: [2, 6],
+      colors: ["var(--fx-gold-1)", "var(--fx-warm-1)", "var(--fx-bright)"],
+    },
+  },
+
+  frameglint: {
+    defaults: {
+      sweepIntervalMs: 6000,
+      sweepDurationMs: 1400,
+      angle: 22,
+      intensity: 0.5,
+    },
+  },
+
+  confettidrift: {
+    defaults: {
+      pieceCount: 18,
+      fallDurationRange: [8, 16],
+      delayRange: [0, 10],
+      sizeRange: [5, 10],
+      spinRange: [180, 540],
+      colors: ["var(--fx-gold-1)", "var(--fx-rose-1)", "var(--fx-cool-1)", "var(--fx-warm-1)"],
+    },
+  },
+
+  inksparkle: {
+    defaults: {
+      glyphCount: 14,
+      driftDurationRange: [6, 12],
+      delayRange: [0, 8],
+      sizeRange: [10, 18],
+      glyphs: ["✧", "❋", "✦"],
+      colors: ["var(--fx-gold-1)", "var(--fx-rose-1)", "var(--fx-warm-1)", "var(--fx-bright)"],
+    },
+  },
+
+  tiltdepth: {
+    defaults: {
+      selector: ".tc-card, .tc-polaroid",
+      maxTilt: 6,
+      depth: 12,
+    },
+  },
 }
 
 /** @type {Types.getDefaultConfig} */
@@ -337,6 +408,18 @@ function mergeInto(target, override) {
       target[key] = val
     }
   }
+}
+
+/** Deep-merge `override` onto a clone of `base`, returning a new object (neither
+ *  input is mutated). Plain objects recurse; arrays/scalars replace wholesale;
+ *  `undefined` is ignored; prototype-pollution keys are skipped. Used by the
+ *  thank-you card page + composer to layer a stored partial config over an
+ *  effect's defaults. No regex.
+ *  @type {Types.mergeConfig} */
+export function mergeConfig(base, override) {
+  const target = structuredClone(base)
+  mergeInto(target, override)
+  return target
 }
 
 /** Read the studio's per-browser override map, guarding corrupt/absent JSON by

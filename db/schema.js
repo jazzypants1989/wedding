@@ -1,6 +1,29 @@
 /** @file Database schema and migrations */
 /** @import * as Types from './types.js' */
 
+import crypto from "node:crypto"
+
+// Local 8-char token generator for the share-token backfill migration. Mirrors
+// db/utils.js#generateInviteCode (same 62-char alphabet, same unbiased sampling)
+// but is inlined here on purpose: schema.js must NOT import db/utils.js, which
+// pulls in db/connection.js and would freeze its DB_PATH constant too early for
+// the test harness's env-swapping (tests/integration/_thank-you-db-env.js).
+const TOKEN_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+
+/** @returns {string} */
+function generateShareToken() {
+  const maxUnbiased = 248 // 248 = 62 * 4, largest multiple of 62 ≤ 256
+  let code = ""
+  const bytes = crypto.randomBytes(16)
+  let byteIdx = 0
+  while (code.length < 8) {
+    if (byteIdx >= bytes.length) return generateShareToken()
+    const b = bytes[byteIdx++]
+    if (b < maxUnbiased) code += TOKEN_ALPHABET[b % TOKEN_ALPHABET.length]
+  }
+  return code
+}
+
 /** @type {Types.createTables} */
 export function createTables(db) {
   db.exec(`
@@ -608,5 +631,225 @@ export function runMigrations(db) {
       db.exec(`ALTER TABLE rsvps ADD COLUMN additional_info TEXT`)
     }
     record.run("add_rsvp_additional_info")
+  }
+
+  // Digital thank-you cards (honey-fund gratitude feature, Phase 1): a gift log
+  // (giver, optional admin-only amount, physical-card tracking) and the cards
+  // themselves (token magic-link auth, message/theme/effects/media, delivery +
+  // view tracking, recipient reply). Reply is plain columns (reply_emoji /
+  // reply_message / replied_at), NOT the polymorphic `reactions` table — the
+  // recipient authenticates by token and may have no account. `reply_seen_at`
+  // tracks admin having seen the reply (unread badge/digest gate), separate
+  // from the guest-facing `viewed_at` (first card open).
+  if (!applied.get("add_thank_you_cards")) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS gifts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        guest_id INTEGER NOT NULL,                 -- giver
+        description TEXT,                          -- what they gave
+        amount TEXT,                                -- optional, admin-only, NEVER on the card
+        notes TEXT,
+        received_at TEXT,
+        physical_card_sent INTEGER NOT NULL DEFAULT 0 CHECK(physical_card_sent IN (0, 1)),
+        physical_card_sent_at TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        deleted_at TEXT DEFAULT NULL,
+        FOREIGN KEY (guest_id) REFERENCES guests(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_gifts_guest ON gifts(guest_id);
+      CREATE INDEX IF NOT EXISTS idx_gifts_deleted_at ON gifts(deleted_at);
+
+      CREATE TABLE IF NOT EXISTS thank_you_cards (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        token TEXT UNIQUE NOT NULL,                -- 8-char generateInviteCode()
+        guest_id INTEGER NOT NULL,                 -- recipient
+        gift_id INTEGER,                           -- optional link
+        message TEXT NOT NULL,
+        theme TEXT NOT NULL DEFAULT 'classic',
+        effects_config TEXT,                        -- JSON (opaque to backend), size-capped at write time
+        media_keys TEXT,                             -- JSON array of media file_keys
+        status TEXT NOT NULL DEFAULT 'draft',       -- draft|sent|viewed
+        sent_via TEXT,                               -- email|sms|manual|link
+        sent_at TEXT,
+        viewed_at TEXT,
+        reply_emoji TEXT,                            -- one REACTION_EMOJI key
+        reply_message TEXT,
+        replied_at TEXT,
+        reply_seen_at TEXT,                          -- admin has seen the reply
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        deleted_at TEXT DEFAULT NULL,
+        FOREIGN KEY (guest_id) REFERENCES guests(id) ON DELETE CASCADE,
+        FOREIGN KEY (gift_id) REFERENCES gifts(id) ON DELETE SET NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_tyc_guest ON thank_you_cards(guest_id) WHERE deleted_at IS NULL;
+      CREATE INDEX IF NOT EXISTS idx_tyc_status ON thank_you_cards(status) WHERE deleted_at IS NULL;
+      CREATE INDEX IF NOT EXISTS idx_tyc_gift ON thank_you_cards(gift_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_tyc_token ON thank_you_cards(token);
+    `)
+
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS check_tyc_status_insert
+      BEFORE INSERT ON thank_you_cards
+      FOR EACH ROW
+      WHEN NEW.status NOT IN ('draft', 'sent', 'viewed')
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid card status. Must be: draft, sent, or viewed');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS check_tyc_status_update
+      BEFORE UPDATE ON thank_you_cards
+      FOR EACH ROW
+      WHEN NEW.status NOT IN ('draft', 'sent', 'viewed')
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid card status. Must be: draft, sent, or viewed');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS check_tyc_sent_via_insert
+      BEFORE INSERT ON thank_you_cards
+      FOR EACH ROW
+      WHEN NEW.sent_via IS NOT NULL AND NEW.sent_via NOT IN ('email', 'sms', 'manual', 'link')
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid sent_via. Must be: email, sms, manual, or link');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS check_tyc_sent_via_update
+      BEFORE UPDATE ON thank_you_cards
+      FOR EACH ROW
+      WHEN NEW.sent_via IS NOT NULL AND NEW.sent_via NOT IN ('email', 'sms', 'manual', 'link')
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid sent_via. Must be: email, sms, manual, or link');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS check_tyc_reply_emoji_insert
+      BEFORE INSERT ON thank_you_cards
+      FOR EACH ROW
+      WHEN NEW.reply_emoji IS NOT NULL AND NEW.reply_emoji NOT IN ('heart', 'clap', 'laugh', 'heart_eyes', 'cheers', 'fire')
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid reply emoji');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS check_tyc_reply_emoji_update
+      BEFORE UPDATE ON thank_you_cards
+      FOR EACH ROW
+      WHEN NEW.reply_emoji IS NOT NULL AND NEW.reply_emoji NOT IN ('heart', 'clap', 'laugh', 'heart_eyes', 'cheers', 'fire')
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid reply emoji');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS auto_updated_at_gifts
+      AFTER UPDATE ON gifts
+      FOR EACH ROW
+      WHEN NEW.updated_at = OLD.updated_at
+      BEGIN
+        UPDATE gifts SET updated_at = datetime('now') WHERE id = NEW.id;
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS auto_updated_at_thank_you_cards
+      AFTER UPDATE ON thank_you_cards
+      FOR EACH ROW
+      WHEN NEW.updated_at = OLD.updated_at
+      BEGIN
+        UPDATE thank_you_cards SET updated_at = datetime('now') WHERE id = NEW.id;
+      END
+    `)
+    record.run("add_thank_you_cards")
+  }
+
+  // Thank-you engagement upgrades (Track B): per-card view tracking
+  // (view_count / last_viewed_at, stamped by the envelope-open beacon), an
+  // append-only reply-history table (the card keeps latest-reply columns for
+  // badge/digest compatibility; this table is the full thread), a partial
+  // index for the unread-reply badge hot path, and dropping the redundant
+  // token index (the column's inline UNIQUE already covers it).
+  if (!applied.get("add_thank_you_engagement")) {
+    // Columns are ALTERed into existing DBs (the base CREATE TABLE lives in the
+    // add_thank_you_cards block, which is frozen). Guard each add so a re-run or
+    // a manually-patched DB doesn't raise "duplicate column name".
+    const have = new Set(
+      /** @type {Array<{ name: string }>} */ (
+        db.prepare("PRAGMA table_info(thank_you_cards)").all()
+      ).map((c) => c.name),
+    )
+    if (!have.has("view_count")) {
+      db.exec(`ALTER TABLE thank_you_cards ADD COLUMN view_count INTEGER NOT NULL DEFAULT 0`)
+    }
+    if (!have.has("last_viewed_at")) {
+      db.exec(`ALTER TABLE thank_you_cards ADD COLUMN last_viewed_at TEXT`)
+    }
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS thank_you_card_replies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        card_id INTEGER NOT NULL,
+        emoji TEXT,                                  -- one REACTION_EMOJI key or NULL
+        message TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (card_id) REFERENCES thank_you_cards(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_tycr_card ON thank_you_card_replies(card_id);
+
+      CREATE TRIGGER IF NOT EXISTS check_tycr_emoji_insert
+      BEFORE INSERT ON thank_you_card_replies
+      FOR EACH ROW
+      WHEN NEW.emoji IS NOT NULL AND NEW.emoji NOT IN ('heart', 'clap', 'laugh', 'heart_eyes', 'cheers', 'fire')
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid reply emoji');
+      END;
+
+      CREATE INDEX IF NOT EXISTS idx_tyc_unread ON thank_you_cards(replied_at)
+        WHERE reply_seen_at IS NULL AND deleted_at IS NULL;
+
+      DROP INDEX IF EXISTS idx_tyc_token;
+    `)
+    record.run("add_thank_you_engagement")
+  }
+
+  // Read-only public share token for thank-you cards (Track B, Phase 2): an
+  // 8-char alnum credential (same generator as the primary `token`) that resolves
+  // the card for a NON-reply viewer — the recipient can forward it without also
+  // exposing their reply-capable primary token. Distinct UNIQUE column; the
+  // public GET resolves by primary OR share token, but the open-beacon and reply
+  // endpoints match the primary token column only (a share token 404s there).
+  if (!applied.get("add_thank_you_share_token")) {
+    // Column is ALTERed into every DB (the base CREATE TABLE lives in the frozen
+    // add_thank_you_cards block). Guard the add so a re-run doesn't raise
+    // "duplicate column name".
+    const have = new Set(
+      /** @type {Array<{ name: string }>} */ (
+        db.prepare("PRAGMA table_info(thank_you_cards)").all()
+      ).map((c) => c.name),
+    )
+    if (!have.has("share_token")) {
+      db.exec(`ALTER TABLE thank_you_cards ADD COLUMN share_token TEXT`)
+    }
+
+    // Backfill every existing row with a unique share token before the UNIQUE
+    // index goes on. Uniqueness is checked against the running set (empty on a
+    // fresh column) so a re-run over a partially-backfilled DB stays consistent.
+    const used = new Set(
+      /** @type {Array<{ share_token: string | null }>} */ (
+        db.prepare("SELECT share_token FROM thank_you_cards WHERE share_token IS NOT NULL").all()
+      ).map((r) => r.share_token),
+    )
+    const pending = /** @type {Array<{ id: number }>} */ (
+      db.prepare("SELECT id FROM thank_you_cards WHERE share_token IS NULL").all()
+    )
+    const setShare = db.prepare("UPDATE thank_you_cards SET share_token = ? WHERE id = ?")
+    for (const row of pending) {
+      let code = generateShareToken()
+      while (used.has(code)) code = generateShareToken()
+      used.add(code)
+      setShare.run(code, row.id)
+    }
+
+    db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_tyc_share_token ON thank_you_cards(share_token);
+    `)
+    record.run("add_thank_you_share_token")
   }
 }

@@ -71,6 +71,8 @@ export const THEME_IDS = new Set([
   "garden",
   "winter",
   "coastal",
+  "celebration",
+  "gratitude",
 ])
 
 /**
