@@ -63,16 +63,45 @@ export interface SoundParam {
 }
 
 /**
- * A pure synth voice: schedules an audio cue on `dest` starting at `when`
+ * A dry + reverb bus pair. Cues connect their transient/body layers to `dry`
+ * and send a cue-dependent portion to `wet` (a pre-delay → convolver reverb).
+ * Both feed the master gain. Built once and shared, exactly as it would be in
+ * the lifted card-sound.js.
+ */
+export interface SoundBus {
+  /** Direct (unprocessed) path into the master gain. */
+  dry: AudioNode
+  /** Reverb send: pre-delay input feeding the shared convolver. */
+  wet: AudioNode
+}
+
+/**
+ * A pure synth voice: schedules an audio cue onto `bus` starting at `when`
  * (an AudioContext currentTime-relative timestamp). Never touches globals so
  * these functions can be lifted into the thanks page unchanged.
  */
 export type SoundSynth = (
   ctx: AudioContext,
-  dest: AudioNode,
+  bus: SoundBus,
   params: Record<string, number>,
   when: number,
 ) => void
+
+/**
+ * One auditionable CC0 sample in the sound lab's Samples section — the A/B
+ * counterpart to a synth SoundCue. Decoded through the same master gain/mute so
+ * the owner can compare recordings against the live-synth voices in one panel.
+ */
+export interface SoundSample {
+  id: string
+  label: string
+  /** Which reveal beat this voices — matches a SoundCue id (for arc offsets). */
+  beat: string
+  /** Absolute served path under /sounds/card/. */
+  path: string
+  /** True for the sample used in the "play sample sequence" arc (one per beat). */
+  primary: boolean
+}
 
 /** One auditionable reveal cue in the sound lab. */
 export interface SoundCue {

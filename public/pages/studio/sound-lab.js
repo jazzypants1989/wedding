@@ -1,16 +1,33 @@
 /** @file Sound lab — a STUDIO-ONLY WebAudio sound-design prototype.
  *
  *  ⚠️ DECISION PROTOTYPE — wired to nothing else in the app. It exists only so
- *  the owner can audition four *synthesized* audio cues (no asset files — every
+ *  the owner can audition the *synthesized* audio cues (no asset files — every
  *  sound is generated live via the WebAudio API) before deciding whether any
  *  sound belongs in the thank-you card reveal.
  *
- *  If approved: the four pure synth functions below (playSealCrack,
- *  playPaperRustle, playSoftChime, playCorkPop) are written to be lifted
- *  verbatim into a new `public/pages/thanks/card-sound.js`. There they would be
- *  gated behind a MUTED-BY-DEFAULT toggle AND `prefers-reduced-motion`, sharing
- *  one lazily-created AudioContext exactly as they do here. Each takes the
- *  shared `ctx`, a destination node, a plain params object, and an absolute
+ *  The four cues follow the reveal arc: a sealed-envelope TAP → the envelope
+ *  OPENS → the words CASCADE onto the card → a CELEBRATION pop. The register is
+ *  an intimate, warm, analog wedding card: stationery ASMR + music box, quiet
+ *  and reverberant — never game SFX.
+ *
+ *  Craft used to get there (all pure WebAudio, no samples):
+ *   • Shared procedural reverb — a stereo impulse response is synthesized into
+ *     an AudioBuffer (exponentially decaying noise, one-pole-darkened tail) and
+ *     run through a ConvolverNode with a ~15 ms pre-delay. Every cue sends a
+ *     cue-dependent wet amount; dry + wet mix through a master gain into a gentle
+ *     bus compressor. This is the single biggest upgrade: "sound in a room", not
+ *     "beep in a void".
+ *   • Every cue is layered (2–4 components at staggered offsets), lightly
+ *     randomized per play, and panned per-grain so repeats feel alive and wide.
+ *   • Envelopes start/end at true near-zero (linear-up → exponential-down) so no
+ *     click survives at any slider position. Loudness is balanced across cues
+ *     (the bell cascade sits quieter than the tap/pop).
+ *
+ *  If approved: the four pure synth functions below (plus buildImpulse / audio's
+ *  reverb bus) lift into a new `public/pages/thanks/card-sound.js`, gated behind
+ *  a MUTED-BY-DEFAULT toggle AND `prefers-reduced-motion`, sharing one lazily-
+ *  created AudioContext + reverb bus exactly as they do here. Each synth takes
+ *  the shared `ctx`, a { dry, wet } bus, a plain params object, and an absolute
  *  start time (`when`) — no globals, no DOM — precisely so they port cleanly.
  *
  *  Studio-only conventions honoured: zero deps (WebAudio is built in), no regex,
@@ -27,24 +44,77 @@ import { getElement, getButtonElement, getInputElement } from "../utils.js"
 let ctx = null
 /** @type {GainNode | null} */
 let master = null
+/** @type {Types.SoundBus | null} */
+let bus = null
 let masterLevel = 0.4
 let muted = false
 
 /**
- * Get (creating on first call) the shared AudioContext + master gain. Created
- * lazily so the very first click satisfies the browser autoplay policy; resumed
- * on every call in case the tab suspended it.
- * @returns {{ ctx: AudioContext, master: GainNode }}
+ * Synthesize a stereo reverb impulse response into an AudioBuffer: decaying
+ * noise per channel with a one-pole lowpass whose smoothing deepens over the
+ * tail (so the reverb darkens as it fades — like a warm room, not a plate).
+ * The `Math.pow(1 - t, decay)` envelope hits exactly zero at the end, so the
+ * convolved tail never clicks.
+ * @param {AudioContext} c @param {number} seconds @param {number} decay
+ * @returns {AudioBuffer}
+ */
+function buildImpulse(c, seconds, decay) {
+  const len = Math.max(1, Math.floor(c.sampleRate * seconds))
+  const buf = c.createBuffer(2, len, c.sampleRate)
+  for (let ch = 0; ch < 2; ch++) {
+    const data = buf.getChannelData(ch)
+    let lp = 0
+    for (let i = 0; i < len; i++) {
+      const t = i / len
+      // Coefficient falls from ~0.6 (bright, early) to ~0.16 (dark tail).
+      const a = 0.6 * (1 - t * 0.72)
+      lp += a * (Math.random() * 2 - 1 - lp)
+      data[i] = lp * Math.pow(1 - t, decay)
+    }
+  }
+  return buf
+}
+
+/**
+ * Get (creating on first call) the shared AudioContext, master gain, and reverb
+ * bus. Graph: cue layers → { dry, wet }; dry → master; wet = preDelay →
+ * convolver → wetGain → master; master → soft compressor → destination.
+ * @returns {{ ctx: AudioContext, master: GainNode, bus: Types.SoundBus }}
  */
 function audio() {
-  if (!ctx || !master) {
+  if (!ctx || !master || !bus) {
     ctx = new AudioContext()
+
     master = ctx.createGain()
-    master.gain.value = muted ? 0 : masterLevel
-    master.connect(ctx.destination)
+    master.gain.value = muted ? 0.0001 : masterLevel
+
+    // Gentle glue compressor — tames layered peaks, adds "expensive" cohesion.
+    const comp = ctx.createDynamicsCompressor()
+    comp.threshold.value = -18
+    comp.knee.value = 26
+    comp.ratio.value = 2.2
+    comp.attack.value = 0.003
+    comp.release.value = 0.25
+    master.connect(comp).connect(ctx.destination)
+
+    // Dry path.
+    const dry = ctx.createGain()
+    dry.gain.value = 1
+    dry.connect(master)
+
+    // Wet path: pre-delay keeps transients crisp before the tail blooms.
+    const preDelay = ctx.createDelay(0.1)
+    preDelay.delayTime.value = 0.015
+    const convolver = ctx.createConvolver()
+    convolver.buffer = buildImpulse(ctx, 1.6, 2.4)
+    const wetGain = ctx.createGain()
+    wetGain.gain.value = 0.9
+    preDelay.connect(convolver).connect(wetGain).connect(master)
+
+    bus = { dry, wet: preDelay }
   }
   if (ctx.state === "suspended") void ctx.resume()
-  return { ctx, master }
+  return { ctx, master, bus }
 }
 
 /** Push the current master level / mute state onto the live gain node. */
@@ -54,9 +124,10 @@ function applyMasterGain() {
   master.gain.setTargetAtTime(target, ctx.currentTime, 0.01)
 }
 
+// ---- Synthesis helpers (pure — lift alongside the voices) -------------------
+
 /**
- * Fill a mono buffer with white noise — the raw material for the crack, rustle,
- * and fizz cues.
+ * Fill a mono buffer with white noise — raw material for taps, rustle, fizz.
  * @param {AudioContext} c @param {number} seconds @returns {AudioBuffer}
  */
 function noiseBuffer(c, seconds) {
@@ -67,136 +138,271 @@ function noiseBuffer(c, seconds) {
   return buf
 }
 
+/**
+ * Route one finished layer node into the dry bus and (optionally) send a copy
+ * to the reverb. Keeping wet per-layer lets each cue pick its own space.
+ * @param {AudioContext} c @param {AudioNode} node @param {Types.SoundBus} b
+ * @param {number} wet Send level (0 = fully dry).
+ */
+function route(c, node, b, wet) {
+  node.connect(b.dry)
+  if (wet > 0) {
+    const send = c.createGain()
+    send.gain.value = wet
+    node.connect(send)
+    send.connect(b.wet)
+  }
+}
+
+/** Random stereo pan in [-spread, spread]. @param {number} spread */
+function rpan(spread) {
+  return (Math.random() * 2 - 1) * spread
+}
+
+/**
+ * Schedule one short bandpassed noise grain (the atom of tap clusters, paper
+ * rustle, and champagne fizz). Linear attack from near-zero → exponential tail,
+ * so it never clicks. Panned.
+ * @param {AudioContext} c @param {Types.SoundBus} b
+ * @param {number} t @param {number} len @param {"bandpass" | "highpass"} type
+ * @param {number} freq @param {number} q @param {number} peak
+ * @param {number} pan @param {number} wet
+ */
+function grain(c, b, t, len, type, freq, q, peak, pan, wet) {
+  const src = c.createBufferSource()
+  src.buffer = noiseBuffer(c, len + 0.004)
+  const filt = c.createBiquadFilter()
+  filt.type = type
+  filt.frequency.value = freq
+  filt.Q.value = q
+  const g = c.createGain()
+  const top = Math.max(0.0001, peak)
+  g.gain.setValueAtTime(0.0001, t)
+  g.gain.linearRampToValueAtTime(top, t + Math.min(0.002, len * 0.3))
+  g.gain.exponentialRampToValueAtTime(0.0001, t + len)
+  const pn = c.createStereoPanner()
+  pn.pan.value = pan
+  src.connect(filt).connect(g).connect(pn)
+  route(c, pn, b, wet)
+  src.start(t)
+  src.stop(t + len + 0.004)
+}
+
+/**
+ * Schedule one warm bell note: a beating fundamental (two slightly-detuned
+ * sines, ~1–2 Hz beat) plus quiet inharmonic partials (2.76, 5.40 — stretched,
+ * bell-like), summed through a warmth lowpass, panned, generously reverbed.
+ * Highs decay faster than the fundamental. Gentle 10 ms attack.
+ * @param {AudioContext} c @param {Types.SoundBus} b
+ * @param {number} freq @param {number} peak @param {number} t
+ * @param {number} decay @param {number} warmth @param {number} pan
+ * @param {number} wet
+ */
+function bellNote(c, b, freq, peak, t, decay, warmth, pan, wet) {
+  const out = c.createGain()
+  out.gain.value = 1
+  const lp = c.createBiquadFilter()
+  lp.type = "lowpass"
+  lp.frequency.value = 850 + warmth * 5200
+  lp.Q.value = 0.5
+  const pn = c.createStereoPanner()
+  pn.pan.value = pan
+  out.connect(lp).connect(pn)
+  route(c, pn, b, wet)
+
+  /** @param {number} f @param {number} lvl @param {number} dec @param {number} det */
+  const voice = (f, lvl, dec, det) => {
+    const o = c.createOscillator()
+    o.type = "sine"
+    o.frequency.value = f
+    o.detune.value = det
+    const g = c.createGain()
+    const top = Math.max(0.0001, lvl)
+    g.gain.setValueAtTime(0.0001, t)
+    g.gain.linearRampToValueAtTime(top, t + 0.01)
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dec)
+    o.connect(g).connect(out)
+    o.start(t)
+    o.stop(t + dec + 0.05)
+  }
+
+  // Beating fundamental (~1.5 Hz at typical roots).
+  voice(freq, peak * 0.55, decay, -3)
+  voice(freq, peak * 0.55, decay, 3)
+  // Stretched inharmonic partials — quieter and shorter-lived.
+  voice(freq * 2.76, peak * 0.2, decay * 0.5, rpan(6))
+  voice(freq * 5.4, peak * 0.09, decay * 0.32, rpan(6))
+}
+
 // ---- The four synth voices (pure — safe to lift into the thanks page) -------
 
 /**
- * 1. Seal crack — the wax seal snapping: a short bandpassed noise burst plus a
- *    fast pitch-down click transient, like brittle wax breaking.
+ * 1. Envelope tap — a soft finger tap on the sealed card: a low woody "knock"
+ *    (damped ~200 Hz sine, tiny downward glide) under a short cluster of 3 soft
+ *    bandpassed noise ticks a few ms apart. Warm and close, only a touch of room.
  * @type {Types.SoundSynth}
  */
-export function playSealCrack(c, dest, p, when) {
+export function playEnvelopeTap(c, b, p, when) {
   const t = when
-  const dur = p.duration
+  const level = p.level
 
-  // Bandpassed noise body (~2–4 kHz snap).
-  const src = c.createBufferSource()
-  src.buffer = noiseBuffer(c, dur + 0.02)
-  const bp = c.createBiquadFilter()
-  bp.type = "bandpass"
-  bp.frequency.value = p.freq
-  bp.Q.value = 1.4
-  const g = c.createGain()
-  g.gain.setValueAtTime(0.0001, t)
-  g.gain.exponentialRampToValueAtTime(Math.max(0.0001, p.level), t + 0.004)
-  g.gain.exponentialRampToValueAtTime(0.0001, t + dur)
-  src.connect(bp).connect(g).connect(dest)
-  src.start(t)
-  src.stop(t + dur + 0.02)
+  // Woody knock body.
+  const knock = c.createOscillator()
+  knock.type = "sine"
+  knock.frequency.setValueAtTime(p.body * 1.4, t)
+  knock.frequency.exponentialRampToValueAtTime(p.body, t + 0.05)
+  const kg = c.createGain()
+  kg.gain.setValueAtTime(0.0001, t)
+  kg.gain.linearRampToValueAtTime(Math.max(0.0001, level * 0.55), t + 0.004)
+  kg.gain.exponentialRampToValueAtTime(0.0001, t + 0.09)
+  const kpan = c.createStereoPanner()
+  kpan.pan.value = rpan(0.12)
+  knock.connect(kg).connect(kpan)
+  route(c, kpan, b, 0.14)
+  knock.start(t)
+  knock.stop(t + 0.12)
 
-  // Pitch-down click transient (~40 ms) — the "snap".
-  const osc = c.createOscillator()
-  osc.type = "triangle"
-  osc.frequency.setValueAtTime(Math.max(60, p.freq * 0.9), t)
-  osc.frequency.exponentialRampToValueAtTime(110, t + 0.04)
-  const og = c.createGain()
-  og.gain.setValueAtTime(0.0001, t)
-  og.gain.exponentialRampToValueAtTime(Math.max(0.0001, p.level * 0.8), t + 0.002)
-  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.05)
-  osc.connect(og).connect(dest)
-  osc.start(t)
-  osc.stop(t + 0.06)
-}
-
-/**
- * 2. Paper rustle — the envelope unfolding: lowpassed noise whose cutoff sweeps
- *    ~1k→4k and back, under a gentle amplitude swell.
- * @type {Types.SoundSynth}
- */
-export function playPaperRustle(c, dest, p, when) {
-  const t = when
-  const dur = p.duration
-
-  const src = c.createBufferSource()
-  src.buffer = noiseBuffer(c, dur + 0.05)
-  const lp = c.createBiquadFilter()
-  lp.type = "lowpass"
-  lp.Q.value = 0.7
-  lp.frequency.setValueAtTime(1000, t)
-  lp.frequency.linearRampToValueAtTime(p.peak, t + dur / 2)
-  lp.frequency.linearRampToValueAtTime(1000, t + dur)
-
-  const g = c.createGain()
-  g.gain.setValueAtTime(0.0001, t)
-  g.gain.exponentialRampToValueAtTime(Math.max(0.0001, p.level), t + dur * 0.4)
-  g.gain.exponentialRampToValueAtTime(0.0001, t + dur)
-  src.connect(lp).connect(g).connect(dest)
-  src.start(t)
-  src.stop(t + dur + 0.05)
-}
-
-/**
- * 3. Soft chime — the card revealed: four slightly-detuned sine partials in a
- *    warm major-ish cluster, each with an exponential decay tail. Quiet.
- * @type {Types.SoundSynth}
- */
-export function playSoftChime(c, dest, p, when) {
-  const t = when
-  const dur = p.duration
-  // root, major third (5/4), fifth (3/2), octave — a warm add-ish cluster.
-  const ratios = [1, 1.25, 1.5, 2]
-  const detune = [0, 4, -3, 6]
-  for (let i = 0; i < ratios.length; i++) {
-    const osc = c.createOscillator()
-    osc.type = "sine"
-    osc.frequency.value = p.baseFreq * ratios[i]
-    osc.detune.value = detune[i]
-    const g = c.createGain()
-    const peak = Math.max(0.0001, p.level * (1 - i * 0.16))
-    g.gain.setValueAtTime(0.0001, t)
-    g.gain.exponentialRampToValueAtTime(peak, t + 0.02 + i * 0.015)
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur)
-    osc.connect(g).connect(dest)
-    osc.start(t)
-    osc.stop(t + dur + 0.05)
+  // Soft tick cluster — the papery contact.
+  const ticks = 3
+  for (let i = 0; i < ticks; i++) {
+    const ct = t + i * (0.004 + Math.random() * 0.004)
+    const freq = p.tone * (0.8 + Math.random() * 0.55)
+    const peak = level * (0.5 - i * 0.13)
+    grain(c, b, ct, 0.014, "bandpass", freq, 6 + Math.random() * 6, peak, rpan(0.4), 0.14)
   }
 }
 
 /**
- * 4. Cork pop — the champagne moment: a resonant sine pitch-drop (~400→80 Hz
- *    over ~80 ms) followed by a tiny high-passed noise fizz tail.
+ * 2. Envelope opens — the paper unfolding: 8–15 tiny bandpassed noise grains
+ *    (granular, not a static hiss) scattered over ~0.5 s under an overall swell,
+ *    a soft lowpassed noise bed, and a warm low "whum" that blooms and fades as
+ *    the flap lifts. Sounds like fingers on real stationery.
  * @type {Types.SoundSynth}
  */
-export function playCorkPop(c, dest, p, when) {
+export function playEnvelopeOpen(c, b, p, when) {
   const t = when
-  const dur = p.duration
+  const dur = 0.55
+  const level = p.level
+  const density = Math.round(p.density)
+  const brightness = p.brightness
+  const lo = 1000 + brightness * 2000
+  const hi = lo + 2000 + brightness * 2600
 
-  const osc = c.createOscillator()
-  osc.type = "sine"
-  osc.frequency.setValueAtTime(p.startFreq, t)
-  osc.frequency.exponentialRampToValueAtTime(80, t + dur)
-  const g = c.createGain()
-  g.gain.setValueAtTime(0.0001, t)
-  g.gain.exponentialRampToValueAtTime(Math.max(0.0001, p.level), t + 0.006)
-  g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.02)
-  osc.connect(g).connect(dest)
-  osc.start(t)
-  osc.stop(t + dur + 0.05)
+  // Soft lowpassed bed.
+  const bed = c.createBufferSource()
+  bed.buffer = noiseBuffer(c, dur + 0.05)
+  const bedLp = c.createBiquadFilter()
+  bedLp.type = "lowpass"
+  bedLp.frequency.value = 900 + brightness * 1500
+  bedLp.Q.value = 0.6
+  const bedG = c.createGain()
+  bedG.gain.setValueAtTime(0.0001, t)
+  bedG.gain.linearRampToValueAtTime(Math.max(0.0001, level * 0.28), t + dur * 0.45)
+  bedG.gain.exponentialRampToValueAtTime(0.0001, t + dur)
+  bed.connect(bedLp).connect(bedG)
+  route(c, bedG, b, 0.2)
+  bed.start(t)
+  bed.stop(t + dur + 0.05)
 
-  // Fizz tail.
-  const fizzDur = 0.25
-  const ft = t + dur
-  const src = c.createBufferSource()
-  src.buffer = noiseBuffer(c, fizzDur)
-  const hp = c.createBiquadFilter()
-  hp.type = "highpass"
-  hp.frequency.value = 5000
-  const fg = c.createGain()
-  fg.gain.setValueAtTime(0.0001, ft)
-  fg.gain.exponentialRampToValueAtTime(Math.max(0.0001, p.level * 0.15), ft + 0.01)
-  fg.gain.exponentialRampToValueAtTime(0.0001, ft + fizzDur)
-  src.connect(hp).connect(fg).connect(dest)
-  src.start(ft)
-  src.stop(ft + fizzDur)
+  // Warm low "whum" as the flap lifts.
+  const whum = c.createOscillator()
+  whum.type = "sine"
+  whum.frequency.setValueAtTime(96, t)
+  whum.frequency.linearRampToValueAtTime(78, t + dur)
+  const wg = c.createGain()
+  wg.gain.setValueAtTime(0.0001, t)
+  wg.gain.linearRampToValueAtTime(Math.max(0.0001, level * 0.5), t + dur * 0.4)
+  wg.gain.exponentialRampToValueAtTime(0.0001, t + dur * 1.05)
+  whum.connect(wg)
+  route(c, wg, b, 0.22)
+  whum.start(t)
+  whum.stop(t + dur + 0.05)
+
+  // Granular rustle — swell shaped by a sine arch across the duration.
+  for (let i = 0; i < density; i++) {
+    const frac = (i + Math.random() * 0.6) / density
+    const gt = t + frac * dur
+    const len = 0.01 + Math.random() * 0.03
+    const freq = lo + Math.random() * (hi - lo)
+    const swell = Math.sin(Math.min(1, Math.max(0, frac)) * Math.PI)
+    const peak = level * (0.16 + 0.5 * swell) * (0.5 + Math.random() * 0.5)
+    grain(c, b, gt, len, "bandpass", freq, 0.8 + Math.random() * 1.2, peak, rpan(0.55), 0.2)
+  }
+}
+
+/**
+ * 3. Word cascade — the message appearing line by line: a rising major-pentatonic
+ *    run of warm bell notes (see bellNote — beating fundamental + stretched
+ *    inharmonic partials), staggered ~0.11 s apart with a loudness arch and
+ *    slight timing jitter, drenched in reverb. "Music box heard across a room."
+ * @type {Types.SoundSynth}
+ */
+export function playWordCascade(c, b, p, when) {
+  const t = when
+  const root = p.root
+  const decay = p.decay
+  const warmth = p.warmth
+  const base = 0.13 // intentionally quiet — the softest cue.
+  const steps = [0, 2, 4, 7, 9, 12] // major pentatonic, ascending.
+  const stagger = 0.11
+  for (let i = 0; i < steps.length; i++) {
+    const nt = t + i * stagger * (0.85 + Math.random() * 0.3)
+    const freq = root * Math.pow(2, steps[i] / 12)
+    // Loudness arch: swells in, eases out.
+    const arch = 0.6 + 0.4 * Math.sin((i / (steps.length - 1)) * Math.PI)
+    const peak = base * arch
+    bellNote(c, b, freq, peak, nt, decay * (1 - i * 0.05), warmth, rpan(0.5), 0.32)
+  }
+}
+
+/**
+ * 4. Celebration — the champagne moment: a pitch-drop thump (sine 320→70 Hz,
+ *    ~60 ms), a quiet resonant "hollow bottle" ping (high-Q bandpassed click),
+ *    a champagne fizz tail (dozens of tiny highpassed grains thinning out over
+ *    ~0.55 s), and 3 bright bell "sparkle" twinkles scattered on top.
+ * @type {Types.SoundSynth}
+ */
+export function playCelebration(c, b, p, when) {
+  const t = when
+  const level = p.level
+  const fizzAmt = p.fizz
+
+  // Pitch-drop thump.
+  const thump = c.createOscillator()
+  thump.type = "sine"
+  thump.frequency.setValueAtTime(p.pop, t)
+  thump.frequency.exponentialRampToValueAtTime(70, t + 0.06)
+  const tg = c.createGain()
+  tg.gain.setValueAtTime(0.0001, t)
+  tg.gain.linearRampToValueAtTime(Math.max(0.0001, level * 0.9), t + 0.003)
+  tg.gain.exponentialRampToValueAtTime(0.0001, t + 0.09)
+  thump.connect(tg)
+  route(c, tg, b, 0.18)
+  thump.start(t)
+  thump.stop(t + 0.12)
+
+  // Hollow bottle ping — resonant, very quiet.
+  grain(c, b, t + 0.002, 0.05, "bandpass", 620 + Math.random() * 280, 12, level * 0.12, rpan(0.2), 0.22)
+
+  // Champagne fizz — grains front-loaded then thinning, level fading.
+  const fizzStart = t + 0.02
+  const fizzDur = 0.55
+  const grains = Math.round(34 * fizzAmt)
+  for (let i = 0; i < grains; i++) {
+    const frac = i / Math.max(1, grains)
+    const gt = fizzStart + fizzDur * Math.pow(frac, 0.75) + Math.random() * 0.01
+    const len = 0.003 + Math.random() * 0.006
+    const freq = 3500 + Math.random() * 4000
+    const peak = level * 0.14 * (1 - frac) * (0.4 + Math.random() * 0.6)
+    grain(c, b, gt, len, "highpass", freq, 0.7, peak, rpan(0.7), 0.15)
+  }
+
+  // Bright sparkle twinkles — celebratory shimmer over the fizz.
+  for (let i = 0; i < 3; i++) {
+    const st = t + 0.04 + Math.random() * 0.28
+    const freq = 1500 + Math.random() * 1600
+    bellNote(c, b, freq, level * 0.05, st, 0.4 + Math.random() * 0.25, 0.9, rpan(0.6), 0.3)
+  }
 }
 
 // ---- Cue registry -----------------------------------------------------------
@@ -222,50 +428,137 @@ function makeCue(cue) {
 /** @type {Types.SoundCue[]} */
 const CUES = [
   makeCue({
-    id: "seal-crack",
-    label: "Seal crack",
+    id: "envelope-tap",
+    label: "Envelope tap",
     offset: 0.0,
-    play: playSealCrack,
+    play: playEnvelopeTap,
     params: [
-      { key: "freq", label: "Band center", min: 1500, max: 5000, step: 50, value: 3000, unit: "Hz" },
-      { key: "duration", label: "Duration", min: 0.02, max: 0.12, step: 0.005, value: 0.05, unit: "s" },
-      { key: "level", label: "Level", min: 0, max: 1, step: 0.02, value: 0.6, unit: "level" },
+      { key: "level", label: "Level", min: 0, max: 1, step: 0.02, value: 0.45, unit: "level" },
+      { key: "tone", label: "Tap tone", min: 1200, max: 3500, step: 50, value: 2200, unit: "Hz" },
+      { key: "body", label: "Wood body", min: 150, max: 280, step: 5, value: 205, unit: "Hz" },
     ],
   }),
   makeCue({
-    id: "paper-rustle",
-    label: "Paper rustle",
-    offset: 0.35,
-    play: playPaperRustle,
+    id: "envelope-open",
+    label: "Envelope opens",
+    offset: 0.5,
+    play: playEnvelopeOpen,
     params: [
-      { key: "duration", label: "Duration", min: 0.3, max: 0.8, step: 0.01, value: 0.55, unit: "s" },
-      { key: "peak", label: "Sweep peak", min: 2500, max: 6000, step: 100, value: 4000, unit: "Hz" },
-      { key: "level", label: "Level", min: 0, max: 1, step: 0.02, value: 0.25, unit: "level" },
+      { key: "level", label: "Level", min: 0, max: 0.6, step: 0.01, value: 0.32, unit: "level" },
+      { key: "density", label: "Grain density", min: 6, max: 18, step: 1, value: 12, unit: "level" },
+      { key: "brightness", label: "Brightness", min: 0, max: 1, step: 0.05, value: 0.5, unit: "level" },
     ],
   }),
   makeCue({
-    id: "soft-chime",
-    label: "Soft chime",
-    offset: 1.3,
-    play: playSoftChime,
+    id: "word-cascade",
+    label: "Word cascade",
+    offset: 1.35,
+    play: playWordCascade,
     params: [
-      { key: "baseFreq", label: "Root freq", min: 330, max: 660, step: 2, value: 528, unit: "Hz" },
-      { key: "duration", label: "Decay", min: 1.2, max: 2.2, step: 0.05, value: 1.6, unit: "s" },
-      { key: "level", label: "Level", min: 0, max: 0.5, step: 0.01, value: 0.18, unit: "level" },
+      { key: "root", label: "Root note", min: 262, max: 523, step: 1, value: 392, unit: "Hz" },
+      { key: "decay", label: "Ring", min: 1.2, max: 2.8, step: 0.05, value: 2.0, unit: "s" },
+      { key: "warmth", label: "Warmth", min: 0, max: 1, step: 0.05, value: 0.5, unit: "level" },
     ],
   }),
   makeCue({
-    id: "cork-pop",
-    label: "Cork pop",
-    offset: 3.2,
-    play: playCorkPop,
+    id: "celebration",
+    label: "Celebration",
+    offset: 4.3,
+    play: playCelebration,
     params: [
-      { key: "startFreq", label: "Pop start", min: 250, max: 600, step: 10, value: 420, unit: "Hz" },
-      { key: "duration", label: "Pop drop", min: 0.05, max: 0.15, step: 0.005, value: 0.08, unit: "s" },
-      { key: "level", label: "Level", min: 0, max: 1, step: 0.02, value: 0.5, unit: "level" },
+      { key: "level", label: "Level", min: 0, max: 1, step: 0.02, value: 0.55, unit: "level" },
+      { key: "pop", label: "Pop pitch", min: 240, max: 420, step: 10, value: 320, unit: "Hz" },
+      { key: "fizz", label: "Fizz", min: 0, max: 1, step: 0.05, value: 0.6, unit: "level" },
     ],
   }),
 ]
+
+// ---- CC0 sample manifest (A/B against the synth cues) -----------------------
+
+/**
+ * Real CC0 recordings (BigSoundBank, processed to short m4a/AAC — see
+ * public/sounds/card/SOURCES.md). Hardcoded so the lab needs no directory
+ * listing. `beat` matches a CUES id so the sample sequence reuses the synth
+ * arc's spacing; one `primary` sample per beat drives that sequence.
+ * @type {Types.SoundSample[]}
+ */
+const SAMPLES = [
+  { id: "tap-wood", label: "Tap — wooden gavel", beat: "envelope-tap", path: "/sounds/card/tap-wood.m4a", primary: true },
+  { id: "open-paper", label: "Open — paper rustle", beat: "envelope-open", path: "/sounds/card/open-paper.m4a", primary: true },
+  { id: "cascade-chimes", label: "Cascade — dream chimes", beat: "word-cascade", path: "/sounds/card/cascade-chimes.m4a", primary: true },
+  { id: "cascade-bells", label: "Cascade — butterfly bells", beat: "word-cascade", path: "/sounds/card/cascade-bells.m4a", primary: false },
+  { id: "celebrate-cork", label: "Celebrate — champagne cork", beat: "celebration", path: "/sounds/card/celebrate-cork.m4a", primary: true },
+  { id: "celebrate-fizz", label: "Celebrate — sparkling fizz", beat: "celebration", path: "/sounds/card/celebrate-fizz.m4a", primary: false },
+]
+
+/**
+ * Decoded-buffer cache keyed by path (decode once, replay cheaply).
+ * @type {Map<string, AudioBuffer>}
+ */
+const sampleBuffers = new Map()
+
+/**
+ * Fetch + decode one sample into an AudioBuffer (cached). decodeAudioData
+ * ignores the response Content-Type, so playback works regardless of how the
+ * static server labels .m4a.
+ * @param {AudioContext} c @param {string} path @returns {Promise<AudioBuffer>}
+ */
+async function loadSample(c, path) {
+  const cached = sampleBuffers.get(path)
+  if (cached) return cached
+  const res = await fetch(path)
+  if (!res.ok) throw new Error("fetch " + path + " → " + res.status)
+  const buf = await c.decodeAudioData(await res.arrayBuffer())
+  sampleBuffers.set(path, buf)
+  return buf
+}
+
+/**
+ * Schedule a decoded sample onto the master gain at `when`. Kept dry (the
+ * recordings already carry their own room) but still routed through master →
+ * compressor, so the mute button and master level apply exactly as to the synths.
+ * @param {AudioContext} c @param {GainNode} m @param {AudioBuffer} buf @param {number} when
+ */
+function scheduleSample(c, m, buf, when) {
+  const src = c.createBufferSource()
+  src.buffer = buf
+  src.connect(m)
+  src.start(when)
+}
+
+/** @param {Types.SoundSample} sample */
+async function playSample(sample) {
+  const { ctx: c, master: m } = audio()
+  try {
+    scheduleSample(c, m, await loadSample(c, sample.path), c.currentTime + 0.03)
+    flash("Playing sample: " + sample.label, "ok")
+  } catch (err) {
+    flash("Sample failed (" + sample.label + "): " + String(err), "err")
+  }
+}
+
+/** A cue's arc offset by id — reused so samples land on the synth spacing. */
+/** @param {string} beat @returns {number} */
+function offsetForBeat(beat) {
+  for (const cue of CUES) if (cue.id === beat) return cue.offset
+  return 0
+}
+
+/** Play the four primary samples along the same arc as the synth sequence. */
+async function playSampleSequence() {
+  const { ctx: c, master: m } = audio()
+  const primaries = SAMPLES.filter((s) => s.primary)
+  try {
+    const bufs = await Promise.all(primaries.map((s) => loadSample(c, s.path)))
+    const base = c.currentTime + 0.08
+    for (let i = 0; i < primaries.length; i++) {
+      scheduleSample(c, m, bufs[i], base + offsetForBeat(primaries[i].beat))
+    }
+    flash("Playing sample sequence (tap → open → cascade → celebration)", "ok")
+  } catch (err) {
+    flash("Sample sequence failed: " + String(err), "err")
+  }
+}
 
 // ---- Rendering / wiring -----------------------------------------------------
 
@@ -286,17 +579,17 @@ function flash(message, kind) {
 /** Fire one cue immediately (small lead so scheduling never lands in the past). */
 /** @param {Types.SoundCue} cue */
 function playCue(cue) {
-  const { ctx: c, master: dest } = audio()
-  cue.play(c, dest, cue.values, c.currentTime + 0.03)
+  const { ctx: c, bus: b } = audio()
+  cue.play(c, b, cue.values, c.currentTime + 0.03)
   flash("Playing " + cue.label, "ok")
 }
 
 /** Play all four cues spaced along the reveal arc so the owner hears the flow. */
 function playSequence() {
-  const { ctx: c, master: dest } = audio()
+  const { ctx: c, bus: b } = audio()
   const base = c.currentTime + 0.05
-  for (const cue of CUES) cue.play(c, dest, cue.values, base + cue.offset)
-  flash("Playing sequence (crack → rustle → chime → pop)", "ok")
+  for (const cue of CUES) cue.play(c, b, cue.values, base + cue.offset)
+  flash("Playing sequence (tap → open → cascade → celebration)", "ok")
 }
 
 /**
@@ -362,9 +655,37 @@ function buildCueCard(cue) {
   return card
 }
 
+/**
+ * Build one sample row (a play button + label) styled like a cue card head, so
+ * the Samples section reads as the A/B twin of the Cues section.
+ * @param {Types.SoundSample} sample @returns {HTMLDivElement}
+ */
+function buildSampleRow(sample) {
+  const card = document.createElement("div")
+  card.className = "sound-cue"
+
+  const head = document.createElement("div")
+  head.className = "sound-cue-head"
+  const title = document.createElement("span")
+  title.className = "sound-cue-title"
+  title.textContent = sample.label + (sample.primary ? "" : " · alt")
+  const playBtn = document.createElement("button")
+  playBtn.type = "button"
+  playBtn.className = "ctrl-btn primary"
+  playBtn.textContent = "▶ Play"
+  playBtn.addEventListener("click", () => void playSample(sample))
+  head.append(title, playBtn)
+
+  card.appendChild(head)
+  return card
+}
+
 function initSoundLab() {
   const list = getElement("sound-cues")
   for (const cue of CUES) list.appendChild(buildCueCard(cue))
+
+  const samples = getElement("sound-samples")
+  for (const sample of SAMPLES) samples.appendChild(buildSampleRow(sample))
 
   const masterRange = getInputElement("sound-master-range")
   const masterReadout = getElement("sound-master-readout")
@@ -385,6 +706,7 @@ function initSoundLab() {
   })
 
   getButtonElement("sound-sequence-btn").addEventListener("click", playSequence)
+  getButtonElement("sound-sample-sequence-btn").addEventListener("click", () => void playSampleSequence())
 }
 
 initSoundLab()

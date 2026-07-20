@@ -29,6 +29,10 @@ const MIME_TYPES = {
   ".woff2": "font/woff2",
   ".ttf": "font/ttf",
   ".txt": "text/plain; charset=utf-8",
+  ".m4a": "audio/mp4",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".ogg": "audio/ogg",
 }
 
 // Assets are versioned by the `?v=<mtime>` cache-busters injected into HTML
@@ -55,6 +59,10 @@ const CACHE_CONTROL = {
   ".woff": ASSET_CACHE_CONTROL,
   ".woff2": ASSET_CACHE_CONTROL,
   ".ttf": ASSET_CACHE_CONTROL,
+  ".m4a": ASSET_CACHE_CONTROL,
+  ".mp3": ASSET_CACHE_CONTROL,
+  ".wav": ASSET_CACHE_CONTROL,
+  ".ogg": ASSET_CACHE_CONTROL,
 }
 
 const THEME_INIT_TAG = '<script src="/components/theme-init.js"></script>'

@@ -67,13 +67,17 @@
         </div>
       </div>
 
-      <p class="section-label">Cues</p>
+      <p class="section-label">Cues (synth)</p>
       <div id="sound-cues"></div>
+
+      <p class="section-label">Samples (CC0 recordings)</p>
+      <div id="sound-samples"></div>
     </div>
 
     <footer class="studio-foot">
-      <button type="button" class="ctrl-btn primary" id="sound-sequence-btn">▶ Play sequence</button>
-      <p class="studio-note">Audio is synthesized live (no files). First play unlocks sound (autoplay policy). If approved, these voices move to a muted-by-default, reduced-motion-gated <strong>card-sound.js</strong> on the thanks page.</p>
+      <button type="button" class="ctrl-btn primary" id="sound-sequence-btn">▶ Play synth sequence</button>
+      <button type="button" class="ctrl-btn primary" id="sound-sample-sequence-btn">▶ Play sample sequence</button>
+      <p class="studio-note">A/B the two rows: <strong>synth</strong> cues are generated live (tunable), <strong>samples</strong> are real CC0 recordings (BigSoundBank, see <code>public/sounds/card/SOURCES.md</code>) decoded through the same master gain/mute. First play unlocks sound (autoplay policy). If approved, the chosen voices move to a muted-by-default, reduced-motion-gated <strong>card-sound.js</strong> on the thanks page.</p>
       <p class="flash" id="sound-flash"></p>
     </footer>
   </aside>
