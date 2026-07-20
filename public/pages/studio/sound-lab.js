@@ -36,7 +36,7 @@
  */
 /** @import * as Types from "./types.js" */
 
-import { getElement, getButtonElement, getInputElement } from "../utils.js"
+import { getElement, getButtonElement, getInputElement, getTextAreaElement } from "../utils.js"
 
 // ---- Shared audio graph (lazy — autoplay policy needs a user gesture) -------
 
@@ -48,6 +48,32 @@ let master = null
 let bus = null
 let masterLevel = 0.4
 let muted = false
+
+// ---- Decision capture state (Jordana's per-beat verdict) --------------------
+
+/**
+ * The current per-beat selection, keyed by cue/beat id. `null` until picked (or
+ * restored from a saved decision). A value is "synth:<beat>", "sample:<file-id>",
+ * or "none" (silent) — the exact string the server whitelists.
+ * @type {Record<string, string | null>}
+ */
+const decisionChoices = {
+  "envelope-tap": null,
+  "envelope-open": null,
+  "word-cascade": null,
+  celebration: null,
+}
+
+/**
+ * `${cueId}:${paramKey}` → a function that writes a value onto the live cue AND
+ * its slider + readout, so a restored decision can push saved synthParams back
+ * onto the UI. Populated as sliders are built.
+ * @type {Map<string, (value: number) => void>}
+ */
+const sliderUpdaters = new Map()
+
+/** ISO timestamp of the last saved decision (loaded on open / set on save). */
+let lastSavedAt = ""
 
 /**
  * Synthesize a stereo reverb impulse response into an AudioBuffer: decaying
@@ -629,6 +655,14 @@ function buildSlider(cue, param) {
   })
   inputs.appendChild(range)
 
+  // Register a programmatic setter so a restored decision can push saved
+  // synthParams back onto this cue value + slider + readout.
+  sliderUpdaters.set(cue.id + ":" + param.key, (value) => {
+    cue.values[param.key] = value
+    range.value = String(value)
+    readout.textContent = formatValue(param, value)
+  })
+
   row.append(head, inputs)
   return row
 }
@@ -680,6 +714,210 @@ function buildSampleRow(sample) {
   return card
 }
 
+// ---- Decision capture (radio groups + play-my-mix + save/load) --------------
+
+/**
+ * Build one beat's radio group: the beat's synth cue, each sample for that beat,
+ * and "Silent". Nothing is checked until the user picks (or a saved decision is
+ * restored). Selecting a radio records the choice string in decisionChoices.
+ * @param {Types.SoundCue} cue @returns {HTMLFieldSetElement}
+ */
+function buildBeatGroup(cue) {
+  const group = document.createElement("fieldset")
+  group.className = "decision-group"
+  const legend = document.createElement("legend")
+  legend.textContent = cue.label
+  group.appendChild(legend)
+
+  /** @type {{ value: string; label: string }[]} */
+  const options = [{ value: "synth:" + cue.id, label: "Synth: " + cue.label }]
+  for (const sample of SAMPLES) {
+    if (sample.beat === cue.id) options.push({ value: "sample:" + sample.id, label: "Sample: " + sample.label })
+  }
+  options.push({ value: "none", label: "Silent" })
+
+  for (const opt of options) {
+    const row = document.createElement("label")
+    row.className = "decision-option"
+    const radio = document.createElement("input")
+    radio.type = "radio"
+    radio.name = "decision-" + cue.id
+    radio.value = opt.value
+    radio.addEventListener("change", () => {
+      if (radio.checked) decisionChoices[cue.id] = opt.value
+    })
+    const span = document.createElement("span")
+    span.textContent = opt.label
+    row.append(radio, span)
+    group.appendChild(row)
+  }
+  return group
+}
+
+/** Find a sample manifest entry by id. @param {string} id @returns {Types.SoundSample | undefined} */
+function sampleById(id) {
+  for (const sample of SAMPLES) if (sample.id === id) return sample
+  return undefined
+}
+
+/**
+ * Play the currently-selected option for each beat at the shared arc offsets,
+ * skipping silent beats — the same playback paths (synth cue / decoded sample)
+ * through the shared master gain + mute, so it sounds exactly as it will ship.
+ */
+async function playMix() {
+  const { ctx: c, master: m, bus: b } = audio()
+
+  /** @type {{ cue: Types.SoundCue; choice: string }[]} */
+  const chosen = []
+  for (const cue of CUES) {
+    const choice = decisionChoices[cue.id]
+    if (choice && choice !== "none") chosen.push({ cue, choice })
+  }
+  if (chosen.length === 0) {
+    flash("Pick a sound for at least one beat first (or it's silent everywhere).", "err")
+    return
+  }
+
+  try {
+    // Lazily fetch + decode any sample buffers the mix needs before scheduling,
+    // so the whole sequence lands on time.
+    /** @type {Map<string, AudioBuffer>} */
+    const bufByPath = new Map()
+    for (const { choice } of chosen) {
+      if (choice.startsWith("sample:")) {
+        const sample = sampleById(choice.slice("sample:".length))
+        if (sample) bufByPath.set(sample.path, await loadSample(c, sample.path))
+      }
+    }
+
+    const base = c.currentTime + 0.1
+    for (const { cue, choice } of chosen) {
+      const when = base + cue.offset
+      if (choice.startsWith("synth:")) {
+        cue.play(c, b, cue.values, when)
+      } else if (choice.startsWith("sample:")) {
+        const sample = sampleById(choice.slice("sample:".length))
+        const buf = sample && bufByPath.get(sample.path)
+        if (buf) scheduleSample(c, m, buf, when)
+      }
+    }
+    flash("Playing your mix (tap → open → cascade → celebration)", "ok")
+  } catch (err) {
+    flash("Mix failed: " + String(err), "err")
+  }
+}
+
+/** @param {string} iso @returns {string} */
+function formatSavedAt(iso) {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return iso
+  return date.toLocaleString()
+}
+
+/**
+ * POST the current decision (per-beat choices + notes + decidedBy + master level
+ * + a full synthParams snapshot) to the dev-only endpoint, which writes it to
+ * docs/post-wedding/sound-decision.json. Unpicked beats save as "none" (silent).
+ */
+async function saveDecision() {
+  const status = getElement("decision-status")
+
+  /** @type {Record<string, string>} */
+  const choices = {}
+  for (const cue of CUES) choices[cue.id] = decisionChoices[cue.id] ?? "none"
+
+  /** @type {Record<string, Record<string, number>>} */
+  const synthParams = {}
+  for (const cue of CUES) synthParams[cue.id] = { ...cue.values }
+
+  const body = {
+    choices,
+    notes: getTextAreaElement("decision-notes").value,
+    decidedBy: getInputElement("decision-decided-by").value,
+    masterLevel,
+    synthParams,
+  }
+
+  try {
+    const res = await fetch("/api/studio/sound-decision", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || "HTTP " + res.status)
+    lastSavedAt = typeof data.savedAt === "string" ? data.savedAt : ""
+    status.textContent = "Saved ✓ — " + (lastSavedAt ? formatSavedAt(lastSavedAt) : "just now")
+    status.className = "flash flash-ok"
+  } catch (err) {
+    status.textContent = "Save failed: " + (err instanceof Error ? err.message : String(err))
+    status.className = "flash flash-err"
+  }
+}
+
+/**
+ * Restore a previously-saved decision onto the UI: check radios, fill notes /
+ * decidedBy, restore the master level, and push saved synthParams back onto the
+ * cue sliders so "Play my mix" reproduces the saved synth exactly.
+ * @param {Record<string, any>} data
+ */
+function restoreDecision(data) {
+  const choices = data.choices && typeof data.choices === "object" ? data.choices : {}
+  for (const cue of CUES) {
+    const choice = choices[cue.id]
+    if (typeof choice !== "string") continue
+    decisionChoices[cue.id] = choice
+    const radios = document.getElementsByName("decision-" + cue.id)
+    for (const radio of radios) {
+      if (radio instanceof HTMLInputElement && radio.value === choice) radio.checked = true
+    }
+  }
+
+  if (typeof data.notes === "string") getTextAreaElement("decision-notes").value = data.notes
+  if (typeof data.decidedBy === "string") getInputElement("decision-decided-by").value = data.decidedBy
+
+  if (typeof data.masterLevel === "number") {
+    masterLevel = data.masterLevel
+    getInputElement("sound-master-range").value = String(masterLevel)
+    getElement("sound-master-readout").textContent = masterLevel.toFixed(2)
+    applyMasterGain()
+  }
+
+  const params = data.synthParams
+  if (params && typeof params === "object") {
+    for (const cue of CUES) {
+      const beatParams = params[cue.id]
+      if (!beatParams || typeof beatParams !== "object") continue
+      for (const key of Object.keys(beatParams)) {
+        const updater = sliderUpdaters.get(cue.id + ":" + key)
+        if (updater && typeof beatParams[key] === "number") updater(beatParams[key])
+      }
+    }
+  }
+
+  if (typeof data.savedAt === "string") {
+    lastSavedAt = data.savedAt
+    const status = getElement("decision-status")
+    status.textContent = "Last saved — " + formatSavedAt(data.savedAt)
+    status.className = "flash"
+  }
+}
+
+/** Load any previously-saved decision on open (dev tool — failures are silent). */
+async function loadDecision() {
+  try {
+    const res = await fetch("/api/studio/sound-decision")
+    if (!res.ok) return
+    const data = await res.json().catch(() => null)
+    if (!data || data.exists === false) return
+    restoreDecision(data)
+  } catch {
+    // Dev-only convenience — a stale/unreachable endpoint just means "nothing to
+    // restore"; the lab still works for a fresh decision.
+  }
+}
+
 function initSoundLab() {
   const list = getElement("sound-cues")
   for (const cue of CUES) list.appendChild(buildCueCard(cue))
@@ -707,6 +945,16 @@ function initSoundLab() {
 
   getButtonElement("sound-sequence-btn").addEventListener("click", playSequence)
   getButtonElement("sound-sample-sequence-btn").addEventListener("click", () => void playSampleSequence())
+
+  // Decision section: per-beat radio groups + play-my-mix + save.
+  const decision = getElement("sound-decision")
+  for (const cue of CUES) decision.appendChild(buildBeatGroup(cue))
+  getButtonElement("decision-mix-btn").addEventListener("click", () => void playMix())
+  getButtonElement("decision-save-btn").addEventListener("click", () => void saveDecision())
+
+  // Restore any previously-saved decision (async; the UI is fully usable before
+  // it resolves).
+  void loadDecision()
 }
 
 initSoundLab()

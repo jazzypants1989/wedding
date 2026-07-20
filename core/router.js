@@ -37,6 +37,7 @@ import * as adminMedia from "../api/admin/media.js"
 import * as siteContent from "../api/admin/site-content.js"
 import * as effectConfig from "../api/admin/effect-config.js"
 import * as setup from "../api/setup.js"
+import * as studio from "../api/studio.js"
 
 /** @type {Types.Route[]} */
 const routes = []
@@ -310,6 +311,12 @@ route("DELETE", "/api/admin/site-content", siteContent.reset, { admin: true })
 route("GET", "/api/admin/effect-config", effectConfig.get, { admin: true })
 route("PUT", "/api/admin/effect-config", effectConfig.update, { admin: true })
 route("DELETE", "/api/admin/effect-config", effectConfig.reset, { admin: true })
+
+// Dev-only Sound lab decision store (thank-you card reveal audio verdict). Gated
+// EXACTLY like the /studio page: api/studio.js 404s these when NODE_ENV ===
+// "production", mirroring core/static.js DEV_ONLY_PAGES.
+route("GET", "/api/studio/sound-decision", studio.get, { errorHandling: true })
+route("POST", "/api/studio/sound-decision", studio.save, { errorHandling: true })
 
 // Admin manual SMS routes
 route("GET", "/api/admin/manual-sms/guests", manualSms.getEligibleGuests, { admin: true })

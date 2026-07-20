@@ -72,6 +72,30 @@
 
       <p class="section-label">Samples (CC0 recordings)</p>
       <div id="sound-samples"></div>
+
+      <p class="section-label">Decision — Jordana's call</p>
+      <p class="studio-note">Pick one sound per beat (synth, a sample, or <strong>Silent</strong>), then <strong>Save decision</strong>. It's written to <code>docs/post-wedding/sound-decision.json</code> for a future agent to wire in — nothing ships to guests here.</p>
+      <div id="sound-decision"></div>
+      <div class="decision-meta">
+        <div class="control">
+          <div class="control-head">
+            <label for="decision-notes">Notes</label>
+          </div>
+          <textarea id="decision-notes" class="text-field" rows="4" maxlength="2000"
+            placeholder="anything the implementing agent should know — vibe, volume, timing…"></textarea>
+        </div>
+        <div class="control">
+          <div class="control-head">
+            <label for="decision-decided-by">Decided by (optional)</label>
+          </div>
+          <input type="text" id="decision-decided-by" class="text-field" maxlength="120" placeholder="e.g. Jordana">
+        </div>
+        <div class="decision-actions">
+          <button type="button" class="ctrl-btn primary" id="decision-mix-btn">▶ Play my mix</button>
+          <button type="button" class="ctrl-btn primary" id="decision-save-btn">💾 Save decision</button>
+        </div>
+        <p class="flash" id="decision-status" aria-live="polite"></p>
+      </div>
     </div>
 
     <footer class="studio-foot">

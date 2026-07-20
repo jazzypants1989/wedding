@@ -312,3 +312,48 @@
 #sound-sequence-btn {
   width: 100%;
 }
+
+/* Decision — per-beat radio groups + notes, below the Samples section. */
+.decision-group {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 8px 12px 10px;
+  margin: 0 0 12px;
+}
+
+.decision-group legend {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-primary);
+  padding: 0 4px;
+}
+
+.decision-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  padding: 3px 0;
+  cursor: pointer;
+}
+
+.decision-option input[type="radio"] {
+  accent-color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.decision-meta {
+  margin-top: 4px;
+}
+
+.decision-meta textarea.text-field {
+  resize: vertical;
+  min-height: 4.5em;
+}
+
+.decision-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 2px;
+}

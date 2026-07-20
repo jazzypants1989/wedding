@@ -354,3 +354,46 @@ export function thankYouReply(
 
 /** GET /api/thank-you/mine — signed-in "card waiting" banner surfacing; never 401s. */
 export function thankYouMine(req: IncomingMessage, res: ServerResponse): Promise<void>
+
+/** @file studio.js - Types for the dev-only Sound lab decision endpoint.
+ *  Named soundDecisionGet/Save (not bare get/post) — api/types.d.ts is one flat
+ *  namespace and rsvp.js already owns `get`/`post`. */
+
+/** Per-beat choice map: beat id → "synth:<beat>" | "sample:<file-id>" | "none". */
+export interface SoundDecisionChoices {
+  [beat: string]: string
+}
+
+/** Per-beat snapshot of the synth cue slider values (for exact reproduction). */
+export interface SoundDecisionSynthParams {
+  [beat: string]: Record<string, number>
+}
+
+/** The cleaned, storable decision input (server adds version + savedAt on write). */
+export interface SoundDecisionInput {
+  choices: SoundDecisionChoices
+  masterLevel: number
+  notes: string
+  decidedBy: string
+  synthParams: SoundDecisionSynthParams
+}
+
+/** Discriminated validation result for a decision POST body. */
+export type SoundDecisionValidation =
+  | { valid: true; value: SoundDecisionInput }
+  | { valid: false; error: string }
+
+/** Strict whitelist validation of a decision POST body (exported for tests). */
+export function validateSoundDecision(body: unknown): SoundDecisionValidation
+
+/** GET /api/studio/sound-decision — stored decision or { exists:false }; 404 in prod. */
+export function soundDecisionGet(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void>
+
+/** POST /api/studio/sound-decision — validate + atomically persist; 404 in prod. */
+export function soundDecisionSave(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void>
