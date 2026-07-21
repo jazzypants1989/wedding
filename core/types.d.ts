@@ -2,6 +2,7 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http"
 import type { Guest, RSVPWithGuest } from "../db/types.js"
+import type { GiftWithGuest, ThankYouCardWithGuest } from "../types.js"
 
 export interface SessionCookieData {
   token: string
@@ -191,6 +192,8 @@ export function parseCSV(csvString: string): CSVRow[]
 export function escapeCSVField(value: unknown): string
 export function guestsToCSV(guests: GuestForCSV[]): string
 export function rsvpsToCSV(rsvps: RSVPForCSV[]): string
+export function giftsToCSV(gifts: GiftWithGuest[]): string
+export function thankYouCardsToCSV(cards: ThankYouCardWithGuest[]): string
 
 export class AppError extends Error {
   constructor(message: string, statusCode?: number, code?: string)
@@ -330,6 +333,8 @@ interface AuditActions {
   readonly GIFT_UPDATE: "GIFT_UPDATE"
   readonly GIFT_DELETE: "GIFT_DELETE"
   readonly GIFT_PHYSICAL_TOGGLE: "GIFT_PHYSICAL_TOGGLE"
+  readonly GIFT_EXPORT: "GIFT_EXPORT"
+  readonly THANK_YOU_CARD_EXPORT: "THANK_YOU_CARD_EXPORT"
   readonly THANK_YOU_CARD_CREATE: "THANK_YOU_CARD_CREATE"
   readonly THANK_YOU_CARD_UPDATE: "THANK_YOU_CARD_UPDATE"
   readonly THANK_YOU_CARD_DELETE: "THANK_YOU_CARD_DELETE"
@@ -641,7 +646,7 @@ export interface BlankedRegion {
  * the values, offsets unchanged). Returns the blanked regions ([] for a
  * GPS-free file, which is a byte-exact no-op). Never throws.
  */
-export function blankVideoGps(filePath: string): BlankedRegion[]
+export function blankVideoGps(filePath: string): Promise<BlankedRegion[]>
 
 // --- Media storage layout (core/media-storage.js) ---
 

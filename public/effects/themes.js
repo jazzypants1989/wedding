@@ -51,8 +51,9 @@ export const EFFECT_THEMES = [
   {
     id: "elegant",
     label: "Elegant",
-    // Refined, calm: fine champagne dust + sparse gold accents.
-    effectIds: ["dust", "namespark", "dividers", "parallaxsparkles"],
+    // Refined, calm: fine champagne dust + sparse gold accents, a whisper of
+    // calligraphy sparkle, and a gentle depth-tilt on the couple photo.
+    effectIds: ["dust", "namespark", "dividers", "parallaxsparkles", "inksparkle", "tiltdepth"],
     configs: {
       namespark: { shimmerColor: "gold" },
       dividers: { dotDensity: 10, color: 0.7 },
@@ -62,6 +63,16 @@ export const EFFECT_THEMES = [
         layerCount: 3,
         opacityRange: [0.15, 0.45],
         glowThreshold: 0.85,
+      },
+      // Sparse gold-only glyphs so the calligraphy sparkle stays refined.
+      inksparkle: { glyphCount: 9, glyphs: ["✧", "✦"] },
+      // Multi-target selector: the couple/hero photo on the landing page, and
+      // card/polaroid frames where this theme rides a thank-you card. No match
+      // on a page → the effect no-ops. Conservative tilt so it's barely-there.
+      tiltdepth: {
+        selector: ".couple-photo, .hero-image, .tc-card, .tc-polaroid",
+        maxTilt: 4,
+        depth: 8,
       },
     },
   },
@@ -127,21 +138,25 @@ export const EFFECT_THEMES = [
   {
     id: "celebration",
     label: "Celebration",
-    // Warm-gold jubilation: champagne fizz, rising paper lanterns, light dust.
-    effectIds: ["fizz", "lanterns", "dust", "namespark", "dividers"],
+    // Warm-gold jubilation: champagne fizz, rising paper lanterns, light dust,
+    // and a gentle drift of tumbling confetti over it all.
+    effectIds: ["fizz", "lanterns", "dust", "confettidrift", "namespark", "dividers"],
     configs: {
       namespark: { shimmerColor: "gold" },
       dividers: { dotDensity: 14, color: 0.7 },
       fizz: { streamCount: 4 },
       lanterns: { lanternCount: 8 },
       dust: { density: 20 },
+      // Sparse, slow confetti so it reads as ambient jubilation, not a party popper.
+      confettidrift: { pieceCount: 12 },
     },
   },
   {
     id: "gratitude",
     label: "Gratitude",
-    // Tender rose thank-you: drifting petals, edge ribbons, rising hearts.
-    effectIds: ["petals", "ribbons", "hearts", "namespark", "dividers"],
+    // Tender rose thank-you: drifting petals, edge ribbons, rising hearts, a
+    // whisper of calligraphy sparkle, and a soft glint across framed keepsakes.
+    effectIds: ["petals", "ribbons", "hearts", "inksparkle", "frameglint", "namespark", "dividers"],
     configs: {
       namespark: { shimmerColor: "pink" },
       dividers: { dotDensity: 12, color: 0.7 },
@@ -150,6 +165,9 @@ export const EFFECT_THEMES = [
       // hardcoded hex list here would fight that and go stale on retheme.
       petals: { petalCount: 14 },
       hearts: { heartCount: 12 },
+      inksparkle: { glyphCount: 9 },
+      // Subtle, slow specular sweep across any framed keepsake (.tc-polaroid).
+      frameglint: { intensity: 0.4, sweepIntervalMs: 8000 },
     },
   },
 ]

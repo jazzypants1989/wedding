@@ -65,6 +65,23 @@ export function playReveal(cardEl, opts) {
     opts.envelopeEl.removeAttribute("tabindex")
   }
 
+  // The card's content is mounted before the reveal but only hidden visually
+  // (opacity) while sealed/opening — without this, a screen reader walks the
+  // whole message before the envelope is ever "opened", spoiling the reveal.
+  // Sealed on first run only: a replay re-seals the visuals, but the content is
+  // no longer a surprise (and re-inerting would fight the focus hop onto the
+  // card that skip/replay perform).
+  function sealCard() {
+    if (!opts.cardEl) return
+    opts.cardEl.inert = true
+    opts.cardEl.setAttribute("aria-hidden", "true")
+  }
+  function unsealCard() {
+    if (!opts.cardEl) return
+    opts.cardEl.inert = false
+    opts.cardEl.removeAttribute("aria-hidden")
+  }
+
   /**
    * True only for the skip()/replay() abort. cancellableDelay rejects with
    * `signal.reason` — a DOMException named "AbortError" when abort() is called
@@ -108,6 +125,8 @@ export function playReveal(cardEl, opts) {
       }
       setStage("unfolding")
       hideEnvelope()
+      // Un-inert before the opened beat — the host focuses the card there.
+      unsealCard()
       beat("opened", () => opts.onOpened?.())
       await cancellableDelay(step(TIMINGS.unfolding), signal)
 
@@ -136,6 +155,7 @@ export function playReveal(cardEl, opts) {
       // the reply UI + ambient effects are up and land on `complete`.
       console.error("Reveal sequence failed; forcing complete:", err)
       hideEnvelope()
+      unsealCard()
       beat("reply", () => opts.onReply?.())
       if (!reduced) beat("ambient", () => opts.onAmbient?.())
       setStage("complete")
@@ -145,6 +165,7 @@ export function playReveal(cardEl, opts) {
 
   // sealed: the interaction gate. The card opens only when the recipient taps.
   setStage("sealed")
+  sealCard()
   function onTap() {
     opts.envelopeEl.removeEventListener("click", onTap)
     // Fire exactly once, on the real open (never on replay): the view beacon +
@@ -160,6 +181,7 @@ export function playReveal(cardEl, opts) {
       runController.abort()
       opts.envelopeEl.removeEventListener("click", onTap)
       // Jump straight to the end: mount reply, start effects, show the card fully.
+      unsealCard()
       beat("reply", () => opts.onReply?.())
       if (!reduced) beat("ambient", () => opts.onAmbient?.())
       hideEnvelope()

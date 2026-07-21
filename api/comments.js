@@ -21,6 +21,7 @@ import {
 } from "../core/validation.js"
 import { LIMITS, CONTENT_STATUS, TARGET_TYPE } from "../types.js"
 import { log, AUDIT_ACTIONS } from "../core/utils.js"
+import { getWeddingFacts } from "../core/wedding-facts.js"
 
 /** @param {GlobalTypes.TargetType} targetType @returns {string} */
 function targetLabel(targetType) {
@@ -28,18 +29,23 @@ function targetLabel(targetType) {
 }
 
 /**
- * Map a raw comment row (SQLite 0|1 flags) to the public shape (booleans).
+ * Map a raw comment row (SQLite 0|1 flags) to the public shape (booleans). A
+ * host/couple reply (account_id NULL → is_host) has no accounts row, so its
+ * author name is resolved to the couple's display name.
  * @param {GlobalTypes.CommentFeedRow} row
+ * @param {string} hostName
  * @returns {GlobalTypes.CommentListItem}
  */
-function toCommentItem(row) {
+function toCommentItem(row, hostName) {
+  const isHost = !!row.is_host
   return {
     id: row.id,
     message: row.message,
-    author_name: row.author_name,
+    author_name: isHost ? hostName : row.author_name ?? "",
     status: row.status,
     created_at: row.created_at,
     is_own: !!row.is_own,
+    is_host: isHost,
   }
 }
 
@@ -69,19 +75,27 @@ async function list(req, res, { params }, targetType) {
     targetId: idResult.value,
     callerId,
   })
-  return sendJson(res, 200, { comments: rows.map(toCommentItem) })
+  const hostName = getWeddingFacts().coupleNames
+  return sendJson(res, 200, {
+    comments: rows.map((row) => toCommentItem(row, hostName)),
+  })
 }
 
 /**
- * POST a comment. Hybrid moderation mirrors the guestbook: trusted → approved
- * instantly, untrusted → pending. 404 if the parent isn't visible to the caller.
+ * POST a comment. A guest posts under hybrid moderation (trusted → approved,
+ * untrusted → pending). An admin (couple) posts a HOST reply: account_id NULL,
+ * always approved, author name = the couple's display name. 404 if the parent
+ * isn't visible to the caller.
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
- * @param {import('../core/types.js').AccountRouteInfo} routeInfo
+ * @param {import('../core/types.js').AccountOrAdminRouteInfo} routeInfo
  * @param {GlobalTypes.TargetType} targetType
  */
-async function create(req, res, { params, account }, targetType) {
-  if (checkRateLimit(res, limiters.commentPost, "acct:" + account.account_id)) {
+async function create(req, res, { params, principal }, targetType) {
+  const isHost = principal.isAdmin
+  // A guest is rate-limited per account; the couple posting host replies isn't.
+  const rateKey = isHost ? "admin:comment" : "acct:" + principal.accountId
+  if (checkRateLimit(res, limiters.commentPost, rateKey)) {
     return
   }
 
@@ -98,16 +112,24 @@ async function create(req, res, { params, account }, targetType) {
 
   // Parent visibility pre-check → the BEFORE INSERT existence trigger stays a
   // backstop (a raw RAISE(ABORT) would surface as a generic 500 otherwise).
-  if (!isTargetVisible(targetType, idResult.value, account.account_id)) {
+  // An admin sees everything approved; guests gate on their own account.
+  if (!isTargetVisible(targetType, idResult.value, principal.accountId)) {
     throw new NotFoundError(targetLabel(targetType))
   }
 
-  const status = account.trusted
-    ? CONTENT_STATUS.APPROVED
-    : CONTENT_STATUS.PENDING
+  // Host replies are auto-approved; guest content follows hybrid moderation.
+  const status =
+    isHost || principal.trusted
+      ? CONTENT_STATUS.APPROVED
+      : CONTENT_STATUS.PENDING
+
+  const accountId = isHost ? null : principal.accountId
+  const authorName = isHost
+    ? getWeddingFacts().coupleNames
+    : /** @type {GlobalTypes.AccountSession} */ (principal.session).name
 
   const comment = createComment({
-    accountId: account.account_id,
+    accountId,
     targetType,
     targetId: idResult.value,
     message: messageResult.value,
@@ -116,10 +138,11 @@ async function create(req, res, { params, account }, targetType) {
 
   log({
     action: AUDIT_ACTIONS.COMMENT_CREATE,
+    adminId: isHost ? principal.session.token : undefined,
     ip: getClientIp(req),
     resourceType: "comment",
     resourceId: comment.id,
-    details: { targetType, targetId: idResult.value, status },
+    details: { targetType, targetId: idResult.value, status, host: isHost },
   })
 
   // No notification call — the digest service discovers pending items on its own
@@ -128,10 +151,11 @@ async function create(req, res, { params, account }, targetType) {
     comment: {
       id: comment.id,
       message: comment.message,
-      author_name: account.name,
+      author_name: authorName,
       status: comment.status,
       created_at: comment.created_at,
       is_own: true,
+      is_host: isHost,
     },
     status,
   })

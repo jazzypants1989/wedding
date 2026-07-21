@@ -50,6 +50,44 @@ export const THANK_YOU_TEMPLATES = [
 ]
 
 /**
+ * One-tap occasion presets (D3): a matching theme + a curated effect stack.
+ * Effect ids match the registry (public/effects/registry.js) and each config is
+ * the effect's defaults (an empty sparse partial), which is always valid per
+ * effect-config-schema. Kept here (the pure, DOM-free module) so it's unit-
+ * testable against the schema. Theme ids are real EFFECT_THEMES ids.
+ * @type {{ id: string, label: string, theme: string, effects: { id: string, config: Record<string, unknown> }[] }[]}
+ */
+export const OCCASION_PRESETS = [
+  {
+    id: "toast",
+    label: "🥂 Toast",
+    theme: "elegant",
+    effects: [
+      { id: "fizz", config: {} },
+      { id: "frameglint", config: {} },
+    ],
+  },
+  {
+    id: "festival",
+    label: "🏮 Festival",
+    theme: "celebration",
+    effects: [
+      { id: "lanterns", config: {} },
+      { id: "inksparkle", config: {} },
+    ],
+  },
+  {
+    id: "jubilee",
+    label: "🎊 Jubilee",
+    theme: "gratitude",
+    effects: [
+      { id: "confettidrift", config: {} },
+      { id: "ribbons", config: {} },
+    ],
+  },
+]
+
+/**
  * A minimal gift shape for template selection / weaving — a real GiftWithGuest
  * is assignable to this. `amount` is admin-only and is used ONLY as a selection
  * signal here; it is NEVER woven into card text (only `description` is shown).
@@ -166,6 +204,32 @@ function firstName(name) {
 export function buildSeedMessage(gift, recipientName) {
   const id = selectTemplateId(gift)
   const tpl = THANK_YOU_TEMPLATES.find((t) => t.id === id) || THANK_YOU_TEMPLATES[0]
+  const desc = gift && typeof gift.description === "string" ? gift.description : ""
+  const woven = weaveGift(tpl.message, desc, tpl.giftFallback)
+  return renderMessage(woven, { name: firstName(recipientName) })
+}
+
+/**
+ * Reroll to a DIFFERENT starter than the smart default (task D2's "↻ Reroll"):
+ * deterministically rotate through THANK_YOU_TEMPLATES by click count, weave the
+ * gift's description into the {gift} slot, and resolve {name}. `rerollCount` is
+ * 1-based (the first click yields the template after the gift's best-fit pick),
+ * so repeated clicks cycle predictably. Pure — no DOM, no regex.
+ * @param {GiftLike | null | undefined} gift
+ * @param {string} recipientName
+ * @param {number} rerollCount
+ * @returns {string}
+ */
+export function rerollSeedMessage(gift, recipientName, rerollCount) {
+  // Anchor the rotation at the gift's best-fit template so click #1 lands on the
+  // NEXT starter, not a repeat of the seeded default.
+  const baseId = selectTemplateId(gift)
+  const baseIdx = THANK_YOU_TEMPLATES.findIndex((t) => t.id === baseId)
+  const anchor = baseIdx === -1 ? 0 : baseIdx
+  const n = THANK_YOU_TEMPLATES.length
+  const safeCount = Number.isFinite(rerollCount) ? Math.trunc(rerollCount) : 0
+  const idx = (((anchor + safeCount) % n) + n) % n
+  const tpl = THANK_YOU_TEMPLATES[idx]
   const desc = gift && typeof gift.description === "string" ? gift.description : ""
   const woven = weaveGift(tpl.message, desc, tpl.giftFallback)
   return renderMessage(woven, { name: firstName(recipientName) })

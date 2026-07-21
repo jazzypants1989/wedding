@@ -4,6 +4,8 @@
 import { sendJson } from "../core/http.js"
 import { FEATURES, SERVER } from "../types.js"
 import { getContent, getMode } from "../core/site-content.js"
+import { countApprovedGuestMedia } from "../db/media.js"
+import { countApprovedGuestbook } from "../db/guestbook-entries.js"
 
 /** @type {Types.getConfig} */
 export function get(req, res) {
@@ -20,5 +22,12 @@ export function get(req, res) {
     // scalars (content.js is the single source).
     mode: getMode(),
     coupleDisplay: getContent().couple.display,
+    // Public "moments shared" tally for the landing Memories line: approved,
+    // visible guest photos + guestbook notes. Two cheap indexed COUNT(*)s; the
+    // landing renders their sum, or nothing if the whole config fetch fails.
+    counts: {
+      photos: countApprovedGuestMedia(),
+      notes: countApprovedGuestbook(),
+    },
   })
 }

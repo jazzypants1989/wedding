@@ -706,6 +706,13 @@ code {
   display: none;
 }
 
+/* Live "N photos & notes" tally under the Memories copy. */
+.memories-count {
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+  font-style: italic;
+}
+
 [data-mode="post"] #schedule,
 [data-mode="post"] #dress-code {
   display: none;

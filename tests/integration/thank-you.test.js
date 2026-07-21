@@ -25,11 +25,12 @@ import assert from "node:assert"
 import crypto from "node:crypto"
 
 import { init, close, getDb } from "../../db/connection.js"
-import { createThankYouCard, markCardSent } from "../../db/thank-you-cards.js"
+import { createThankYouCard, markCardSent, setCardReply } from "../../db/thank-you-cards.js"
 import { createGift as createGiftDb } from "../../db/gifts.js"
 import {
   startServer,
   stopServer,
+  startAuxServer,
   createTestGuest,
   createTestAccount,
   createTestAccountSession,
@@ -39,6 +40,7 @@ import {
   adminFetch,
   readAuditLog,
   BASE_URL,
+  TEST_PORT,
 } from "../helpers.js"
 
 /** @type {DatabaseSync} */
@@ -226,6 +228,27 @@ describe("Digital thank-you cards (Phase 3 public API)", () => {
       const { token } = seedDraftCard()
       const draft = await fetch(`${BASE_URL}/api/thank-you/${token}/opened`, { method: "POST" })
       assert.strictEqual(draft.status, 404)
+    })
+
+    it("the open beacon 404s a soft-deleted card and never bumps its view_count", async () => {
+      const { token, cardId } = seedSentCard()
+      // One legitimate open first, so view_count has a known non-zero baseline.
+      await fetch(`${BASE_URL}/api/thank-you/${token}/opened`, { method: "POST" })
+      const before = /** @type {any} */ (
+        db.prepare("SELECT view_count FROM thank_you_cards WHERE id = ?").get(cardId)
+      )
+      assert.strictEqual(before.view_count, 1)
+
+      // Soft-delete, then the beacon must 404 (like the GET) AND leave view_count
+      // untouched — recordCardOpen's WHERE clause filters deleted_at IS NULL.
+      db.prepare("UPDATE thank_you_cards SET deleted_at = datetime('now') WHERE id = ?").run(cardId)
+      const res = await fetch(`${BASE_URL}/api/thank-you/${token}/opened`, { method: "POST" })
+      assert.strictEqual(res.status, 404)
+
+      const after = /** @type {any} */ (
+        db.prepare("SELECT view_count FROM thank_you_cards WHERE id = ?").get(cardId)
+      )
+      assert.strictEqual(after.view_count, 1, "no view_count bump on a soft-deleted card")
     })
 
     it("resolves media_keys to approved, non-deleted media items only", async () => {
@@ -1207,6 +1230,83 @@ describe("Digital thank-you cards (Phase 3 public API)", () => {
       })
     })
 
+    describe("send-failure compensation (A2)", () => {
+      /** A dedicated server whose email provider is CONFIGURED (RESEND_API_KEY set)
+       *  but deterministically FAILS every outbound call (SERVICE_FORCE_FAILURE) —
+       *  no network touched. It shares this suite's DB, so the admin cookie stays
+       *  valid; kept separate so the main suite's "provider not configured" tests
+       *  are unaffected. Its own high port avoids colliding with the suite server.
+       *  @type {{ baseUrl: string, stop: () => Promise<void> } | null} */
+      let aux = null
+
+      before(async () => {
+        aux = await startAuxServer(
+          {
+            RESEND_API_KEY: "test-forced-fail-key",
+            FROM_EMAIL: "couple@example.com",
+            SERVICE_FORCE_FAILURE: "1",
+          },
+          TEST_PORT + 500,
+        )
+      })
+
+      after(async () => {
+        if (aux) await aux.stop()
+        aux = null
+      })
+
+      it("rolls a failed send back to draft and logs a failed communication", async (t) => {
+        if (!hasAdmin) return t.skip("TEST_ADMIN_PASSWORD not set")
+        const auth = admin
+        if (!auth || !aux) return t.skip("admin/aux server unavailable")
+
+        // A fresh draft card for a guest who has an email (createTestGuest seeds one).
+        const guest = createTestGuest(db)
+        const card = createThankYouCard({
+          guestId: Number(guest.id),
+          giftId: null,
+          message: "Thank you!",
+          theme: "classic",
+          effectsConfig: undefined,
+          mediaKeys: undefined,
+        })
+
+        // Drive /send against the failing-provider server, reusing the admin cookie.
+        const res = await fetch(`${aux.baseUrl}/api/admin/thank-you/send`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Cookie": auth.cookieHeader,
+            "X-CSRF-Token": auth.csrfToken,
+          },
+          body: JSON.stringify({ cardId: card.id, type: "email" }),
+        })
+        assert.strictEqual(res.status, 502, "a provider failure surfaces as 502 SEND_FAILED")
+
+        // Compensation: the claim is undone — the card is a retryable draft again.
+        const row = /** @type {any} */ (
+          db
+            .prepare("SELECT status, sent_at, sent_via FROM thank_you_cards WHERE id = ?")
+            .get(card.id)
+        )
+        assert.strictEqual(row.status, "draft", "card reset to draft")
+        assert.strictEqual(row.sent_at, null, "sent_at cleared")
+        assert.strictEqual(row.sent_via, null, "sent_via cleared")
+
+        // And the failed attempt was recorded in the communications ledger.
+        const comm = /** @type {any} */ (
+          db
+            .prepare(
+              "SELECT type, status FROM communications WHERE guest_id = ? ORDER BY id DESC LIMIT 1",
+            )
+            .get(Number(guest.id))
+        )
+        assert.ok(comm, "a communication row was written")
+        assert.strictEqual(comm.status, "failed")
+        assert.strictEqual(comm.type, "email")
+      })
+    })
+
     describe("clear-reply lever", () => {
       it("clears the reply surface, retains history, and logs THANK_YOU_REPLY_CLEAR", async (t) => {
         if (!hasAdmin) return t.skip("TEST_ADMIN_PASSWORD not set")
@@ -1257,6 +1357,38 @@ describe("Digital thank-you cards (Phase 3 public API)", () => {
           if (!logged) await new Promise((r) => setTimeout(r, 25))
         }
         assert.ok(logged, "THANK_YOU_REPLY_CLEAR logged")
+      })
+
+      it("retains the FULL reply history after a clear (two replies → both rows kept)", async (t) => {
+        if (!hasAdmin) return t.skip("TEST_ADMIN_PASSWORD not set")
+
+        const { card } = await createGuestAndDraftCard()
+        await markSentViaAdmin(card.id)
+        await postReply(card.token, { emoji: "heart", message: "First!" })
+        await postReply(card.token, { emoji: "cheers", message: "Second!" })
+
+        // Both replies live in the append-only history before the clear.
+        const before = await json(await asAdmin(`/api/admin/thank-you/${card.id}`))
+        assert.strictEqual(before.replies.length, 2)
+
+        const res = await asAdmin(`/api/admin/thank-you/cards/${card.id}/clear-reply`, {
+          method: "POST",
+          body: JSON.stringify({}),
+        })
+        assert.strictEqual(res.status, 200)
+
+        // Surface columns wiped, but thank_you_card_replies STILL holds both rows
+        // (clearCardReply is surface-only — history is a keepsake, never deleted).
+        const after = await json(await asAdmin(`/api/admin/thank-you/${card.id}`))
+        assert.strictEqual(after.card.reply_emoji, null, "surface wiped")
+        assert.strictEqual(after.replies.length, 2, "both history rows retained")
+        // Assert directly against the table too, not just the API projection.
+        const rows = /** @type {any} */ (
+          db
+            .prepare("SELECT COUNT(*) AS n FROM thank_you_card_replies WHERE card_id = ?")
+            .get(card.id)
+        )
+        assert.strictEqual(rows.n, 2)
       })
 
       it("404s clearing a reply on an unknown card", async (t) => {
@@ -1508,6 +1640,124 @@ describe("Digital thank-you cards (Phase 3 public API)", () => {
           )
         }
       })
+    })
+  })
+
+  // ---- A1/D1: cross-card recent replies feed (Inbox + Mailbox) ----
+  describe("GET /api/admin/thank-you/replies (recent replies)", () => {
+    it("is admin-gated (401 unauthenticated)", async () => {
+      const res = await fetch(`${BASE_URL}/api/admin/thank-you/replies`)
+      assert.strictEqual(res.status, 401)
+    })
+
+    it("returns replies newest-first with unread flags, clearing on reply-seen", async () => {
+      if (!hasAdmin) return
+      const a = seedSentCard({ message: "Card A" })
+      const b = seedSentCard({ message: "Card B" })
+      // Reply to A first, then B — B is newer, so it must lead the feed.
+      setCardReply(a.cardId, { emoji: "heart", message: "Loved it, thank you!" })
+      setCardReply(b.cardId, { emoji: "cheers", message: "Cheers!" })
+
+      const res = await asAdmin("/api/admin/thank-you/replies")
+      assert.strictEqual(res.status, 200)
+      const data = await json(res)
+      assert.ok(Array.isArray(data.replies))
+      const forA = data.replies.filter((/** @type {any} */ r) => r.cardId === a.cardId)
+      const forB = data.replies.filter((/** @type {any} */ r) => r.cardId === b.cardId)
+      assert.strictEqual(forA.length, 1)
+      assert.strictEqual(forB.length, 1)
+      // Newest-first: B's reply (later) appears before A's in the array.
+      const idxA = data.replies.findIndex((/** @type {any} */ r) => r.cardId === a.cardId)
+      const idxB = data.replies.findIndex((/** @type {any} */ r) => r.cardId === b.cardId)
+      assert.ok(idxB < idxA, "newer reply (B) is listed before older (A)")
+      // Both start unread; each carries the guest name + emoji glyph key.
+      assert.strictEqual(forA[0].unread, true)
+      assert.strictEqual(forB[0].unread, true)
+      assert.strictEqual(forA[0].emoji, "heart")
+      assert.ok(typeof forA[0].guestName === "string" && forA[0].guestName.length > 0)
+
+      // Acknowledge card A → its reply flips to read; B stays unread.
+      const seen = await asAdmin(`/api/admin/thank-you/${a.cardId}/reply-seen`, {
+        method: "POST",
+      })
+      assert.strictEqual(seen.status, 200)
+      const after = await json(await asAdmin("/api/admin/thank-you/replies"))
+      const afterA = after.replies.find((/** @type {any} */ r) => r.cardId === a.cardId)
+      const afterB = after.replies.find((/** @type {any} */ r) => r.cardId === b.cardId)
+      assert.strictEqual(afterA.unread, false)
+      assert.strictEqual(afterB.unread, true)
+    })
+
+    it("clamps the limit and honours it", async () => {
+      if (!hasAdmin) return
+      for (let i = 0; i < 3; i++) {
+        const c = seedSentCard({ message: `Card ${i}` })
+        setCardReply(c.cardId, { emoji: "heart", message: `reply ${i}` })
+      }
+      const res = await asAdmin("/api/admin/thank-you/replies?limit=2")
+      const data = await json(res)
+      assert.strictEqual(data.replies.length, 2)
+    })
+  })
+
+  // ---- A3: "Most loved" guest media curation ----
+  describe("GET /api/admin/media/guest-loved (reaction-count sort)", () => {
+    /** Insert `n` distinct-account heart reactions on a media row. */
+    function addReactions(/** @type {number} */ mediaId, /** @type {number} */ n) {
+      for (let i = 0; i < n; i++) {
+        const acct = createTestAccount(db)
+        db.prepare(
+          `INSERT INTO reactions (account_id, target_type, target_id, emoji)
+           VALUES (?, 'media', ?, 'heart')`,
+        ).run(Number(acct.id), mediaId)
+      }
+    }
+    /** @param {string} fileKey @returns {number} */
+    function mediaIdFor(fileKey) {
+      const row = /** @type {any} */ (
+        db.prepare(`SELECT id FROM media WHERE file_key = ?`).get(fileKey)
+      )
+      return Number(row.id)
+    }
+
+    it("is admin-gated (401 unauthenticated)", async () => {
+      const res = await fetch(`${BASE_URL}/api/admin/media/guest-loved`)
+      assert.strictEqual(res.status, 401)
+    })
+
+    it("ranks approved guest media by total reaction count, with the total on each item", async () => {
+      if (!hasAdmin) return
+      const low = mediaIdFor(seedMediaRow())
+      const high = mediaIdFor(seedMediaRow())
+      const mid = mediaIdFor(seedMediaRow())
+      addReactions(low, 1)
+      addReactions(high, 3)
+      addReactions(mid, 2)
+
+      const res = await asAdmin("/api/admin/media/guest-loved")
+      assert.strictEqual(res.status, 200)
+      const data = await json(res)
+      const ids = data.items.map((/** @type {any} */ m) => m.id)
+      // Descending by reaction count: high(3) → mid(2) → low(1).
+      assert.deepStrictEqual(
+        [ids.indexOf(high) < ids.indexOf(mid), ids.indexOf(mid) < ids.indexOf(low)],
+        [true, true],
+      )
+      const highItem = data.items.find((/** @type {any} */ m) => m.id === high)
+      assert.strictEqual(highItem.reaction_count, 3)
+    })
+  })
+
+  // ---- D5: printable memory book public page ----
+  describe("GET /memory-book (public page)", () => {
+    it("serves 200 HTML with the same security headers as other pages", async () => {
+      const res = await fetch(`${BASE_URL}/memory-book`)
+      assert.strictEqual(res.status, 200)
+      assert.ok((res.headers.get("content-type") || "").includes("text/html"))
+      assert.ok(res.headers.get("content-security-policy"), "has a CSP header")
+      assert.strictEqual(res.headers.get("x-content-type-options"), "nosniff")
+      const body = await res.text()
+      assert.ok(body.includes("Memory Book"), "renders the memory book title")
     })
   })
 })

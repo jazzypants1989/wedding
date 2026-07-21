@@ -8,7 +8,15 @@
 /** @import * as Components from '../../components/types.js' */
 
 import { state } from "./state.js"
-import { api, openModal, closeModal, showSuccess, showLoading, showLoadError } from "./utils.js"
+import {
+  api,
+  openModal,
+  closeModal,
+  showSuccess,
+  showError,
+  showLoading,
+  showLoadError,
+} from "./utils.js"
 import {
   html,
   getElement,
@@ -67,6 +75,107 @@ function renderGrid() {
     return
   }
   grid.innerHTML = html`${items.map(itemMarkup)}`
+}
+
+// ---- "Most loved" guest curation (A3) -------------------------------------
+
+/** Official ⇆ Most-loved sub-view within the Gallery tab. */
+let gallerySubView = /** @type {"official" | "loved"} */ ("official")
+
+/** @param {"official" | "loved"} view */
+function showGallerySubView(view) {
+  gallerySubView = view
+  getElement("gallery-official-view").hidden = view !== "official"
+  getElement("gallery-loved-view").hidden = view !== "loved"
+  for (const [id, name] of /** @type {[string, "official" | "loved"][]} */ ([
+    ["gallery-sub-official", "official"],
+    ["gallery-sub-loved", "loved"],
+  ])) {
+    const btn = getButtonElement(id)
+    const active = name === view
+    btn.classList.toggle("active", active)
+    btn.setAttribute("aria-selected", active ? "true" : "false")
+  }
+  if (view === "loved") void loadLoved()
+}
+
+/** Load approved guest media ranked by total reaction count (server-side sort,
+ *  so "Most loved" is globally correct, not just over a loaded window). */
+async function loadLoved() {
+  const grid = getElement("loved-grid")
+  showLoading(grid)
+  try {
+    const data = /** @type {Types.LovedMediaResponse} */ (
+      await api("/api/admin/media/guest-loved?limit=60")
+    )
+    renderLoved(data.items)
+  } catch (err) {
+    showLoadError(grid, 1, "Couldn't load the most-loved photos.", () => void loadLoved())
+  }
+}
+
+/** @param {Types.LovedMediaItem[]} items */
+function renderLoved(items) {
+  const grid = getElement("loved-grid")
+  if (items.length === 0) {
+    grid.innerHTML = html`<p class="curated-empty">
+      No guest photos have reactions yet. Once guests start reacting, the most-loved rise to the top here.
+    </p>`
+    return
+  }
+  grid.innerHTML = html`${items.map(lovedItemMarkup)}`
+}
+
+/** @param {Types.LovedMediaItem} item @returns {string} */
+function lovedItemMarkup(item) {
+  const isVideo = item.kind === "video"
+  const thumb =
+    item.needs_display && !isVideo
+      ? html`<div class="curated-thumb mod-thumb-empty">HEIC</div>`
+      : html`<img class="curated-thumb"
+          src="/media/${item.file_key}/${isVideo ? "poster" : "thumb"}"
+          alt="" loading="lazy" />`
+  return html`
+    <div class="curated-item loved-item" data-id="${item.id}">
+      <div class="curated-thumb-wrap">${thumb}</div>
+      <div class="loved-meta">
+        <span class="loved-reactions" title="Total reactions">❤ ${item.reaction_count}</span>
+        <span class="loved-author text-muted">${item.author_name || "A guest"}</span>
+      </div>
+      <div class="curated-actions">
+        <button type="button" class="btn btn-primary btn-sm" data-loved-action="promote">
+          Move to official
+        </button>
+      </div>
+    </div>
+  `
+}
+
+/** @param {MouseEvent} e */
+async function handleLovedGridClick(e) {
+  const target = e.target
+  if (!(target instanceof Element)) return
+  const btn = target.closest("[data-loved-action]")
+  if (!(btn instanceof HTMLElement)) return
+  const wrap = btn.closest(".loved-item")
+  if (!(wrap instanceof HTMLElement)) return
+  const id = parseInt(wrap.dataset.id || "", 10)
+  if (Number.isNaN(id)) return
+  if (btn.dataset.lovedAction !== "promote") return
+  if (
+    !window.confirm(
+      "Move this photo into the Official gallery? It leaves the guest feed — this is a move, not a copy.",
+    )
+  ) {
+    return
+  }
+  try {
+    await api(`/api/admin/media/${id}/promote`, { method: "POST" })
+    showSuccess("Moved to official ✓")
+    await loadLoved()
+  } catch (err) {
+    showError("Couldn't move that photo: " + getErrorMessage(err))
+  }
 }
 
 /** @param {GlobalTypes.MediaListItem} item @param {number} index @returns {string} */
@@ -263,7 +372,41 @@ let pendingRemoveId = /** @type {number | null} */ (null)
 function removeItem(id) {
   pendingRemoveId = id
   getElement("gallery-remove-error").hidden = true
+  const warnEl = getElement("gallery-remove-card-warning")
+  warnEl.hidden = true
+  warnEl.textContent = ""
   openModal(getDialogElement("gallery-remove-modal"))
+  // Removing a photo silently strips it from any thank-you card that embeds it
+  // (the card degrades gracefully). Warn if it rides in already-delivered cards.
+  // Best-effort + async so the modal opens instantly; a guard skips the update if
+  // the couple moved on to remove a different photo before the lookup returned.
+  void (async () => {
+    let warning = ""
+    try {
+      const res = /** @type {Types.MediaReferencesResponse} */ (
+        await api(`/api/admin/media/${id}/references`)
+      )
+      warning = cardRefWarning(res.deliveredCardRefs)
+    } catch {
+      return // never block the remove on a failed lookup
+    }
+    if (!warning || pendingRemoveId !== id) return
+    warnEl.textContent = warning
+    warnEl.hidden = false
+  })()
+}
+
+/**
+ * Warning clause for a photo embedded in N delivered thank-you cards, or "" when
+ * none. Mirrors the moderation confirm's copy.
+ * @param {number} n @returns {string}
+ */
+function cardRefWarning(n) {
+  if (n <= 0) return ""
+  return (
+    `Heads up: this photo appears in ${n} sent thank-you card${n === 1 ? "" : "s"} — ` +
+    `${n === 1 ? "it'll" : "they'll"} show without it.`
+  )
 }
 
 async function confirmRemove() {
@@ -498,6 +641,14 @@ export function initGalleryAdmin() {
     openModal(getDialogElement("gallery-upload-modal")),
   )
   getButtonElement("gallery-remove-btn").addEventListener("click", confirmRemove)
+  // Official ⇆ Most-loved sub-view (A3).
+  getButtonElement("gallery-sub-official").addEventListener("click", () =>
+    showGallerySubView("official"),
+  )
+  getButtonElement("gallery-sub-loved").addEventListener("click", () =>
+    showGallerySubView("loved"),
+  )
+  getElement("loved-grid").addEventListener("click", handleLovedGridClick)
   initUploadModal()
 
   // Resume network-failed curated uploads when connectivity returns (a 401 is

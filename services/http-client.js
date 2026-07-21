@@ -5,6 +5,13 @@ const MAX_RESPONSE_SIZE = 64 * 1024 // 64KB
 
 /** @type {Types.makeServiceRequest} */
 export function makeServiceRequest(httpClient, options, postData) {
+  // Test seam: when SERVICE_FORCE_FAILURE is set, every outbound service call
+  // resolves as a deterministic, non-retryable failure WITHOUT touching the
+  // network — so a test can drive the "configured provider that fails" path
+  // (send-failure compensation) fast and offline. Never set in production.
+  if (process.env.SERVICE_FORCE_FAILURE) {
+    return Promise.resolve({ success: false, error: "Forced service failure (test seam)" })
+  }
   return new Promise((resolve) => {
     const req = httpClient.request(options, (res) => {
       let data = ""

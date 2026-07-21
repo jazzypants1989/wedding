@@ -193,6 +193,7 @@ export function createTables(db) {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
       reviewed_at TEXT,
+      pinned_at TEXT DEFAULT NULL,                    -- admin "Favorites" pin timestamp (newest-pinned-first)
       deleted_at TEXT DEFAULT NULL,
       FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
     );
@@ -203,6 +204,10 @@ export function createTables(db) {
     CREATE INDEX IF NOT EXISTS idx_guestbook_feed
       ON guestbook_entries(status, id DESC) WHERE deleted_at IS NULL;
     CREATE INDEX IF NOT EXISTS idx_guestbook_account ON guestbook_entries(account_id);
+    -- NOTE: idx_guestbook_pinned (the "Favorites" partial index) is created by the
+    -- add_guestbook_pinned migration, NOT here — createTables runs before
+    -- runMigrations, and on a pre-existing DB the pinned_at column doesn't exist
+    -- yet at this point (CREATE TABLE IF NOT EXISTS keeps the old shape).
 
     -- Media items (photos + short videos). file_key is the public/storage id;
     -- account_id NULL = admin/official upload. Rows stay 'uploading' until
@@ -244,7 +249,7 @@ export function createTables(db) {
     -- a backstop only. See 00-overview reconciliation 2 + decision log.
     CREATE TABLE IF NOT EXISTS comments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      account_id INTEGER NOT NULL,
+      account_id INTEGER,                             -- NULL = host/couple reply (admin-authored)
       target_type TEXT NOT NULL,                     -- guestbook|media
       target_id INTEGER NOT NULL,
       message TEXT NOT NULL,
@@ -851,5 +856,104 @@ export function runMigrations(db) {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_tyc_share_token ON thank_you_cards(share_token);
     `)
     record.run("add_thank_you_share_token")
+  }
+
+  // Guestbook "Favorites" pin column (Wow pack, Feature 2). Declared in the base
+  // CREATE TABLE for fresh installs; ALTER it into pre-existing DBs (+ its partial
+  // index). Guard the add so a fresh DB (already has it) doesn't raise
+  // "duplicate column name".
+  if (!applied.get("add_guestbook_pinned")) {
+    const have = new Set(
+      /** @type {Array<{ name: string }>} */ (
+        db.prepare("PRAGMA table_info(guestbook_entries)").all()
+      ).map((c) => c.name),
+    )
+    if (!have.has("pinned_at")) {
+      db.exec(`ALTER TABLE guestbook_entries ADD COLUMN pinned_at TEXT DEFAULT NULL`)
+    }
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_guestbook_pinned
+        ON guestbook_entries(pinned_at DESC) WHERE pinned_at IS NOT NULL AND deleted_at IS NULL;
+    `)
+    record.run("add_guestbook_pinned")
+  }
+
+  // Host/couple replies (Wow pack, Feature 1) are comments with account_id NULL,
+  // mirroring media's admin uploads. comments.account_id shipped NOT NULL, and
+  // SQLite can't ALTER a column's nullability, so rebuild the table when the
+  // constraint is still present. The comment triggers + indexes are dropped with
+  // the old table and recreated here (add_social_triggers already ran and won't
+  // re-fire). FK enforcement is bracketed off around the rebuild.
+  if (!applied.get("relax_comment_account_null")) {
+    const cols = /** @type {Array<{ name: string, notnull: number }>} */ (
+      db.prepare("PRAGMA table_info(comments)").all()
+    )
+    const accountCol = cols.find((c) => c.name === "account_id")
+    if (accountCol && accountCol.notnull === 1) {
+      db.exec("PRAGMA foreign_keys=OFF")
+      db.exec(`
+        CREATE TABLE comments_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          account_id INTEGER,
+          target_type TEXT NOT NULL,
+          target_id INTEGER NOT NULL,
+          message TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          reviewed_at TEXT,
+          deleted_at TEXT DEFAULT NULL,
+          FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+        );
+        INSERT INTO comments_new
+          (id, account_id, target_type, target_id, message, status,
+           created_at, updated_at, reviewed_at, deleted_at)
+          SELECT id, account_id, target_type, target_id, message, status,
+           created_at, updated_at, reviewed_at, deleted_at FROM comments;
+        DROP TABLE comments;
+        ALTER TABLE comments_new RENAME TO comments;
+
+        CREATE INDEX IF NOT EXISTS idx_comments_target
+          ON comments(target_type, target_id, status, id) WHERE deleted_at IS NULL;
+        CREATE INDEX IF NOT EXISTS idx_comments_account ON comments(account_id);
+
+        CREATE TRIGGER IF NOT EXISTS check_comment_status_insert
+        BEFORE INSERT ON comments
+        FOR EACH ROW
+        WHEN NEW.status NOT IN ('pending', 'approved', 'hidden', 'rejected')
+        BEGIN
+          SELECT RAISE(ABORT, 'Invalid comment status. Must be: pending, approved, hidden, or rejected');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS check_comment_status_update
+        BEFORE UPDATE ON comments
+        FOR EACH ROW
+        WHEN NEW.status NOT IN ('pending', 'approved', 'hidden', 'rejected')
+        BEGIN
+          SELECT RAISE(ABORT, 'Invalid comment status. Must be: pending, approved, hidden, or rejected');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS check_comment_target_exists
+        BEFORE INSERT ON comments
+        FOR EACH ROW
+        WHEN (NEW.target_type = 'guestbook'
+                AND NOT EXISTS (SELECT 1 FROM guestbook_entries WHERE id = NEW.target_id AND deleted_at IS NULL))
+          OR (NEW.target_type = 'media'
+                AND NOT EXISTS (SELECT 1 FROM media WHERE id = NEW.target_id AND deleted_at IS NULL))
+        BEGIN
+          SELECT RAISE(ABORT, 'Comment target does not exist');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS auto_updated_at_comments
+        AFTER UPDATE ON comments
+        FOR EACH ROW
+        WHEN NEW.updated_at = OLD.updated_at
+        BEGIN
+          UPDATE comments SET updated_at = datetime('now') WHERE id = NEW.id;
+        END;
+      `)
+      db.exec("PRAGMA foreign_keys=ON")
+    }
+    record.run("relax_comment_account_null")
   }
 }

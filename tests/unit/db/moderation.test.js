@@ -70,7 +70,11 @@ describe("db/moderation getModerationQueue", () => {
     const acct = makeAccount()
     const entryId = makeEntry(acct)
     const media = makeMedia(acct)
-    makeComment(acct, entryId)
+    // The comment hangs off a LIVE (approved) parent: a pending comment only
+    // surfaces in the queue while its target is still visible (Fix B). The parent
+    // is approved so it isn't itself a pending queue row — only the comment is.
+    const liveParent = makeEntry(acct, "approved")
+    makeComment(acct, liveParent)
 
     const rows = getModerationQueue({ limit: 50, offset: 0 })
     assert.strictEqual(rows.length, 3)
@@ -93,7 +97,7 @@ describe("db/moderation getModerationQueue", () => {
     const cm = rows.find((r) => r.content_type === "comment")
     assert.ok(cm)
     assert.strictEqual(cm.target_type, "guestbook")
-    assert.strictEqual(cm.target_id, entryId)
+    assert.strictEqual(cm.target_id, liveParent)
   })
 
   it("narrows to a single table when type is set", () => {

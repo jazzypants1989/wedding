@@ -83,8 +83,13 @@
       <div id="notification-banner" class="alert alert-error" aria-live="polite" hidden></div>
 
       <div class="tabs" role="tablist" aria-label="Admin dashboard sections">
-        <button class="tab-btn active" data-tab="guests" role="tab" id="tab-btn-guests" aria-selected="true"
-          aria-controls="tab-guests" tabindex="0">Guests</button>
+        <button class="tab-btn active" data-tab="inbox" role="tab" id="tab-btn-inbox" aria-selected="true"
+          aria-controls="tab-inbox" tabindex="0">
+          Inbox
+          <span id="inbox-badge" class="tab-badge" hidden aria-label="items needing attention">0</span>
+        </button>
+        <button class="tab-btn" data-tab="guests" role="tab" id="tab-btn-guests" aria-selected="false"
+          aria-controls="tab-guests" tabindex="-1">Guests</button>
         <button class="tab-btn" data-tab="rsvps" role="tab" id="tab-btn-rsvps" aria-selected="false"
           aria-controls="tab-rsvps" tabindex="-1">RSVPs</button>
         <button class="tab-btn" data-tab="petitions" role="tab" id="tab-btn-petitions" aria-selected="false"
@@ -114,7 +119,36 @@
           aria-controls="tab-effects" tabindex="-1">Effects</button>
       </div>
 
-      <div id="tab-guests" class="tab-content active" role="tabpanel" aria-labelledby="tab-btn-guests">
+      <!-- INBOX (A1): the daily-loop landing surface — pending review, unread
+           replies, and the next un-thanked guests, each deep-linking onward. -->
+      <div id="tab-inbox" class="tab-content active" role="tabpanel" aria-labelledby="tab-btn-inbox">
+        <p id="inbox-error" class="form-error" role="alert" hidden></p>
+        <div class="inbox-grid">
+          <section class="card inbox-card">
+            <div class="card-header flex-between">
+              <h2>Awaiting review <span id="inbox-mod-count" class="inbox-count"></span></h2>
+              <button type="button" class="btn btn-secondary btn-sm inbox-jump" data-jump="moderation">Open →</button>
+            </div>
+            <div id="inbox-moderation" class="inbox-section" role="status" aria-live="polite"></div>
+          </section>
+          <section class="card inbox-card">
+            <div class="card-header flex-between">
+              <h2>Unread replies <span id="inbox-replies-count" class="inbox-count"></span></h2>
+              <button type="button" class="btn btn-secondary btn-sm inbox-jump" data-jump="mailbox">Open →</button>
+            </div>
+            <div id="inbox-replies" class="inbox-section" role="status" aria-live="polite"></div>
+          </section>
+          <section class="card inbox-card">
+            <div class="card-header flex-between">
+              <h2>Still to thank <span id="inbox-unthanked-count" class="inbox-count"></span></h2>
+              <button type="button" class="btn btn-secondary btn-sm inbox-jump" data-jump="thankyous">Open →</button>
+            </div>
+            <div id="inbox-unthanked" class="inbox-section" role="status" aria-live="polite"></div>
+          </section>
+        </div>
+      </div>
+
+      <div id="tab-guests" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-guests" hidden>
         <div class="card">
           <div class="card-header flex-between">
             <h2>Guest List</h2>
@@ -240,6 +274,12 @@
         <div id="mod-view-queue" class="card">
           <div class="card-header flex-between">
             <h2>Awaiting Review</h2>
+            <div class="header-buttons">
+              <button type="button" id="mod-start-review" class="btn btn-primary btn-sm" hidden
+                title="Review pending items one at a time. Keys: ← / → to page, A approve, R reject, H hide.">
+                Start review ⏵
+              </button>
+            </div>
           </div>
 
           <div class="filters">
@@ -340,18 +380,44 @@
 
       <!-- Gallery Tab -->
       <div id="tab-gallery" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-gallery" hidden>
-        <div class="card">
-          <div class="card-header flex-between">
-            <h2>Official Gallery</h2>
-            <button id="gallery-add-btn" class="btn btn-primary btn-sm">Add official photos</button>
+        <!-- Official ⇆ Most-loved (guest, by reaction count) toggle (A3). -->
+        <div class="tc-subnav" role="tablist" aria-label="Gallery views">
+          <button type="button" id="gallery-sub-official" class="tc-subnav-btn active" role="tab"
+            aria-selected="true">Official</button>
+          <button type="button" id="gallery-sub-loved" class="tc-subnav-btn" role="tab"
+            aria-selected="false">❤️ Most loved</button>
+        </div>
+
+        <div id="gallery-official-view">
+          <div class="card">
+            <div class="card-header flex-between">
+              <h2>Official Gallery</h2>
+              <button id="gallery-add-btn" class="btn btn-primary btn-sm">Add official photos</button>
+            </div>
+            <p class="text-muted card-text">
+              These appear in the gallery's Official section, in the order below. Use the arrows to reorder;
+              captions save as you type.
+            </p>
+            <div id="gallery-error" class="alert alert-error" role="alert" hidden></div>
+            <div id="curated-grid" class="curated-grid">
+              <!-- Populated by JS -->
+            </div>
           </div>
-          <p class="text-muted card-text">
-            These appear in the gallery's Official section, in the order below. Use the arrows to reorder;
-            captions save as you type.
-          </p>
-          <div id="gallery-error" class="alert alert-error" role="alert" hidden></div>
-          <div id="curated-grid" class="curated-grid">
-            <!-- Populated by JS -->
+        </div>
+
+        <div id="gallery-loved-view" hidden>
+          <div class="card">
+            <div class="card-header flex-between">
+              <h2>Most loved <span aria-hidden="true">❤️</span></h2>
+            </div>
+            <p class="text-muted card-text">
+              Guest photos and videos ranked by how many reactions they've received. Feature a favourite by
+              moving it into the Official gallery.
+            </p>
+            <div id="loved-error" class="alert alert-error" role="alert" hidden></div>
+            <div id="loved-grid" class="curated-grid">
+              <!-- Populated by JS -->
+            </div>
           </div>
         </div>
       </div>
@@ -618,10 +684,27 @@
               <span>Email me the moment a card gets its first reply</span>
             </label>
           </div>
+
+          <!-- Cards ⇆ Mailbox sub-view toggle (D1). -->
+          <div class="tc-subnav" role="tablist" aria-label="Thank-you views">
+            <button type="button" id="tc-sub-cards" class="tc-subnav-btn active" role="tab"
+              aria-selected="true">Cards</button>
+            <button type="button" id="tc-sub-mailbox" class="tc-subnav-btn" role="tab"
+              aria-selected="false">
+              💌 Mailbox
+              <span id="tc-mailbox-badge" class="tab-badge tab-badge-reply" hidden
+                aria-label="unread replies">&#9829;&nbsp;0</span>
+            </button>
+          </div>
+
+          <div id="tc-cards-view">
           <div class="card">
             <div class="card-header flex-between">
               <h2>Gifts</h2>
-              <button type="button" id="gift-add-btn" class="btn btn-primary btn-sm">Add gift</button>
+              <div class="header-buttons">
+                <a href="/api/admin/thank-you/export/gifts.csv" id="export-gifts-btn" class="btn btn-secondary btn-sm">Export CSV</a>
+                <button type="button" id="gift-add-btn" class="btn btn-primary btn-sm">Add gift</button>
+              </div>
             </div>
             <p class="text-muted card-text">
               The gift log tracks who gave what. The amount is admin-only — it never appears on a card or any
@@ -650,7 +733,10 @@
           <div class="card">
             <div class="card-header flex-between">
               <h2>Thank-you cards</h2>
-              <button type="button" id="tc-write-card-btn" class="btn btn-primary btn-sm">Write a card</button>
+              <div class="header-buttons">
+                <a href="/api/admin/thank-you/export/cards.csv" id="export-cards-btn" class="btn btn-secondary btn-sm">Export CSV</a>
+                <button type="button" id="tc-write-card-btn" class="btn btn-primary btn-sm">Write a card</button>
+              </div>
             </div>
             <div id="tc-status-chips" class="tc-status-chips" role="group"
               aria-label="Filter cards by status"></div>
@@ -668,6 +754,20 @@
                 </thead>
                 <tbody id="cards-tbody"></tbody>
               </table>
+            </div>
+          </div>
+          </div><!-- /#tc-cards-view -->
+
+          <!-- MAILBOX (D1): one warm chronological feed of every reply. -->
+          <div id="tc-mailbox-view" hidden>
+            <div class="card">
+              <div class="card-header flex-between">
+                <h2>Mailbox <span aria-hidden="true">💌</span></h2>
+              </div>
+              <p class="text-muted card-text tc-mailbox-sub">
+                Every reply your guests have sent, newest first. Opening this clears the unread badge.
+              </p>
+              <div id="tc-mailbox-feed" class="tc-mailbox-feed" role="list"></div>
             </div>
           </div>
         </div>
@@ -692,7 +792,11 @@
               </div>
               <div class="form-group">
                 <label for="tc-editor-template">Start from a template</label>
-                <select id="tc-editor-template" aria-label="Start from a message template"></select>
+                <div class="tc-template-row">
+                  <select id="tc-editor-template" aria-label="Start from a message template"></select>
+                  <button type="button" id="tc-reroll-btn" class="btn btn-secondary btn-sm"
+                    title="Swap in a different starter message (keeps cycling on each click)">↻ Reroll</button>
+                </div>
               </div>
               <div class="form-group">
                 <label for="tc-editor-message">Message</label>
@@ -705,6 +809,14 @@
                 <summary class="tc-story-summary">Their story</summary>
                 <div id="tc-story-body" class="tc-story-body"></div>
               </details>
+
+              <div class="form-group">
+                <label id="tc-preset-label">Occasion presets</label>
+                <div id="tc-preset-chips" class="tc-preset-chips" role="group"
+                  aria-labelledby="tc-preset-label"></div>
+                <small class="text-muted">One tap sets a matching theme + effect stack.</small>
+              </div>
+
               <div class="form-row">
                 <div class="form-group">
                   <label for="tc-editor-theme">Theme</label>
@@ -1237,6 +1349,7 @@
       <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
     </div>
     <p>Remove this photo from the site? Its files are set aside out of sight (not permanently deleted) in case it was a mistake.</p>
+    <div id="gallery-remove-card-warning" class="alert alert-warning" role="alert" hidden></div>
     <div id="gallery-remove-error" class="alert alert-error" role="alert" hidden></div>
     <div class="modal-actions">
       <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>

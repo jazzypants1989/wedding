@@ -1,13 +1,18 @@
 /** @file Types for the gallery page (grid, lightbox, upload tray). */
 
-import type { MediaListItem, MediaSection } from "../../../types.js"
+import type {
+  MediaListItem,
+  MediaSection,
+  MediaContributors,
+} from "../../../types.js"
 
-export type { MediaListItem, MediaSection }
+export type { MediaListItem, MediaSection, MediaContributors }
 
-/** GET /api/media response. */
+/** GET /api/media response. `contributors` rides on the first guest page. */
 export interface GalleryListResponse {
   items: MediaListItem[]
   nextCursor: number | null
+  contributors?: MediaContributors
 }
 
 /** Per-section loaded state; each section keeps its own cursor + scroll. */

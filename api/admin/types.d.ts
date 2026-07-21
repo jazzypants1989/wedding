@@ -334,6 +334,14 @@ export function accountDeleteHandler(
 
 /** @file media.js (admin) - Types for curated-gallery management (Phase 6) */
 
+/** GET /api/admin/media/guest-loved — approved GUEST media ranked by total
+ *  reaction count, each with its `reaction_count` (A3 "Most loved" curation).
+ *  Optional ?limit (default 60, max 200). */
+export function adminGuestLovedHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void>
+
 /** POST /api/admin/media/reorder — { ids:number[] } → sort_order = index. */
 export function mediaReorderHandler(
   req: IncomingMessage,
@@ -350,6 +358,14 @@ export function mediaPromoteHandler(
 
 /** PATCH /api/admin/media/:id — { caption } inline caption edit. */
 export function mediaCaptionHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** GET /api/admin/media/:id/references — thank-you card reference counts for
+ *  this photo (pre-confirm warning that removal strips it from sent cards). */
+export function mediaReferencesHandler(
   req: IncomingMessage,
   res: ServerResponse,
   routeInfo: AuthenticatedRouteInfo,
@@ -545,6 +561,20 @@ export function adminGiftPhysicalCardHandler(
   routeInfo: AuthenticatedRouteInfo,
 ): Promise<void>
 
+/** GET /api/admin/thank-you/export/gifts.csv — full gift ledger as CSV (sunset
+ *  archive parity with `npm run export`). */
+export function adminGiftsExportHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): void
+
+/** GET /api/admin/thank-you/export/cards.csv — thank-you cards (incl. latest
+ *  reply) as CSV. */
+export function adminThankYouExportHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): void
+
 /** GET /api/admin/thank-you — admin card list, joined guest name. */
 export function adminThankYouListHandler(
   req: IncomingMessage,
@@ -591,6 +621,13 @@ export function adminThankYouReplySeenHandler(
 
 /** GET /api/admin/thank-you/counts — { unreadReplies, drafts } for the tab badge. */
 export function adminThankYouCountsHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void>
+
+/** GET /api/admin/thank-you/replies — recent replies across ALL cards, newest
+ *  first (the Inbox + Mailbox feed). Optional ?limit (default 50, max 200). */
+export function adminThankYouRecentRepliesHandler(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void>

@@ -111,6 +111,7 @@ function render(card, token) {
 
   const controller = playReveal(scene, {
     envelopeEl: envelope,
+    cardEl,
     reduced,
     // Beacon fires on the real open — only for the reply-capable primary view
     // (share tokens 404 the beacon endpoint anyway).

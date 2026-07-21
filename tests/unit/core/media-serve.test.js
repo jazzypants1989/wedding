@@ -56,7 +56,21 @@ describe("parseRange", () => {
     assert.strictEqual(parseRange("bytes=", SIZE), "invalid")
   })
 
-  it("returns 'invalid' on a 16-digit overflow value", () => {
-    assert.strictEqual(parseRange("bytes=0-1234567890123456", SIZE), "invalid")
+  it("clamps a 16-digit overflow end to size-1 (RFC 9110: end past EOF is satisfiable)", () => {
+    assert.deepStrictEqual(parseRange("bytes=0-1234567890123456", SIZE), {
+      start: 0,
+      end: SIZE - 1,
+    })
+  })
+
+  it("clamps a 16-digit overflow suffix to the whole file", () => {
+    assert.deepStrictEqual(parseRange("bytes=-1234567890123456", SIZE), {
+      start: 0,
+      end: SIZE - 1,
+    })
+  })
+
+  it("returns 'invalid' on a 16-digit overflow start (necessarily past EOF)", () => {
+    assert.strictEqual(parseRange("bytes=1234567890123456-", SIZE), "invalid")
   })
 })

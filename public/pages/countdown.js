@@ -54,6 +54,11 @@ export function initCountdown() {
 
   const DAY_MS = 1000 * 60 * 60 * 24
 
+  // The first anniversary: same day, one year on. Used for the post-wedding soft
+  // countdown + the one-day celebratory swap.
+  const anniversary = new Date(weddingDate)
+  anniversary.setFullYear(weddingDate.getFullYear() + 1)
+
   function update() {
     const now = new Date()
     const diff = weddingDate.getTime() - now.getTime()
@@ -77,12 +82,36 @@ export function initCountdown() {
       exactTimeEl.textContent = ""
       celebrateOnce("countdownWeddingDayCelebrated")
     } else {
-      // Permanent post-wedding state.
+      // Post-wedding. Layer a soft countdown to the first anniversary on top of
+      // the permanent married state, with a one-day celebratory swap.
       countdownEl.classList.remove("wedding-day")
-      countdownEl.classList.add("married")
-      if (textNode) textNode.textContent = "We're married! 💍 "
-      exactTimeEl.textContent = "Relive the day below"
-      celebrateOnce("countdownMarriedCelebrated")
+      const annivDiff = anniversary.getTime() - now.getTime()
+      if (annivDiff > DAY_MS * -1 && annivDiff <= 0) {
+        // The first anniversary day itself — celebrate once (per-day localStorage
+        // guard; fireConfetti self-gates on reduced motion).
+        countdownEl.classList.remove("married")
+        countdownEl.classList.add("anniversary")
+        if (textNode) textNode.textContent = "Happy first anniversary! 🥂 "
+        exactTimeEl.textContent = "One year of us — relive the day below"
+        celebrateOnce("countdownAnniversaryCelebrated")
+      } else if (annivDiff > 0) {
+        // Between the wedding and the first anniversary: married + soft countdown.
+        countdownEl.classList.remove("anniversary")
+        countdownEl.classList.add("married")
+        if (textNode) textNode.textContent = "We're married! 💍 "
+        const days = Math.ceil(annivDiff / DAY_MS)
+        exactTimeEl.textContent = `Our first anniversary in ${days} day${
+          days !== 1 ? "s" : ""
+        } 🥂`
+        celebrateOnce("countdownMarriedCelebrated")
+      } else {
+        // After the first anniversary: the permanent married state.
+        countdownEl.classList.remove("anniversary")
+        countdownEl.classList.add("married")
+        if (textNode) textNode.textContent = "We're married! 💍 "
+        exactTimeEl.textContent = "Relive the day below"
+        celebrateOnce("countdownMarriedCelebrated")
+      }
     }
   }
 

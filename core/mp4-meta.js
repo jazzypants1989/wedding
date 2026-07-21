@@ -188,19 +188,82 @@ function walk(buf, box, regions) {
   }
 }
 
-/** @type {Types.blankVideoGps} */
-export function blankVideoGps(filePath) {
-  const buf = fs.readFileSync(filePath)
-  /** @type {Types.BlankedRegion[]} */
-  const regions = []
-  try {
-    for (const box of childBoxes(buf, 0, buf.length)) {
-      if (box.type === "moov") walk(buf, box, regions)
-    }
-  } catch {
-    // Never fail finalize over weird-but-servable metadata — keep whatever was
-    // already blanked and move on.
+/**
+ * Read one top-level box header directly from the file (16 bytes covers the
+ * 32-bit and largesize forms). Same semantics as readBox: handles size=1
+ * (64-bit largesize) and size=0 (extends to EOF); null on malformed input.
+ * @param {import('node:fs/promises').FileHandle} fh
+ * @param {number} offset @param {number} fileSize
+ * @returns {Promise<{ type: string, boxEnd: number } | null>}
+ */
+async function readTopLevelHeader(fh, offset, fileSize) {
+  if (offset + 8 > fileSize) return null
+  const header = Buffer.alloc(16)
+  const { bytesRead } = await fh.read(header, 0, 16, offset)
+  if (bytesRead < 8) return null
+  let size = header.readUInt32BE(0)
+  const type = header.toString("latin1", 4, 8)
+  let headerSize = 8
+  if (size === 1) {
+    if (bytesRead < 16 || offset + 16 > fileSize) return null
+    size = header.readUInt32BE(8) * 2 ** 32 + header.readUInt32BE(12)
+    headerSize = 16
+  } else if (size === 0) {
+    size = fileSize - offset
   }
-  if (regions.length > 0) fs.writeFileSync(filePath, buf)
-  return regions
+  const boxEnd = offset + size
+  if (size < headerSize || boxEnd > fileSize || boxEnd <= offset) return null
+  return { type, boxEnd }
+}
+
+/** @type {Types.blankVideoGps} */
+export async function blankVideoGps(filePath) {
+  // Both GPS carriers live under `moov`, so only that subtree needs to be in
+  // memory: scan top-level headers (16 bytes each) to find it, read just its
+  // bytes, and seek-write back only the blanked regions. The old whole-file
+  // readFileSync/writeFileSync stalled the event loop for the full read+rewrite
+  // of a video up to 110MB during finalize — with mdat dwarfing moov, this
+  // touches a tiny fraction of that, and the I/O runs off-loop.
+  const fh = await fs.promises.open(filePath, "r+")
+  try {
+    const { size: fileSize } = await fh.stat()
+    /** @type {{ start: number, end: number } | null} */
+    let moov = null
+    let offset = 0
+    while (offset + 8 <= fileSize) {
+      const box = await readTopLevelHeader(fh, offset, fileSize)
+      if (!box) break // malformed → treat like the old parser: stop cleanly
+      if (box.type === "moov") {
+        moov = { start: offset, end: box.boxEnd }
+        break
+      }
+      offset = box.boxEnd
+    }
+    if (!moov) return []
+
+    const moovBuf = Buffer.alloc(moov.end - moov.start)
+    const { bytesRead } = await fh.read(moovBuf, 0, moovBuf.length, moov.start)
+    if (bytesRead < moovBuf.length) return []
+
+    // Region offsets are moov-relative while walking; absolute in the result.
+    /** @type {Types.BlankedRegion[]} */
+    const regions = []
+    try {
+      const moovBox = readBox(moovBuf, 0, moovBuf.length)
+      if (moovBox && moovBox.type === "moov") walk(moovBuf, moovBox, regions)
+    } catch {
+      // Never fail finalize over weird-but-servable metadata — keep whatever was
+      // already blanked and move on.
+    }
+    for (const r of regions) {
+      await fh.write(moovBuf, r.start, r.end - r.start, moov.start + r.start)
+    }
+    return regions.map((r) => ({
+      start: r.start + moov.start,
+      end: r.end + moov.start,
+      type: r.type,
+    }))
+  } finally {
+    await fh.close()
+  }
 }

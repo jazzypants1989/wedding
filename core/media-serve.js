@@ -42,6 +42,21 @@ function parseDecimal(str) {
   return n
 }
 
+/**
+ * True when the string is one or more decimal digits (no length cap) — used to
+ * tell "number too big to parse" apart from "not a number" so oversized values
+ * can clamp per RFC 9110 instead of 416ing a satisfiable range.
+ * @param {string} str @returns {boolean}
+ */
+function isAllDigits(str) {
+  if (str.length === 0) return false
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i)
+    if (c < 48 || c > 57) return false
+  }
+  return true
+}
+
 /** @type {Types.parseRange} */
 export function parseRange(header, size) {
   if (!header || !header.startsWith("bytes=")) return null
@@ -52,14 +67,22 @@ export function parseRange(header, size) {
   const startStr = spec.slice(0, dash).trim()
   const endStr = spec.slice(dash + 1).trim()
   if (startStr === "") {
-    // suffix: bytes=-N (last N bytes)
+    // suffix: bytes=-N (last N bytes). A suffix longer than the file (including
+    // one too long to parse) means "the whole file" per RFC 9110 §14.1.2.
+    if (parseDecimal(endStr) === null && isAllDigits(endStr)) {
+      return { start: 0, end: size - 1 }
+    }
     const n = parseDecimal(endStr)
     if (n === null || n === 0) return "invalid"
     return { start: Math.max(0, size - n), end: size - 1 }
   }
   const start = parseDecimal(startStr)
+  // An unparseably-large start is necessarily ≥ size → genuinely unsatisfiable.
   if (start === null) return "invalid"
-  const end = endStr === "" ? size - 1 : parseDecimal(endStr)
+  // An end past EOF clamps to size-1 (RFC 9110 §14.1.2) — including an end too
+  // large for parseDecimal's overflow guard, which is by definition past EOF.
+  const end =
+    endStr === "" ? size - 1 : (parseDecimal(endStr) ?? (isAllDigits(endStr) ? size - 1 : null))
   if (end === null || start >= size || start > end) return "invalid"
   return { start, end: Math.min(end, size - 1) }
 }

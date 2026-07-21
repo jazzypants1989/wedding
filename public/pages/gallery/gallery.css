@@ -597,3 +597,130 @@
     display: none;
   }
 }
+
+/* ============ Contributors strip ("Shared by …") ============ */
+.gallery-contributors {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+  margin: 0 auto var(--spacing-md);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  max-width: max-content;
+}
+
+.gallery-contrib-chips {
+  display: inline-flex;
+  align-items: center;
+  /* Overlap the monogram chips into a friendly cluster. */
+  padding-left: 8px;
+}
+
+.gallery-contrib-chips .monogram,
+.gallery-contrib-more {
+  margin-left: -8px;
+  border: 2px solid var(--color-surface);
+  box-sizing: border-box;
+}
+
+.gallery-contrib-chip {
+  display: inline-flex;
+}
+
+.gallery-contrib-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-alt, var(--color-surface));
+  color: var(--color-text-muted, inherit);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.gallery-contrib-text {
+  font-size: 0.9rem;
+  color: var(--color-text-muted, inherit);
+}
+
+/* ============ Slideshow ("Memories" ambient mode) ============ */
+.lightbox-play {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+/* ▶ play triangle; becomes ‖ pause bars while running. */
+.lightbox-play-glyph {
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 8px 0 8px 13px;
+  border-color: transparent transparent transparent currentColor;
+}
+
+.lightbox-play.is-playing .lightbox-play-glyph {
+  width: 12px;
+  height: 15px;
+  border: none;
+  border-left: 4px solid currentColor;
+  border-right: 4px solid currentColor;
+  box-sizing: border-box;
+}
+
+/* Ken Burns slow pan/zoom + soft fade-in for a playing slideshow image. */
+.lightbox-media.slideshow-anim {
+  animation:
+    slideshow-fade 700ms ease-out,
+    slideshow-kenburns 8s ease-in-out forwards;
+  transform-origin: center;
+}
+
+@keyframes slideshow-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideshow-kenburns {
+  from {
+    transform: scale(1) translate(0, 0);
+  }
+  to {
+    transform: scale(1.08) translate(-1.5%, 1%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Reduced motion: the slideshow still advances on its timer, but no Ken
+     Burns / crossfade — the class isn't added by JS, and this guards any race. */
+  .lightbox-media.slideshow-anim {
+    animation: none;
+    transform: none;
+  }
+}
+
+/* ============ Pinch-zoom ============ */
+/* Own the touch gestures on the image so the browser doesn't hijack pinch as a
+   page zoom or two-finger pan. Video keeps default touch-action for controls. */
+.lightbox-stage img.lightbox-media {
+  touch-action: none;
+}
+
+.lightbox-stage.stage-zoomed {
+  /* A zoomed image is panned by dragging; hint it and suppress swipe-nav. */
+  cursor: grab;
+}

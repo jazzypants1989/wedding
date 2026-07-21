@@ -8,13 +8,36 @@
  */
 /** @import * as Types from "./types.js" */
 
-import { html, api, getErrorMessage, announceCharsRemaining } from "../pages/utils.js"
-import { requireAccount } from "./guest-session.js"
+import {
+  html,
+  api,
+  getErrorMessage,
+  getCoupleName,
+  announceCharsRemaining,
+} from "../pages/utils.js"
+import { requireAccount, session } from "./guest-session.js"
 import { formatRelative, upgradeTimes } from "./relative-time.js"
+import { renderMonogram } from "./monogram.js"
+import { heartBurst } from "./celebrate.js"
 import { announcePolite } from "./announce.js"
 
 /** Max comment length — mirrors the server limit; drives the counter + maxlength. */
 const COMMENT_MAXLENGTH = 500
+
+/** The couple's admin `csrf` cookie value, if present (readable — not HttpOnly). */
+function adminCsrfCookie() {
+  for (const pair of document.cookie.split("; ")) {
+    if (pair.startsWith("csrf=")) return pair.slice(5)
+  }
+  return null
+}
+
+/** Host mode: an admin (couple) session is present and NO guest is signed in, so
+ *  the thread composer posts an auto-approved "host" reply. withAccountOrAdmin
+ *  checks the guest cookie first, so a guest session always wins over host mode. */
+function isHostMode() {
+  return !session.account && adminCsrfCookie() !== null
+}
 
 /** @type {Types.renderCommentThread} */
 export function renderCommentThread(targetType, targetId, count = 0) {
@@ -58,10 +81,17 @@ function countLabel(count) {
 /** @param {Types.CommentListItem} c */
 function renderComment(c) {
   const pending = c.status === "pending" && c.is_own
+  const cls =
+    "comment" +
+    (pending ? " comment-pending" : "") +
+    (c.is_host ? " comment-host" : "")
   return html`
-    <li class="comment${pending ? " comment-pending" : ""}" data-comment-id="${c.id}">
+    <li class="${cls}" data-comment-id="${c.id}">
       <div class="comment-head">
-        <span class="comment-author">${c.author_name}</span>
+        ${renderMonogram(c.author_name)}
+        ${c.is_host
+          ? html`<span class="host-badge">${c.author_name} 💍</span>`
+          : html`<span class="comment-author">${c.author_name}</span>`}
         <time class="comment-time" datetime="${c.created_at}">${formatRelative(
           c.created_at,
         )}</time>
@@ -79,11 +109,15 @@ function renderComment(c) {
     </li>`
 }
 
-function composerMarkup() {
+/** @param {boolean} host */
+function composerMarkup(host) {
   return html`
-    <form class="comment-composer" data-comment-form>
+    <form class="comment-composer${host ? " comment-composer-host" : ""}" data-comment-form>
+      ${host
+        ? html`<p class="comment-host-hint">Replying as ${getCoupleName()} 💍</p>`
+        : ""}
       <textarea class="comment-input" data-comment-input rows="2" maxlength="${COMMENT_MAXLENGTH}"
-        placeholder="Add a comment…" aria-label="Add a comment"></textarea>
+        placeholder="${host ? "Reply as the hosts…" : "Add a comment…"}" aria-label="Add a comment"></textarea>
       <span class="char-counter" data-comment-counter aria-hidden="true">0/${COMMENT_MAXLENGTH}</span>
       <button type="submit" class="btn btn-small comment-submit">Post</button>
     </form>
@@ -152,7 +186,7 @@ async function loadComments(thread) {
         ? html`<p class="comment-empty" data-comment-empty>
             No comments yet — say something nice ✨</p>`
         : ""}
-      ${composerMarkup()}`
+      ${composerMarkup(isHostMode())}`
     upgradeTimes(body)
     thread.dataset.loaded = "true"
     updateCount(thread)
@@ -176,6 +210,11 @@ function onSubmit(e) {
     input.focus()
     return
   }
+  // The couple (admin session, no guest session) posts a host reply directly.
+  if (isHostMode()) {
+    void postComment(thread, input, message)
+    return
+  }
   // Browse freely; gate only at write. This exact post replays after sign-in.
   requireAccount(() => void postComment(thread, input, message))
 }
@@ -187,13 +226,16 @@ function onSubmit(e) {
  */
 async function postComment(thread, input, message) {
   const { targetType, targetId } = context(thread)
+  const host = isHostMode()
   clearError(thread)
   try {
     const data = /** @type {Types.CommentPostResponse} */ (
       await api(`/api/${targetType}/${targetId}/comments`, {
         method: "POST",
         csrf: true,
-        csrfCookie: "guest_csrf",
+        // Host replies ride the admin `csrf` cookie so withAccountOrAdmin
+        // resolves the couple; guests send the guest token.
+        csrfCookie: host ? "csrf" : "guest_csrf",
         body: JSON.stringify({ message }),
       })
     )
@@ -202,12 +244,22 @@ async function postComment(thread, input, message) {
     input.dispatchEvent(new Event("input", { bubbles: true }))
     appendComment(thread, data.comment)
     updateCount(thread)
+    // A landed host reply gets a small heart burst from its card (self-gates
+    // under reduced motion).
+    if (data.comment.is_host) {
+      const node = thread.querySelector(
+        `.comment[data-comment-id="${data.comment.id}"]`,
+      )
+      heartBurst(node instanceof HTMLElement ? node : input)
+    }
     // The appended node is silent to screen readers — say what happened
     // (pending comments look posted to their author but aren't public yet).
     announcePolite(
-      data.comment.status === "pending"
-        ? "Comment sent — the couple will approve it soon"
-        : "Comment posted",
+      data.comment.is_host
+        ? "Host reply posted"
+        : data.comment.status === "pending"
+          ? "Comment sent — the couple will approve it soon"
+          : "Comment posted",
     )
   } catch (err) {
     showError(thread, getErrorMessage(err))

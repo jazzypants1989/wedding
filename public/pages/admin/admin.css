@@ -1019,6 +1019,55 @@ tr:hover td {
   color: var(--color-text-muted);
 }
 
+/* Comment moderation: the parent (guestbook message / media) being replied to. */
+.mod-parent-context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+  background: var(--color-primary-faint);
+  border-left: 3px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.mod-parent-label {
+  flex-basis: 100%;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.mod-parent-quote {
+  margin: 0;
+  font-style: italic;
+  color: var(--color-text);
+}
+
+.mod-parent-thumb {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  display: block;
+}
+
+.mod-parent-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.mod-parent-author {
+  color: var(--color-text);
+}
+
+.mod-parent-context-link {
+  font-size: var(--text-sm);
+}
+
 /* Curated gallery grid */
 .curated-grid {
   display: grid;
@@ -1753,6 +1802,35 @@ tr:hover td {
   gap: var(--spacing-sm);
   margin: 0 0 var(--spacing-md);
 }
+
+/* Occasion preset chips (D3) + the template row with its Reroll button (D2). */
+.tc-preset-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin: var(--spacing-2xs) 0;
+}
+.tc-preset-chip {
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.tc-preset-chip:hover,
+.tc-preset-chip:focus-visible {
+  color: var(--color-text);
+  border-color: var(--color-accent, var(--color-text));
+}
+.tc-template-row {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+.tc-template-row select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.tc-template-row .btn {
+  flex: 0 0 auto;
+}
 .tc-chip {
   display: inline-flex;
   align-items: baseline;
@@ -2050,4 +2128,167 @@ tr:hover td {
 }
 .guest-thankyou-text {
   flex: 1 1 12rem;
+}
+
+/* ==================== Inbox (A1) ==================== */
+.inbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: var(--spacing-lg);
+}
+.inbox-card {
+  display: flex;
+  flex-direction: column;
+}
+.inbox-count {
+  color: var(--color-text-muted);
+  font-weight: 400;
+  font-size: var(--text-sm);
+}
+.inbox-section {
+  margin-top: var(--spacing-sm);
+}
+.inbox-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.inbox-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) 0;
+  border-bottom: 1px solid var(--color-text-10, var(--color-border));
+  font-size: var(--text-sm);
+}
+.inbox-item:last-child {
+  border-bottom: none;
+}
+.inbox-item.is-unread {
+  font-weight: 600;
+}
+.inbox-item-author {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.inbox-item-text {
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.inbox-item-time {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs, 0.75rem);
+  white-space: nowrap;
+}
+.inbox-empty {
+  color: var(--color-text-muted);
+  margin: var(--spacing-sm) 0;
+}
+.inbox-more {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  margin: var(--spacing-xs) 0 0;
+}
+
+/* ==================== Thank-you sub-nav + Mailbox (D1) ==================== */
+.tc-subnav {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin: 0 0 var(--spacing-md);
+}
+.tc-subnav-btn {
+  padding: var(--spacing-2xs) var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: var(--color-bg-subtle, var(--color-card-bg));
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: var(--text-sm);
+}
+.tc-subnav-btn.active {
+  color: var(--color-text);
+  border-color: var(--color-accent, var(--color-text));
+  font-weight: 600;
+}
+.tc-mailbox-feed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.tc-mailbox-item {
+  display: flex;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-subtle, var(--color-card-bg));
+}
+.tc-mailbox-item.is-unread {
+  border-color: var(--color-accent, var(--color-text));
+  background: var(--color-text-3, var(--color-card-bg));
+}
+.tc-mailbox-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.tc-mailbox-head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex-wrap: wrap;
+  margin-bottom: var(--spacing-2xs);
+}
+.tc-mailbox-name {
+  font-weight: 600;
+}
+.tc-mailbox-emoji {
+  font-size: 1.1rem;
+}
+.tc-mailbox-new {
+  font-size: var(--text-xs, 0.7rem);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-accent, var(--color-text));
+  border: 1px solid currentColor;
+  border-radius: var(--radius-full);
+  padding: 0 var(--spacing-2xs);
+}
+.tc-mailbox-time {
+  margin-left: auto;
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text-muted);
+}
+.tc-mailbox-message {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+/* "Thank the next →" button in the progress ring (A2). */
+.tc-progress-next {
+  margin-left: var(--spacing-md);
+}
+
+/* "Most loved" guest curation cards (A3). */
+.loved-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin: var(--spacing-2xs) 0;
+  font-size: var(--text-sm);
+}
+.loved-reactions {
+  font-weight: 700;
+  color: var(--color-text);
+}
+.loved-author {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

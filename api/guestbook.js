@@ -9,6 +9,7 @@ import {
   createGuestbookEntry,
   getGuestbookFeed,
   getGuestbookFeedEntryById,
+  getPinnedGuestbook,
   softDeleteGuestbookEntry,
 } from "../db/guestbook-entries.js"
 import {
@@ -23,6 +24,8 @@ import { enrichSocial } from "./enrich.js"
 
 const DEFAULT_LIMIT = 20
 const MAX_LIMIT = 50
+/** Cap on the admin-pinned "Favorites" strip returned on the first page. */
+const PINNED_LIMIT = 6
 
 /**
  * Parse the keyset cursor. Only a positive integer is a valid cursor; anything
@@ -87,7 +90,18 @@ export async function list(req, res) {
   // row's id is the exclusive cursor for the next page.
   const nextCursor = rows.length === limit ? rows[rows.length - 1].id : null
 
-  return sendJson(res, 200, { entries, nextCursor })
+  // The admin-pinned "Favorites" strip rides along on the FIRST page only (no
+  // cursor). Pinned entries also remain in the main chronological feed — the
+  // duplication is intentional and simpler (the strip is a separate, distinctly
+  // styled section, like a pinned post above a timeline).
+  /** @type {GlobalTypes.GuestbookFeedEntry[]} */
+  let pinned = []
+  if (before === null) {
+    pinned = getPinnedGuestbook({ callerId, limit: PINNED_LIMIT }).map(toFeedEntry)
+    enrichSocial(pinned, TARGET_TYPE.GUESTBOOK, callerId)
+  }
+
+  return sendJson(res, 200, { entries, nextCursor, pinned })
 }
 
 /** @type {Types.guestbookGetOne} */

@@ -474,17 +474,29 @@ export interface MediaListItem {
   comment_count?: number
 }
 
-/** Public GET /api/media response: a page of items + keyset cursor. */
+/** Contributors strip for the guest section: distinct visible author names +
+ *  totals. Attached to the FIRST guest page only (cheap aggregate, not re-run
+ *  per keyset page). `names` is capped; `guests` is the true distinct total. */
+export interface MediaContributors {
+  photos: number
+  guests: number
+  names: string[]
+}
+
+/** Public GET /api/media response: a page of items + keyset cursor. The
+ *  `contributors` aggregate rides along on the first guest page only. */
 export interface MediaListResponse {
   items: MediaListItem[]
   nextCursor: number | null
+  contributors?: MediaContributors
 }
 
 // --- Comments & reactions (Phase 5) — polymorphic over guestbook + media ---
 
 export interface Comment {
   id: number
-  account_id: number
+  /** NULL for a host/couple reply (admin-authored). */
+  account_id: number | null
   target_type: TargetType
   target_id: number
   message: string
@@ -505,18 +517,22 @@ export interface Reaction {
 }
 
 /** A comments row joined with its author, as returned by getCommentsForTarget.
- *  `is_own` arrives as 0|1 from SQLite; the API maps it to a boolean. */
+ *  `is_own`/`is_host` arrive as 0|1 from SQLite; the API maps them to booleans.
+ *  `author_name` is NULL for host/couple replies (account_id NULL) — the API
+ *  resolves it to the couple's display name. */
 export interface CommentFeedRow {
   id: number
-  account_id: number
+  account_id: number | null
   message: string
   status: ContentStatus
   created_at: string
-  author_name: string
+  author_name: string | null
   is_own: 0 | 1
+  is_host: 0 | 1
 }
 
-/** Public comment shape (booleans, no account_id leaked). */
+/** Public comment shape (booleans, no account_id leaked). `is_host` marks a
+ *  couple/host reply (rendered with the host badge + accent). */
 export interface CommentListItem {
   id: number
   message: string
@@ -524,6 +540,7 @@ export interface CommentListItem {
   status: ContentStatus
   created_at: string
   is_own: boolean
+  is_host: boolean
 }
 
 /** A pending comment row for the moderation queue (includes its target). */
@@ -590,6 +607,19 @@ export interface ModerationQueueRow {
   kind: MediaKind | null
   caption: string | null
   needs_display: 0 | 1 | null
+  /** Comment rows only: a short snippet of the parent being commented on
+   *  (the guestbook message or the media caption). NULL for guestbook/media rows
+   *  and for a media parent with no caption. */
+  parent_snippet: string | null
+  /** Comment rows only: the parent author's display name (NULL for an official
+   *  media parent with no account, or for non-comment rows). */
+  parent_author: string | null
+  /** Comment rows only: the parent media's file_key when the comment targets
+   *  media (drives the thumbnail); NULL otherwise. */
+  parent_file_key: string | null
+  /** Comment rows only: the parent media's kind, to pick the right thumbnail
+   *  variant (image → thumb, video → poster). NULL otherwise. */
+  parent_kind: MediaKind | null
 }
 
 /**

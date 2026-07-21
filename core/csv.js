@@ -127,3 +127,71 @@ export function rsvpsToCSV(rsvps) {
 
   return rows.join("\n")
 }
+
+/** @type {Types.giftsToCSV} */
+export function giftsToCSV(gifts) {
+  const headers = [
+    "guest_name",
+    "description",
+    "amount",
+    "notes",
+    "received_at",
+    "physical_card_sent",
+    "physical_card_sent_at",
+    "digital_card_status",
+    "created_at",
+  ]
+  const rows = [headers.join(",")]
+
+  for (const gift of gifts) {
+    const row = [
+      escapeCSVField(gift.guest_name),
+      escapeCSVField(gift.description),
+      escapeCSVField(gift.amount),
+      escapeCSVField(gift.notes),
+      escapeCSVField(gift.received_at),
+      gift.physical_card_sent ? "Yes" : "No",
+      escapeCSVField(gift.physical_card_sent_at),
+      escapeCSVField(gift.digital_card_status),
+      escapeCSVField(gift.created_at),
+    ]
+    rows.push(row.join(","))
+  }
+
+  return rows.join("\n")
+}
+
+/** @type {Types.thankYouCardsToCSV} */
+export function thankYouCardsToCSV(cards) {
+  const headers = [
+    "guest_name",
+    "status",
+    "sent_via",
+    "sent_at",
+    "viewed_at",
+    "view_count",
+    "replied_at",
+    "reply_emoji",
+    "reply_message",
+    "message",
+  ]
+  const rows = [headers.join(",")]
+
+  for (const card of cards) {
+    const row = [
+      escapeCSVField(card.guest_name),
+      escapeCSVField(card.status),
+      escapeCSVField(card.sent_via),
+      escapeCSVField(card.sent_at),
+      escapeCSVField(card.viewed_at),
+      escapeCSVField(card.view_count),
+      escapeCSVField(card.replied_at),
+      escapeCSVField(card.reply_emoji),
+      escapeCSVField(card.reply_message),
+      escapeCSVField(card.message),
+    ]
+    rows.push(row.join(","))
+  }
+
+  return rows.join("\n")
+}

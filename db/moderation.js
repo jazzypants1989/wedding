@@ -7,12 +7,20 @@
 
 import { sql } from "./sql.js"
 import { now } from "./utils.js"
+import { liveCommentParentFilter } from "./comments.js"
 import { MEDIA_SECTION } from "../types.js"
 
 /**
  * Build one type's contribution to the combined queue. Every branch projects the
- * SAME 14 columns (NULL-filled where a column doesn't apply) so the UNION ALL is
+ * SAME 18 columns (NULL-filled where a column doesn't apply) so the UNION ALL is
  * well-formed. Media uses a LEFT JOIN (official uploads have account_id NULL).
+ * A soft-deleted author's rows drop out of every branch (the admin removed that
+ * person; media stays null-tolerant so admin uploads survive), and the comment
+ * branch additionally hides comments whose parent target is no longer live — the
+ * same gate the standalone comment queue/count use, so all consumers agree.
+ * The comment branch also carries parent context (snippet/author/file_key/kind)
+ * via correlated subqueries so the moderation detail can show what a comment is
+ * ON; guestbook/media branches NULL-fill those four columns.
  * @param {'guestbook' | 'media' | 'comment'} type
  * @param {string} status
  * @param {number | null} accountId
@@ -25,9 +33,10 @@ function typeSelect(type, status, accountId) {
         a.name AS author_name, a.relation AS relation, a.trusted AS author_trusted, e.status AS status,
         e.created_at AS created_at, e.message AS message,
         NULL AS target_type, NULL AS target_id,
-        NULL AS file_key, NULL AS kind, NULL AS caption, NULL AS needs_display
+        NULL AS file_key, NULL AS kind, NULL AS caption, NULL AS needs_display,
+        NULL AS parent_snippet, NULL AS parent_author, NULL AS parent_file_key, NULL AS parent_kind
       FROM guestbook_entries e JOIN accounts a ON a.id = e.account_id
-      WHERE e.status = ${status} AND e.deleted_at IS NULL ${acct}`
+      WHERE e.status = ${status} AND e.deleted_at IS NULL AND a.deleted_at IS NULL ${acct}`
   }
   if (type === "comment") {
     const acct = accountId !== null ? sql`AND c.account_id = ${accountId}` : sql.empty
@@ -35,18 +44,38 @@ function typeSelect(type, status, accountId) {
         a.name AS author_name, a.relation AS relation, a.trusted AS author_trusted, c.status AS status,
         c.created_at AS created_at, c.message AS message,
         c.target_type AS target_type, c.target_id AS target_id,
-        NULL AS file_key, NULL AS kind, NULL AS caption, NULL AS needs_display
+        NULL AS file_key, NULL AS kind, NULL AS caption, NULL AS needs_display,
+        CASE c.target_type
+          WHEN 'guestbook' THEN (SELECT ge.message FROM guestbook_entries ge WHERE ge.id = c.target_id)
+          WHEN 'media' THEN (SELECT m.caption FROM media m WHERE m.id = c.target_id)
+        END AS parent_snippet,
+        CASE c.target_type
+          WHEN 'guestbook' THEN (SELECT pa.name FROM guestbook_entries ge
+            JOIN accounts pa ON pa.id = ge.account_id WHERE ge.id = c.target_id)
+          WHEN 'media' THEN (SELECT pa.name FROM media m
+            JOIN accounts pa ON pa.id = m.account_id WHERE m.id = c.target_id)
+        END AS parent_author,
+        CASE c.target_type
+          WHEN 'media' THEN (SELECT m.file_key FROM media m WHERE m.id = c.target_id)
+        END AS parent_file_key,
+        CASE c.target_type
+          WHEN 'media' THEN (SELECT m.kind FROM media m WHERE m.id = c.target_id)
+        END AS parent_kind
       FROM comments c JOIN accounts a ON a.id = c.account_id
-      WHERE c.status = ${status} AND c.deleted_at IS NULL ${acct}`
+      WHERE c.status = ${status} AND c.deleted_at IS NULL AND a.deleted_at IS NULL
+        AND ${liveCommentParentFilter()} ${acct}`
   }
   const acct = accountId !== null ? sql`AND m.account_id = ${accountId}` : sql.empty
   return sql`SELECT 'media' AS content_type, m.id AS id, m.account_id AS account_id,
       a.name AS author_name, a.relation AS relation, a.trusted AS author_trusted, m.status AS status,
       m.created_at AS created_at, NULL AS message,
       NULL AS target_type, NULL AS target_id,
-      m.file_key AS file_key, m.kind AS kind, m.caption AS caption, m.needs_display AS needs_display
+      m.file_key AS file_key, m.kind AS kind, m.caption AS caption, m.needs_display AS needs_display,
+      NULL AS parent_snippet, NULL AS parent_author, NULL AS parent_file_key, NULL AS parent_kind
     FROM media m LEFT JOIN accounts a ON a.id = m.account_id
-    WHERE m.status = ${status} AND m.deleted_at IS NULL AND m.section != ${MEDIA_SECTION.CONTENT} ${acct}`
+    WHERE m.status = ${status} AND m.deleted_at IS NULL
+      AND (m.account_id IS NULL OR a.deleted_at IS NULL)
+      AND m.section != ${MEDIA_SECTION.CONTENT} ${acct}`
 }
 
 /** @type {Types.getModerationQueue} */

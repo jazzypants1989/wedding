@@ -12,7 +12,7 @@ import {
   announceCharsRemaining,
 } from "../utils.js"
 import { requireAccount, session, loadSession } from "../../components/guest-session.js"
-import { fireConfetti } from "../../components/celebrate.js"
+import { fireConfetti, champagnePop, miniSparkle } from "../../components/celebrate.js"
 import { showNote } from "../../components/notice.js"
 import { announcePolite } from "../../components/announce.js"
 import { createUploadQueue } from "../../components/media-uploader.js"
@@ -133,12 +133,31 @@ function updateCaptionCount(input) {
   announceCharsRemaining(len, CAPTION_MAX, count)
 }
 
+// Batch celebration state: sparkles are capped per batch so a 30-photo dump
+// doesn't strobe, and the champagne pop fires once per completed multi-item
+// batch (from the newest grid cell). All celebrate helpers self-gate under
+// prefers-reduced-motion.
+const BATCH_SPARKLE_CAP = 5
+let batchSparkles = 0
+let batchActive = false
+/** @type {number | null} */
+let newestCellId = null
+
 /** @param {Components.UploadQueueItem} item */
 function onItemChange(item) {
   if ((item.state === "done" || item.state === "pending") && !prepended.has(item.id)) {
     prepended.add(item.id)
     prependItem(toListItem(item))
     if (item.state === "pending") showPendingNote()
+    // Sparkle the freshly-landed thumbnail (capped per batch).
+    if (typeof item.serverId === "number") {
+      newestCellId = item.serverId
+      if (batchSparkles < BATCH_SPARKLE_CAP) {
+        batchSparkles += 1
+        const cell = document.querySelector(`.media-cell[data-id="${item.serverId}"]`)
+        if (cell instanceof HTMLElement) miniSparkle(cell)
+      }
+    }
   }
   // A 401 means the session died server-side while local state still says
   // signed-in. Re-sync so the identity UI tells the truth and the row's Retry
@@ -212,6 +231,24 @@ function renderTray() {
   // The summary is the tray's only live region; skip identical reassignment,
   // which replaces the text node and can re-announce it.
   if (summaryEl.textContent !== summary) summaryEl.textContent = summary
+
+  // Batch-completion beat: on the active→idle edge of a multi-item batch, pop
+  // champagne from the newest landed cell (viewport confetti if it scrolled
+  // away). Single uploads keep the quieter first-success confetti only.
+  if (active > 0) {
+    batchActive = true
+  } else if (batchActive) {
+    batchActive = false
+    batchSparkles = 0
+    if (succeeded >= 2) {
+      const cell =
+        newestCellId !== null
+          ? document.querySelector(`.media-cell[data-id="${newestCellId}"]`)
+          : null
+      if (cell instanceof HTMLElement) champagnePop(cell)
+      else fireConfetti()
+    }
+  }
 
   // With nothing active the button only clears finished rows — say so.
   getElement("upload-cancel-all").textContent = active > 0 ? "Cancel all" : "Clear"

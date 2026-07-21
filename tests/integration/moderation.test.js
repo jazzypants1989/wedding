@@ -166,7 +166,10 @@ describe("combined moderation queue + filters + counts", () => {
     const b = signIn({ name: "Bob" })
     const entryId = seedEntry(a.accountId)
     const media = seedMedia(b.accountId)
-    const commentId = seedComment(a.accountId, entryId)
+    // The pending comment hangs off a LIVE (approved) parent so it surfaces in
+    // the queue — a comment on a non-live parent is intentionally suppressed.
+    const liveParent = seedEntry(a.accountId, "approved")
+    const commentId = seedComment(a.accountId, liveParent)
 
     const all = await json(await asAdmin("/api/admin/moderation/queue"))
     const kinds = all.items.map((/** @type {any} */ i) => i.content_type).sort()

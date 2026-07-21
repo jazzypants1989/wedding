@@ -10,6 +10,30 @@ initMobileNav()
 initCountdown()
 initThemeToggle()
 initRegistryFrame()
+initMemoriesCount()
+
+/**
+ * Fill the landing "N moments shared so far" line from the public /api/config
+ * counts (approved gallery photos + guestbook notes). Best-effort: any failure,
+ * or a zero total, leaves the line hidden so nothing half-rendered shows.
+ */
+function initMemoriesCount() {
+  const el = document.getElementById("memories-count")
+  if (!el) return
+  fetch("/api/config", { headers: { Accept: "application/json" } })
+    .then((res) => (res.ok ? res.json() : null))
+    .then((cfg) => {
+      const counts = cfg && cfg.counts
+      if (!counts) return
+      const total = (counts.photos || 0) + (counts.notes || 0)
+      if (total <= 0) return
+      el.textContent = `${total} photos & notes from our favorite people`
+      el.hidden = false
+    })
+    .catch(() => {
+      // Silent — the section reads fine without the tally.
+    })
+}
 
 // Resolve the guest session, then surface any waiting thank-you card banner.
 void loadSession().then(() => initThanksBanner())

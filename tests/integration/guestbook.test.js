@@ -45,9 +45,12 @@ function signIn({ trusted = 0, name = "Guest" } = {}) {
  * @param {string} [status]
  */
 function seedEntry(accountId, status = "approved") {
-  db.prepare(
-    `INSERT INTO guestbook_entries (account_id, message, status) VALUES (?, ?, ?)`,
-  ).run(accountId, "seeded message", status)
+  const r = db
+    .prepare(
+      `INSERT INTO guestbook_entries (account_id, message, status) VALUES (?, ?, ?)`,
+    )
+    .run(accountId, "seeded message", status)
+  return Number(r.lastInsertRowid)
 }
 
 /**
@@ -242,6 +245,38 @@ describe("Guestbook", () => {
       assert.strictEqual(anon.data.entries.length, 0, "hidden entry is gone publicly")
     })
 
+    it("approving a pending entry whose author was soft-deleted keeps it out of the public feed", async () => {
+      if (!hasAdmin) return
+      // Regression: an approve after the author's account was removed used to
+      // publish content by someone who is no longer here. The row-level approve
+      // still succeeds (kept behavior — we don't touch the transition), but the
+      // feed's account join now excludes soft-deleted authors.
+      const { accountId, auth } = signIn({ trusted: 0, name: "Ghosted Gus" })
+      const id = /** @type {any} */ (
+        await (await post("/api/guestbook", "posthumous hello", auth)).json()
+      ).entry.id
+
+      db.prepare(`UPDATE accounts SET deleted_at = ? WHERE id = ?`).run(
+        new Date().toISOString(),
+        accountId,
+      )
+
+      const adminAuth = await adminLogin()
+      const aRes = await adminFetch(
+        `/api/admin/moderation/guestbook/${id}/approve`,
+        { method: "POST" },
+        adminAuth,
+      )
+      assert.strictEqual(aRes.status, 200, "row-level approve still succeeds")
+
+      const anon = await anonFeed()
+      assert.strictEqual(
+        anon.data.entries.length,
+        0,
+        "a soft-deleted author's entry never surfaces publicly",
+      )
+    })
+
     it("rejects an unknown moderation :type with 404", async () => {
       if (!hasAdmin) return
       const adminAuth = await adminLogin()
@@ -389,6 +424,156 @@ describe("Guestbook", () => {
 
       const res = await fetch(`${BASE_URL}/api/guestbook/${id}`)
       assert.strictEqual(res.status, 404)
+    })
+  })
+
+  describe("host replies (Feature 1)", () => {
+    it("admin posts a host comment → is_host, approved instantly, visible to anon", async () => {
+      if (!hasAdmin) return
+      const owner = signIn({ trusted: 1, name: "Aunt Carol" })
+      const entryId = seedEntry(owner.accountId, "approved")
+      const adminAuth = await adminLogin()
+
+      const res = await adminFetch(
+        `/api/guestbook/${entryId}/comments`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: "Thank you so much! 💗" }),
+        },
+        adminAuth,
+      )
+      assert.strictEqual(res.status, 201)
+      const body = /** @type {any} */ (await res.json())
+      assert.strictEqual(body.status, "approved")
+      assert.strictEqual(body.comment.is_host, true)
+      assert.ok(
+        typeof body.comment.author_name === "string" &&
+          body.comment.author_name.length > 0,
+        "host reply carries the couple's display name",
+      )
+      const commentId = body.comment.id
+
+      // Stored with account_id NULL (the host/couple representation).
+      const row = /** @type {any} */ (
+        db.prepare(`SELECT account_id, status FROM comments WHERE id = ?`).get(commentId)
+      )
+      assert.strictEqual(row.account_id, null)
+      assert.strictEqual(row.status, "approved")
+
+      // Anonymous thread GET shows it, flagged is_host.
+      const anon = await fetch(`${BASE_URL}/api/guestbook/${entryId}/comments`)
+      const data = /** @type {any} */ (await anon.json())
+      const hostC = data.comments.find((/** @type {any} */ c) => c.id === commentId)
+      assert.ok(hostC, "host reply visible to the public")
+      assert.strictEqual(hostC.is_host, true)
+      assert.strictEqual(hostC.status, "approved")
+    })
+
+    it("a guest comment is not flagged is_host", async () => {
+      const owner = signIn({ trusted: 1 })
+      const entryId = seedEntry(owner.accountId, "approved")
+      const commenter = signIn({ trusted: 1, name: "Regular Guest" })
+
+      const res = await accountFetch(
+        `/api/guestbook/${entryId}/comments`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: "so happy!" }),
+        },
+        commenter.auth,
+      )
+      assert.strictEqual(res.status, 201)
+      const body = /** @type {any} */ (await res.json())
+      assert.strictEqual(body.comment.is_host, false)
+    })
+  })
+
+  describe("pinned Favorites (Feature 2)", () => {
+    it("pin surfaces an approved entry in the feed's pinned array; unpin removes it", async () => {
+      if (!hasAdmin) return
+      const owner = signIn({ trusted: 1, name: "Fav Author" })
+      const entryId = seedEntry(owner.accountId, "approved")
+      const adminAuth = await adminLogin()
+
+      const pinRes = await adminFetch(
+        `/api/admin/guestbook/${entryId}/pin`,
+        { method: "POST" },
+        adminAuth,
+      )
+      assert.strictEqual(pinRes.status, 200)
+
+      let feed = await anonFeed()
+      assert.ok(
+        feed.data.pinned.some((/** @type {any} */ e) => e.id === entryId),
+        "pinned entry appears in the pinned array",
+      )
+
+      const unpinRes = await adminFetch(
+        `/api/admin/guestbook/${entryId}/unpin`,
+        { method: "POST" },
+        adminAuth,
+      )
+      assert.strictEqual(unpinRes.status, 200)
+
+      feed = await anonFeed()
+      assert.strictEqual(feed.data.pinned.length, 0, "unpinned → gone from pinned array")
+    })
+
+    it("pinned array is capped at 6, newest-pinned-first", async () => {
+      if (!hasAdmin) return
+      const owner = signIn({ trusted: 1 })
+      const adminAuth = await adminLogin()
+      /** @type {number[]} */
+      const ids = []
+      for (let i = 0; i < 8; i++) {
+        const id = seedEntry(owner.accountId, "approved")
+        ids.push(id)
+        const r = await adminFetch(
+          `/api/admin/guestbook/${id}/pin`,
+          { method: "POST" },
+          adminAuth,
+        )
+        assert.strictEqual(r.status, 200)
+      }
+      const feed = await anonFeed()
+      assert.strictEqual(feed.data.pinned.length, 6, "capped at 6")
+      assert.strictEqual(
+        feed.data.pinned[0].id,
+        ids[ids.length - 1],
+        "newest-pinned first",
+      )
+    })
+
+    it("pinning a pending entry is rejected (409)", async () => {
+      if (!hasAdmin) return
+      const owner = signIn({ trusted: 0 })
+      const id = seedEntry(owner.accountId, "pending")
+      const adminAuth = await adminLogin()
+      const res = await adminFetch(
+        `/api/admin/guestbook/${id}/pin`,
+        { method: "POST" },
+        adminAuth,
+      )
+      assert.strictEqual(res.status, 409)
+    })
+
+    it("pin endpoints reject a guest and an anonymous caller (401)", async () => {
+      const owner = signIn({ trusted: 1 })
+      const id = seedEntry(owner.accountId, "approved")
+
+      const guestPin = await accountFetch(
+        `/api/admin/guestbook/${id}/pin`,
+        { method: "POST" },
+        owner.auth,
+      )
+      assert.strictEqual(guestPin.status, 401)
+
+      const anonPin = await fetch(`${BASE_URL}/api/admin/guestbook/${id}/pin`, {
+        method: "POST",
+      })
+      assert.strictEqual(anonPin.status, 401)
     })
   })
 })

@@ -475,6 +475,22 @@ export function softDeleteGuestbookEntry(
   accountId: number,
 ): boolean
 
+/**
+ * Pin (pinned=true) or unpin an approved, live entry for the "Favorites" strip.
+ * Pin sets pinned_at=now only on an approved non-pinned row; unpin clears it.
+ * Returns true if a row changed.
+ */
+export function setGuestbookPinned(id: number, pinned: boolean): boolean
+
+/**
+ * The admin-pinned "Favorites" set: approved, live, non-deleted author, newest
+ * pinned first, capped by `limit`. Same row shape as the feed.
+ */
+export function getPinnedGuestbook(options: {
+  callerId?: number | null
+  limit: number
+}): GuestbookFeedRow[]
+
 /** Admin queue: pending entries oldest-first, offset-paginated. */
 export function getGuestbookModerationQueue(options: {
   limit: number
@@ -483,6 +499,10 @@ export function getGuestbookModerationQueue(options: {
 
 /** Count non-deleted pending guestbook entries. */
 export function countPendingGuestbook(): number
+
+/** Count of publicly visible (approved, live-account, non-deleted) guestbook
+ *  entries — the notes half of the landing "moments shared" tally. */
+export function countApprovedGuestbook(): number
 
 /**
  * Transition an entry's status if its current status is in fromStatuses (and it
@@ -534,6 +554,25 @@ export interface MediaFeedOptions {
  * single page. LEFT JOIN accounts, so author_name is null for official uploads.
  */
 export function getMediaFeed(options: MediaFeedOptions): MediaFeedRow[]
+
+/** One "Most loved" guest media row: enough to render a curation card plus its
+ *  total reaction count (A3). */
+export interface GuestMediaByReactionsRow {
+  id: number
+  file_key: string
+  kind: string
+  caption: string | null
+  width: number | null
+  height: number | null
+  needs_display: number
+  created_at: string
+  author_name: string | null
+  reaction_count: number
+}
+
+/** Approved GUEST media ranked by total reaction count, capped at `limit`
+ *  (single page — reaction count isn't a stable keyset cursor). */
+export function listGuestMediaByReactions(limit: number): GuestMediaByReactionsRow[]
 
 /**
  * Single-item feed row (LEFT JOIN accounts + is_own) for ?item= deep links.
@@ -620,6 +659,21 @@ export function hardDeleteMedia(id: number): void
 /** Pending media count for the moderation digest/badge. */
 export function countPendingMedia(): number
 
+/** Distinct visible guest-upload contributors + totals for the gallery
+ *  "Shared by" strip. `names` is capped at `limit` (contribution desc); `guests`
+ *  is the true distinct count (may exceed names.length); `photos` is the total. */
+export interface GuestContributors {
+  photos: number
+  guests: number
+  names: string[]
+}
+
+export function getGuestContributors(limit?: number): GuestContributors
+
+/** Count of publicly visible (approved, live-account, non-deleted) guest photos
+ *  — the gallery half of the landing "moments shared" tally. */
+export function countApprovedGuestMedia(): number
+
 /** Sum of original_bytes across live rows (global disk guard). */
 export function sumOriginalBytes(): number
 
@@ -667,7 +721,8 @@ import type {
 } from "../types.js"
 
 export interface CreateCommentInput {
-  accountId: number
+  /** NULL for a host/couple reply (admin-authored). */
+  accountId: number | null
   targetType: TargetType
   targetId: number
   message: string
@@ -931,8 +986,40 @@ export function softDeleteCard(id: number): boolean
 /** Sent/viewed cards for a guest (banner surfacing), newest sent first. */
 export function getCardsForGuest(guestId: number): ThankYouCardForGuest[]
 
+/** Reference counts for a gallery photo across non-deleted thank-you cards. */
+export interface CardReferenceCounts {
+  /** All non-deleted cards (any status) whose media_keys array holds the key. */
+  total: number
+  /** The sent/viewed subset — already delivered, so what a removal warning names. */
+  delivered: number
+}
+
+/** Count non-deleted thank-you cards whose media_keys JSON array contains this
+ *  file_key, broken out into total vs delivered (sent/viewed). Used to warn an
+ *  admin before removing/rejecting a gallery photo embedded in already-sent
+ *  cards (which then degrade gracefully via resolveMedia). */
+export function countCardsReferencingFileKey(fileKey: string): CardReferenceCounts
+
 /** Count of replied, not-yet-admin-seen, non-deleted cards (badge/digest). */
 export function countUnreadReplies(): number
+
+/** One reply in the cross-card "Mailbox" feed: the reply plus its card's guest
+ *  name + token, and whether it's still unread (card not yet acked, or the reply
+ *  landed after the last ack). */
+export interface RecentReply {
+  id: number
+  cardId: number
+  emoji: string | null
+  message: string | null
+  createdAt: string
+  guestName: string
+  cardToken: string
+  unread: boolean
+}
+
+/** Recent replies across ALL non-deleted cards, newest first (Mailbox / Inbox).
+ *  `limit` caps the page. */
+export function getRecentReplies(limit: number): RecentReply[]
 
 /** Mark a batch of replies as seen. Returns the number of rows changed. */
 export function markRepliesSeen(ids: number[]): number

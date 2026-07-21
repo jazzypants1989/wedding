@@ -92,6 +92,14 @@ export function buildControl(
   ctx: ControlBuildContext,
 ): HTMLElement
 
+/** @file monogram.js - Deterministic initial-chip avatar derived from a name */
+
+/** Derived monogram: 1–2 initials (or a fallback/leading glyph) + a stable hue. */
+export function monogramData(name: string): { initial: string; hue: number }
+
+/** Render the colored monogram chip (`<span class="monogram">`) as an HTML string. */
+export function renderMonogram(name: string): string
+
 /** @file relative-time.js - Types for relative time formatting */
 
 /** Format an ISO timestamp as e.g. "3 days ago" via Intl.RelativeTimeFormat. */

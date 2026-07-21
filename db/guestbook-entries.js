@@ -23,12 +23,14 @@ export function getGuestbookEntryById(id) {
 /** @type {Types.getGuestbookEntryForCaller} */
 export function getGuestbookEntryForCaller(id, callerId = null) {
   // Minimal visibility probe for the comments parent gate (media's analog is
-  // getMediaFeedRowById). Excludes soft-deleted rows → undefined; the caller
-  // gates on status (approved, or own-pending via is_own).
+  // getMediaFeedRowById). Excludes soft-deleted rows AND rows whose author
+  // account is soft-deleted → undefined; the caller gates on status (approved,
+  // or own-pending via is_own).
   const isOwn = callerId !== null ? sql`(e.account_id = ${callerId})` : sql`0`
   return sql`SELECT e.id, e.account_id, e.status, ${isOwn} AS is_own
     FROM guestbook_entries e
-    WHERE e.id = ${id} AND e.deleted_at IS NULL`.get()
+    JOIN accounts a ON a.id = e.account_id
+    WHERE e.id = ${id} AND e.deleted_at IS NULL AND a.deleted_at IS NULL`.get()
 }
 
 /** @type {Types.getGuestbookFeed} */
@@ -50,7 +52,7 @@ export function getGuestbookFeed({ callerId = null, before = null, limit }) {
       a.name AS author_name, a.trusted AS author_trusted, ${isOwn} AS is_own
     FROM guestbook_entries e
     JOIN accounts a ON a.id = e.account_id
-    WHERE e.deleted_at IS NULL
+    WHERE e.deleted_at IS NULL AND a.deleted_at IS NULL
       AND (e.status = 'approved' ${ownPending})
       ${beforeFilter}
     ORDER BY e.id DESC
@@ -71,8 +73,38 @@ export function getGuestbookFeedEntryById(id, callerId = null) {
       a.name AS author_name, a.trusted AS author_trusted, ${isOwn} AS is_own
     FROM guestbook_entries e
     JOIN accounts a ON a.id = e.account_id
-    WHERE e.id = ${id} AND e.deleted_at IS NULL
+    WHERE e.id = ${id} AND e.deleted_at IS NULL AND a.deleted_at IS NULL
       AND (e.status = 'approved' ${ownPending})`.get()
+}
+
+/** @type {Types.setGuestbookPinned} */
+export function setGuestbookPinned(id, pinned) {
+  // Only an approved, live entry can be pinned (the Favorites strip shows public
+  // notes only). Unpin clears the timestamp. Returns true if a row changed.
+  const result = pinned
+    ? sql`UPDATE guestbook_entries SET pinned_at = ${now()}
+        WHERE id = ${id} AND deleted_at IS NULL AND status = 'approved' AND pinned_at IS NULL`.run()
+    : sql`UPDATE guestbook_entries SET pinned_at = NULL
+        WHERE id = ${id} AND deleted_at IS NULL AND pinned_at IS NOT NULL`.run()
+  return result.changes > 0
+}
+
+/** @type {Types.getPinnedGuestbook} */
+export function getPinnedGuestbook({ callerId = null, limit }) {
+  // The admin-pinned "Favorites" set: approved, live, non-deleted author, newest
+  // pinned first. Same columns as getGuestbookFeed so the page renders them with
+  // the shared entry renderer. `is_own` is computed for parity (delete/share
+  // affordances) though the strip is read-mostly.
+  const isOwn =
+    callerId !== null ? sql`(e.account_id = ${callerId})` : sql`0`
+  return sql`SELECT e.id, e.account_id, e.message, e.status, e.created_at,
+      a.name AS author_name, a.trusted AS author_trusted, ${isOwn} AS is_own
+    FROM guestbook_entries e
+    JOIN accounts a ON a.id = e.account_id
+    WHERE e.pinned_at IS NOT NULL AND e.status = 'approved'
+      AND e.deleted_at IS NULL AND a.deleted_at IS NULL
+    ORDER BY e.pinned_at DESC, e.id DESC
+    LIMIT ${limit}`.all()
 }
 
 /** @type {Types.softDeleteGuestbookEntry} */
@@ -84,21 +116,36 @@ export function softDeleteGuestbookEntry(id, accountId) {
 
 /** @type {Types.getGuestbookModerationQueue} */
 export function getGuestbookModerationQueue({ limit, offset }) {
-  // Oldest-first so the admin clears the backlog in arrival order.
+  // Oldest-first so the admin clears the backlog in arrival order. A soft-deleted
+  // author's pending items drop out — the admin removed that person.
   return sql`SELECT e.id, e.account_id, e.message, e.status, e.created_at,
       a.name AS author_name, a.trusted AS author_trusted, 0 AS is_own
     FROM guestbook_entries e
     JOIN accounts a ON a.id = e.account_id
-    WHERE e.status = 'pending' AND e.deleted_at IS NULL
+    WHERE e.status = 'pending' AND e.deleted_at IS NULL AND a.deleted_at IS NULL
     ORDER BY e.created_at ASC, e.id ASC
     LIMIT ${limit} OFFSET ${offset}`.all()
 }
 
 /** @type {Types.countPendingGuestbook} */
 export function countPendingGuestbook() {
+  // Joins accounts so a soft-deleted author's pending items drop out of the badge,
+  // keeping this count in step with getGuestbookModerationQueue.
   /** @type {import('./types.js').CountResult | undefined} */
-  const result = sql`SELECT COUNT(*) AS count FROM guestbook_entries
-    WHERE status = 'pending' AND deleted_at IS NULL`.get()
+  const result = sql`SELECT COUNT(*) AS count FROM guestbook_entries e
+    JOIN accounts a ON a.id = e.account_id
+    WHERE e.status = 'pending' AND e.deleted_at IS NULL AND a.deleted_at IS NULL`.get()
+  return result ? result.count : 0
+}
+
+/** @type {Types.countApprovedGuestbook} */
+export function countApprovedGuestbook() {
+  // Public "moments shared" tally for the landing page — approved, non-deleted
+  // entries from live accounts (same gate as the public feed).
+  /** @type {import('./types.js').CountResult | undefined} */
+  const result = sql`SELECT COUNT(*) AS count FROM guestbook_entries e
+    JOIN accounts a ON a.id = e.account_id
+    WHERE e.status = 'approved' AND e.deleted_at IS NULL AND a.deleted_at IS NULL`.get()
   return result ? result.count : 0
 }
 
@@ -123,8 +170,11 @@ export function getModerationCounts() {
 
 /** @type {Types.getOldestPendingGuestbookAt} */
 export function getOldestPendingGuestbookAt() {
+  // Matches countPendingGuestbook's account gate so the digest's "oldest pending"
+  // never points at an item that no longer counts (deleted author).
   /** @type {{ oldest: string | null } | undefined} */
-  const row = sql`SELECT MIN(created_at) AS oldest FROM guestbook_entries
-    WHERE status = 'pending' AND deleted_at IS NULL`.get()
+  const row = sql`SELECT MIN(e.created_at) AS oldest FROM guestbook_entries e
+    JOIN accounts a ON a.id = e.account_id
+    WHERE e.status = 'pending' AND e.deleted_at IS NULL AND a.deleted_at IS NULL`.get()
   return row && row.oldest ? row.oldest : null
 }

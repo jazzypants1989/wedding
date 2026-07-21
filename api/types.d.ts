@@ -15,6 +15,14 @@ export interface PublicConfig {
   }
   /** Reply-to / contact address surfaced to guests (gallery report mailto). */
   contactEmail: string
+  /** Timeline mode + couple display name for client-side use. */
+  mode: string
+  coupleDisplay: string
+  /** Public "moments shared" tally (approved guest photos + guestbook notes). */
+  counts: {
+    photos: number
+    notes: number
+  }
 }
 
 export function getConfig(req: IncomingMessage, res: ServerResponse): void
@@ -191,18 +199,20 @@ export function commentListMedia(
   routeInfo: RouteInfo,
 ): Promise<void>
 
-/** POST /api/guestbook/:id/comments — post a comment (withAccount); hybrid moderation. */
+/** POST /api/guestbook/:id/comments — post a comment (withAccountOrAdmin): a
+ *  guest under hybrid moderation, or the couple as an auto-approved host reply. */
 export function commentCreateGuestbook(
   req: IncomingMessage,
   res: ServerResponse,
-  routeInfo: AccountRouteInfo,
+  routeInfo: AccountOrAdminRouteInfo,
 ): Promise<void>
 
-/** POST /api/media/:id/comments — post a comment (withAccount); hybrid moderation. */
+/** POST /api/media/:id/comments — post a comment (withAccountOrAdmin): a guest
+ *  under hybrid moderation, or the couple as an auto-approved host reply. */
 export function commentCreateMedia(
   req: IncomingMessage,
   res: ServerResponse,
-  routeInfo: AccountRouteInfo,
+  routeInfo: AccountOrAdminRouteInfo,
 ): Promise<void>
 
 /** DELETE /api/comments/:id — soft-delete own comment (withAccount). */

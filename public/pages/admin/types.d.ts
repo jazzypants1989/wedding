@@ -154,6 +154,13 @@ export interface ModerationItem {
   kind: string | null
   caption: string | null
   needs_display: boolean | null
+  /** Comment rows only: the parent's snippet (guestbook message / media caption),
+   *  author name, and — for a media parent — its file_key + kind (to pick the
+   *  thumbnail variant). Null on non-comment rows and where a field is absent. */
+  parent_snippet: string | null
+  parent_author: string | null
+  parent_file_key: string | null
+  parent_kind: string | null
 }
 
 export interface ModerationQueueResponse {
@@ -184,6 +191,15 @@ export interface ModerationCountsResponse {
   media: number
   comments: number
   total: number
+}
+
+/** GET /api/admin/media/:id/references — thank-you card reference counts for a
+ *  photo, so a Remove/Reject/Hide confirm can warn about cards it would strip. */
+export interface MediaReferencesResponse {
+  /** All non-deleted cards (any status) that embed this photo. */
+  cardRefs: number
+  /** The sent/viewed subset — already delivered, so what the warning names. */
+  deliveredCardRefs: number
 }
 
 /** One account row as projected by GET /api/admin/accounts (booleans, source). */
@@ -1130,6 +1146,40 @@ export interface ThankYouCounts {
   drafts: number
 }
 
+/** One "Most loved" guest media item in the gallery manager (A3). */
+export interface LovedMediaItem {
+  id: number
+  file_key: string
+  kind: string
+  caption: string | null
+  author_name: string | null
+  needs_display: boolean
+  reaction_count: number
+}
+
+/** Response of GET /api/admin/media/guest-loved. */
+export interface LovedMediaResponse {
+  items: LovedMediaItem[]
+}
+
+/** One reply in the cross-card Mailbox / Inbox feed (GET
+ *  /api/admin/thank-you/replies). Mirrors db RecentReply. */
+export interface ThankYouRecentReply {
+  id: number
+  cardId: number
+  emoji: string | null
+  message: string | null
+  createdAt: string
+  guestName: string
+  cardToken: string
+  unread: boolean
+}
+
+/** Response of GET /api/admin/thank-you/replies. */
+export interface ThankYouRepliesResponse {
+  replies: ThankYouRecentReply[]
+}
+
 /** Per-channel availability + default template for the send wizard. */
 export interface ThankYouSendChannel {
   configured: boolean
@@ -1278,6 +1328,11 @@ export interface ThankYouModuleState {
   view: "list" | "editor"
   dirty: boolean
   effectsCustomized: boolean
+  /** Whether the couple has hand-edited the message — guards "↻ Reroll" from
+   *  silently replacing real writing (D2). */
+  messageCustomized: boolean
+  /** How many times Reroll has cycled the current draft (deterministic rotation). */
+  rerollCount: number
   guestsLoaded: boolean
   guestOptions: { id: number; name: string }[]
   /** The site's active effect theme, cached for seeding new cards (E4). Null
@@ -1298,9 +1353,21 @@ export interface ThankYouModuleState {
   replyPingEnabled: boolean
   /** The open card recipient's story, for the composer sidecar (task 7). */
   story: GuestStory | null
+  /** Cards ⇆ Mailbox sub-view within the list view (D1). */
+  subView: "cards" | "mailbox"
+  /** When true, entering the tab lands on the Mailbox (set by the Inbox jump). */
+  mailboxOnLoad: boolean
 }
 
 export function initThankYous(): void
 export function loadThankYous(): Promise<void>
 export function loadThankYouCount(): Promise<void>
 export function isThankYousDirty(): boolean
+/** Ask the thank-you tab to open on the Mailbox next time it loads (Inbox jump). */
+export function requestThankYouMailbox(): void
+
+// ---- Inbox (A1) ----
+export function initInbox(): void
+export function loadInbox(): Promise<void>
+/** Badge-only refresh (piggybacks on main.js's existing poll). */
+export function refreshInboxBadge(): Promise<void>

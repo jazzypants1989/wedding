@@ -31,18 +31,25 @@ export function createThankYouCard({ guestId, giftId, message, theme, effectsCon
 }
 
 /**
- * Generate a code that no row (including soft-deleted) already holds in the
- * given column — the UNIQUE indexes on token/share_token ignore deleted_at, so
- * availability must be checked against every row, not just live ones.
+ * Generate a code that no row (including soft-deleted) already holds in EITHER
+ * token column — the UNIQUE indexes on token/share_token ignore deleted_at, so
+ * availability must be checked against every row, not just live ones. Checking
+ * both columns (not just the target) closes a cross-column collision: card A's
+ * primary token equaling card B's share_token would resolve B's share link to
+ * card A *with reply rights* (the GET tries the primary column first).
+ *
+ * Tokens are deliberately stored plaintext (unlike hashed recovery tokens):
+ * cards carry only thank-you prose + already-shared photos — no gift amounts —
+ * and the admin composer's copy-link / resend flows need the raw link on
+ * demand. Accepted tradeoff (owner decision 2026-07-21).
  * @param {"token" | "share_token"} column
  * @returns {string}
  */
 function generateUniqueToken(column) {
   for (let i = 0; i < MAX_TOKEN_ATTEMPTS; i++) {
     const candidate = generateInviteCode()
-    // Column name is a fixed literal (never user input) injected via sql.raw;
-    // the candidate is a bound param. One helper covers both unique columns.
-    const exists = sql`SELECT 1 FROM thank_you_cards WHERE ${sql.raw(column)} = ${candidate}`.get()
+    const exists = sql`SELECT 1 FROM thank_you_cards
+      WHERE token = ${candidate} OR share_token = ${candidate}`.get()
     if (!exists) return candidate
   }
   throw new Error(`Could not generate a unique card ${column}`)
@@ -145,9 +152,13 @@ export function resetCardToDraft(id) {
   // Compensating action for a failed send (A2) and the "resend an unopened
   // card" path (C1). The viewed_at IS NULL guard is the safety rail: once the
   // recipient has opened the envelope we never silently rewind their card.
+  // replied_at IS NULL too: a reply can land while viewed_at is still NULL
+  // (beacon blocked/failed), and a replied-to card must never rewind either —
+  // the API routes that case to duplicate, but the rail belongs at this layer.
   const result = sql`UPDATE thank_you_cards
     SET status = 'draft', sent_via = NULL, sent_at = NULL
-    WHERE id = ${id} AND status = 'sent' AND viewed_at IS NULL AND deleted_at IS NULL`.run()
+    WHERE id = ${id} AND status = 'sent' AND viewed_at IS NULL
+      AND replied_at IS NULL AND deleted_at IS NULL`.run()
   return result.changes > 0
 }
 
@@ -223,6 +234,33 @@ export function getCardReplies(cardId) {
     ORDER BY id ASC`.all()
 }
 
+/** @type {Types.getRecentReplies} */
+export function getRecentReplies(limit) {
+  // Cross-card mailbox feed: join every append-only reply to its card + guest,
+  // newest first. A reply is "unread" when the card hasn't been acked at all, or
+  // when the reply landed after the last ack (reply_seen_at) — string ISO
+  // timestamps compare correctly with `>` since they're zero-padded + ordered.
+  /** @type {Array<{ id: number, card_id: number, emoji: string | null, message: string | null, created_at: string, guest_name: string, card_token: string, reply_seen_at: string | null }>} */
+  const rows = sql`SELECT r.id, r.card_id, r.emoji, r.message, r.created_at,
+      g.name AS guest_name, t.token AS card_token, t.reply_seen_at
+    FROM thank_you_card_replies r
+    JOIN thank_you_cards t ON t.id = r.card_id
+    JOIN guests g ON g.id = t.guest_id
+    WHERE t.deleted_at IS NULL
+    ORDER BY r.id DESC
+    LIMIT ${limit}`.all()
+  return rows.map((r) => ({
+    id: r.id,
+    cardId: r.card_id,
+    emoji: r.emoji,
+    message: r.message,
+    createdAt: r.created_at,
+    guestName: r.guest_name,
+    cardToken: r.card_token,
+    unread: r.reply_seen_at === null || r.created_at > r.reply_seen_at,
+  }))
+}
+
 /** @type {Types.softDeleteCard} */
 export function softDeleteCard(id) {
   const result = sql`UPDATE thank_you_cards SET deleted_at = ${now()}
@@ -265,6 +303,24 @@ function hasCardPhotos(mediaKeysJson) {
   } catch {
     return false
   }
+}
+
+/** @type {Types.countCardsReferencingFileKey} */
+export function countCardsReferencingFileKey(fileKey) {
+  // Cards whose media_keys JSON array contains this file_key. json_each expands
+  // the JSON text column into one row per key so an exact value match works
+  // without a fragile substring/LIKE test. COUNT(DISTINCT t.id) guards against a
+  // (malformed) duplicate key in a single card double-counting it. `delivered`
+  // breaks out the sent/viewed subset — those are already out, so a removal
+  // warning names them. Soft-deleted cards are excluded; a card with NULL
+  // media_keys produces no json_each rows and is naturally omitted.
+  /** @type {{ total: number, delivered: number } | undefined} */
+  const row = sql`SELECT
+      COUNT(DISTINCT t.id) AS total,
+      COUNT(DISTINCT CASE WHEN t.status IN ('sent', 'viewed') THEN t.id END) AS delivered
+    FROM thank_you_cards t, json_each(t.media_keys)
+    WHERE json_each.value = ${fileKey} AND t.deleted_at IS NULL`.get()
+  return { total: row ? row.total : 0, delivered: row ? row.delivered : 0 }
 }
 
 /** @type {Types.countUnreadReplies} */

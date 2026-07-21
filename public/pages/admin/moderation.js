@@ -157,6 +157,11 @@ async function loadQueue(append = false) {
       accountFilter === null &&
       state.currentModeration.length > 0
     )
+    // "Start review ⏵" (A2): only meaningful when there's a pending backlog to
+    // step through with the keyboard flow the detail modal already provides.
+    getButtonElement("mod-start-review").hidden = !(
+      status === "pending" && state.currentModeration.length > 0
+    )
     await loadModerationCount()
   } catch (err) {
     console.error("Failed to load moderation queue:", err)
@@ -570,6 +575,7 @@ function openConfirm(action, items, onComplete) {
       },
       onComplete,
     })
+    maybeWarnCardRefs(action, single)
     return
   }
 
@@ -583,6 +589,51 @@ function openConfirm(action, items, onComplete) {
     run: () => runModeration(action, items, false),
     onComplete,
   })
+  maybeWarnCardRefs(action, single)
+}
+
+/**
+ * A media Reject/Hide silently strips this photo from any thank-you card that
+ * embeds it (the card degrades gracefully via resolveMedia). If the photo rides
+ * in already-delivered cards, warn the couple by appending to the just-opened
+ * confirm's description. Best-effort + async so the dialog still opens instantly;
+ * a failed/late lookup never blocks the action, and a guard skips the append if a
+ * different confirm opened meanwhile.
+ * @param {"approve" | "reject" | "hide"} action
+ * @param {Types.ModerationItem | null} single
+ */
+function maybeWarnCardRefs(action, single) {
+  if (!single || single.content_type !== "media") return
+  if (action !== "reject" && action !== "hide") return
+  const forState = confirmState
+  void (async () => {
+    let warning = ""
+    try {
+      const res = /** @type {Types.MediaReferencesResponse} */ (
+        await api(`/api/admin/media/${single.id}/references`)
+      )
+      warning = cardRefWarning(res.deliveredCardRefs)
+    } catch {
+      return // never block a moderation action on a failed lookup
+    }
+    // A different confirm (or none) is showing now — don't scribble on it.
+    if (!warning || confirmState !== forState) return
+    const el = getElement("mod-confirm-desc")
+    el.textContent = `${el.textContent} ${warning}`
+  })()
+}
+
+/**
+ * Warning clause for a photo embedded in N delivered thank-you cards, or "" when
+ * none. Shared by the moderation and gallery confirm dialogs.
+ * @param {number} n @returns {string}
+ */
+function cardRefWarning(n) {
+  if (n <= 0) return ""
+  return (
+    `Heads up: this photo appears in ${n} sent thank-you card${n === 1 ? "" : "s"} — ` +
+    `${n === 1 ? "it'll" : "they'll"} show without it.`
+  )
 }
 
 /**
@@ -755,7 +806,62 @@ function detailBody(item) {
     <strong>${name}</strong>${trustBadge(item.author_trusted)}${relation} ·
     ${TYPE_LABELS[item.content_type]} · ${formatDate(item.created_at)}
   </div>`
-  return html`${media}${text}${caption}${author}`
+  return html`${commentParentContext(item)}${media}${text}${caption}${author}`
+}
+
+/** Trim a parent snippet to a short preview (no regex). @param {string | null} text
+ *  @param {number} max @returns {string} */
+function truncateSnippet(text, max) {
+  if (!text) return ""
+  const trimmed = text.trim()
+  return trimmed.length > max ? trimmed.slice(0, max) + "…" : trimmed
+}
+
+/**
+ * For a comment row, show what it's a comment ON: a guestbook parent renders a
+ * short quoted snippet + author; a media parent renders its thumbnail (image →
+ * thumb, video → poster) + caption/author. Both carry a "View in context" deep
+ * link (guestbook ?entry=, gallery ?item=). Empty string for non-comment rows.
+ * Every queued comment has a live parent (the queue's liveCommentParentFilter),
+ * so the enriched columns are populated.
+ * @param {Types.ModerationItem} item @returns {string}
+ */
+function commentParentContext(item) {
+  if (item.content_type !== "comment" || item.target_id === null) return ""
+  const author = item.parent_author
+    ? html`<span class="mod-parent-author">${item.parent_author}</span>`
+    : ""
+  const snippet = truncateSnippet(item.parent_snippet, 140)
+  if (item.target_type === "media" && item.parent_file_key) {
+    const variant = item.parent_kind === "video" ? "poster" : "thumb"
+    const caption = snippet
+      ? html`<span class="mod-parent-caption">${snippet}</span>`
+      : html`<span class="mod-parent-caption text-muted">(no caption)</span>`
+    return html`<div class="mod-parent-context">
+      <span class="mod-parent-label">In reply to</span>
+      <a class="mod-parent-media-link" href="/gallery?item=${item.target_id}" target="_blank" rel="noopener">
+        <img class="mod-parent-thumb" src="/media/${item.parent_file_key}/${variant}" alt="" />
+      </a>
+      <div class="mod-parent-meta">${caption}${author}
+        <a class="mod-parent-context-link" href="/gallery?item=${item.target_id}"
+          target="_blank" rel="noopener">View in context ↗</a>
+      </div>
+    </div>`
+  }
+  if (item.target_type === "guestbook") {
+    const quote = snippet
+      ? html`<blockquote class="mod-parent-quote">${snippet}</blockquote>`
+      : html`<span class="text-muted">(message unavailable)</span>`
+    return html`<div class="mod-parent-context">
+      <span class="mod-parent-label">In reply to</span>
+      ${quote}
+      <div class="mod-parent-meta">${author}
+        <a class="mod-parent-context-link" href="/guestbook?entry=${item.target_id}"
+          target="_blank" rel="noopener">View in context ↗</a>
+      </div>
+    </div>`
+  }
+  return ""
 }
 
 /** @param {Types.ModerationItem} item @returns {string} */
@@ -1028,6 +1134,12 @@ export function initModeration() {
 
   getElement("accounts-tbody").addEventListener("click", handleAccountsClick)
   getButtonElement("mod-approve-all").addEventListener("click", handleApproveAll)
+  // "Start review ⏵" opens the detail modal on the first pending item; the
+  // keyboard review flow (←/→ to page, A/R/H to act) lives there already.
+  getButtonElement("mod-start-review").addEventListener("click", () => {
+    const first = state.currentModeration[0]
+    if (first) openDetail(first)
+  })
   getButtonElement("mod-detail-prev").addEventListener("click", () => stepDetail(-1))
   getButtonElement("mod-detail-next").addEventListener("click", () => stepDetail(1))
   getElement("moderation-detail-actions").addEventListener(

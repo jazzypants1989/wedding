@@ -12,11 +12,18 @@ import {
   setLoadMoreState,
 } from "../utils.js"
 import { upgradeTimes } from "../../components/relative-time.js"
+import { renderMonogram } from "../../components/monogram.js"
 
 const BATCH_SIZE = 100
 const GUEST_LIMIT = 100
 const OFFICIAL_LIMIT = 500
 const MAX_AUTO_BATCHES = 20
+/** Overlapping monogram chips shown in the "Shared by" strip before "+N more". */
+const MAX_CONTRIB_CHIPS = 12
+
+/** Whether the contributors strip has content (so section switches can show it
+ *  only when the guest section — the only one it belongs to — is active). */
+let hasContributors = false
 
 /** @type {Types.GridCallbacks | null} */
 let callbacks = null
@@ -121,11 +128,45 @@ function onCellClick(e) {
   if (callbacks) callbacks.onOpen(section, Number(cell.dataset.id))
 }
 
+/**
+ * Render the "Shared by …" contributors strip: overlapping monogram chips for
+ * the distinct authors of visible guest uploads, plus a "N photos from M guests"
+ * summary. Empty/absent data leaves the strip hidden. @param {Types.MediaContributors} data
+ */
+function renderContributors(data) {
+  const el = getElement("gallery-contributors")
+  if (!data.names.length || data.photos === 0) {
+    hasContributors = false
+    el.hidden = true
+    el.innerHTML = ""
+    return
+  }
+  const shown = data.names.slice(0, MAX_CONTRIB_CHIPS)
+  const overflow = data.guests - shown.length
+  // NOTE: keep this an ARRAY of html`` results — .join("") would coerce the
+  // SafeHTML pieces to a plain string, which the outer html`` then re-escapes
+  // (rendering the chip markup as literal text). Arrays interpolate unescaped.
+  const chips = shown.map(
+    (name) =>
+      html`<span class="gallery-contrib-chip" title="${name}">${renderMonogram(name)}</span>`,
+  )
+  const more = overflow > 0 ? html`<span class="gallery-contrib-more">+${overflow}</span>` : ""
+  const photoLabel = `${data.photos} photo${data.photos === 1 ? "" : "s"}`
+  const guestLabel = `${data.guests} guest${data.guests === 1 ? "" : "s"}`
+  el.innerHTML = html`
+    <span class="gallery-contrib-chips" aria-hidden="true">${chips}${more}</span>
+    <span class="gallery-contrib-text">${photoLabel} shared by ${guestLabel}</span>`
+  hasContributors = true
+  el.hidden = active !== "guest"
+}
+
 /** @type {Types.showSection} */
 export function showSection(section) {
   active = section
   sections.official.container.hidden = section !== "official"
   sections.guest.container.hidden = section !== "guest"
+  // The contributors strip belongs to the guest section only.
+  getElement("gallery-contributors").hidden = !(section === "guest" && hasContributors)
   const s = sections[section]
   if (s.items.length === 0 && !s.reachedEnd && !s.loading) {
     void loadMore(section)
@@ -152,6 +193,10 @@ export async function loadMore(section) {
       await api(`/api/media?section=${section}&limit=${limit}${beforeParam}`)
     )
     appendItems(s, data.items)
+    // The contributors aggregate rides on the first guest page only.
+    if (section === "guest" && data.contributors) {
+      renderContributors(data.contributors)
+    }
     s.nextCursor = data.nextCursor
     if (data.nextCursor === null) s.reachedEnd = true
     if (s.reachedEnd && s.items.length === 0) showEmpty(s)

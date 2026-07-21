@@ -115,6 +115,9 @@
     <section id="memories" class="content-section text-center">
       <h2>{{memories.title}}</h2>
       <p>{{memories.body}}</p>
+      <!-- Live "N moments shared" tally, filled by main.js from /api/config.
+           Stays hidden if the fetch fails or nothing's been shared yet. -->
+      <p class="memories-count" id="memories-count" hidden></p>
       <p>
         <a href="/gallery" class="btn btn-primary">See the photos</a>
         <a href="/guestbook" class="btn btn-secondary">Sign our guestbook</a>

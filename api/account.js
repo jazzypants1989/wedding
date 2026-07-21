@@ -197,6 +197,10 @@ export async function logout(req, res) {
 
 /** @type {Types.me} */
 export async function me(req, res) {
+  // Generous shared public-read bucket — cheap single-row lookup, but no
+  // endpoint should be the lone unlimited exception.
+  if (checkRateLimit(res, limiters.publicRead, getClientIp(req))) return
+
   const session = getOptionalAccount(req)
   if (!session) return sendJson(res, 200, { account: null })
 

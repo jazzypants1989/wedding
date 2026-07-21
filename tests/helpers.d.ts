@@ -279,6 +279,10 @@ export type AccountFetchFn = (
 
 export const startServer: StartServerFn
 export const stopServer: StopServerFn
+export function startAuxServer(
+  extraEnv: Record<string, string>,
+  port: number,
+): Promise<{ baseUrl: string; stop: () => Promise<void> }>
 export const getTestDb: GetTestDbFn
 export const createTestGuest: CreateTestGuestFn
 export const deleteTestGuest: DeleteTestGuestFn

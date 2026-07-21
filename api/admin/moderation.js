@@ -191,6 +191,10 @@ export async function queue(req, res) {
     kind: row.kind,
     caption: row.caption,
     needs_display: row.needs_display === null ? null : !!row.needs_display,
+    parent_snippet: row.parent_snippet,
+    parent_author: row.parent_author,
+    parent_file_key: row.parent_file_key,
+    parent_kind: row.parent_kind,
   }))
 
   return sendJson(res, 200, { items, type, status, hasMore })

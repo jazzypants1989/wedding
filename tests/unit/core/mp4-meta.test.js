@@ -29,13 +29,13 @@ beforeEach(() => {
 })
 
 describe("blankVideoGps", () => {
-  it("blanks both GPS carriers (ISO fullbox meta) and keeps the tree byte-length identical", () => {
+  it("blanks both GPS carriers (ISO fullbox meta) and keeps the tree byte-length identical", async () => {
     const { buffer, coord } = makeMp4WithGps()
     const before = Buffer.from(buffer)
     assert.ok(before.includes(coord), "coord present before blanking")
 
     const p = tmpFile(buffer, "iso.mp4")
-    const regions = blankVideoGps(p)
+    const regions = await blankVideoGps(p)
 
     const after = fs.readFileSync(p)
     assert.strictEqual(after.length, before.length, "no re-mux: same byte length")
@@ -53,27 +53,27 @@ describe("blankVideoGps", () => {
     }
   })
 
-  it("handles QuickTime-style meta (no version/flags)", () => {
+  it("handles QuickTime-style meta (no version/flags)", async () => {
     const { buffer, coord } = makeMp4WithGps({ isoMeta: false })
     const p = tmpFile(buffer, "qt.mp4")
-    const regions = blankVideoGps(p)
+    const regions = await blankVideoGps(p)
     const after = fs.readFileSync(p)
     assert.strictEqual(regions.length, 2)
     assert.ok(!after.includes(coord))
   })
 
-  it("is a byte-exact no-op on a GPS-free file", () => {
+  it("is a byte-exact no-op on a GPS-free file", async () => {
     // A plain ftyp+filler mp4 has no moov/gps atoms.
     const buffer = makeMp4(128)
     const before = Buffer.from(buffer)
     const p = tmpFile(buffer, "clean.mp4")
-    const regions = blankVideoGps(p)
+    const regions = await blankVideoGps(p)
     const after = fs.readFileSync(p)
     assert.strictEqual(regions.length, 0)
     assert.deepStrictEqual(after, before)
   })
 
-  it("bails cleanly (no throw) on malformed atom structure", () => {
+  it("bails cleanly (no reject) on malformed atom structure", async () => {
     // A truncated moov box with a bogus oversized child size.
     const bad = Buffer.concat([
       makeMp4(16),
@@ -84,8 +84,8 @@ describe("blankVideoGps", () => {
     ])
     const p = tmpFile(bad, "bad.mp4")
     let regions
-    assert.doesNotThrow(() => {
-      regions = blankVideoGps(p)
+    await assert.doesNotReject(async () => {
+      regions = await blankVideoGps(p)
     })
     assert.deepStrictEqual(regions, [])
   })

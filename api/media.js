@@ -33,11 +33,13 @@ import {
   getMediaById,
   getMediaFeed,
   getMediaFeedRowById,
+  getGuestContributors,
   setMediaVariantBytes,
   setMediaOriginalExt,
   finalizeMedia,
   updateMediaCaption,
   softDeleteMedia,
+  hardDeleteMedia,
   sumOriginalBytes,
   sumOriginalBytesForAccount,
 } from "../db/media.js"
@@ -70,6 +72,11 @@ const VARIANT_SPEC = {
     image: { expectedKinds: ["jpeg", "png", "webp", "heic"], maxBytes: MEDIA_LIMITS.IMAGE_ORIGINAL_MAX },
     video: { expectedKinds: ["mp4", "mov"], maxBytes: MEDIA_LIMITS.VIDEO_ORIGINAL_MAX },
   },
+  // Public image variants (display/thumb/w*) are stored as-received: EXIF/GPS
+  // removal relies on the client's canvas re-encode (media-processing.js), with
+  // no server-side strip — a non-conforming client could publish metadata-bearing
+  // bytes. Accepted posture (owner decision 2026-07-21); video differs (GPS is
+  // blanked server-side at finalize because originals ARE the public bytes).
   display: { image: { expectedKinds: ["jpeg", "webp"], maxBytes: MEDIA_LIMITS.DISPLAY_MAX } },
   thumb: { image: { expectedKinds: ["jpeg", "webp"], maxBytes: MEDIA_LIMITS.THUMB_MAX } },
   poster: { video: { expectedKinds: ["jpeg", "webp"], maxBytes: MEDIA_LIMITS.POSTER_MAX } },
@@ -78,6 +85,14 @@ const VARIANT_SPEC = {
   w800: { image: { expectedKinds: ["jpeg", "webp"], maxBytes: MEDIA_LIMITS.W800_MAX } },
   w1600: { image: { expectedKinds: ["jpeg", "webp"], maxBytes: MEDIA_LIMITS.W1600_MAX } },
 }
+
+// Tolerance added to a session's client-declared original_bytes when bounding the
+// actual `original` upload stream (below): Content-Length (about to be sent) and
+// the File.size declared at session-create come from the same file, but harmless
+// drift (a re-encode, metadata tweak between picking and uploading) shouldn't 413
+// an honest client. Small enough that an untrusted account still can't
+// meaningfully exceed its declared reservation and neutralize the quota.
+const ORIGINAL_BYTES_SLACK = 64 * 1024
 
 /**
  * @param {CoreTypes.Principal} principal
@@ -169,6 +184,37 @@ function passesDiskGuard(res, declaredBytes, principal) {
     }
   }
   return true
+}
+
+/**
+ * Re-run the byte guards at finalize against the ACTUAL stored bytes. The
+ * create-time guard trusted the client-declared original size, and putVariant
+ * only bounds the stream by that declared size + slack — so a client that
+ * under-declared could still land more bytes than it reserved. By finalize the
+ * row EXISTS ('uploading', non-deleted) with its real original_bytes reconciled
+ * by setMediaVariantBytes, so it's already counted in the sums; compare the sums
+ * directly (no declared bytes to add). Mirrors passesDiskGuard's trust logic
+ * exactly: the untrusted per-account quota applies only to untrusted accounts;
+ * the site-wide total cap applies to everyone (admins/trusted included). Returns
+ * the error payload to send, or null when within the caps.
+ * @param {CoreTypes.Principal} principal
+ * @returns {{ error: string, code: string } | null}
+ */
+function finalizeByteViolation(principal) {
+  if (sumOriginalBytes() > MEDIA_STORAGE.MAX_TOTAL_BYTES) {
+    return { error: "Storage is full — please try later", code: "INSUFFICIENT_STORAGE" }
+  }
+  if (!principal.trusted && principal.accountId !== null) {
+    const used = sumOriginalBytesForAccount(principal.accountId)
+    if (used > MEDIA_STORAGE.UNTRUSTED_QUOTA_BYTES) {
+      return {
+        error:
+          "You've reached your upload limit for now — more space opens up once the couple approves your photos",
+        code: "UPLOAD_QUOTA_EXCEEDED",
+      }
+    }
+  }
+  return null
 }
 
 // ---- Gallery read endpoints (public) ------------------------------------
@@ -268,7 +314,14 @@ export async function list(req, res) {
   const nextCursor =
     !isOfficial && rows.length === limit ? rows[rows.length - 1].id : null
 
-  return sendJson(res, 200, { items, nextCursor })
+  // Contributors strip data ("Shared by …") rides on the FIRST guest page only —
+  // it's a section-wide aggregate, so recomputing it on every keyset page would
+  // be wasted work. `before === null` identifies the first page.
+  /** @type {GlobalTypes.MediaContributors | undefined} */
+  const contributors =
+    !isOfficial && before === null ? getGuestContributors() : undefined
+
+  return sendJson(res, 200, { items, nextCursor, contributors })
 }
 
 /** @type {Types.getOne} */
@@ -378,6 +431,15 @@ export async function putVariant(req, res, { params, principal }) {
   const declared = Number(req.headers["content-length"])
   const validDeclared = Number.isInteger(declared) && declared > 0
   const isOriginal = variant === "original"
+  // The original stream is bounded by the size this session RESERVED (declared at
+  // create, where the quota/disk guard gated on it) + a small slack, not just the
+  // global per-kind cap. Without this an untrusted account could declare 1 byte to
+  // slip past the quota guard, then actually stream up to spec.maxBytes (30/110MB)
+  // and neutralize MEDIA_UNTRUSTED_QUOTA_BYTES. Derived variants keep their spec
+  // caps (they don't press the quota). A 413 from streamToStaging is the enforcer.
+  const maxBytes = isOriginal
+    ? Math.min(spec.maxBytes, (row.original_bytes ?? 0) + ORIGINAL_BYTES_SLACK)
+    : spec.maxBytes
   // Reserve a concurrency slot + byte reservation only for the (large) original;
   // the small derived variants don't count against the cap or the disk guard.
   let reserved = false
@@ -390,7 +452,7 @@ export async function putVariant(req, res, { params, principal }) {
 
   try {
     const result = await streamToStaging(req, {
-      maxBytes: spec.maxBytes,
+      maxBytes,
       expectedKinds: spec.expectedKinds,
       stagingDir: TMP_DIR,
     })
@@ -451,10 +513,30 @@ export async function finalize(req, res, { params, principal }) {
     }
   }
 
+  // Quota re-check against the ACTUAL stored bytes (§6): an under-declared session
+  // could have slipped past the create-time guard, then streamed more than it
+  // reserved (still within putVariant's declared+slack cap). If the real bytes
+  // blow the untrusted quota or the site total, discard the whole upload — row +
+  // files, exactly like the abandoned-upload sweep (never went public, no audit
+  // value beyond this log) — and refuse the finalize with the create guard's shape.
+  const violation = finalizeByteViolation(principal)
+  if (violation) {
+    fs.rmSync(itemDir(row.file_key), { recursive: true, force: true })
+    hardDeleteMedia(row.id)
+    log({
+      action: AUDIT_ACTIONS.MEDIA_DELETE,
+      ip: getClientIp(req),
+      resourceType: "media",
+      resourceId: row.id,
+      details: { reason: "quota_exceeded_at_finalize", code: violation.code },
+    })
+    return sendJson(res, 507, violation)
+  }
+
   // A video's original becomes the public `video` variant only after its GPS
   // atoms are blanked in place here.
   if (row.kind === MEDIA_KIND.VIDEO && row.original_ext) {
-    const regions = blankVideoGps(variantDiskPath(row.file_key, "original", row.original_ext))
+    const regions = await blankVideoGps(variantDiskPath(row.file_key, "original", row.original_ext))
     log({
       action: AUDIT_ACTIONS.MEDIA_FINALIZE,
       ip: getClientIp(req),

@@ -301,6 +301,60 @@ describe("media upload session", () => {
     })
     assert.strictEqual(res.status, 401)
   })
+
+  it("caps the original upload at the declared size + slack (413 on under-declare)", async () => {
+    // The quota bypass: declare a tiny originalBytes (passes the create-time
+    // guard), then try to stream far more than declared + the 64KB slack. The
+    // putVariant cap must 413 it rather than accept up to the 30MB kind cap.
+    const { auth } = signIn({ trusted: 0, name: "Underdeclare" })
+    const { res: createRes, data } = await createSession(
+      { kind: "image", originalBytes: 100 },
+      auth,
+    )
+    assert.strictEqual(createRes.status, 201)
+    // 200KB is well over declared(100) + 64KB slack → rejected.
+    const put = await putVariant(data.id, "original", makeJpeg(200 * 1024), "image/jpeg", auth)
+    assert.strictEqual(put.status, 413)
+  })
+
+  it("accepts an original modestly over the declared size (within slack)", async () => {
+    // Honest Content-Length vs File.size drift must not 413 — a small overshoot
+    // inside the slack window still uploads.
+    const { auth } = signIn({ trusted: 1 })
+    const { data } = await createSession({ kind: "image", originalBytes: 100 }, auth)
+    const put = await putVariant(data.id, "original", makeJpeg(2000), "image/jpeg", auth)
+    assert.strictEqual(put.status, 200)
+  })
+
+  it("re-checks the untrusted quota against actual bytes at finalize (507)", async () => {
+    // _media-port.js sets MEDIA_UNTRUSTED_QUOTA_BYTES = 1MB. Declare just under it
+    // (passes the create-time guard), then — within the declared+slack window —
+    // actually store slightly OVER the quota. The finalize re-guard must catch the
+    // real bytes, reject with 507/UPLOAD_QUOTA_EXCEEDED, and discard the upload.
+    const QUOTA = 1024 * 1024
+    const { auth } = signIn({ trusted: 0, name: "FinalizeQuota" })
+    const declared = QUOTA - 100 // create guard: 0 + declared <= quota ✓
+    const { res: createRes, data } = await createSession(
+      { kind: "image", originalBytes: declared },
+      auth,
+    )
+    assert.strictEqual(createRes.status, 201)
+
+    // Actual original is ~10KB over the quota but still within declared + 64KB slack.
+    const actual = QUOTA + 10 * 1024
+    const putOriginal = await putVariant(data.id, "original", makeJpeg(actual), "image/jpeg", auth)
+    assert.strictEqual(putOriginal.status, 200)
+    await putVariant(data.id, "display", makeJpeg(200), "image/jpeg", auth)
+    await putVariant(data.id, "thumb", makeJpeg(120), "image/jpeg", auth)
+
+    const fin = await finalize(data.id, { width: 1200, height: 800 }, auth)
+    assert.strictEqual(fin.status, 507)
+    assert.strictEqual((await json(fin)).code, "UPLOAD_QUOTA_EXCEEDED")
+
+    // The whole upload was discarded (row + files) like an abandoned session.
+    const get = await fetch(`${BASE_URL}/media/${data.fileKey}/display`)
+    assert.strictEqual(get.status, 404)
+  })
 })
 
 describe("admin media upload (requires TEST_ADMIN_PASSWORD)", () => {
@@ -428,6 +482,45 @@ describe("gallery list + single-item API", () => {
     assert.strictEqual(item.author_name, getWeddingFacts().coupleNames)
     assert.strictEqual(item.section, "official")
     assert.strictEqual(body.nextCursor, null, "official section is a single page")
+  })
+
+  it("hiding an approved item pulls it from BOTH the public file server and the id API", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    // A trusted guest upload auto-approves and is publicly visible both ways.
+    const { auth } = signIn({ trusted: 1 })
+    const { id, fileKey } = await uploadImage(auth)
+    assert.strictEqual(
+      (await fetch(`${BASE_URL}/media/${fileKey}/display`)).status,
+      200,
+      "approved: display served",
+    )
+    assert.strictEqual(
+      (await fetch(`${BASE_URL}/api/media/${id}`)).status,
+      200,
+      "approved: id API 200",
+    )
+
+    // Admin hides it (approved → hidden).
+    const admin = await adminLogin(process.env.TEST_ADMIN_PASSWORD)
+    const hide = await adminFetch(
+      `/api/admin/moderation/media/${id}/hide`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" },
+      admin,
+    )
+    assert.strictEqual(hide.status, 200, "hide succeeds on an approved item")
+
+    // Anonymous public access now 404s through both surfaces (approval gate).
+    assert.strictEqual(
+      (await fetch(`${BASE_URL}/media/${fileKey}/display`)).status,
+      404,
+      "hidden: public file server 404s",
+    )
+    assert.strictEqual(
+      (await fetch(`${BASE_URL}/api/media/${id}`)).status,
+      404,
+      "hidden: id API 404s for anonymous",
+    )
   })
 })
 
@@ -607,5 +700,90 @@ describe("guest photo captions", () => {
       auth,
     )
     assert.strictEqual((await json(cleared)).caption, null, "blank caption → null")
+  })
+})
+
+describe("gallery contributors + moments-count aggregates (wow pack)", () => {
+  it("contributors strip: distinct visible authors, excludes others' pending", async () => {
+    const { auth: alice } = signIn({ trusted: 1, name: "Alice" })
+    await uploadImage(alice)
+    await uploadImage(alice)
+    const { auth: bob } = signIn({ trusted: 1, name: "Bob" })
+    await uploadImage(bob)
+    // Untrusted Cara → pending upload must not credit her nor count.
+    const { auth: cara } = signIn({ trusted: 0, name: "Cara" })
+    const pending = await uploadImage(cara)
+    assert.strictEqual((await json(pending.finalizeRes)).status, "pending")
+
+    const body = await json(await fetch(`${BASE_URL}/api/media?section=guest`))
+    assert.ok(body.contributors, "contributors aggregate rides on the first guest page")
+    assert.strictEqual(body.contributors.photos, 3, "3 approved guest photos")
+    assert.strictEqual(body.contributors.guests, 2, "2 distinct visible contributors")
+    assert.ok(body.contributors.names.includes("Alice"), "Alice credited")
+    assert.ok(body.contributors.names.includes("Bob"), "Bob credited")
+    assert.ok(!body.contributors.names.includes("Cara"), "pending uploader not credited")
+  })
+
+  it("contributors: attached to the first page only, not later keyset pages", async () => {
+    const { auth } = signIn({ trusted: 1, name: "Solo" })
+    for (let i = 0; i < 3; i++) await uploadImage(auth)
+
+    const page1 = await json(await fetch(`${BASE_URL}/api/media?section=guest&limit=2`))
+    assert.ok(page1.contributors, "first page carries the aggregate")
+    assert.strictEqual(page1.contributors.photos, 3)
+
+    const page2 = await json(
+      await fetch(`${BASE_URL}/api/media?section=guest&limit=2&before=${page1.nextCursor}`),
+    )
+    assert.strictEqual(page2.contributors, undefined, "later pages omit the aggregate")
+  })
+
+  it("contributors: a self-deleted photo drops from the counts", async () => {
+    const { auth } = signIn({ trusted: 1, name: "Deleter" })
+    const first = await uploadImage(auth)
+    await uploadImage(auth)
+
+    const del = await accountFetch(`/api/media/${first.id}`, { method: "DELETE" }, auth)
+    assert.strictEqual(del.status, 200, "owner self-delete succeeds")
+
+    const body = await json(await fetch(`${BASE_URL}/api/media?section=guest`))
+    assert.strictEqual(body.contributors.photos, 1, "deleted photo no longer counted")
+    assert.strictEqual(body.contributors.guests, 1)
+  })
+
+  it("contributors: a soft-deleted account's uploads don't credit or count", async () => {
+    const { auth: keep, accountId: keepId } = signIn({ trusted: 1, name: "Keeper" })
+    await uploadImage(keep)
+    const { auth: gone, accountId: goneId } = signIn({ trusted: 1, name: "Ghost" })
+    await uploadImage(gone)
+
+    // Soft-delete Ghost's account: their approved upload must drop out (mirrors
+    // the feed's account-liveness gate), leaving one visible contributor.
+    db.prepare(`UPDATE accounts SET deleted_at = datetime('now') WHERE id = ?`).run(goneId)
+
+    const body = await json(await fetch(`${BASE_URL}/api/media?section=guest`))
+    assert.strictEqual(body.contributors.photos, 1, "only the live account's photo counts")
+    assert.strictEqual(body.contributors.guests, 1)
+    assert.ok(body.contributors.names.includes("Keeper"))
+    assert.ok(!body.contributors.names.includes("Ghost"))
+    assert.ok(keepId && goneId)
+  })
+
+  it("/api/config exposes the public moments count (photos + notes)", async () => {
+    const { auth, accountId } = signIn({ trusted: 1, name: "Counter" })
+    await uploadImage(auth) // approved guest photo
+    await uploadImage(auth) // approved guest photo
+    // One approved guestbook note + one pending (pending excluded from the tally).
+    db.prepare(
+      `INSERT INTO guestbook_entries (account_id, message, status) VALUES (?, ?, 'approved')`,
+    ).run(accountId, "What a day!")
+    db.prepare(
+      `INSERT INTO guestbook_entries (account_id, message, status) VALUES (?, ?, 'pending')`,
+    ).run(accountId, "held for review")
+
+    const cfg = await json(await fetch(`${BASE_URL}/api/config`))
+    assert.ok(cfg.counts, "config carries the counts object")
+    assert.strictEqual(cfg.counts.photos, 2, "approved guest photos counted")
+    assert.strictEqual(cfg.counts.notes, 1, "only approved guestbook notes counted")
   })
 })

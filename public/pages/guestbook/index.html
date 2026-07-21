@@ -83,6 +83,7 @@
     <section class="content-section gb-section">
       <h2 class="gb-title">Guestbook</h2>
       <p class="gb-intro">Leave us a note — we read every one 💗</p>
+      <p class="gb-intro"><a href="/memory-book" class="gb-memory-book-link">📖 Print the memory book →</a></p>
 
       <div class="card gb-composer">
         <div id="guest-identity" class="guest-identity" hidden></div>
@@ -101,6 +102,11 @@
 
       <div id="gb-error" class="alert alert-error" role="alert" hidden></div>
 
+      <section id="gb-favorites" class="gb-favorites" aria-label="Favorites" hidden>
+        <h3 class="gb-favorites-title">Favorites <span aria-hidden="true">✨</span></h3>
+        <ul id="gb-favorites-list" class="gb-favorites-list" role="list"></ul>
+      </section>
+
       <div id="gb-loading" class="loading" hidden>
         <span class="spinner" aria-hidden="true"></span>Loading messages…
       </div>
@@ -111,8 +117,10 @@
       <div id="gb-feed" class="gb-feed"></div>
       <div id="gb-live" class="sr-only" aria-live="polite"></div>
 
-      <div id="gb-empty" class="empty-state" hidden>
-        No messages yet.
+      <div id="gb-empty" class="empty-state gb-empty" hidden>
+        <span class="gb-empty-flourish" aria-hidden="true"></span>
+        <p class="gb-empty-lead">No messages yet.</p>
+        <p class="gb-empty-prompt" id="gb-empty-prompt" aria-hidden="true">Share a memory…</p>
         <button type="button" class="auth-link" id="gb-empty-cta">Be the first to sign!</button>
       </div>
 

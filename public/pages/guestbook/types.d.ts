@@ -21,6 +21,9 @@ export interface GuestbookFeedEntry {
 export interface GuestbookFeedResponse {
   entries: GuestbookFeedEntry[]
   nextCursor: number | null
+  /** Admin-pinned "Favorites" (newest-pinned-first, cap 6); present on the first
+   *  page only. Pinned entries also remain in `entries` (intentional duplication). */
+  pinned?: GuestbookFeedEntry[]
 }
 
 export interface GuestbookPostResponse {

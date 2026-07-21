@@ -109,8 +109,10 @@ function playRevealPreview(reveal) {
   if (activeReveal) activeReveal.skip()
   stopCardEffects()
 
+  const card = document.getElementById("tc-card")
   activeReveal = playReveal(scene, {
     envelopeEl: envelope,
+    cardEl: card instanceof HTMLElement ? card : undefined,
     reduced: prefersReducedMotion(),
     onReveal: (origin) => fireRevealMoment(reveal, origin),
     onAmbient: () => startCardEffects(lastEffects),

@@ -328,6 +328,80 @@ describe("Social (comments + reactions)", () => {
       const anon = await getComments("guestbook", entryId)
       assert.strictEqual(anon.data.comments.length, 0)
     })
+
+    it("a pending comment on a since-invisible parent leaves the queue + counts, and re-showing the parent brings it back", async () => {
+      if (!hasAdmin) return
+      // Regression (Fix B): a pending comment used to linger in the queue and
+      // inflate the badge/digest forever once its parent was hidden/rejected/
+      // deleted. The comment row is never rewritten — it just stops counting and
+      // showing while the parent isn't a live target.
+      const owner = signIn({ trusted: 1, name: "Parent Owner" })
+      const entryId = seedEntry(owner.accountId) // approved parent
+      const commenter = signIn({ trusted: 0, name: "Held Commenter" }) // untrusted → pending
+      const commentId = /** @type {any} */ (
+        await (await postComment("guestbook", entryId, "held pls", commenter.auth)).json()
+      ).comment.id
+
+      const adminAuth = await adminLogin()
+      const counts = async () =>
+        /** @type {any} */ (
+          await (
+            await adminFetch("/api/admin/moderation/counts", { method: "GET" }, adminAuth)
+          ).json()
+        )
+      const queueHasComment = async () => {
+        const q = /** @type {any} */ (
+          await (
+            await adminFetch(
+              "/api/admin/moderation/queue?type=comment",
+              { method: "GET" },
+              adminAuth,
+            )
+          ).json()
+        )
+        return q.items.some((/** @type {any} */ i) => i.id === commentId)
+      }
+
+      // Baseline: live parent → the pending comment is queued and counted.
+      assert.strictEqual((await counts()).comments, 1)
+      assert.strictEqual((await counts()).total, 1)
+      assert.strictEqual(await queueHasComment(), true)
+
+      // Hide the parent → the orphaned comment drops out of both.
+      const hRes = await adminFetch(
+        `/api/admin/moderation/guestbook/${entryId}/hide`,
+        { method: "POST" },
+        adminAuth,
+      )
+      assert.strictEqual(hRes.status, 200)
+      assert.strictEqual((await counts()).comments, 0, "hidden parent → comment stops counting")
+      assert.strictEqual(await queueHasComment(), false, "…and leaves the queue")
+
+      // The comment row itself is untouched — still pending, not soft-deleted.
+      const row = /** @type {any} */ (
+        db.prepare(`SELECT status, deleted_at FROM comments WHERE id = ?`).get(commentId)
+      )
+      assert.strictEqual(row.status, "pending")
+      assert.strictEqual(row.deleted_at, null)
+
+      // Un-hide the parent → the comment reappears in both.
+      const un = await adminFetch(
+        `/api/admin/moderation/guestbook/${entryId}/undo`,
+        { method: "POST", body: JSON.stringify({ to: "approved" }) },
+        adminAuth,
+      )
+      assert.strictEqual(un.status, 200)
+      assert.strictEqual((await counts()).comments, 1, "re-showing the parent brings it back")
+      assert.strictEqual(await queueHasComment(), true)
+
+      // Soft-deleting the parent removes the comment from the queue + counts too.
+      db.prepare(`UPDATE guestbook_entries SET deleted_at = ? WHERE id = ?`).run(
+        new Date().toISOString(),
+        entryId,
+      )
+      assert.strictEqual((await counts()).comments, 0, "soft-deleted parent → comment stops counting")
+      assert.strictEqual(await queueHasComment(), false)
+    })
   })
 
   describe("media targets", () => {

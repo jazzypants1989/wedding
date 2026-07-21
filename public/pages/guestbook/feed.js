@@ -14,16 +14,25 @@ import {
   announceCharsRemaining,
   shareUrl,
 } from "../utils.js"
-import { requireAccount } from "../../components/guest-session.js"
+import { requireAccount, session } from "../../components/guest-session.js"
 import { showToast } from "../../components/toast.js"
 import { fireConfetti, miniSparkle, setButtonLoading } from "../../components/celebrate.js"
 import { showNote } from "../../components/notice.js"
 import { upgradeTimes } from "../../components/relative-time.js"
 import { renderReactionBar } from "../../components/reaction-bar.js"
 import { renderCommentThread } from "../../components/comment-thread.js"
+import { renderMonogram } from "../../components/monogram.js"
 
 const PAGE_SIZE = 20
 const MAX_AUTO_FETCHES = 5
+
+/** Rotating composer-prompt lines for the empty state (Feature 4). */
+const EMPTY_PROMPTS = [
+  "Share a memory…",
+  "A wish for the years ahead…",
+  "A bit of advice…",
+  "A favorite moment from the day…",
+]
 
 /** @type {number | null} */
 let nextCursor = null
@@ -31,6 +40,23 @@ let reachedEnd = false
 let loading = false
 let autoFetches = 0
 let renderedCount = 0
+/** Host mode: the couple, admin-logged-in and not signed in as a guest, can pin. */
+let hostMode = false
+/** @type {ReturnType<typeof setInterval> | null} */
+let emptyPromptTimer = null
+
+/** The couple's admin `csrf` cookie value, if present (readable — not HttpOnly). */
+function adminCsrfCookie() {
+  for (const pair of document.cookie.split("; ")) {
+    if (pair.startsWith("csrf=")) return pair.slice(5)
+  }
+  return null
+}
+
+/** Host mode: an admin session present and no guest signed in (guest wins). */
+function isHostMode() {
+  return !session.account && adminCsrfCookie() !== null
+}
 
 /** @param {Types.GuestbookFeedEntry} entry */
 function renderEntry(entry) {
@@ -41,7 +67,10 @@ function renderEntry(entry) {
   return html`
     <article class="${cls}" data-id="${entry.id}">
       <header class="gb-entry-head">
-        <span class="gb-author">${entry.author_name}</span>
+        <div class="gb-byline">
+          ${renderMonogram(entry.author_name)}
+          <span class="gb-author">${entry.author_name}</span>
+        </div>
         <time datetime="${entry.created_at}" class="gb-time">${formatDate(
           entry.created_at,
         )}</time>
@@ -59,6 +88,10 @@ function renderEntry(entry) {
           ? html`<button type="button" class="gb-share" data-gb-action="share"
               data-id="${entry.id}" aria-label="Share this message">Share</button>`
           : ""}
+        ${hostMode && entry.status === "approved"
+          ? html`<button type="button" class="gb-pin" data-gb-action="pin"
+              data-id="${entry.id}" aria-label="Pin to Favorites">Pin ✨</button>`
+          : ""}
         ${entry.is_own
           ? html`<button type="button" class="gb-delete" data-gb-action="delete"
               data-id="${entry.id}">Delete</button>`
@@ -69,11 +102,61 @@ function renderEntry(entry) {
 }
 
 /**
+ * A compact card for the admin-pinned "Favorites" strip (list-item semantics).
+ * @param {Types.GuestbookFeedEntry} entry
+ */
+function renderFavorite(entry) {
+  return html`
+    <li class="gb-fav" data-id="${entry.id}">
+      <div class="gb-byline">
+        ${renderMonogram(entry.author_name)}
+        <span class="gb-author">${entry.author_name}</span>
+      </div>
+      <p class="gb-fav-message">${entry.message}</p>
+      ${hostMode
+        ? html`<button type="button" class="gb-unpin" data-gb-action="unpin"
+            data-id="${entry.id}" aria-label="Remove from Favorites">Unpin</button>`
+        : ""}
+    </li>
+  `
+}
+
+/** @param {Types.GuestbookFeedEntry[]} pinned */
+function renderFavorites(pinned) {
+  const section = getElement("gb-favorites")
+  const list = getElement("gb-favorites-list")
+  if (!pinned || pinned.length === 0) {
+    list.innerHTML = ""
+    section.hidden = true
+    return
+  }
+  list.innerHTML = html`${pinned.map(renderFavorite)}`
+  section.hidden = false
+}
+
+/** Refetch the first page purely to refresh the Favorites strip after a pin/unpin. */
+async function refreshFavorites() {
+  try {
+    const data = /** @type {Types.GuestbookFeedResponse} */ (
+      await api("/api/guestbook?limit=1")
+    )
+    renderFavorites(data.pinned ?? [])
+  } catch {
+    // Non-fatal: the strip refreshes on next full page load.
+  }
+}
+
+/**
  * @param {Types.GuestbookFeedEntry[]} entries
  * @param {boolean} prepend
  */
 function addEntries(entries, prepend) {
-  if (entries.length === 0) return
+  // Even an empty page must refresh the empty-state CTA — a fresh site's first
+  // load reaches here with zero entries and #gb-empty ships hidden in the HTML.
+  if (entries.length === 0) {
+    updateEmptyState()
+    return
+  }
   const feed = getElement("gb-feed")
   const frag = document.createDocumentFragment()
   let added = 0
@@ -97,7 +180,40 @@ function addEntries(entries, prepend) {
 }
 
 function updateEmptyState() {
-  getElement("gb-empty").hidden = renderedCount > 0
+  const empty = getElement("gb-empty")
+  const isEmpty = renderedCount === 0
+  empty.hidden = !isEmpty
+  if (isEmpty) startEmptyPromptRotation()
+  else stopEmptyPromptRotation()
+}
+
+/** Cycle the empty-state prompt line with a gentle crossfade. Static (no timer,
+ *  no fade) under prefers-reduced-motion. */
+function startEmptyPromptRotation() {
+  if (emptyPromptTimer !== null) return
+  const el = document.getElementById("gb-empty-prompt")
+  if (!el) return
+  const reduce =
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  el.textContent = EMPTY_PROMPTS[0]
+  if (reduce) return
+  let i = 0
+  emptyPromptTimer = setInterval(() => {
+    i = (i + 1) % EMPTY_PROMPTS.length
+    el.classList.add("gb-empty-prompt-out")
+    setTimeout(() => {
+      el.textContent = EMPTY_PROMPTS[i]
+      el.classList.remove("gb-empty-prompt-out")
+    }, 300)
+  }, 3600)
+}
+
+function stopEmptyPromptRotation() {
+  if (emptyPromptTimer !== null) {
+    clearInterval(emptyPromptTimer)
+    emptyPromptTimer = null
+  }
 }
 
 /**
@@ -111,11 +227,38 @@ function onFeedClick(e) {
   if (!(btn instanceof HTMLElement)) return
   const id = btn.dataset.id
   if (!id) return
-  if (btn.dataset.gbAction === "delete") {
-    if (!window.confirm("Delete your guestbook message?")) return
+  const action = btn.dataset.gbAction
+  if (action === "delete") {
+    if (!window.confirm("Remove your guestbook message?")) return
     void deleteEntry(Number(id), btn)
-  } else if (btn.dataset.gbAction === "share") {
+  } else if (action === "share") {
     void shareEntry(Number(id), btn)
+  } else if (action === "pin") {
+    void setPinned(Number(id), true, btn)
+  } else if (action === "unpin") {
+    void setPinned(Number(id), false, btn)
+  }
+}
+
+/**
+ * Admin-only pin/unpin toggle for the Favorites strip. Posts with the admin
+ * `csrf` cookie (host mode), then refreshes the strip.
+ * @param {number} id @param {boolean} pinned @param {HTMLElement} btn
+ */
+async function setPinned(id, pinned, btn) {
+  btn.setAttribute("disabled", "")
+  try {
+    await api(`/api/admin/guestbook/${id}/${pinned ? "pin" : "unpin"}`, {
+      method: "POST",
+      csrf: true,
+      csrfCookie: "csrf",
+    })
+    await refreshFavorites()
+    showToast(pinned ? "Pinned to Favorites ✨" : "Removed from Favorites")
+  } catch (err) {
+    showToast(getErrorMessage(err), { variant: "error" })
+  } finally {
+    btn.removeAttribute("disabled")
   }
 }
 
@@ -211,6 +354,8 @@ async function loadPage(isAuto) {
     const data = /** @type {Types.GuestbookFeedResponse} */ (
       await api(`/api/guestbook${query}`)
     )
+    // The pinned "Favorites" strip only ships on the first page.
+    if (data.pinned) renderFavorites(data.pinned)
     addEntries(data.entries, false)
     nextCursor = data.nextCursor
     setLoadMoreState(btn, "reset")
@@ -233,9 +378,11 @@ async function loadPage(isAuto) {
 /** @param {Types.ContentStatus} status */
 function celebrate(status) {
   const btn = getButtonElement("gb-submit")
-  // First-ever post gets full confetti (once, guarded); later posts a small
-  // sparkle. Both no-op under prefers-reduced-motion.
-  if (!localStorage.getItem("gbCelebrated")) {
+  // A held-pending post gets the modest sparkle, not full confetti — the note
+  // landed, but it isn't live yet, and the pending note right below says so.
+  // The first-ever *published* post gets full confetti (once, guarded); later
+  // posts a small sparkle. All no-op under prefers-reduced-motion.
+  if (status !== "pending" && !localStorage.getItem("gbCelebrated")) {
     localStorage.setItem("gbCelebrated", "1")
     fireConfetti()
   } else {
@@ -316,8 +463,15 @@ function onComposerSubmit(e) {
 
 /** @type {Types.initFeed} */
 export function initFeed() {
+  // Resolve host mode once (session was loaded before init) so the pin
+  // affordances render for the couple browsing their own guestbook.
+  hostMode = isHostMode()
+  if (hostMode) document.body.classList.add("gb-host")
+
   getElement("gb-composer-form").addEventListener("submit", onComposerSubmit)
   getElement("gb-feed").addEventListener("click", onFeedClick)
+  // The Favorites strip shares the same delegated action handler (pin/unpin/share).
+  getElement("gb-favorites-list").addEventListener("click", onFeedClick)
 
   // Live character counter (2.6) — mirrors the textarea's maxlength.
   const messageEl = getTextAreaElement("gb-message")

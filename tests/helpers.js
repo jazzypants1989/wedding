@@ -129,6 +129,87 @@ export async function startServer() {
   )
 }
 
+/**
+ * Spawn an ADDITIONAL server process on its own port, sharing the SAME test DB +
+ * audit dir as the main suite server, with extra environment overrides (e.g. a
+ * configured-but-failing provider for send-failure compensation). This lets a
+ * single test exercise a "configured provider that fails" path without
+ * reconfiguring — and breaking — the shared suite server's other tests.
+ *
+ * The returned stop() kills the process but — unlike stopServer() — never
+ * deletes the shared DB (the main suite still needs it).
+ * @param {Record<string, string>} extraEnv
+ * @param {number} port
+ * @returns {Promise<{ baseUrl: string, stop: () => Promise<void> }>}
+ */
+export async function startAuxServer(extraEnv, port) {
+  /** @type {ChildProcessWithoutNullStreams} */
+  const proc = await /** @type {Promise<ChildProcessWithoutNullStreams>} */ (
+    new Promise((resolve, reject) => {
+      const env = {
+        ...process.env,
+        PORT: String(port),
+        NODE_ENV: "test",
+        DATABASE_PATH: TEST_DB_PATH,
+        AUDIT_LOG_DIR: TEST_AUDIT_DIR,
+        TRUSTED_PROXIES: "127.0.0.1,::1,::ffff:127.0.0.1",
+        ...extraEnv,
+      }
+      const child = spawn("node", ["server.js"], {
+        cwd: PROJECT_ROOT,
+        env,
+        stdio: ["pipe", "pipe", "pipe"],
+      })
+      let started = false
+      const timer = setTimeout(() => {
+        if (!started) {
+          child.kill()
+          reject(new Error("Aux server startup timeout"))
+        }
+      }, 10000)
+      child.stdout.on("data", (data) => {
+        if (data.toString().includes("Wedding website running") && !started) {
+          started = true
+          clearTimeout(timer)
+          resolve(child)
+        }
+      })
+      child.stderr.on("data", (data) => {
+        const output = data.toString()
+        if (!output.includes("ExperimentalWarning")) console.error("Aux server stderr:", output)
+      })
+      child.on("error", (err) => {
+        clearTimeout(timer)
+        reject(new Error(`Failed to start aux server: ${err.message}`))
+      })
+      child.on("exit", (code) => {
+        if (!started) {
+          clearTimeout(timer)
+          reject(new Error(`Aux server exited with code ${code} before starting`))
+        }
+      })
+    })
+  )
+
+  return {
+    baseUrl: `http://localhost:${port}`,
+    stop: () =>
+      /** @type {Promise<void>} */ (
+        new Promise((resolve) => {
+          const killTimer = setTimeout(() => {
+            proc.kill("SIGKILL")
+            resolve()
+          }, 5000)
+          proc.on("exit", () => {
+            clearTimeout(killTimer)
+            resolve()
+          })
+          proc.kill("SIGINT")
+        })
+      ),
+  }
+}
+
 /** @type {StopServerFn} */
 export async function stopServer() {
   await /** @type {Promise<void>} */ (

@@ -67,6 +67,7 @@ export function getMediaFeed({ callerId = null, section, before = null, limit })
     FROM media m
     LEFT JOIN accounts a ON a.id = m.account_id
     WHERE m.deleted_at IS NULL
+      AND (m.account_id IS NULL OR a.deleted_at IS NULL)
       AND m.section = ${section}
       AND (m.status = 'approved' ${ownPending})
       ${beforeFilter}
@@ -74,21 +75,52 @@ export function getMediaFeed({ callerId = null, section, before = null, limit })
     LIMIT ${limit}`.all()
 }
 
+/** @type {Types.listGuestMediaByReactions} */
+export function listGuestMediaByReactions(limit) {
+  // "Most loved" curation (A3): approved guest media ranked by TOTAL reaction
+  // count across all emojis. Reactions are polymorphic (target_type='media',
+  // target_id=media.id), aggregated in a subquery so a media row with no
+  // reactions still returns (COALESCE → 0). This is a single capped page — a
+  // reaction count isn't a stable keyset cursor (ties + mutable counts), so we
+  // don't paginate it; the cap keeps it a bounded curation view, not a feed.
+  return sql`SELECT m.id, m.file_key, m.kind, m.caption, m.width, m.height,
+      m.needs_display, m.created_at, a.name AS author_name,
+      COALESCE(r.cnt, 0) AS reaction_count
+    FROM media m
+    LEFT JOIN accounts a ON a.id = m.account_id
+    LEFT JOIN (
+      SELECT target_id, COUNT(*) AS cnt
+      FROM reactions
+      WHERE target_type = 'media'
+      GROUP BY target_id
+    ) r ON r.target_id = m.id
+    WHERE m.deleted_at IS NULL
+      AND (m.account_id IS NULL OR a.deleted_at IS NULL)
+      AND m.section = 'guest'
+      AND m.status = 'approved'
+    ORDER BY reaction_count DESC, m.id DESC
+    LIMIT ${limit}`.all()
+}
+
 /** @type {Types.getMediaFeedRowById} */
 export function getMediaFeedRowById(id, callerId = null) {
   // Single-item form of getMediaFeed for ?item= deep links: same LEFT JOIN +
   // is_own shape so the API applies an identical visibility gate. Excludes
-  // soft-deleted rows (→ undefined → 404); the caller gates on status. Also
-  // excludes the 'content' section so admin site-content images (dress-code
-  // figures) are never publicly deep-linked, nor targetable by comments/
-  // reactions (this same query backs db/targets.js's visibility gate).
+  // soft-deleted rows and rows whose author account is soft-deleted (→ undefined
+  // → 404), while staying null-tolerant so admin/official uploads (account_id
+  // NULL) remain visible; the caller gates on status. Also excludes the 'content'
+  // section so admin site-content images (dress-code figures) are never publicly
+  // deep-linked, nor targetable by comments/reactions (this same query backs
+  // db/targets.js's visibility gate).
   const isOwn = callerId !== null ? sql`(m.account_id = ${callerId})` : sql`0`
   return sql`SELECT m.id, m.file_key, m.account_id, m.kind, m.section, m.status,
       m.caption, m.width, m.height, m.duration_seconds, m.needs_display,
       m.created_at, a.name AS author_name, ${isOwn} AS is_own
     FROM media m
     LEFT JOIN accounts a ON a.id = m.account_id
-    WHERE m.id = ${id} AND m.deleted_at IS NULL AND m.section != ${MEDIA_SECTION.CONTENT}`.get()
+    WHERE m.id = ${id} AND m.deleted_at IS NULL
+      AND (m.account_id IS NULL OR a.deleted_at IS NULL)
+      AND m.section != ${MEDIA_SECTION.CONTENT}`.get()
 }
 
 /** @type {Types.setMediaVariantBytes} */
@@ -197,9 +229,53 @@ export function hardDeleteMedia(id) {
 
 /** @type {Types.countPendingMedia} */
 export function countPendingMedia() {
+  // LEFT JOIN + null-tolerant author gate: a soft-deleted uploader's pending items
+  // drop out of the badge, while admin/official uploads (account_id NULL) still
+  // count. Keeps this in step with the media branch of the combined queue.
   /** @type {import('./types.js').CountResult | undefined} */
-  const result = sql`SELECT COUNT(*) AS count FROM media
-    WHERE status = 'pending' AND deleted_at IS NULL`.get()
+  const result = sql`SELECT COUNT(*) AS count FROM media m
+    LEFT JOIN accounts a ON a.id = m.account_id
+    WHERE m.status = 'pending' AND m.deleted_at IS NULL
+      AND (m.account_id IS NULL OR a.deleted_at IS NULL)`.get()
+  return result ? result.count : 0
+}
+
+/** @type {Types.getGuestContributors} */
+export function getGuestContributors(limit = 24) {
+  // Contributors strip for the guest section (04 gallery "wow pack"): distinct
+  // author names of *visible* guest uploads, ordered by contribution, plus the
+  // total photo + distinct-guest counts. Mirrors the getMediaFeed visibility
+  // gate exactly — approved, not soft-deleted, and the uploader account not
+  // soft-deleted — so a hidden/pending/deleted upload (or a removed account)
+  // never credits a name. Guest uploads always carry an account_id, so a plain
+  // JOIN is correct here (official/admin uploads with NULL account_id are a
+  // different section and excluded by section='guest').
+  /** @type {{ name: string, n: number }[]} */
+  const rows = sql`SELECT a.name AS name, COUNT(*) AS n
+    FROM media m
+    JOIN accounts a ON a.id = m.account_id
+    WHERE m.section = 'guest' AND m.status = 'approved'
+      AND m.deleted_at IS NULL AND a.deleted_at IS NULL
+    GROUP BY a.id
+    ORDER BY n DESC, a.name ASC`.all()
+  let photos = 0
+  for (const r of rows) photos += r.n
+  return {
+    photos,
+    guests: rows.length,
+    names: rows.slice(0, limit).map((r) => r.name),
+  }
+}
+
+/** @type {Types.countApprovedGuestMedia} */
+export function countApprovedGuestMedia() {
+  // Public "moments shared" tally for the landing page. Same visibility gate as
+  // the guest feed / contributors strip (approved, not deleted, live account).
+  /** @type {import('./types.js').CountResult | undefined} */
+  const result = sql`SELECT COUNT(*) AS count FROM media m
+    JOIN accounts a ON a.id = m.account_id
+    WHERE m.section = 'guest' AND m.status = 'approved'
+      AND m.deleted_at IS NULL AND a.deleted_at IS NULL`.get()
   return result ? result.count : 0
 }
 

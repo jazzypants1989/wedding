@@ -103,6 +103,11 @@
       <div id="gallery-pending-note" role="status" hidden></div>
       <div id="gallery-nudge" role="status" hidden></div>
 
+      <!-- "Shared by …" contributors strip: monogram chips for the distinct
+           authors of visible guest uploads (guest section only). Populated by
+           grid.js from the first-page contributors aggregate. -->
+      <div id="gallery-contributors" class="gallery-contributors" hidden></div>
+
       <!-- Two persistent grids: hidden/shown, never re-rendered on switch. -->
       <div id="grid-official" class="gallery-grid-container" role="tabpanel" aria-labelledby="tab-official" hidden></div>
       <div id="grid-guest" class="gallery-grid-container" role="tabpanel" aria-labelledby="tab-guest"></div>
@@ -136,6 +141,8 @@
         <span class="lightbox-author" id="lightbox-author"></span>
         <time class="lightbox-time" id="lightbox-time"></time>
       </div>
+      <button type="button" class="lightbox-play" id="lightbox-play" aria-pressed="false"
+        aria-label="Play slideshow"><span class="lightbox-play-glyph" aria-hidden="true"></span></button>
       <button type="button" class="lightbox-copy" id="lightbox-copy" aria-label="Copy link to this photo">Copy link</button>
     </div>
     <button type="button" class="lightbox-nav lightbox-prev" id="lightbox-prev" aria-label="Previous">&#8249;</button>

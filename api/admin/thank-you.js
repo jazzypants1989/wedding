@@ -32,12 +32,14 @@ import {
   getReplyPingEnabled,
   setReplyPingEnabled,
   getGuestStory,
+  getRecentReplies,
 } from "../../db/thank-you-cards.js"
 import { getGuestById } from "../guests/data.js"
 import { getRsvpByGuestId } from "../rsvp.js"
 import { getMediaByFileKey } from "../../db/media.js"
 import { logCommunication } from "../../db/utils.js"
-import { sendJson, parseBody, checkRateLimit } from "../../core/http.js"
+import { sendJson, parseBody, checkRateLimit, sendCsv } from "../../core/http.js"
+import { giftsToCSV, thankYouCardsToCSV } from "../../core/csv.js"
 import { limiters, getClientIp } from "../../core/rate-limit.js"
 import { getEmailSubjects } from "../../core/wedding-facts.js"
 import {
@@ -312,11 +314,41 @@ export async function togglePhysicalCard(req, res, { params, session }) {
   return sendJson(res, 200, { success: true, gift: getGiftById(idResult.value) })
 }
 
+/** @type {Types.adminGiftsExportHandler} */
+export function exportGiftsCSV(req, res) {
+  const gifts = listGiftsDb()
+  const csv = giftsToCSV(gifts)
+  const filename = `gifts-${new Date().toISOString().slice(0, 10)}.csv`
+
+  log({
+    action: AUDIT_ACTIONS.GIFT_EXPORT,
+    ip: getClientIp(req),
+    details: { giftCount: gifts.length, filename },
+  })
+
+  return sendCsv(res, filename, csv)
+}
+
 // ==================== Cards ====================
 
 /** @type {Types.adminThankYouListHandler} */
 export async function listCards(req, res) {
   return sendJson(res, 200, { cards: listCardsDb() })
+}
+
+/** @type {Types.adminThankYouExportHandler} */
+export function exportCardsCSV(req, res) {
+  const cards = listCardsDb()
+  const csv = thankYouCardsToCSV(cards)
+  const filename = `thank-you-cards-${new Date().toISOString().slice(0, 10)}.csv`
+
+  log({
+    action: AUDIT_ACTIONS.THANK_YOU_CARD_EXPORT,
+    ip: getClientIp(req),
+    details: { cardCount: cards.length, filename },
+  })
+
+  return sendCsv(res, filename, csv)
 }
 
 /** @type {Types.adminThankYouGetHandler} */
@@ -541,6 +573,22 @@ export async function counts(req, res) {
   // query — same posture as this module's other small aggregate reads.
   const drafts = listCardsDb().filter((c) => c.status === THANK_YOU_CARD_STATUS.DRAFT).length
   return sendJson(res, 200, { unreadReplies: countUnreadReplies(), drafts })
+}
+
+/** Default + hard cap for the recent-replies feed page size. */
+const REPLIES_DEFAULT_LIMIT = 50
+const REPLIES_MAX_LIMIT = 200
+
+/** @type {Types.adminThankYouRecentRepliesHandler} */
+export async function recentReplies(req, res) {
+  // Cross-card mailbox/inbox feed. `limit` is clamped: a bad/absent value falls
+  // back to the default rather than erroring — this is a convenience read.
+  const url = new URL(req.url ?? "/", `http://${req.headers.host}`)
+  const raw = parseInt(url.searchParams.get("limit") ?? "", 10)
+  const limit = Number.isNaN(raw)
+    ? REPLIES_DEFAULT_LIMIT
+    : Math.min(Math.max(raw, 1), REPLIES_MAX_LIMIT)
+  return sendJson(res, 200, { replies: getRecentReplies(limit) })
 }
 
 // ==================== Delivery ====================

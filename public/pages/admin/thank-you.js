@@ -47,10 +47,13 @@ import {
   diffConfig,
   THANK_YOU_TEMPLATES,
   buildSeedMessage,
+  rerollSeedMessage,
   weaveGift,
+  OCCASION_PRESETS,
 } from "./thank-you-util.js"
 import { fireConfetti } from "../../components/celebrate.js"
 import { formatRelative } from "../../components/relative-time.js"
+import { renderMonogram } from "../../components/monogram.js"
 import { EFFECT_DEFINITIONS } from "../../effects/registry.js"
 import { getDefaultConfig, mergeConfig } from "../../effects/config.js"
 import { EFFECT_THEMES, resolveTheme } from "../../effects/themes.js"
@@ -69,6 +72,10 @@ const moduleState = {
   view: "list",
   dirty: false,
   effectsCustomized: false,
+  // Whether the couple has hand-edited the message (guards Reroll from clobbering
+  // real writing) + how many times Reroll has cycled this draft (D2).
+  messageCustomized: false,
+  rerollCount: 0,
   guestsLoaded: false,
   guestOptions: [],
   siteTheme: null,
@@ -82,6 +89,10 @@ const moduleState = {
   previewDevice: "mobile",
   replyPingEnabled: false,
   story: null,
+  // Cards ⇆ Mailbox sub-view (D1). `mailboxOnLoad` lets the Inbox (A1) request
+  // that entering the tab lands straight on the Mailbox.
+  subView: "cards",
+  mailboxOnLoad: false,
 }
 
 /** file_key → media list item, populated by the picker / editor resolution. */
@@ -200,6 +211,12 @@ export async function loadThankYous() {
     renderCards()
     renderProgress()
     void loadReplyPingConfig()
+    // Reflect the active sub-view (D1). The Inbox (A1) can deep-link straight to
+    // the Mailbox via requestThankYouMailbox(); otherwise keep the last sub-view.
+    const target = moduleState.mailboxOnLoad ? "mailbox" : moduleState.subView
+    moduleState.mailboxOnLoad = false
+    showThankYouSubView(target)
+    if (target === "mailbox") void loadMailbox()
   } catch (err) {
     console.error("Failed to load thank-yous:", err)
     showLoadError(getElement("gifts-tbody"), 7, "Couldn't load the gift log.", loadThankYous)
@@ -227,6 +244,12 @@ export async function loadThankYouCount() {
     if (replyBadge) {
       replyBadge.textContent = `♥ ${replies}`
       replyBadge.hidden = replies <= 0
+    }
+    // Mirror the unread count onto the Mailbox sub-view pill (D1).
+    const mailboxBadge = document.getElementById("tc-mailbox-badge")
+    if (mailboxBadge) {
+      mailboxBadge.textContent = "♥ " + replies
+      mailboxBadge.hidden = replies <= 0
     }
   } catch {
     // Non-critical.
@@ -271,26 +294,45 @@ async function handleReplyPingToggle() {
 
 // ==================== Progress ring + milestones (task 1) ====================
 
-/** Compute the thank-you worklist from data already in memory.
+/** Compute the thank-you worklist from gift + card lists. Pure — shared by the
+ *  tab's progress ring / queue prompt AND the Inbox summary (A1), so the "who do
+ *  we still owe" logic lives in exactly one place.
  *
- *  Denominator ("owed thanks") = distinct guests we owe a thank-you: every guest
- *  with a logged gift, PLUS the guests of any gift-less card (we chose to thank
- *  them even without a gift). Numerator ("thanked") = those owed guests who have
- *  at least one card that's actually been SENT (`sent_at` is set — i.e. status
- *  sent or viewed). We key on `sent_at` rather than status text because it's the
- *  honest "the card left our hands" signal; a still-draft card doesn't count.
- *  @returns {{ owed: Set<number>, thanked: Set<number> }} */
-function progressSets() {
+ *  "owed" = distinct guests we owe a thank-you: every guest with a logged gift,
+ *  PLUS the guests of any gift-less card (we chose to thank them even without a
+ *  gift). "thanked" = those owed guests who have at least one card that's actually
+ *  been SENT (`sent_at` set — status sent or viewed); a still-draft card doesn't
+ *  count. "remaining" = owed-but-not-thanked, de-duped, in gift order then
+ *  gift-less-card order.
+ *  @param {GlobalTypes.GiftWithGuest[]} gifts
+ *  @param {GlobalTypes.ThankYouCardWithGuest[]} cards
+ *  @returns {{ owed: number, thanked: number, remaining: { guestId: number, name: string }[] }} */
+export function computeWorklist(gifts, cards) {
   /** @type {Set<number>} */
   const owed = new Set()
-  for (const g of state.currentGifts) owed.add(g.guest_id)
-  for (const c of state.currentCards) if (c.gift_id == null) owed.add(c.guest_id)
+  for (const g of gifts) owed.add(g.guest_id)
+  for (const c of cards) if (c.gift_id == null) owed.add(c.guest_id)
   /** @type {Set<number>} */
   const thanked = new Set()
-  for (const c of state.currentCards) {
+  for (const c of cards) {
     if (c.sent_at && owed.has(c.guest_id)) thanked.add(c.guest_id)
   }
-  return { owed, thanked }
+  /** @type {Set<number>} */
+  const seen = new Set()
+  /** @type {{ guestId: number, name: string }[]} */
+  const remaining = []
+  for (const g of gifts) {
+    if (thanked.has(g.guest_id) || seen.has(g.guest_id)) continue
+    seen.add(g.guest_id)
+    remaining.push({ guestId: g.guest_id, name: g.guest_name })
+  }
+  for (const c of cards) {
+    if (c.gift_id != null) continue
+    if (thanked.has(c.guest_id) || seen.has(c.guest_id)) continue
+    seen.add(c.guest_id)
+    remaining.push({ guestId: c.guest_id, name: c.guest_name })
+  }
+  return { owed: owed.size, thanked: thanked.size, remaining }
 }
 
 /** Highest milestone (0/25/50/75/100) a percentage has reached. @param {number} pct */
@@ -305,14 +347,14 @@ function milestoneLevel(pct) {
  *  checks whether we've crossed a celebration milestone. */
 function renderProgress() {
   const el = getElement("tc-progress")
-  const { owed, thanked } = progressSets()
-  if (owed.size === 0) {
+  const { owed, thanked } = computeWorklist(state.currentGifts, state.currentCards)
+  if (owed === 0) {
     el.hidden = true
     el.innerHTML = ""
     return
   }
-  const done = thanked.size
-  const total = owed.size
+  const done = thanked
+  const total = owed
   const pct = Math.round((done / total) * 100)
   const size = 44
   const stroke = 5
@@ -329,6 +371,11 @@ function renderProgress() {
         transform="rotate(-90 ${mid} ${mid})" />
     </svg>
     <span class="tc-progress-label"><strong>${done}</strong> of <strong>${total}</strong> thanked</span>
+    ${done < total
+      ? html`<button type="button" id="tc-progress-next" class="btn btn-primary btn-sm tc-progress-next">
+          Thank the next →
+        </button>`
+      : ""}
   `
   el.hidden = false
   checkMilestone(pct)
@@ -375,26 +422,10 @@ function checkMilestone(pct) {
  *  gift-less-card order, de-duplicated by guest, filtered by the active name
  *  search (the same filter the tables honor). @returns {{ guestId: number, name: string }[]} */
 function remainingWorklist() {
-  const { thanked } = progressSets()
   const q = moduleState.nameQuery
-  /** @type {Set<number>} */
-  const seen = new Set()
-  /** @type {{ guestId: number, name: string }[]} */
-  const items = []
-  for (const g of state.currentGifts) {
-    if (thanked.has(g.guest_id) || seen.has(g.guest_id)) continue
-    if (!nameMatches(g.guest_name, q)) continue
-    seen.add(g.guest_id)
-    items.push({ guestId: g.guest_id, name: g.guest_name })
-  }
-  for (const c of state.currentCards) {
-    if (c.gift_id != null) continue
-    if (thanked.has(c.guest_id) || seen.has(c.guest_id)) continue
-    if (!nameMatches(c.guest_name, q)) continue
-    seen.add(c.guest_id)
-    items.push({ guestId: c.guest_id, name: c.guest_name })
-  }
-  return items
+  return computeWorklist(state.currentGifts, state.currentCards).remaining.filter((i) =>
+    nameMatches(i.name, q),
+  )
 }
 
 /** Open the editor for a worklist guest, pre-seeded per task 2: resume their
@@ -473,6 +504,131 @@ function handleQueuePromptClick(e) {
   } else {
     // "Back to list" or the dismiss ✕ — just close it.
     dismissQueuePrompt()
+  }
+}
+
+// ==================== Progress ring action (A2) ====================
+
+/** The progress ring's "Thank the next →" button jumps straight into composing
+ *  for the first still-owed guest — surfacing the worklist from a cold tab load,
+ *  not only after a save. @param {MouseEvent} e */
+function handleProgressClick(e) {
+  const target = e.target
+  if (!(target instanceof Element)) return
+  if (!target.closest("#tc-progress-next")) return
+  const items = remainingWorklist()
+  if (items.length) openWorklistItem(items[0].guestId)
+}
+
+// ==================== Mailbox (D1) ====================
+
+/** Ask the tab to open on the Mailbox next time it loads (Inbox deep-link, A1). */
+/** @type {Types.requestThankYouMailbox} */
+export function requestThankYouMailbox() {
+  moduleState.mailboxOnLoad = true
+}
+
+/** Switch the list view between the Cards tables and the Mailbox feed. Loading
+ *  the Mailbox (fetch + mark-seen) is left to the caller so a plain reset to
+ *  "cards" costs nothing. @param {"cards" | "mailbox"} view */
+function showThankYouSubView(view) {
+  moduleState.subView = view
+  getElement("tc-cards-view").hidden = view !== "cards"
+  getElement("tc-mailbox-view").hidden = view !== "mailbox"
+  for (const [id, name] of /** @type {[string, "cards" | "mailbox"][]} */ ([
+    ["tc-sub-cards", "cards"],
+    ["tc-sub-mailbox", "mailbox"],
+  ])) {
+    const btn = getButtonElement(id)
+    const active = name === view
+    btn.classList.toggle("active", active)
+    btn.setAttribute("aria-selected", active ? "true" : "false")
+  }
+}
+
+/** Load + render the cross-card Mailbox feed, then acknowledge any unread replies
+ *  it surfaced (mark-seen on view) so the badges clear — the visible unread
+ *  highlight persists for this session (based on the fetch-time flags). */
+async function loadMailbox() {
+  const feed = getElement("tc-mailbox-feed")
+  showLoading(feed)
+  /** @type {Types.ThankYouRecentReply[]} */
+  let replies
+  try {
+    const data = /** @type {Types.ThankYouRepliesResponse} */ (
+      await api("/api/admin/thank-you/replies?limit=200")
+    )
+    replies = data.replies
+  } catch (err) {
+    showLoadError(feed, 1, "Couldn't load the mailbox.", () => void loadMailbox())
+    return
+  }
+  renderMailbox(replies)
+  await markMailboxSeen(replies)
+}
+
+/** @param {Types.ThankYouRecentReply[]} replies */
+function renderMailbox(replies) {
+  const feed = getElement("tc-mailbox-feed")
+  if (replies.length === 0) {
+    feed.innerHTML = html`<p class="empty-state">No replies yet — they'll appear here as guests write back. 💌</p>`
+    return
+  }
+  feed.innerHTML = html`${replies.map(mailboxItem)}`
+}
+
+/** @param {Types.ThankYouRecentReply} r @returns {string} */
+function mailboxItem(r) {
+  const glyph = r.emoji
+    ? REACTION_GLYPHS[/** @type {GlobalTypes.ReactionEmoji} */ (r.emoji)]
+    : "💬"
+  return html`
+    <div class="tc-mailbox-item ${r.unread ? "is-unread" : ""}" role="listitem">
+      ${renderMonogram(r.guestName)}
+      <div class="tc-mailbox-body">
+        <div class="tc-mailbox-head">
+          <span class="tc-mailbox-name">${r.guestName}</span>
+          <span class="tc-mailbox-emoji" aria-hidden="true">${glyph}</span>
+          ${r.unread ? html`<span class="tc-mailbox-new">New</span>` : ""}
+          <span class="tc-mailbox-time">${formatRelative(r.createdAt)}</span>
+        </div>
+        <div class="tc-mailbox-message">
+          ${r.message || html`<span class="text-muted">(no message)</span>`}
+        </div>
+      </div>
+    </div>
+  `
+}
+
+/** Mark every card with an unread reply as seen (reusing the per-card reply-seen
+ *  endpoint), then refresh the badges. Best-effort: a failed ack never blocks
+ *  the view. @param {Types.ThankYouRecentReply[]} replies */
+async function markMailboxSeen(replies) {
+  /** @type {Set<number>} */
+  const unreadCardIds = new Set()
+  for (const r of replies) if (r.unread) unreadCardIds.add(r.cardId)
+  if (unreadCardIds.size === 0) return
+  try {
+    await Promise.all(
+      [...unreadCardIds].map((cardId) =>
+        api(`/api/admin/thank-you/${cardId}/reply-seen`, { method: "POST" }),
+      ),
+    )
+  } catch {
+    // Non-critical — the badge just stays until the next poll.
+  }
+  await loadThankYouCount()
+}
+
+/** @param {MouseEvent} e */
+function handleSubnavClick(e) {
+  const target = e.target
+  if (!(target instanceof HTMLElement)) return
+  if (target.id === "tc-sub-cards" || target.closest("#tc-sub-cards")) {
+    showThankYouSubView("cards")
+  } else if (target.id === "tc-sub-mailbox" || target.closest("#tc-sub-mailbox")) {
+    showThankYouSubView("mailbox")
+    void loadMailbox()
   }
 }
 
@@ -634,7 +790,12 @@ function cardTimeline(card) {
     : html`<span class="tc-tl-step is-dim">not sent</span>`
   const openedStep = card.viewed_at
     ? html`<span class="tc-tl-step is-done"
-        title="${card.last_viewed_at ? "Last opened " + formatDate(card.last_viewed_at) : ""}"
+        title="${card.view_count > 1
+          ? `Opened ${card.view_count} times (every revisit counts)` +
+            (card.last_viewed_at ? ` · last ${formatDate(card.last_viewed_at)}` : "")
+          : card.last_viewed_at
+            ? "Last opened " + formatDate(card.last_viewed_at)
+            : ""}"
         >opened ${formatDate(card.viewed_at)}${card.view_count > 1
           ? html` · ${card.view_count}×`
           : ""}</span>`
@@ -710,9 +871,12 @@ function showEditorView() {
 
 // ==================== Gift form ====================
 
-/** Load the full guest roster once for the gift picker (wedding-sized). */
-async function ensureGuestsLoaded() {
-  if (moduleState.guestsLoaded) return
+/** Load the full guest roster for the gift/recipient pickers (wedding-sized).
+ *  Pickers pass `force` so every open refetches — the couple adds guests while
+ *  composing cards, and a fetch-once cache hid new guests until a full reload.
+ *  @param {boolean} [force] */
+async function ensureGuestsLoaded(force = false) {
+  if (moduleState.guestsLoaded && !force) return
   const data = /** @type {Types.GuestsApiResponse} */ (
     await api("/api/admin/guests?limit=1000&offset=0")
   )
@@ -725,7 +889,7 @@ async function openGiftModal(editGiftId) {
   const errorEl = getElement("gift-form-error")
   errorEl.hidden = true
   try {
-    await ensureGuestsLoaded()
+    await ensureGuestsLoaded(true)
   } catch (err) {
     showError("Couldn't load the guest list: " + getErrorMessage(err))
     return
@@ -1106,7 +1270,7 @@ async function openEditorForGuestless(guest) {
 
 async function openGuestPicker() {
   try {
-    await ensureGuestsLoaded()
+    await ensureGuestsLoaded(true)
   } catch (err) {
     showError("Couldn't load the guest list: " + getErrorMessage(err))
     return
@@ -1196,6 +1360,10 @@ function openEditor(seed) {
     mediaItems: seed.mediaItems,
   }
   moduleState.effectsCustomized = seed.customized
+  // A brand-new card's message is a seeded starter (safe to Reroll silently); a
+  // saved card's message is authored (Reroll must confirm). (D2)
+  moduleState.messageCustomized = !seed.isNew
+  moduleState.rerollCount = 0
   moduleState.dirty = seed.isNew // a brand-new unsaved draft should warn on leave
   getElement("tc-editor-error").hidden = true
 
@@ -1211,6 +1379,7 @@ function openEditor(seed) {
   updateMessageCounter()
   populateTemplateSelect()
   populateThemeSelect(draft.theme)
+  renderPresetChips()
   getSelectElement("tc-editor-reveal").value = draft.reveal
   renderEffectStack()
   renderPhotoStrip()
@@ -1249,6 +1418,8 @@ function maybeRestoreDraft() {
       draft.mediaItems = mapMediaItems(draft.mediaKeys)
     }
     moduleState.effectsCustomized = true
+    // A restored draft is the couple's own writing — Reroll must confirm (D2).
+    moduleState.messageCustomized = true
     moduleState.dirty = true
   } catch {
     // Corrupt autosave — ignore and keep the seeded draft.
@@ -1287,9 +1458,77 @@ function handleTemplateChange() {
   const woven = weaveGift(tpl.message, gift ? gift.description : "", tpl.giftFallback)
   draft.message = woven
   getTextAreaElement("tc-editor-message").value = woven
+  // A template pick is a starter, not the couple's own writing — Reroll may
+  // continue cycling silently from here (D2).
+  moduleState.messageCustomized = false
   updateMessageCounter()
   markDirty()
   schedulePreview()
+}
+
+/** "↻ Reroll" (D2): cycle to a DIFFERENT starter message. Never clobbers writing
+ *  the couple has customized — it confirms first in that case. Deterministic per
+ *  click via rerollCount so repeated taps rotate predictably. */
+function handleReroll() {
+  const draft = moduleState.draft
+  if (!draft) return
+  if (
+    moduleState.messageCustomized &&
+    draft.message.trim() &&
+    !window.confirm("Replace your edited message with a fresh starter?")
+  ) {
+    return
+  }
+  const gift = draft.giftId != null ? state.getGiftById(draft.giftId) : null
+  moduleState.rerollCount += 1
+  const next = rerollSeedMessage(gift, draft.recipientName, moduleState.rerollCount)
+  draft.message = next
+  getTextAreaElement("tc-editor-message").value = next
+  moduleState.messageCustomized = false
+  updateMessageCounter()
+  markDirty()
+  schedulePreview()
+}
+
+// ---- occasion presets (D3) ----
+
+/** Paint the one-tap occasion-preset chips into the editor. */
+function renderPresetChips() {
+  const el = getElement("tc-preset-chips")
+  el.innerHTML = html`${OCCASION_PRESETS.map(
+    (p) => html`<button type="button" class="tc-chip tc-preset-chip" data-preset="${p.id}"
+      title="Set theme + effects for a ${p.label} feel">${p.label}</button>`,
+  )}`
+}
+
+/** @param {MouseEvent} e */
+function handlePresetChipsClick(e) {
+  const target = e.target
+  if (!(target instanceof Element)) return
+  const btn = target.closest("[data-preset]")
+  if (!(btn instanceof HTMLElement)) return
+  const preset = OCCASION_PRESETS.find((p) => p.id === btn.dataset.preset)
+  if (preset) applyPreset(preset)
+}
+
+/** Apply a preset: set theme + effect stack together, sync the theme <select>,
+ *  mark the config dirty/customized, and refresh the live preview.
+ *  @param {{ id: string, label: string, theme: string, effects: { id: string, config: Record<string, unknown> }[] }} preset */
+function applyPreset(preset) {
+  const draft = moduleState.draft
+  if (!draft) return
+  draft.theme = preset.theme
+  draft.effects = preset.effects.map((entry) => ({
+    id: entry.id,
+    config: structuredClone(entry.config),
+  }))
+  // Mark customized so a later Theme change warns before replacing these.
+  moduleState.effectsCustomized = true
+  getSelectElement("tc-editor-theme").value = preset.theme
+  renderEffectStack()
+  markDirty()
+  schedulePreview()
+  showSuccess(`Applied the ${preset.label} look`)
 }
 
 /** Reset the preview to sealed and play the full reveal choreography once with
@@ -1362,6 +1601,8 @@ function handleMessageInput() {
   if (!moduleState.draft) return
   const el = getTextAreaElement("tc-editor-message")
   moduleState.draft.message = el.value
+  // Hand-edited now — Reroll must confirm before replacing it (D2).
+  moduleState.messageCustomized = true
   updateMessageCounter()
   announceCharsRemaining(el.value.length, MESSAGE_MAX, el)
   markDirty()
@@ -1547,9 +1788,12 @@ function swap(arr, a, b) {
   arr[b] = tmp
 }
 
-/** @param {"official" | "guest"} section */
-async function ensureMediaLoaded(section) {
-  if (loadedSections.has(section)) return
+/** The photo picker passes `force` so each section view refetches — photos get
+ *  approved/promoted while the couple composes, and a fetch-once cache hid them
+ *  until a full reload. Editor-open key mapping keeps the cached fast path.
+ *  @param {"official" | "guest"} section @param {boolean} [force] */
+async function ensureMediaLoaded(section, force = false) {
+  if (loadedSections.has(section) && !force) return
   const data = /** @type {GlobalTypes.MediaListResponse} */ (
     await api(`/api/media?section=${section}&limit=500`)
   )
@@ -1605,7 +1849,7 @@ async function loadPickerSection(section) {
   const grid = getElement("photo-picker-grid")
   showLoading(grid)
   try {
-    await ensureMediaLoaded(section)
+    await ensureMediaLoaded(section, true)
   } catch (err) {
     showLoadError(grid, 1, "Couldn't load photos.", () => loadPickerSection(section))
     return
@@ -2263,6 +2507,10 @@ export function initThankYous() {
 
   // Post-save/send "next guest" queue prompt (task 3).
   getElement("tc-queue-prompt").addEventListener("click", handleQueuePromptClick)
+  // Progress-ring "Thank the next →" jump (A2) + Cards⇆Mailbox toggle (D1).
+  getElement("tc-progress").addEventListener("click", handleProgressClick)
+  getButtonElement("tc-sub-cards").addEventListener("click", handleSubnavClick)
+  getButtonElement("tc-sub-mailbox").addEventListener("click", handleSubnavClick)
 
   // Live-preview device-width toggle (4d) — mobile is the default.
   getButtonElement("tc-preview-mobile").addEventListener("click", () => setPreviewDevice("mobile"))
@@ -2277,6 +2525,8 @@ export function initThankYous() {
   getButtonElement("tc-editor-save").addEventListener("click", handleSave)
   getTextAreaElement("tc-editor-message").addEventListener("input", handleMessageInput)
   getSelectElement("tc-editor-template").addEventListener("change", handleTemplateChange)
+  getButtonElement("tc-reroll-btn").addEventListener("click", handleReroll)
+  getElement("tc-preset-chips").addEventListener("click", handlePresetChipsClick)
   getSelectElement("tc-editor-theme").addEventListener("change", handleThemeChange)
   getSelectElement("tc-editor-reveal").addEventListener("change", handleRevealChange)
   getButtonElement("tc-play-reveal-btn").addEventListener("click", handlePlayReveal)

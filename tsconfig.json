@@ -19,12 +19,14 @@
     "js",
     "public",
     "tests/unit/reaction-glyphs.test.js",
+    "tests/unit/monogram.test.js",
     "tests/unit/dresscode-descriptor.test.js",
     "tests/unit/effect-themes.test.js",
     "tests/unit/effect-config-schema.test.js",
     "tests/unit/thank-you-card.test.js",
     "tests/unit/thank-you-compose.test.js",
     "tests/unit/effect-config-merge.test.js",
-    "tests/unit/frame-glint.test.js"
+    "tests/unit/frame-glint.test.js",
+    "tests/unit/thank-you-presets.test.js"
   ]
 }

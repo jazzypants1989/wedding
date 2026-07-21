@@ -11,14 +11,18 @@
   <meta name="theme-color" content="#1a1614" media="(prefers-color-scheme: dark)">
   <link rel="icon" type="image/png" href="/images/favicon.png">
   <link rel="apple-touch-icon" href="/images/favicon.png">
+  <!-- Link preview: site-generic (no per-card data — the token stays 404 for
+       anyone without the card link). Couple names + a warm "thank-you card"
+       framing + the existing static couple photo ({{ogImage}} = /images/us.webp). -->
   <meta property="og:type" content="website">
-  <meta property="og:title" content="{{couple.display}}'s Wedding">
-  <meta property="og:description" content="{{weddingDate}} in {{location}}">
+  <meta property="og:site_name" content="{{couple.display}}'s Wedding">
+  <meta property="og:title" content="{{couple.display}} sent you a thank-you card 💌">
+  <meta property="og:description" content="A little note of gratitude from {{couple.first}}.">
   <meta property="og:image" content="{{ogImage}}">
   <meta property="og:url" content="{{ogUrl}}">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="{{couple.display}}'s Wedding">
-  <meta name="twitter:description" content="{{weddingDate}} in {{location}}">
+  <meta name="twitter:title" content="{{couple.display}} sent you a thank-you card 💌">
+  <meta name="twitter:description" content="A little note of gratitude from {{couple.first}}.">
   <meta name="twitter:image" content="{{ogImage}}">
   <link rel="preload" as="font" type="font/woff2" href="/fonts/dm-serif-display-latin.woff2" crossorigin>
   <link rel="preload" as="font" type="font/woff2" href="/fonts/jost-latin.woff2" crossorigin>

@@ -11,6 +11,7 @@ import { initPetitions, loadPetitions, loadPetitionCount } from "./petitions.js"
 import { initBlocklist, loadBlocklist } from "./blocklist.js"
 import { initManualSms } from "./manual-sms.js"
 import { initModeration, loadModeration, loadModerationCount } from "./moderation.js"
+import { initInbox, loadInbox, refreshInboxBadge } from "./inbox.js"
 import { initGalleryAdmin, loadGalleryAdmin } from "./gallery-admin.js"
 import {
   initThankYous,
@@ -52,12 +53,15 @@ function onLoginSuccess() {
     loadModerationCount()
     loadPetitionCount()
     loadThankYouCount()
+    // Keep the Inbox tab badge fresh on the SAME poll — no second timer (A1).
+    refreshInboxBadge()
   }, BADGE_POLL_MS)
 
   // Deep-link support: /admin#thankyous (the digest email link) or any hash
-  // matching a tab id opens that tab on load. (C8)
+  // matching a tab id opens that tab on load. (C8) Otherwise land on the Inbox —
+  // the daily-loop summary of what needs attention. (A1)
   const hashTab = tabIdFromHash()
-  if (hashTab) switchTab(hashTab)
+  switchTab(hashTab || "inbox")
 }
 
 /** The tab id named by the current location.hash, if it matches a real tab.
@@ -129,7 +133,9 @@ function switchTab(tabId) {
     history.replaceState(null, "", "#" + tabId)
   }
 
-  if (tabId === "rsvps") {
+  if (tabId === "inbox") {
+    loadInbox()
+  } else if (tabId === "rsvps") {
     loadRsvps()
   } else if (tabId === "petitions") {
     loadPetitions()
@@ -199,6 +205,7 @@ function init() {
   initBlocklist()
   initManualSms()
   initModeration()
+  initInbox()
   initGalleryAdmin()
   initThankYous()
   initSiteContent()

@@ -19,7 +19,34 @@ import {
   promoteMediaToOfficial,
   updateMediaCaption,
   softDeleteMedia,
+  listGuestMediaByReactions,
 } from "../../db/media.js"
+import { countCardsReferencingFileKey } from "../../db/thank-you-cards.js"
+
+/** Default + hard cap for the "Most loved" curation page (A3). */
+const LOVED_DEFAULT_LIMIT = 60
+const LOVED_MAX_LIMIT = 200
+
+/** @type {Types.adminGuestLovedHandler} */
+export async function guestLoved(req, res) {
+  // "Most loved" guest curation: approved guest media ranked by total reactions.
+  // A single capped page (not a feed) — the count isn't a stable keyset cursor.
+  const url = new URL(req.url ?? "/", `http://${req.headers.host}`)
+  const raw = parseInt(url.searchParams.get("limit") ?? "", 10)
+  const limit = Number.isNaN(raw)
+    ? LOVED_DEFAULT_LIMIT
+    : Math.min(Math.max(raw, 1), LOVED_MAX_LIMIT)
+  const items = listGuestMediaByReactions(limit).map((m) => ({
+    id: m.id,
+    file_key: m.file_key,
+    kind: m.kind,
+    caption: m.caption,
+    author_name: m.author_name,
+    needs_display: !!m.needs_display,
+    reaction_count: m.reaction_count,
+  }))
+  return sendJson(res, 200, { items })
+}
 
 /** @type {Types.mediaReorderHandler} */
 export async function reorder(req, res, { session }) {
@@ -119,6 +146,25 @@ export async function caption(req, res, { params, session }) {
   })
 
   return sendJson(res, 200, { success: true, caption: value })
+}
+
+/** @type {Types.mediaReferencesHandler} */
+export async function references(req, res, { params }) {
+  const idResult = validateId(params.id, "media ID")
+  if (!idResult.valid) throw new ValidationError(idResult.error)
+
+  const row = getMediaById(idResult.value)
+  if (!row || row.deleted_at) throw new NotFoundError("Media")
+
+  // A destructive action (Remove / moderation Reject / Hide) silently strips this
+  // photo from any thank-you card that embeds it (resolveMedia drops the
+  // now-unapproved key). Surface the count so the confirm dialog can warn BEFORE
+  // acting — especially for already-delivered (sent/viewed) cards.
+  const counts = countCardsReferencingFileKey(row.file_key)
+  return sendJson(res, 200, {
+    cardRefs: counts.total,
+    deliveredCardRefs: counts.delivered,
+  })
 }
 
 /** @type {Types.mediaDeleteHandler} */

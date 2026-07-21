@@ -118,6 +118,10 @@ export const REVEAL_STAGES: RevealStage[]
 export interface RevealOptions {
   /** The envelope button whose tap opens the card. */
   envelopeEl: HTMLElement
+  /** The card article whose content is pre-mounted: kept `inert` + aria-hidden
+   *  while sealed/opening so assistive tech can't read the message before the
+   *  envelope opens. Unsealed at `unfolding` (before onOpened's focus hop). */
+  cardEl?: HTMLElement
   /** Whether reduced-motion is in effect (skip choreography + particles). */
   reduced: boolean
   /** Fired exactly once, the moment the guest actually opens the envelope (the

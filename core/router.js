@@ -32,6 +32,7 @@ import * as media from "../api/media.js"
 import * as comments from "../api/comments.js"
 import * as reactions from "../api/reactions.js"
 import * as moderation from "../api/admin/moderation.js"
+import * as adminGuestbook from "../api/admin/guestbook.js"
 import * as adminAccounts from "../api/admin/accounts.js"
 import * as adminMedia from "../api/admin/media.js"
 import * as siteContent from "../api/admin/site-content.js"
@@ -200,9 +201,11 @@ route("DELETE", "/api/media/:id", media.remove, { accountOrAdmin: true })
 // own-pending interleave); POST requires a guest account. The literal 4th
 // segment `comments` distinguishes these from PUT :variant / POST finalize.
 route("GET", "/api/guestbook/:id/comments", comments.listGuestbook, { errorHandling: true })
-route("POST", "/api/guestbook/:id/comments", comments.createGuestbook, { account: true })
+// POST accepts a guest (hybrid moderation) OR an admin (the couple's auto-approved
+// "host" reply, stored account_id NULL) via withAccountOrAdmin.
+route("POST", "/api/guestbook/:id/comments", comments.createGuestbook, { accountOrAdmin: true })
 route("GET", "/api/media/:id/comments", comments.listMedia, { errorHandling: true })
-route("POST", "/api/media/:id/comments", comments.createMedia, { account: true })
+route("POST", "/api/media/:id/comments", comments.createMedia, { accountOrAdmin: true })
 route("DELETE", "/api/comments/:id", comments.remove, { account: true })
 
 // Reactions: a single toggle endpoint (target in the body). Account required.
@@ -261,6 +264,13 @@ route("POST", "/api/admin/thank-you/config", adminThankYou.setConfig, { admin: t
 route("POST", "/api/admin/thank-you/preview", adminThankYou.sendPreview, { admin: true })
 route("POST", "/api/admin/thank-you/send", adminThankYou.send, { admin: true })
 route("GET", "/api/admin/thank-you/counts", adminThankYou.counts, { admin: true })
+// Cross-card replies feed (Inbox + Mailbox). Literal segment, so it must sit
+// ahead of the `/:id` routes below or "replies" would be captured as an id.
+route("GET", "/api/admin/thank-you/replies", adminThankYou.recentReplies, { admin: true })
+// CSV export (sunset archive parity with `npm run export`). Two literal segments
+// (`export/…`) keep these clear of the single-segment `/:id` routes below.
+route("GET", "/api/admin/thank-you/export/gifts.csv", adminThankYou.exportGiftsCSV, { admin: true })
+route("GET", "/api/admin/thank-you/export/cards.csv", adminThankYou.exportCardsCSV, { admin: true })
 // Clear-reply lever. The literal `cards` segment keeps this distinct from the
 // bare `/:id/*` card routes below; history rows are retained (surface-only wipe).
 route("POST", "/api/admin/thank-you/cards/:id/clear-reply", adminThankYou.clearReply, { admin: true })
@@ -284,6 +294,11 @@ route("POST", "/api/admin/moderation/:type/:id/reject", moderation.reject, { adm
 route("POST", "/api/admin/moderation/:type/:id/hide", moderation.hide, { admin: true })
 route("POST", "/api/admin/moderation/:type/:id/undo", moderation.undo, { admin: true })
 
+// Admin guestbook "Favorites" pin toggle (Wow pack). Distinct from the off-limits
+// moderation queue — the couple pins approved notes for the public Favorites strip.
+route("POST", "/api/admin/guestbook/:id/pin", adminGuestbook.pin, { admin: true })
+route("POST", "/api/admin/guestbook/:id/unpin", adminGuestbook.unpin, { admin: true })
+
 // Admin account-management routes (Phase 6)
 route("GET", "/api/admin/accounts", adminAccounts.list, { admin: true })
 route("POST", "/api/admin/accounts/:id/trust", adminAccounts.trust, { admin: true })
@@ -292,8 +307,11 @@ route("DELETE", "/api/admin/accounts/:id", adminAccounts.remove, { admin: true }
 
 // Admin curated-gallery routes (Phase 6). The literal `reorder` segment and the
 // `:id/promote` shape disambiguate from the bare `/:id` PATCH/DELETE.
+// Literal segment — must precede the `/:id/*` media routes so it isn't captured.
+route("GET", "/api/admin/media/guest-loved", adminMedia.guestLoved, { admin: true })
 route("POST", "/api/admin/media/reorder", adminMedia.reorder, { admin: true })
 route("POST", "/api/admin/media/:id/promote", adminMedia.promote, { admin: true })
+route("GET", "/api/admin/media/:id/references", adminMedia.references, { admin: true })
 route("PATCH", "/api/admin/media/:id", adminMedia.caption, { admin: true })
 route("DELETE", "/api/admin/media/:id", adminMedia.remove, { admin: true })
 

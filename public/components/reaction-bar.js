@@ -9,9 +9,38 @@
 
 import { html, api, getErrorMessage } from "../pages/utils.js"
 import { requireAccount } from "./guest-session.js"
-import { miniSparkle } from "./celebrate.js"
+import { miniSparkle, heartBurst, champagnePop } from "./celebrate.js"
 import { showToast } from "./toast.js"
 import { announcePolite } from "./announce.js"
+
+/** Reaction-count thresholds that trigger a one-time celebratory micro-burst. */
+const MILESTONES = [10, 25, 50]
+
+/** Fired milestones this session, keyed `type:id:emoji:threshold`, so a burst
+ *  plays once per target/emoji/threshold no matter how the count wobbles. */
+const firedMilestones = new Set()
+
+/**
+ * Fire a subtle one-time burst when a target's count for an emoji crosses a
+ * milestone (10/25/50) upward. Origin is the pill; the burst style matches the
+ * emoji (heart → hearts, cheers → champagne, else sparkle). Self-gates under
+ * reduced motion via the celebrate helpers.
+ * @param {HTMLButtonElement} btn
+ * @param {string} targetType @param {number} targetId
+ * @param {string} emoji @param {number} before @param {number} after
+ */
+function maybeMilestone(btn, targetType, targetId, emoji, before, after) {
+  for (const m of MILESTONES) {
+    if (before < m && after >= m) {
+      const key = `${targetType}:${targetId}:${emoji}:${m}`
+      if (firedMilestones.has(key)) continue
+      firedMilestones.add(key)
+      if (emoji === "heart") heartBurst(btn)
+      else if (emoji === "cheers") champagnePop(btn)
+      else miniSparkle(btn)
+    }
+  }
+}
 
 /** Stable reaction key → display glyph. Must stay in sync with REACTION_EMOJI. */
 export const REACTION_GLYPHS = Object.freeze({
@@ -75,6 +104,12 @@ export function initReactionBars(root = document.body) {
  * @param {string} emoji
  */
 async function toggle(btn, bar, targetType, targetId, emoji) {
+  // One toggle in flight per pill: a double-tap (or a retried tap) would race
+  // two POSTs whose server-side insert-then-delete resolution converges to
+  // "removed" — the opposite of the guest's single intent. Drop the duplicate.
+  if (btn.dataset.busy) return
+  btn.dataset.busy = "1"
+
   const wasPressed = btn.getAttribute("aria-pressed") === "true"
   const wasCount = countOf(btn)
   // Optimistic flip.
@@ -99,6 +134,8 @@ async function toggle(btn, bar, targetType, targetId, emoji) {
     // flips, but the new count is never spoken) — announce the outcome.
     const plain = emoji.replaceAll("_", " ")
     const total = res.counts[emoji] ?? 0
+    // A fresh add that crosses 10/25/50 gets a one-time milestone burst.
+    if (res.active) maybeMilestone(btn, targetType, targetId, emoji, wasCount, total)
     announcePolite(
       res.active
         ? `Reacted with ${plain} — ${total} total`
@@ -109,6 +146,8 @@ async function toggle(btn, bar, targetType, targetId, emoji) {
     setPill(btn, wasPressed, wasCount)
     console.warn("Reaction toggle failed:", getErrorMessage(err))
     showToast("Couldn't save your reaction — please try again.", { variant: "error" })
+  } finally {
+    delete btn.dataset.busy
   }
 }
 

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en" data-effect-theme="{{effectTheme}}">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Memory Book - {{couple.display}}</title>
+  <meta name="description" content="A printable keepsake of every guestbook message for {{couple.first}}.">
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#eee6dc" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1a1614" media="(prefers-color-scheme: dark)">
+  <link rel="icon" type="image/png" href="/images/favicon.png">
+  <link rel="apple-touch-icon" href="/images/favicon.png">
+  <link rel="preload" as="font" type="font/woff2" href="/fonts/dm-serif-display-latin.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="/fonts/jost-latin.woff2" crossorigin>
+  <link rel="stylesheet" href="/styles/tokens.css">
+  <link rel="stylesheet" href="/styles/layout.css">
+  <link rel="stylesheet" href="/styles/components.css">
+  <link rel="stylesheet" href="/styles/social.css">
+  <link rel="stylesheet" href="/pages/memory-book/memory-book.css">
+  <script src="/components/theme-init.js"></script>
+</head>
+
+<body data-mode="{{mode}}">
+  <a href="#mb-book" class="skip-link">Skip to content</a>
+
+  <!-- Screen-only toolbar; hidden when printing (see memory-book.css @media print). -->
+  <div class="mb-toolbar" role="toolbar" aria-label="Memory book actions">
+    <a href="/guestbook" class="btn btn-secondary btn-sm">← Back to guestbook</a>
+    <button type="button" id="mb-print" class="btn btn-primary btn-sm">🖨 Print / Save as PDF</button>
+  </div>
+
+  <noscript>
+    <div class="mb-noscript">
+      <h2>JavaScript Required</h2>
+      <p>The memory book gathers every guestbook message with JavaScript. Please enable it and reload.</p>
+    </div>
+  </noscript>
+
+  <main id="mb-book" class="mb-book">
+    <section class="mb-cover">
+      <p class="mb-cover-mono" aria-hidden="true">{{couple.monogram}}</p>
+      <h1 class="mb-cover-names">{{couple.display}}</h1>
+      <p class="mb-cover-date">{{weddingDate}} &bull; {{location}}</p>
+      <p class="mb-cover-sub">Our Guestbook</p>
+    </section>
+
+    <div id="mb-status" class="mb-status" role="status">Gathering every message…</div>
+    <div id="mb-error" class="alert alert-error" role="alert" hidden></div>
+
+    <div id="mb-entries" class="mb-entries"></div>
+  </main>
+
+  <script type="module" src="/pages/memory-book/main.js"></script>
+</body>
+
+</html>
