@@ -275,7 +275,42 @@ as placeholder tiles. That is what the CLI is for.
 
 ---
 
-## 9. Note for whoever edits the CSS
+## 9. Verification status
+
+Automated: 46 unit tests (arg parsing, scanning, planning, the run loop's
+taxonomy and ordering, the HTTP transport contract) and 7 integration tests
+driving the whole pipeline against both real sinks. `npm test` covers them.
+
+Checked by hand against real files, because these are the parts a synthetic
+fixture cannot prove:
+
+| | |
+|---|---|
+| Orientation-6 source (stored landscape, displays portrait) | ✅ correct `1600×2400` on **all three** backends, including sips's explicit rotate pass |
+| HEIC decode | ✅ vips, magick **and** sips |
+| No upscaling of a source smaller than the target | ✅ a 300×200 source stays 300×200 through sips `-Z` |
+| Derived variants metadata-free | ✅ zero EXIF/XMP/IPTC fields on every backend's output |
+| ICC profile retained | ✅ a Display-P3 profile survives `vips keep=icc` and the WebP ICCP filter into `display.webp`, while its EXIF does not |
+| `--strip-original` | ✅ EXIF removed, ICC kept, image intact |
+| `--url` end to end | ✅ against a live server: dry run without a prompt, correct `sort_order`, publicly-served display variants, second run imports nothing |
+
+**Still unverified**, for want of the right thing to test with — flag these if
+they matter:
+
+1. **ffmpeg argv.** Written from the spec; ffmpeg was not installed on the
+   machine this was built on. The first video import is the real test. Photos are
+   unaffected — a missing ffmpeg skips videos per-file with an install hint.
+2. **Real 12MP display sizes.** Only 2000px sources were available, so the
+   quality step-down ladder has never actually needed a rung. It exists for
+   exactly this gap; if it fires, the run reports `steppedDown`.
+3. **ImageMagick 6 (`convert`).** Only IM7 (`magick`) was installed. The
+   operators used are IM6-compatible in principle but unexercised.
+4. **A real iPhone HEIC.** The HEIC tested was ImageMagick-produced. Backends are
+   known to disagree about iPhone HEIC orientation (vips/magick vs sips), which is
+   why the reported dimensions are cross-checked against the largest derived
+   variant rather than trusted.
+
+## 10. Note for whoever edits the CSS
 
 CSS in `public/styles/` and the per-page sheets is concatenated and inlined at
 server startup, then SHA-256 hashed for CSP (`core/static.js`). A `.css` edit is
