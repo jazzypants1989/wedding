@@ -631,6 +631,118 @@ export function releaseUploadSlot(accountId: number | null, bytes: number): void
 /** Current in-flight reserved bytes (for the disk guard). */
 export function getReservedBytes(): number
 
+// --- Image container reader / metadata filter (core/image-meta.js) ---
+
+/** Container formats image-meta.js can parse without decoding pixels. */
+export type ImageContainerFormat = "jpeg" | "png" | "webp"
+
+/** Dimensions as stored, before any EXIF orientation is applied. */
+export interface ImageHeader {
+  format: ImageContainerFormat
+  width: number
+  height: number
+}
+
+/** The three EXIF facts an importer needs. Safe defaults when EXIF is absent. */
+export interface ExifSummary {
+  /** EXIF orientation 1-8; 1 when absent, unreadable or out of range. */
+  orientation: number
+  /** Whether a GPS IFD is present (not whether it holds a real fix). */
+  hasGps: boolean
+  /** DateTimeOriginal as "YYYY-MM-DD HH:MM:SS", or null. */
+  capturedAt: string | null
+}
+
+/**
+ * Dimensions from the container header, without decoding. Returns null for an
+ * unrecognized or truncated file.
+ */
+export function readImageHeader(buf: Buffer): ImageHeader | null
+
+/** Orientation, GPS presence and capture time. Never throws. */
+export function readExifSummary(buf: Buffer): ExifSummary
+
+/**
+ * Drop EXIF/XMP/IPTC and other metadata, keeping pixel data byte-for-byte and
+ * keeping the ICC profile. Returns the input unchanged when there is nothing to
+ * remove or the format isn't recognized.
+ */
+export function stripImageMetadata(buf: Buffer): Buffer
+
+/** Whether stripImageMetadata would remove anything — the post-strip assertion. */
+export function hasImageMetadata(buf: Buffer): boolean
+
+// --- ISO BMFF box primitives (core/mp4-boxes.js) ---
+
+/** A parsed MP4/QuickTime box header plus the byte range it spans. */
+export interface Mp4Box {
+  /** Offset of the box header itself. */
+  start: number
+  /** Four-character type, read as latin1 (e.g. "moov", "©xyz"). */
+  type: string
+  /** 8, or 16 for the 64-bit largesize form. */
+  headerSize: number
+  /** First payload byte (start + headerSize). */
+  contentStart: number
+  /** One past the last byte of the box. */
+  boxEnd: number
+}
+
+/**
+ * Read a box header at `offset`. Handles 32-bit sizes, size=1 (64-bit
+ * largesize) and size=0 (extends to `end`). Returns null on malformed input.
+ */
+export function readBox(buf: Buffer, offset: number, end: number): Mp4Box | null
+
+/**
+ * Iterate the child boxes in [start, end). Stops cleanly at the first malformed
+ * header rather than throwing.
+ */
+export function childBoxes(buf: Buffer, start: number, end: number): Mp4Box[]
+
+/** First direct child of `parent` with the given type, or null. */
+export function findChildBox(buf: Buffer, parent: Mp4Box, type: string): Mp4Box | null
+
+/**
+ * Read one top-level box header directly from the file (16 bytes covers the
+ * 32-bit and largesize forms). Same semantics as readBox; null on malformed
+ * input.
+ */
+export function readTopLevelHeader(
+  fh: import("node:fs/promises").FileHandle,
+  offset: number,
+  fileSize: number,
+): Promise<{ type: string; boxEnd: number } | null>
+
+/**
+ * Scan top-level box headers for `type`, reading 16 bytes per box rather than
+ * the file. Returns its absolute byte range, or null if absent/malformed.
+ */
+export function findTopLevelBox(
+  fh: import("node:fs/promises").FileHandle,
+  fileSize: number,
+  type: string,
+): Promise<{ start: number; end: number } | null>
+
+// --- Video duration/dimension probe (core/mp4-probe.js) ---
+
+/** What an MP4/QuickTime container can tell us without decoding a frame. */
+export interface Mp4ProbeResult {
+  /** From moov/mvhd; null when the container declares it unknown. */
+  durationSeconds: number | null
+  /** Display width with the tkhd matrix applied; null when no trak is usable. */
+  width: number | null
+  height: number | null
+  /** 0, 90 or 270 — quarter turns, the only rotations cameras produce. */
+  rotation: number
+}
+
+/**
+ * Read duration and display dimensions from the moov subtree. Returns null for
+ * a file that isn't ISO-BMFF, is truncated, or carries neither. Never throws.
+ */
+export function probeMp4(filePath: string): Promise<Mp4ProbeResult | null>
+
 // --- Video GPS blanking (core/mp4-meta.js) ---
 
 /** A byte range that was blanked (filled with spaces), for logging. */
