@@ -37,6 +37,7 @@ import {
 } from "./lib/import-manifest.js"
 import { isMediaImportError } from "./lib/media-errors.js"
 import { buildMediaVariants, planMediaFile, probeBackends } from "./lib/media-variants.js"
+import { createHttpSink } from "./lib/sink-http.js"
 import { createLocalSink } from "./lib/sink-local.js"
 
 const USAGE = `Usage: npm run import:media -- <dir> [options]
@@ -454,12 +455,7 @@ const SKIP_LABEL = {
 
 /** Build the sink the arguments ask for. */
 function defaultCreateSink(/** @type {Types.ImportArgs} */ args) {
-  if (args.url) {
-    throw new Error(
-      "--url is not wired up yet in this build. Run the importer on the machine hosting the site, " +
-        "or omit --url to write locally.",
-    )
-  }
+  if (args.url) return createHttpSink({ url: args.url, verbose: args.verbose })
   return createLocalSink({ readOnly: args.dryRun })
 }
 

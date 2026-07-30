@@ -404,6 +404,17 @@ export function createLocalSink(options?: {
   databasePath?: string
 }): ImportSink
 
+/**
+ * Build the API-driven sink. Logs in lazily on the first mutation, so
+ * `preflight()` — and therefore --dry-run — never asks for a password.
+ */
+export function createHttpSink(options: {
+  /** Origin, no trailing slash. */
+  url: string
+  verbose?: boolean
+  stderr?: { write(chunk: string): unknown }
+}): ImportSink
+
 // --- Idempotency manifest (scripts/lib/import-manifest.js) ---
 
 /** What was recorded about one successfully imported file. */
