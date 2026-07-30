@@ -66,8 +66,12 @@ import { enrichSocial } from "./enrich.js"
 
 // Per-variant streaming spec, keyed by variant then item kind. A variant absent
 // for a kind (e.g. poster on an image) is structurally invalid → 400.
+//
+// Exported so scripts/import-media.js's local sink, which writes rows and files
+// directly rather than over HTTP, enforces the identical allowlist and caps
+// instead of restating them and drifting.
 /** @type {Record<string, Partial<Record<GlobalTypes.MediaKind, { expectedKinds: string[], maxBytes: number }>>>} */
-const VARIANT_SPEC = {
+export const VARIANT_SPEC = {
   original: {
     image: { expectedKinds: ["jpeg", "png", "webp", "heic"], maxBytes: MEDIA_LIMITS.IMAGE_ORIGINAL_MAX },
     video: { expectedKinds: ["mp4", "mov"], maxBytes: MEDIA_LIMITS.VIDEO_ORIGINAL_MAX },

@@ -239,7 +239,7 @@ export interface MediaPlanOk {
   orientation: number
   /** Whether the original carries GPS — reported to the user, not acted on. */
   hasGps: boolean
-  /** EXIF DateTimeOriginal as "YYYY-MM-DD HH:MM:SS", for --order=captured. */
+  /** EXIF DateTimeOriginal as "YYYY-MM-DD HH:MM:SS". Read, reported, not yet ordered on. */
   capturedAt: string | null
   mtimeMs: number
 }
@@ -332,3 +332,65 @@ export function buildMediaVariants(
 
 /** Short random token for scratch filenames. */
 export function randomWorkName(): string
+
+// --- Idempotency manifest (scripts/lib/import-manifest.js) ---
+
+/** What was recorded about one successfully imported file. */
+export interface ManifestEntry {
+  /** The media row's id, so the manifest doubles as a provenance record. */
+  id: number
+  fileKey: string
+  section: string
+  /** Basename at import time; informational, never matched on. */
+  name: string
+  bytes: number
+  /** ISO timestamp of the import. */
+  at: string
+}
+
+/** origin → sha256 → entry. Content-keyed, so renames do not re-import. */
+export interface ImportManifest {
+  version: number
+  origins: Record<string, Record<string, ManifestEntry>>
+}
+
+/**
+ * Read the manifest. Returns an empty one for a missing, corrupt or
+ * wrong-version file rather than throwing — refusing to run would be worse than
+ * re-importing, which is visible and fixable.
+ */
+export function loadManifest(manifestPath: string): ImportManifest
+
+/** Whether this content hash was already imported to this origin. */
+export function manifestHas(
+  manifest: ImportManifest,
+  origin: string,
+  sha256: string,
+): boolean
+
+/** The recorded entry, or null. */
+export function manifestGet(
+  manifest: ImportManifest,
+  origin: string,
+  sha256: string,
+): ManifestEntry | null
+
+/** Record an import. Mutates and returns the manifest. */
+export function manifestRecord(
+  manifest: ImportManifest,
+  origin: string,
+  sha256: string,
+  entry: ManifestEntry,
+): ImportManifest
+
+/** How many files this origin has recorded. */
+export function manifestCount(manifest: ImportManifest, origin: string): number
+
+/** Write atomically (tmp + rename), creating the parent directory. */
+export function saveManifest(manifestPath: string, manifest: ImportManifest): void
+
+/** Streamed sha256 of a file's contents, as lowercase hex. */
+export function hashFile(filePath: string): Promise<string>
+
+/** Canonical origin key — trailing slashes must not create a second bucket. */
+export function normalizeOrigin(origin: string): string

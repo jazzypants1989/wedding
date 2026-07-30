@@ -16,6 +16,7 @@
   "exclude": [
     "node_modules",
     "data",
+    "tmp",
     "js",
     "public",
     "tests/unit/reaction-glyphs.test.js",

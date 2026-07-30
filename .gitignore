@@ -7,6 +7,9 @@
 # carry IPs, so the whole tree stays out of git.
 data/
 
+# Scratch space for exploratory work (never part of the app).
+tmp/
+
 # Node
 node_modules/
 
