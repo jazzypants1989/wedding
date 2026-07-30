@@ -933,6 +933,4 @@ export function setupShutdownHandlers(): void
 
 export function HashPassword(password: string): string
 export function ValidatePasswordStrength(password: string): string | null
-export function Prompt(question: string, hidden?: boolean): Promise<string>
-export function OnData(char: string): void
-export function Main(): Promise<void>
+// Prompt/OnData moved to scripts/types.d.ts alongside scripts/lib/prompt.js.

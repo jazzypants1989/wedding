@@ -3,65 +3,13 @@
 /**
  * @file Admin password setup script
  */
-/** @import * as Types from '../types.js' */
 
-import readline from "node:readline"
 import fs from "node:fs"
 import path from "node:path"
 import { hashPassword, validatePasswordStrength } from "../core/password-policy.js"
+import { prompt } from "./lib/prompt.js"
 
 const ENV_PATH = path.join(import.meta.dirname, "..", ".env")
-
-/** @type {Types.Prompt} */
-function prompt(question, hidden = false) {
-  return new Promise((resolve) => {
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    })
-
-    if (hidden && process.stdin.isTTY) {
-      // Hide input for password
-      process.stdout.write(question)
-      let password = ""
-
-      process.stdin.setRawMode(true)
-      process.stdin.resume()
-      process.stdin.setEncoding("utf8")
-
-      /** @type {Types.OnData} */
-      const onData = (char) => {
-        if (char === "\n" || char === "\r") {
-          process.stdin.setRawMode(false)
-          process.stdin.removeListener("data", onData)
-          process.stdout.write("\n")
-          rl.close()
-          resolve(password)
-        } else if (char === "\u0003") {
-          // Ctrl+C
-          process.exit(1)
-        } else if (char === "\u007F" || char === "\b") {
-          // Backspace
-          if (password.length > 0) {
-            password = password.slice(0, -1)
-            process.stdout.write("\b \b")
-          }
-        } else {
-          password += char
-          process.stdout.write("*")
-        }
-      }
-
-      process.stdin.on("data", onData)
-    } else {
-      // Fallback for non-TTY (password will be visible)
-      rl.question(question, (answer) => {
-        rl.close()
-        resolve(answer)
-      })
-    }
-  })
-}
 
 async function main() {
   console.log("\n=== Wedding Admin Password Setup ===\n")
