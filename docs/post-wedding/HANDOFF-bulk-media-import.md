@@ -1,5 +1,13 @@
 # Hand-off: bulk media import (+ a modal centering fix already landed)
 
+> **SUPERSEDED — this is a historical design document.** The feature is built; see
+> **`08-bulk-import.md`** for what actually exists and how to use it. Two claims
+> below turned out to be wrong and the corrections matter: §5.4's assumption that
+> byte-for-byte originals are a privacy regression (image originals are never
+> served publicly), and the direction of the EXIF hazard (the live risk is the
+> public `display`/`thumb` variants, which the server stores as-received). Kept
+> for the reasoning, not as instructions.
+
 **Date:** 2026-07-29
 **Branch:** `track-1-content-as-data`
 **Status:** one bug fixed and verified; the bulk-import feature is **designed but not

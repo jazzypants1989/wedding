@@ -35,6 +35,14 @@ export type MediaImportErrorCode =
   | "VARIANT_FORMAT_MISMATCH"
   /** stripImageMetadata could not guarantee a clean variant. Per-file. */
   | "STRIP_FAILED"
+  /**
+   * The destination is out of room (507, or the local cap). Run-fatal: every
+   * remaining file would fail the same way, and 200 identical errors bury the
+   * one line that matters.
+   */
+  | "DESTINATION_FULL"
+  /** The admin session died mid-run (401, repeated CSRF rejection). Run-fatal. */
+  | "AUTH_LOST"
 
 /**
  * The shape MediaImportError implements. Declared for consumers that catch and

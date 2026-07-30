@@ -41,6 +41,12 @@ export const CODE_ENV_VARS = [
   "MEDIA_MIN_FREE_BYTES",
   "MEDIA_MAX_TOTAL_BYTES",
   "MEDIA_UNTRUSTED_QUOTA_BYTES",
+  // Read only by scripts/import-media.js — never by the server.
+  "WEDDING_ADMIN_PASSWORD",
+  "WEDDING_IMAGE_BACKEND",
+  "WEDDING_IMAGE_BIN",
+  "WEDDING_VIDEO_BACKEND",
+  "WEDDING_FFMPEG_BIN",
 ]
 
 const PLACEHOLDER_CONTACT = "contact@example.com"

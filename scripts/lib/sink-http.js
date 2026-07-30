@@ -91,6 +91,9 @@ export function createHttpSink(options) {
   /** @type {Map<number, string>} */
   const fileKeys = new Map()
   let loggedIn = false
+  /** The single in-flight login, shared by every worker that needs one. */
+  /** @type {Promise<void> | null} */
+  let loginPromise = null
 
   /**
    * One HTTP round trip. `filePath` streams a file as the body with an exact
@@ -225,17 +228,40 @@ export function createHttpSink(options) {
         ? "VARIANT_TOO_LARGE"
         : res.status === 415
           ? "VARIANT_FORMAT_MISMATCH"
-          : res.status === 507
-            ? "SOURCE_TOO_LARGE"
-            : "BACKEND_FAILED"
+          : // 507 and 401 are run-fatal, not per-file: every remaining file would
+            // fail identically, and 200 copies of the same error bury the one
+            // line that matters.
+            res.status === 507
+            ? "DESTINATION_FULL"
+            : res.status === 401 || res.status === 403
+              ? "AUTH_LOST"
+              : "BACKEND_FAILED"
     return new MediaImportError(/** @type {any} */ (code), `${what} — ${res.status}: ${message}`, {
       detail: res.body.slice(0, 500),
     })
   }
 
-  /** Log in once. Called lazily, so --dry-run never asks for a password. */
-  async function login() {
-    if (loggedIn) return
+  /**
+   * Log in once, even under concurrency. Every worker calls login() before its
+   * first mutation, so without a shared in-flight promise N workers race into N
+   * logins — and each one's Set-Cookie overwrites the jar, so a request already
+   * in flight ends up pairing one login's session cookie with another's CSRF
+   * token and comes back 401. Memoized on success; cleared on failure so a
+   * transient network error can be retried.
+   */
+  function login() {
+    if (loggedIn) return Promise.resolve()
+    if (!loginPromise) {
+      loginPromise = doLogin().catch((err) => {
+        loginPromise = null
+        throw err
+      })
+    }
+    return loginPromise
+  }
+
+  /** Called lazily, so --dry-run never asks for a password. */
+  async function doLogin() {
     let password = process.env.WEDDING_ADMIN_PASSWORD ?? ""
     if (!password) {
       if (!canPrompt()) {
@@ -300,7 +326,10 @@ export function createHttpSink(options) {
         json: { kind, originalBytes, section },
       })
       if (response.status === 401) {
-        throw new MediaImportError("BACKEND_FAILED", "Admin session expired mid-run — re-run to resume.")
+        throw new MediaImportError(
+          "AUTH_LOST",
+          "The admin session expired mid-run. Re-run to resume — the manifest records what already landed.",
+        )
       }
       if (response.status !== 201) throw fail("Creating an upload session", response)
       const id = Number(response.json?.id)
@@ -382,6 +411,7 @@ export function createHttpSink(options) {
       if (loggedIn) {
         await retryRequest("POST", "/api/admin/logout").catch(() => {})
         loggedIn = false
+        loginPromise = null
       }
     },
   }

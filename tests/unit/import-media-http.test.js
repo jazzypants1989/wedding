@@ -145,6 +145,29 @@ describe("sink-http session and upload", () => {
     assert.ok(String(seen[1].headers.cookie).includes("session=sess-1"))
   })
 
+  it("logs in exactly once even when several workers start at the same moment", async () => {
+    reset([
+      { status: 200, json: { success: true }, setCookie: LOGIN_COOKIES },
+      { status: 201, json: { id: 1, fileKey: "a" } },
+    ])
+    const s = sink()
+
+    // Without a shared in-flight login promise this issues four logins, each
+    // one's Set-Cookie overwriting the jar — so a request already in flight
+    // pairs one login's session cookie with another's CSRF token and 401s.
+    await Promise.all(
+      [1, 2, 3, 4].map(() =>
+        s.createSession({ kind: "image", originalBytes: 1, section: "official" }),
+      ),
+    )
+
+    assert.deepEqual(
+      seen.filter((r) => r.url === "/api/admin/login").map((r) => r.method),
+      ["POST"],
+    )
+    assert.equal(seen.filter((r) => r.url === "/api/media").length, 4)
+  })
+
   it("streams a variant with the exact Content-Length the server verifies", async () => {
     reset([
       { status: 200, json: { success: true }, setCookie: LOGIN_COOKIES },
@@ -244,7 +267,10 @@ describe("sink-http session and upload", () => {
     for (const [status, expected] of [
       [413, "VARIANT_TOO_LARGE"],
       [415, "VARIANT_FORMAT_MISMATCH"],
-      [507, "SOURCE_TOO_LARGE"],
+      // 507 and 401 map to run-fatal codes: the next 199 files would fail the
+      // same way, so the run stops instead of repeating the error.
+      [507, "DESTINATION_FULL"],
+      [401, "AUTH_LOST"],
       [409, "BACKEND_FAILED"],
     ]) {
       reset([

@@ -174,15 +174,15 @@ export function createLocalSink(options = {}) {
       // snapshot: 200 originals move the number a lot as the run proceeds.
       if (sumOriginalBytes() + originalBytes > MEDIA_STORAGE.MAX_TOTAL_BYTES) {
         throw new MediaImportError(
-          "SOURCE_TOO_LARGE",
-          `Storage is full — stored originals would exceed the ${formatBytes(MEDIA_STORAGE.MAX_TOTAL_BYTES)} cap.`,
+          "DESTINATION_FULL",
+          `Storage is full — stored originals would exceed the ${formatBytes(MEDIA_STORAGE.MAX_TOTAL_BYTES)} cap (MEDIA_MAX_TOTAL_BYTES).`,
         )
       }
       const free = freeBytesOnDataVolume()
       if (free !== null && free - originalBytes < MEDIA_STORAGE.MIN_FREE_BYTES) {
         throw new MediaImportError(
-          "SOURCE_TOO_LARGE",
-          `Storage is full — less than ${formatBytes(MEDIA_STORAGE.MIN_FREE_BYTES)} would be left free.`,
+          "DESTINATION_FULL",
+          `Storage is full — less than ${formatBytes(MEDIA_STORAGE.MIN_FREE_BYTES)} would be left free (MEDIA_MIN_FREE_BYTES).`,
         )
       }
 

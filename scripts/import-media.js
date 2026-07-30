@@ -598,6 +598,14 @@ export async function runImport(args, deps = {}) {
     let nextIndex = 0
     let done = 0
 
+    /**
+     * Failures that make every remaining file pointless. Storage is full, or the
+     * admin session died: attempting the other 199 would produce 199 identical
+     * errors and bury the one line that matters.
+     * @type {Set<string>}
+     */
+    const FATAL_CODES = new Set(["DESTINATION_FULL", "AUTH_LOST"])
+
     const onSignal = () => {
       if (aborted) return
       aborted = true
@@ -700,6 +708,10 @@ export async function runImport(args, deps = {}) {
         if (args.verbose && isMediaImportError(error) && error.detail) {
           note(`      ${error.detail.split("\n").join("\n      ")}`)
         }
+        if (FATAL_CODES.has(code) && !aborted) {
+          aborted = true
+          note(`! Stopping — ${message}`)
+        }
       } finally {
         await built?.dispose()
       }
@@ -751,7 +763,7 @@ export async function runImport(args, deps = {}) {
       for (const failure of report.failed) write(`    ${failure.file} — ${failure.message}`)
     }
     if (report.unattempted.length > 0) {
-      write(`Not attempted (run interrupted): ${report.unattempted.length}.`)
+      write(`Not attempted (the run stopped early): ${report.unattempted.length}.`)
     }
     if (report.warnings.length > 0 && !args.verbose) {
       write(`${report.warnings.length} warning(s) — re-run with --verbose to see them.`)

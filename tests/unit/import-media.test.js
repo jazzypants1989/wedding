@@ -557,6 +557,56 @@ describe("runImport", () => {
     assert.equal(sink.calls.finalized.length, 0)
   })
 
+  it("stops the whole run when the destination fills up", async () => {
+    const dir = scratch("run-fills-up")
+    for (const name of ["a.jpg", "b.jpg", "c.jpg", "d.jpg"]) {
+      write(dir, name, makeJpegWithMetadata({ width: 100, height: 100 }))
+    }
+    let created = 0
+    const sink = stubSink({
+      async createSession() {
+        created++
+        if (created > 1) throw new MediaImportError("DESTINATION_FULL", "Storage is full")
+        return { id: 500, fileKey: "k500" }
+      },
+    })
+
+    const report = await runImport(
+      runArgs(dir, { concurrency: 1 }),
+      runDeps({ createSink: () => sink }),
+    )
+
+    // One landed, one failed fatally, and the remaining two were not attempted —
+    // rather than four identical "storage is full" errors.
+    assert.equal(report.exitCode, 2)
+    assert.equal(report.imported.length, 1)
+    assert.deepEqual(
+      report.failed.map((f) => f.code),
+      ["DESTINATION_FULL"],
+    )
+    assert.deepEqual(report.unattempted, ["c.jpg", "d.jpg"])
+  })
+
+  it("stops the whole run when the admin session dies mid-flight", async () => {
+    const dir = scratch("run-auth-lost")
+    for (const name of ["a.jpg", "b.jpg", "c.jpg"]) {
+      write(dir, name, makeJpegWithMetadata({ width: 100, height: 100 }))
+    }
+    const sink = stubSink({
+      async createSession() {
+        throw new MediaImportError("AUTH_LOST", "The admin session expired mid-run")
+      },
+    })
+
+    const report = await runImport(
+      runArgs(dir, { concurrency: 1 }),
+      runDeps({ createSink: () => sink }),
+    )
+    assert.equal(report.exitCode, 2)
+    assert.equal(report.failed.length, 1)
+    assert.equal(report.unattempted.length, 2)
+  })
+
   it("writes nothing at all on a dry run", async () => {
     const dir = scratch("run-dry")
     write(dir, "one.jpg", makeJpegWithMetadata({}))
