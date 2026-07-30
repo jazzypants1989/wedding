@@ -97,6 +97,9 @@ const EXIT = { CLEAN: 0, SOME_FAILED: 1, ABORTED: 2, INTERRUPTED: 130 }
 /** Schema version of label-data.js / labels.json. */
 const LABEL_DATA_VERSION = 1
 
+/** Schema version of contact-data.js. */
+const CONTACT_DATA_VERSION = 1
+
 /**
  * Fixed seed for pool sampling and presentation order. A constant, not
  * `Math.random()`, so two runs over one directory produce the same pools and the
@@ -129,6 +132,7 @@ const PROGRESS_EVERY = 1
  * @property {string[]} skipped relative paths passed over (not photographs)
  * @property {Types.Session1Timing} timing
  * @property {Types.Session1LabelData} labelData
+ * @property {Types.Session1ContactData} contactData
  */
 
 /** @typedef {{ valid: true, value: Types.Session1Args } | { valid: false, error: string }} ArgsResult */
@@ -620,6 +624,52 @@ export function groupPoolB(poolBFaces, descriptorsById, groupConfig) {
   return assignment
 }
 
+// --- The contact sheet -------------------------------------------------------
+
+/**
+ * The data behind `contact-sheet.html` — the five-minute eyeball pass
+ * SESSION-1-vision.md §2 puts BEFORE labelling.
+ *
+ * Every signal here is already in `faces.jsonl`; this is a projection of it, not
+ * a second measurement. It exists as a separate file because the sheet is opened
+ * over file:// (a script tag, not a fetch) and because a jsonl carrying 128
+ * descriptor floats per face is tens of megabytes the eyeball pass has no use
+ * for. Only the signals the sheet can sort, filter and show are copied.
+ *
+ * The cutoffs travel with it so the sheet can split would-keep from
+ * would-reject. They are the gate's, unchanged — the batch itself still does not
+ * filter (see the file header), and a sheet showing a cutoff the run did not use
+ * would be answering "are the rejects actually bad?" about a different gate.
+ *
+ * @param {readonly Types.Session1FaceRecord[]} faces
+ * @param {Record<string, number>} cutoffs `allDefaults().gate`
+ * @returns {Types.Session1ContactData}
+ */
+export function buildContactData(faces, cutoffs) {
+  return {
+    version: CONTACT_DATA_VERSION,
+    faces: faces.map((face) => ({
+      id: face.id,
+      crop: face.crop,
+      photoId: face.photoId,
+      // Already rounded by buildFaceRecord; rounding again would only lose bits.
+      score: face.signals.score,
+      residual: face.signals.residual,
+      eyeRatio: face.signals.eyeRatio,
+      eyeAngle: face.signals.eyeAngle,
+      sharpness: face.signals.sharpness,
+      boxPx: face.signals.boxPx,
+      // Without this the sheet cannot evaluate the gate's `border` check, and a
+      // face rejected only for clipping the frame would render as a keep — the
+      // one failure a check-the-rejects pass cannot afford.
+      borderPx: face.signals.borderPx,
+      alignScale: face.signals.alignScale,
+      outsideFraction: face.signals.outsideFraction,
+    })),
+    cutoffs,
+  }
+}
+
 // --- One photograph ----------------------------------------------------------
 
 /**
@@ -1017,6 +1067,13 @@ export async function runSession1(args, deps = {}) {
     "window.SESSION1_DATA = " + JSON.stringify(labelData) + "\n",
   )
 
+  const contactData = buildContactData(faces, defaults.gate)
+  fs.writeFileSync(
+    path.join(args.outDir, "contact-data.js"),
+    // Same reason as label-data.js: file://, so a script tag.
+    "window.SESSION1_CONTACT = " + JSON.stringify(contactData) + "\n",
+  )
+
   /** @type {Types.Session1Timing} */
   const timing = {
     photos: photos.length,
@@ -1051,14 +1108,16 @@ export async function runSession1(args, deps = {}) {
   }
   fs.writeFileSync(path.join(args.outDir, "timing.json"), JSON.stringify(timing, null, 2) + "\n")
 
-  // The labelling page is a template that travels with its data. A missing one
-  // is a warning, not a failure — the jsonl files are the run's real output and
-  // the page can be copied in afterwards.
-  const template = path.join(import.meta.dirname, "label.html")
-  try {
-    fs.copyFileSync(template, path.join(args.outDir, "label.html"))
-  } catch {
-    log(`! ${template} not found — label-data.js was written; copy the page in when it exists.`)
+  // Both pages are templates that travel with their data. A missing one is a
+  // warning, not a failure — the jsonl files are the run's real output and a
+  // page can be copied in afterwards.
+  for (const page of ["contact-sheet.html", "label.html"]) {
+    const template = path.join(import.meta.dirname, page)
+    try {
+      fs.copyFileSync(template, path.join(args.outDir, page))
+    } catch {
+      log(`! ${template} not found — its data file was written; copy the page in when it exists.`)
+    }
   }
 
   if (engine.close) await engine.close().catch(() => {})
@@ -1070,7 +1129,13 @@ export async function runSession1(args, deps = {}) {
   if (skipped.length > 0) log(`Skipped ${skipped.length} non-photograph file(s).`)
   if (failures.length > 0) log(`Failed ${failures.length} — see failures.jsonl.`)
   log(`Output: ${args.outDir}`)
-  if (!interrupted) log(`Next: open ${path.join(args.outDir, "label.html")}`)
+  if (!interrupted) {
+    // The eyeball pass comes first, per SESSION-1-vision.md §2: a mirrored or
+    // rotated crop is the cheapest bug here and the most expensive after
+    // labelling has been done on top of it.
+    log(`Next: open ${path.join(args.outDir, "contact-sheet.html")} (5 minutes, by eye),`)
+    log(`      then ${path.join(args.outDir, "label.html")}`)
+  }
 
   const exitCode = interrupted
     ? EXIT.INTERRUPTED
@@ -1078,7 +1143,7 @@ export async function runSession1(args, deps = {}) {
       ? EXIT.SOME_FAILED
       : EXIT.CLEAN
 
-  return { exitCode, photos, faces, resolution, failures, skipped, timing, labelData }
+  return { exitCode, photos, faces, resolution, failures, skipped, timing, labelData, contactData }
 }
 
 /**

@@ -1,0 +1,950 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Session 1 — contact sheet</title>
+    <!--
+      TEMPLATE. scripts/vision/session1.js copies this file into tmp/session1/,
+      next to contact-data.js and crops/. It is opened over file:// — no server,
+      no network, no fonts, no build step. fetch() does not work over file://,
+      which is why the data arrives as a script tag rather than a request.
+
+      WHAT IT IS FOR. SESSION-1-vision.md §2, "guided thing #1": five minutes
+      with your eyes, BEFORE any labelling. Three questions, each with a named
+      failure signature:
+
+        1. Are the crops centred and upright?  Consistently mirrored or rotated
+           means the landmark order is swapped. A mirrored crop looks entirely
+           plausible on its own and quietly degrades every match afterwards.
+        2. Are the rejects actually bad?  Good faces in the reject pile means the
+           gate is too tight — loosen it before measuring anything.
+        3. Are the keeps actually faces?  Printed and painted faces are faces to
+           a detector. Expected and harmless, and the reason this shows crops
+           rather than counts.
+
+      The default view answers (1) for free. Reflection is excluded from the
+      similarity transform family in public/vision/align.js, so a swapped or
+      mirrored landmark order CANNOT be absorbed by the fit — it comes out as a
+      systematically large `residual`. Sorting by residual descending puts the
+      likely mirrors at the top, so the check is a glance at the head of a list
+      rather than a scroll through thousands of crops.
+
+      Scaffolding: this code is thrown away. The check it makes cheap is not.
+    -->
+    <style>
+      :root {
+        --bg: #0f1115;
+        --panel: #161a21;
+        --panel-2: #1d222b;
+        --line: #2a313d;
+        --ink: #e6e9ef;
+        --dim: #8b94a5;
+        --accent: #7cc4ff;
+        --ok: #5ddc8f;
+        --warn: #ffcc66;
+        --bad: #ff7a7a;
+        --tile: 168px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+      }
+      body {
+        background: var(--bg);
+        color: var(--ink);
+        font:
+          12px/1.45 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Consolas,
+          monospace;
+      }
+      button,
+      select,
+      input {
+        font: inherit;
+        color: var(--ink);
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 4px 8px;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:hover,
+      select:hover {
+        border-color: var(--accent);
+      }
+      button.on {
+        background: #1f3a52;
+        border-color: var(--accent);
+        color: #fff;
+      }
+      .hide {
+        display: none !important;
+      }
+
+      /* ---- header ---- */
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        background: var(--panel);
+        border-bottom: 1px solid var(--line);
+        padding: 8px 12px 9px;
+      }
+      .bar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .bar + .bar {
+        margin-top: 7px;
+      }
+      .title {
+        font-weight: 700;
+        letter-spacing: 0.04em;
+      }
+      .sep {
+        width: 1px;
+        align-self: stretch;
+        background: var(--line);
+      }
+      label.ctl {
+        color: var(--dim);
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+      .count {
+        margin-left: auto;
+        color: var(--dim);
+      }
+      .count b {
+        color: var(--accent);
+        font-size: 14px;
+      }
+
+      /* The three checks, as presets. Each button is one question. */
+      .checks {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .check {
+        text-align: left;
+        line-height: 1.3;
+        padding: 4px 9px;
+        max-width: 33ch;
+      }
+      .check b {
+        display: block;
+        color: var(--ink);
+      }
+      .check span {
+        color: var(--dim);
+      }
+      .check.on span {
+        color: #cfe6ff;
+      }
+
+      .why {
+        color: var(--dim);
+        padding: 6px 12px;
+        border-bottom: 1px solid var(--line);
+        background: #12161d;
+      }
+      .why b {
+        color: var(--warn);
+      }
+      .why code {
+        color: var(--accent);
+      }
+
+      details.cut {
+        color: var(--dim);
+        padding: 5px 12px;
+        border-bottom: 1px solid var(--line);
+      }
+      details.cut summary {
+        cursor: pointer;
+      }
+      details.cut .cuts {
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
+        margin-top: 6px;
+      }
+      details.cut .cuts span b {
+        color: var(--ink);
+      }
+
+      /* ---- grid ---- */
+      .gridwrap {
+        padding: 12px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(var(--tile), 1fr));
+        gap: 10px;
+      }
+      .tile {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        overflow: hidden;
+      }
+      .tile.reject {
+        border-color: #5a2b2b;
+      }
+      .tile.flagged {
+        border-color: var(--warn);
+      }
+      .tile img {
+        display: block;
+        width: 100%;
+        aspect-ratio: 1 / 1;
+        object-fit: cover;
+        background: #0b0e13;
+      }
+      .tile .cap {
+        padding: 4px 6px 5px;
+        border-top: 1px solid var(--line);
+      }
+      .cap .idline {
+        display: flex;
+        gap: 6px;
+        align-items: baseline;
+        color: var(--dim);
+      }
+      .cap .idline b {
+        color: var(--ink);
+      }
+      .verdict {
+        margin-left: auto;
+        border-radius: 3px;
+        padding: 0 4px;
+        font-size: 11px;
+      }
+      .verdict.keep {
+        color: var(--ok);
+        border: 1px solid #23482f;
+      }
+      .verdict.reject {
+        color: var(--bad);
+        border: 1px solid #5a2b2b;
+      }
+      .sig {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 0 6px;
+        margin-top: 3px;
+        font-size: 11px;
+        color: var(--dim);
+      }
+      .sig i {
+        font-style: normal;
+      }
+      .sig em {
+        font-style: normal;
+        color: var(--ink);
+        text-align: right;
+      }
+      .sig .bad em,
+      .sig .bad i {
+        color: var(--bad);
+      }
+      .sig .sorted i,
+      .sig .sorted em {
+        color: var(--accent);
+      }
+      .flag {
+        margin-top: 3px;
+        font-size: 11px;
+        color: var(--warn);
+      }
+      .reasons {
+        margin-top: 3px;
+        font-size: 11px;
+        color: var(--bad);
+        word-break: break-word;
+      }
+      #sentinel {
+        height: 1px;
+      }
+      #more {
+        text-align: center;
+        color: var(--dim);
+        padding: 14px;
+      }
+      #empty {
+        color: var(--dim);
+        padding: 24px 12px;
+      }
+
+      /* ---- missing data ---- */
+      #missing {
+        padding: 24px;
+        max-width: 820px;
+      }
+      #missing h1 {
+        font-size: 18px;
+      }
+      #missing pre {
+        background: #0b0e13;
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        padding: 10px;
+        overflow-x: auto;
+        color: var(--warn);
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Shown only when contact-data.js is absent or malformed. -->
+    <section id="missing" class="hide">
+      <h1 id="missing-title">contact-data.js was not loaded</h1>
+      <p id="missing-detail"></p>
+      <p>
+        This page is a template. It must be opened from the run's output
+        directory, alongside the files that run produced:
+      </p>
+      <pre>
+tmp/session1/
+  contact-sheet.html  &lt;- this file (copied here by session1.js)
+  contact-data.js     &lt;- window.SESSION1_CONTACT = { version, faces, cutoffs }
+  crops/000000.png    &lt;- one PNG per detected face</pre
+      >
+      <p>Produce them with:</p>
+      <pre>node scripts/vision/session1.js "$PHOTOS" --out tmp/session1</pre>
+      <p>then <code>open tmp/session1/contact-sheet.html</code>.</p>
+    </section>
+
+    <header id="app" class="hide">
+      <div class="bar">
+        <span class="title">SESSION 1 · CONTACT SHEET</span>
+        <div class="checks">
+          <button class="check" id="preset-1">
+            <b>1 · centred &amp; upright?</b><span>every crop, worst fit first</span>
+          </button>
+          <button class="check" id="preset-2">
+            <b>2 · rejects actually bad?</b><span>would-reject, best fits first</span>
+          </button>
+          <button class="check" id="preset-3">
+            <b>3 · keeps actually faces?</b><span>would-keep, least confident first</span>
+          </button>
+        </div>
+        <span class="count"><b id="c-shown">0</b> shown / <span id="c-total">0</span> faces</span>
+      </div>
+
+      <div class="bar">
+        <label class="ctl"
+          >show
+          <select id="view">
+            <option value="all">all</option>
+            <option value="keep">would keep</option>
+            <option value="reject">would reject</option>
+          </select>
+        </label>
+        <label class="ctl"
+          >rejected for
+          <select id="reason"><option value="">any reason</option></select>
+        </label>
+        <div class="sep"></div>
+        <label class="ctl"
+          >sort
+          <select id="sort"></select>
+        </label>
+        <button id="dir" title="Flip the sort direction">worst first ↓</button>
+        <div class="sep"></div>
+        <label class="ctl">
+          size
+          <input id="size" type="range" min="96" max="360" step="8" value="168" />
+        </label>
+        <label class="ctl">
+          <input id="mirror" type="checkbox" style="accent-color: #7cc4ff" />
+          mirror every crop
+        </label>
+        <span class="count" id="verdict-counts"></span>
+      </div>
+    </header>
+
+    <p class="why" id="why"></p>
+
+    <details class="cut" id="cutbox">
+      <summary>gate cutoffs in force <span id="cut-note"></span></summary>
+      <div class="cuts" id="cuts"></div>
+    </details>
+
+    <div class="gridwrap">
+      <div class="grid" id="grid"></div>
+      <div id="empty" class="hide">Nothing matches this filter.</div>
+      <div id="more" class="hide"></div>
+      <div id="sentinel"></div>
+    </div>
+
+    <script src="contact-data.js"></script>
+    <script>
+      "use strict"
+      ;(function () {
+        var DATA = window.SESSION1_CONTACT
+        var $ = function (id) {
+          return document.getElementById(id)
+        }
+
+        function bail(title, detail) {
+          $("missing").classList.remove("hide")
+          $("missing-title").textContent = title
+          $("missing-detail").textContent = detail
+          $("app").classList.add("hide")
+          $("why").classList.add("hide")
+          $("cutbox").classList.add("hide")
+        }
+
+        if (!DATA) {
+          bail(
+            "contact-data.js was not loaded",
+            "window.SESSION1_CONTACT is undefined. Either the file is missing from this directory, or the browser refused to load it.",
+          )
+          return
+        }
+        if (!Array.isArray(DATA.faces) || DATA.faces.length === 0) {
+          bail(
+            "contact-data.js is malformed",
+            "SESSION1_CONTACT must be { version, faces: [...], cutoffs: {...} } with at least one face. Got faces=" +
+              typeof DATA.faces +
+              ".",
+          )
+          return
+        }
+
+        var FACES = DATA.faces
+        var CUTOFFS = DATA.cutoffs || {}
+
+        // ---------- the gate ----------
+        // A faithful copy of CHECKS + applyGate from public/vision/gate.js.
+        // It cannot be imported: this file is copied into the run's output
+        // directory and opened over file://, where a module import of
+        // ../../public/vision/gate.js resolves outside the directory and is
+        // refused as a cross-origin request. KEEP IN STEP with that file — the
+        // order matters too, because it is what `primaryReason` reports.
+        //
+        // It stays a live evaluation rather than a verdict precomputed into
+        // contact-data.js on purpose: edit a cutoff, reload, and the keep/reject
+        // split moves with it. Answering "is the gate too tight?" is the point
+        // of the second check, and a frozen verdict cannot answer it.
+        var CHECKS = [
+          {
+            key: "score",
+            test: function (s, c) {
+              return s.score < (c.minScore === undefined ? 0 : c.minScore)
+            },
+          },
+          {
+            key: "boxPx",
+            test: function (s, c) {
+              return s.boxPx < c.minBoxPx
+            },
+          },
+          {
+            key: "border",
+            test: function (s, c) {
+              return s.borderPx < c.minBorderPx
+            },
+          },
+          {
+            key: "eyeRatioLow",
+            test: function (s, c) {
+              return s.eyeRatio < c.minEyeRatio
+            },
+          },
+          {
+            key: "eyeRatioHigh",
+            test: function (s, c) {
+              return s.eyeRatio > c.maxEyeRatio
+            },
+          },
+          {
+            key: "residual",
+            test: function (s, c) {
+              return s.residual > c.maxResidual
+            },
+          },
+          {
+            key: "alignScale",
+            test: function (s, c) {
+              return s.alignScale > c.maxAlignScale
+            },
+          },
+          {
+            key: "outside",
+            test: function (s, c) {
+              return s.outsideFraction > c.maxOutside
+            },
+          },
+          {
+            key: "sharpness",
+            test: function (s, c) {
+              return s.sharpness < c.minSharpness
+            },
+          },
+        ]
+
+        /** Which signal each check reads, so the tile can redden that row. */
+        var CHECK_SIGNAL = {
+          score: "score",
+          boxPx: "boxPx",
+          border: "borderPx",
+          eyeRatioLow: "eyeRatio",
+          eyeRatioHigh: "eyeRatio",
+          residual: "residual",
+          alignScale: "alignScale",
+          outside: "outsideFraction",
+          sharpness: "sharpness",
+        }
+
+        function applyGate(signals) {
+          var reasons = []
+          for (var i = 0; i < CHECKS.length; i++) {
+            var check = CHECKS[i]
+            var cutoff = CUTOFFS[cutoffNameFor(check.key)]
+            // A cutoff the run did not record is not a rejection. Skipping is
+            // the honest reading; guessing one is not.
+            if (cutoff === undefined && check.key !== "score") continue
+            if (check.test(signals, CUTOFFS)) reasons.push(check.key)
+          }
+          return { pass: reasons.length === 0, reasons: reasons }
+        }
+
+        function cutoffNameFor(key) {
+          if (key === "score") return "minScore"
+          if (key === "boxPx") return "minBoxPx"
+          if (key === "border") return "minBorderPx"
+          if (key === "eyeRatioLow") return "minEyeRatio"
+          if (key === "eyeRatioHigh") return "maxEyeRatio"
+          if (key === "residual") return "maxResidual"
+          if (key === "alignScale") return "maxAlignScale"
+          if (key === "outside") return "maxOutside"
+          if (key === "sharpness") return "minSharpness"
+          return key
+        }
+
+        // ---------- signals ----------
+        // `worst` is the direction that puts the suspicious crops first, so
+        // changing the sort never means also remembering which way is bad.
+        var SIGNALS = [
+          { key: "residual", label: "residual", worst: -1, places: 2 },
+          { key: "eyeAngle", label: "eyeAngle |tilt|", worst: -1, places: 1, abs: true, deg: true },
+          { key: "eyeRatio", label: "eyeRatio", worst: 1, places: 3 },
+          { key: "sharpness", label: "sharpness", worst: 1, places: 4 },
+          { key: "boxPx", label: "boxPx", worst: 1, places: 0 },
+          // Negative means the box runs off the frame, so low is the bad end.
+          { key: "borderPx", label: "borderPx", worst: 1, places: 0 },
+          { key: "alignScale", label: "alignScale", worst: -1, places: 2 },
+          { key: "outsideFraction", label: "outsideFraction", worst: -1, places: 3 },
+          { key: "score", label: "score", worst: 1, places: 3 },
+        ]
+        var EXTRA_SORTS = [
+          { key: "id", label: "face id", worst: 1, places: 0 },
+          { key: "photoId", label: "photo id", worst: 1, places: 0 },
+        ]
+        var SORTS = SIGNALS.concat(EXTRA_SORTS)
+
+        var RAD_TO_DEG = 180 / Math.PI
+
+        function displayValue(spec, face) {
+          var v = face[spec.key]
+          if (typeof v !== "number" || !isFinite(v)) return "—"
+          if (spec.deg) return (v * RAD_TO_DEG).toFixed(spec.places) + "°"
+          return v.toFixed(spec.places)
+        }
+
+        function sortValue(spec, face) {
+          var v = face[spec.key]
+          if (typeof v !== "number" || !isFinite(v)) return 0
+          return spec.abs ? Math.abs(v) : v
+        }
+
+        // A mirrored landmark order flips the sign of the eye vector, so the eye
+        // line reads as roughly half a turn from level. Not a gate reason — a
+        // hint, next to the residual that is the real instrument.
+        function eyesReversed(face) {
+          return Math.abs(face.eyeAngle * RAD_TO_DEG) > 90
+        }
+
+        // ---------- verdicts, computed once ----------
+        var VERDICTS = new Array(FACES.length)
+        var reasonCounts = {}
+        var keepCount = 0
+        var flaggedCount = 0
+        for (var fi = 0; fi < FACES.length; fi++) {
+          var verdict = applyGate(FACES[fi])
+          VERDICTS[fi] = verdict
+          if (verdict.pass) keepCount++
+          for (var ri = 0; ri < verdict.reasons.length; ri++) {
+            var rk = verdict.reasons[ri]
+            reasonCounts[rk] = (reasonCounts[rk] || 0) + 1
+          }
+          if (eyesReversed(FACES[fi])) flaggedCount++
+        }
+
+        // ---------- state ----------
+        var state = {
+          view: "all",
+          reason: "",
+          sort: "residual",
+          dir: "worst",
+          size: 168,
+          mirror: false,
+        }
+        var CHUNK = 120
+        var COMPACT_BELOW = 132
+        var rendered = 0
+        var visible = []
+
+        // ---------- controls ----------
+        var sortSel = $("sort")
+        for (var si = 0; si < SORTS.length; si++) {
+          var opt = document.createElement("option")
+          opt.value = SORTS[si].key
+          opt.textContent = SORTS[si].label
+          sortSel.appendChild(opt)
+        }
+        sortSel.value = state.sort
+
+        var reasonSel = $("reason")
+        for (var ci = 0; ci < CHECKS.length; ci++) {
+          var key = CHECKS[ci].key
+          if (!reasonCounts[key]) continue
+          var ropt = document.createElement("option")
+          ropt.value = key
+          ropt.textContent = key + " (" + reasonCounts[key] + ")"
+          reasonSel.appendChild(ropt)
+        }
+
+        var cuts = $("cuts")
+        var cutNames = Object.keys(CUTOFFS)
+        for (var ki = 0; ki < cutNames.length; ki++) {
+          var span = document.createElement("span")
+          var b = document.createElement("b")
+          b.textContent = String(CUTOFFS[cutNames[ki]])
+          span.textContent = cutNames[ki] + " "
+          span.appendChild(b)
+          cuts.appendChild(span)
+        }
+        $("cut-note").textContent =
+          "— all " +
+          CHECKS.length +
+          " checks are evaluated in the page, live: change one in " +
+          "public/vision/defaults.js, re-run, and the split moves with it"
+
+        // One line, on screen, saying what the current view answers. It is
+        // composed rather than fixed so it can never claim an ordering the grid
+        // is not actually in.
+        function updateWhy() {
+          var head, body
+          // A reason filter can only ever show rejected faces, whatever the view
+          // says, so it asks the reject question too.
+          if (state.view === "reject" || state.reason) {
+            head = "Are the rejects actually bad?"
+            body =
+              "You are looking for a GOOD face in this pile — each tile prints the cutoff it " +
+              "failed. If there are good faces here the gate is too tight: loosen it in " +
+              "<code>public/vision/defaults.js</code> <i>before</i> measuring anything."
+          } else if (state.view === "keep") {
+            head = "Are the keeps actually faces?"
+            body =
+              "You are looking for detections that are not people at all. Printed and painted " +
+              "faces are faces to a detector and recur consistently enough to form tidy groups " +
+              "— expected, harmless, and the reason this page shows crops rather than counts."
+          } else {
+            head = "Are the crops centred and upright?"
+            body =
+              "Reflection is excluded from the similarity transform in <code>align.js</code>, " +
+              "so a swapped or mirrored landmark order cannot be fitted away — it surfaces as " +
+              "a large <code>residual</code>. <code>eyeAngle</code> near ±180° means the eye " +
+              "points arrived reversed."
+          }
+          $("why").innerHTML =
+            "<b>" +
+            head +
+            "</b> " +
+            body +
+            " Sorted by <code>" +
+            specFor(state.sort).label +
+            "</code>, " +
+            (state.dir === "worst" ? "worst first." : "best first.")
+        }
+
+        $("verdict-counts").textContent =
+          keepCount +
+          " keep / " +
+          (FACES.length - keepCount) +
+          " reject" +
+          (flaggedCount > 0 ? " · " + flaggedCount + " eye-angle flagged" : "")
+
+        // ---------- filter + sort ----------
+        function specFor(key) {
+          for (var i = 0; i < SORTS.length; i++) {
+            if (SORTS[i].key === key) return SORTS[i]
+          }
+          return SORTS[0]
+        }
+
+        function recompute() {
+          var spec = specFor(state.sort)
+
+          var rows = []
+          for (var f = 0; f < FACES.length; f++) {
+            var v = VERDICTS[f]
+            if (state.view === "keep" && !v.pass) continue
+            if (state.view === "reject" && v.pass) continue
+            if (state.reason && v.reasons.indexOf(state.reason) === -1) continue
+            rows.push(f)
+          }
+
+          // `spec.worst` is +1 when the LOW end is the suspicious one (sort
+          // ascending) and -1 when the high end is (sort descending).
+          var sign = state.dir === "worst" ? spec.worst : -spec.worst
+          rows.sort(function (a, b) {
+            var av = sortValue(spec, FACES[a])
+            var bv = sortValue(spec, FACES[b])
+            if (av === bv) return FACES[a].id - FACES[b].id
+            return av < bv ? -sign : sign
+          })
+
+          visible = rows
+          rendered = 0
+          $("grid").textContent = ""
+          $("empty").classList.toggle("hide", rows.length > 0)
+          $("c-shown").textContent = String(rows.length)
+          $("c-total").textContent = String(FACES.length)
+          $("dir").textContent = state.dir === "worst" ? "worst first ↓" : "best first ↑"
+          updateWhy()
+          renderMore()
+        }
+
+        // ---------- tiles ----------
+        function tileFor(index) {
+          var face = FACES[index]
+          var verdict = VERDICTS[index]
+          var flagged = eyesReversed(face)
+
+          var tile = document.createElement("div")
+          tile.className =
+            "tile" + (verdict.pass ? "" : " reject") + (flagged ? " flagged" : "")
+
+          var img = document.createElement("img")
+          // A property, never innerHTML: the path comes from a generated file
+          // and there is no reason to hand it to a parser.
+          img.src = face.crop
+          img.alt = "face " + face.id
+          img.loading = "lazy"
+          img.decoding = "async"
+          if (state.mirror) img.style.transform = "scaleX(-1)"
+          tile.appendChild(img)
+
+          var cap = document.createElement("div")
+          cap.className = "cap"
+
+          var idline = document.createElement("div")
+          idline.className = "idline"
+          var idb = document.createElement("b")
+          idb.textContent = "#" + face.id
+          idline.appendChild(idb)
+          var ph = document.createElement("span")
+          ph.textContent = "ph" + face.photoId
+          idline.appendChild(ph)
+          var badge = document.createElement("span")
+          badge.className = "verdict " + (verdict.pass ? "keep" : "reject")
+          badge.textContent = verdict.pass ? "keep" : "reject"
+          idline.appendChild(badge)
+          cap.appendChild(idline)
+
+          var badSignals = {}
+          for (var r = 0; r < verdict.reasons.length; r++) {
+            badSignals[CHECK_SIGNAL[verdict.reasons[r]]] = true
+          }
+
+          // Below this width the caption would be taller than the crop, and the
+          // crop is the thing being looked at. Keep the sorted signal and
+          // whatever is actually failing; drop the rest.
+          var compact = state.size < COMPACT_BELOW
+
+          var sig = document.createElement("div")
+          sig.className = "sig"
+          for (var s = 0; s < SIGNALS.length; s++) {
+            var spec = SIGNALS[s]
+            if (compact && !badSignals[spec.key] && spec.key !== state.sort) continue
+            var name = document.createElement("i")
+            name.textContent = spec.label
+            var value = document.createElement("em")
+            value.textContent = displayValue(spec, face)
+            var cls = ""
+            if (badSignals[spec.key]) cls = "bad"
+            else if (spec.key === state.sort) cls = "sorted"
+            if (cls) {
+              name.className = cls
+              value.className = cls
+            }
+            sig.appendChild(name)
+            sig.appendChild(value)
+          }
+          cap.appendChild(sig)
+
+          if (flagged) {
+            var flag = document.createElement("div")
+            flag.className = "flag"
+            flag.textContent = "eye line reversed — check for a mirrored crop"
+            cap.appendChild(flag)
+          }
+          if (!verdict.pass) {
+            var reasons = document.createElement("div")
+            reasons.className = "reasons"
+            reasons.textContent = "rejected: " + verdict.reasons.join(", ")
+            cap.appendChild(reasons)
+          }
+
+          tile.appendChild(cap)
+          return tile
+        }
+
+        function renderMore() {
+          if (rendered >= visible.length) {
+            $("more").classList.add("hide")
+            return
+          }
+          var end = Math.min(rendered + CHUNK, visible.length)
+          var frag = document.createDocumentFragment()
+          for (var i = rendered; i < end; i++) frag.appendChild(tileFor(visible[i]))
+          $("grid").appendChild(frag)
+          rendered = end
+          var more = $("more")
+          if (rendered >= visible.length) {
+            more.classList.add("hide")
+          } else {
+            more.classList.remove("hide")
+            more.textContent = rendered + " of " + visible.length + " — scroll for more"
+          }
+        }
+
+        // Chunked append rather than a full render: several thousand tiles built
+        // eagerly is a visibly frozen tab, and the browser will not lazy-load
+        // images it has not been given layout for.
+        function fillViewport() {
+          for (var guard = 0; guard < 20; guard++) {
+            if (rendered >= visible.length) return
+            var box = $("sentinel").getBoundingClientRect()
+            if (box.top > window.innerHeight + 600) return
+            renderMore()
+          }
+        }
+        window.addEventListener("scroll", fillViewport, { passive: true })
+        window.addEventListener("resize", fillViewport)
+        if (typeof IntersectionObserver === "function") {
+          new IntersectionObserver(function (entries) {
+            for (var i = 0; i < entries.length; i++) {
+              if (entries[i].isIntersecting) fillViewport()
+            }
+          }).observe($("sentinel"))
+        }
+
+        // ---------- wiring ----------
+        function setView(view) {
+          state.view = view
+          $("view").value = view
+          $("reason").disabled = view === "keep"
+          syncPresets()
+        }
+        function syncPresets() {
+          $("preset-1").classList.toggle(
+            "on",
+            state.view === "all" && state.sort === "residual" && state.dir === "worst",
+          )
+          $("preset-2").classList.toggle("on", state.view === "reject")
+          $("preset-3").classList.toggle("on", state.view === "keep")
+        }
+
+        $("view").addEventListener("change", function () {
+          setView($("view").value)
+          recompute()
+        })
+        $("reason").addEventListener("change", function () {
+          state.reason = $("reason").value
+          // A reason only exists on a rejected face, so asking for one while
+          // looking at the keeps would silently show nothing.
+          if (state.reason && state.view === "keep") setView("reject")
+          recompute()
+        })
+        $("sort").addEventListener("change", function () {
+          state.sort = $("sort").value
+          syncPresets()
+          recompute()
+        })
+        $("dir").addEventListener("click", function () {
+          state.dir = state.dir === "worst" ? "best" : "worst"
+          syncPresets()
+          recompute()
+        })
+        $("size").addEventListener("input", function () {
+          var wasCompact = state.size < COMPACT_BELOW
+          state.size = Number($("size").value)
+          document.documentElement.style.setProperty("--tile", state.size + "px")
+          // Resizing is a CSS variable, not a re-render — except at the one
+          // width where the caption changes shape.
+          if (wasCompact !== state.size < COMPACT_BELOW) recompute()
+          else fillViewport()
+        })
+        $("mirror").addEventListener("change", function () {
+          state.mirror = $("mirror").checked
+          recompute()
+        })
+
+        $("preset-1").addEventListener("click", function () {
+          state.sort = "residual"
+          state.dir = "worst"
+          state.reason = ""
+          $("sort").value = "residual"
+          $("reason").value = ""
+          setView("all")
+          recompute()
+        })
+        $("preset-2").addEventListener("click", function () {
+          // Best fit FIRST, deliberately: the question is whether a good face is
+          // in the reject pile, and a well-aligned crop that the gate threw out
+          // anyway is exactly what that looks like.
+          state.sort = "residual"
+          state.dir = "best"
+          state.reason = ""
+          $("sort").value = "residual"
+          $("reason").value = ""
+          setView("reject")
+          recompute()
+        })
+        $("preset-3").addEventListener("click", function () {
+          // Least confident first: if anything kept is not a person at all, this
+          // is the end of the distribution it sits at.
+          state.sort = "score"
+          state.dir = "worst"
+          state.reason = ""
+          $("sort").value = "score"
+          $("reason").value = ""
+          setView("keep")
+          recompute()
+        })
+
+        $("app").classList.remove("hide")
+        setView("all")
+        recompute()
+        fillViewport()
+      })()
+    </script>
+  </body>
+</html>

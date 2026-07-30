@@ -23,6 +23,7 @@ import { after, test } from "node:test"
 
 import {
   assignPools,
+  buildContactData,
   buildFaceRecord,
   buildPhotoRecord,
   capturedAtToMs,
@@ -734,7 +735,93 @@ test("runSession1 writes every declared output, with faces indexed by row", asyn
     2,
   )
 
+  // The eyeball pass of SESSION-1-vision.md §2, which happens BEFORE labelling.
+  // Same reason for the script tag: contact-sheet.html is opened over file://.
+  const contactData = fs.readFileSync(path.join(outDir, "contact-data.js"), "utf8")
+  assert.ok(contactData.startsWith("window.SESSION1_CONTACT = "))
+  const contact = JSON.parse(contactData.slice("window.SESSION1_CONTACT = ".length))
+  assert.equal(contact.faces.length, 3)
+  assert.equal(contact.version, result.contactData.version)
+  // The cutoffs travel with it so the sheet can show what WOULD be rejected.
+  assert.equal(typeof contact.cutoffs.maxResidual, "number")
+  assert.equal(typeof contact.cutoffs.minSharpness, "number")
+  for (const face of contact.faces) {
+    for (const key of [
+      "residual",
+      "eyeRatio",
+      "eyeAngle",
+      "sharpness",
+      "boxPx",
+      "borderPx",
+      "alignScale",
+      "outsideFraction",
+      "score",
+    ]) {
+      assert.equal(typeof face[key], "number", `contact face ${face.id} carries ${key}`)
+    }
+    assert.ok(fs.existsSync(path.join(outDir, face.crop)))
+  }
+
+  // Both templates travel with their data, so the pages open from the run's
+  // own directory with no server and no copying step.
+  for (const page of ["contact-sheet.html", "label.html"]) {
+    assert.ok(fs.existsSync(path.join(outDir, page)), `${page} was copied beside its data`)
+  }
+
   assert.ok(lines.some((line) => line.includes("3 photograph(s)")))
+  assert.ok(
+    lines.some((line) => line.includes("contact-sheet.html")),
+    "the run points at the eyeball pass first",
+  )
+})
+
+test("buildContactData projects the signals the sheet sorts on, and nothing else", () => {
+  const faces = [
+    buildFaceRecord({
+      id: 4,
+      photoId: 2,
+      detection: {
+        score: 0.91234,
+        box: { x: 10, y: 12, w: 80, h: 90 },
+        landmarks: [30, 40, 62, 41, 46, 55, 34, 70, 60, 71],
+      },
+      signals: {
+        score: 0.91234,
+        boxPx: 80,
+        borderPx: 10,
+        eyeRatio: 0.4,
+        eyeAngle: 0.03125,
+        alignScale: 0.8,
+        residual: 3.5,
+        outsideFraction: 0,
+        sharpness: 0.012,
+      },
+      descriptor: Float32Array.from([0.5, 0.5, 0.5, 0.5]),
+    }),
+  ]
+  const cutoffs = { minBoxPx: 40, maxResidual: 12 }
+  const contact = buildContactData(faces, cutoffs)
+
+  assert.equal(contact.faces.length, 1)
+  assert.deepEqual(contact.cutoffs, cutoffs)
+  assert.deepEqual(contact.faces[0], {
+    id: 4,
+    crop: "crops/000004.png",
+    photoId: 2,
+    score: 0.9123,
+    residual: 3.5,
+    eyeRatio: 0.4,
+    eyeAngle: 0.03125,
+    sharpness: 0.012,
+    boxPx: 80,
+    // Travels so the sheet can evaluate the gate's `border` check. Without it a
+    // face rejected only for clipping the frame would render as a keep.
+    borderPx: 10,
+    alignScale: 0.8,
+    outsideFraction: 0,
+  })
+  // The descriptor is 128 floats a face and the eyeball pass has no use for it.
+  assert.equal("descriptor" in contact.faces[0], false)
 })
 
 test("a per-file failure is recorded and skipped, and the rest of the run continues", async () => {
