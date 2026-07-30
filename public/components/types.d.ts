@@ -299,6 +299,14 @@ export function createUploadQueue(
   options?: UploadQueueOptions,
 ): UploadQueue
 
+/**
+ * Magic-byte classification of a file, matching core/sniff.js. The queue applies
+ * this itself; callers use it to filter a folder pick before enqueueing, so
+ * .DS_Store and sidecar files are dropped rather than shown as failed rows.
+ */
+export function sniffKind(file: File): Promise<"image" | "video" | "unknown">
+
+
 /** notice.js — one-time dismissible note (pending reassurances + cross nudges). */
 export interface NoteOptions {
   /** Body text (escaped). */

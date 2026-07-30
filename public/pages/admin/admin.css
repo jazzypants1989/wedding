@@ -1196,6 +1196,24 @@ tr:hover td {
   margin-bottom: var(--spacing-sm);
 }
 
+/* Drop zone + helper text. Doubles as the "skipped N non-media files" line
+   after a folder pick, so the explanation appears where the files came from. */
+.gallery-upload-drop {
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.gallery-upload-drop.drag-over {
+  border-color: var(--color-primary);
+  background: var(--color-card-bg);
+  color: var(--color-text);
+}
+
 .upload-tray-summary {
   font-size: var(--text-sm);
   color: var(--color-text-muted);

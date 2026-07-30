@@ -489,9 +489,13 @@ function delay(ms) {
 /**
  * Classify a file by magic bytes as image/video/unknown. Authoritative sniffing
  * happens server-side (core/sniff.js); this only avoids doomed retry loops.
+ *
+ * Exported so a folder picker can drop non-media entries BEFORE enqueueing them.
+ * A folder pick hands over .DS_Store and .AAE sidecars, and add() would turn each
+ * one into a red "Not a supported format" row the admin has to scroll past.
  * @param {File} file @returns {Promise<"image" | "video" | "unknown">}
  */
-async function sniffKind(file) {
+export async function sniffKind(file) {
   const format = await sniffFormat(file)
   if (format === "jpeg" || format === "png" || format === "webp" || format === "heic") {
     return "image"

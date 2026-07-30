@@ -25,7 +25,7 @@ import {
   getDialogElement,
   getErrorMessage,
 } from "../utils.js"
-import { createUploadQueue } from "../../components/media-uploader.js"
+import { createUploadQueue, sniffKind } from "../../components/media-uploader.js"
 
 /** @type {Components.UploadQueue} */
 let queue
@@ -512,11 +512,79 @@ function initUploadModal() {
   getButtonElement("gallery-upload-pick").addEventListener("click", () =>
     input.click(),
   )
+
+  // Folder pick. Needs its own input because webkitdirectory makes an input
+  // folder-only, and its contents need filtering: a folder hands over
+  // .DS_Store, .AAE sidecars and stray text files, each of which the queue
+  // would otherwise render as a red "Not a supported format" row.
+  const folderInput = getInputElement("gallery-upload-folder-input")
+  folderInput.addEventListener("change", () => {
+    const picked = folderInput.files
+    folderInput.value = ""
+    if (picked && picked.length) void addFiltered(picked)
+  })
+  getButtonElement("gallery-upload-pick-folder").addEventListener("click", () =>
+    folderInput.click(),
+  )
+
+  wireModalDragDrop(getElement("gallery-upload-drop"))
   getButtonElement("gallery-upload-cancel-all").addEventListener("click", () => {
     queue.cancelAll()
     renderUploadTray()
   })
   getElement("gallery-upload-list").addEventListener("click", handleUploadListClick)
+}
+
+/**
+ * Enqueue only the entries that sniff as media, and say how many were passed
+ * over. Silence would be worse: "I selected 214 files and 203 appeared" needs an
+ * explanation, and a folder of 11 sidecars is the normal case, not an error.
+ * @param {FileList} files
+ */
+async function addFiltered(files) {
+  /** @type {File[]} */
+  const media = []
+  let dropped = 0
+  for (const file of files) {
+    if ((await sniffKind(file)) === "unknown") dropped++
+    else media.push(file)
+  }
+  if (media.length) queue.add(media)
+  const note = getElement("gallery-upload-drop")
+  if (dropped > 0) {
+    note.textContent =
+      `Added ${media.length} photo${media.length === 1 ? "" : "s"} — skipped ${dropped} ` +
+      `non-media file${dropped === 1 ? "" : "s"} (things like .DS_Store).`
+  } else if (media.length === 0) {
+    note.textContent = "Nothing in there was a photo or video."
+  }
+}
+
+/**
+ * Drop zone on the modal body. Mirrors wireDragDrop() in
+ * public/pages/gallery/upload.js, minus its requireAccount wrapper, which is a
+ * guest-only concern — an admin is already authenticated to be here.
+ * @param {HTMLElement} dropZone
+ */
+function wireModalDragDrop(dropZone) {
+  const stop = (/** @type {Event} */ e) => {
+    e.preventDefault()
+    e.stopPropagation()
+  }
+  dropZone.addEventListener("dragover", (e) => {
+    stop(e)
+    dropZone.classList.add("drag-over")
+  })
+  dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"))
+  dropZone.addEventListener("drop", (e) => {
+    stop(e)
+    dropZone.classList.remove("drag-over")
+    // dataTransfer.files is EMPTY for a dropped directory without walking
+    // webkitGetAsEntry — which is why the folder button exists and the helper
+    // text says so. This handles a dropped file selection.
+    const files = /** @type {DragEvent} */ (e).dataTransfer?.files
+    if (files && files.length) void addFiltered(files)
+  })
 }
 
 /** @param {Components.UploadQueueItem} item */

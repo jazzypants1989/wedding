@@ -1332,9 +1332,19 @@
       files from an iPhone may fail to process — export as JPEG first if that happens.
     </p>
     <input type="file" id="gallery-upload-input" accept="image/*,video/*" multiple hidden>
+    <!-- A second input: webkitdirectory makes an input folder-ONLY, so it cannot
+         be combined with the multi-file one above. Both feed the same queue. -->
+    <input type="file" id="gallery-upload-folder-input" webkitdirectory multiple hidden>
     <div class="gallery-upload-controls">
       <button type="button" id="gallery-upload-pick" class="btn btn-primary btn-sm">Choose files</button>
+      <button type="button" id="gallery-upload-pick-folder" class="btn btn-secondary btn-sm">Choose folder</button>
       <button type="button" id="gallery-upload-cancel-all" class="btn btn-secondary btn-sm">Cancel all</button>
+    </div>
+    <div id="gallery-upload-drop" class="gallery-upload-drop">
+      Drop photos here, or use the buttons above. Dragging a whole
+      <em>folder</em> in doesn't work in any browser — use “Choose folder” for that.
+      For hundreds of photos at once, <code>npm run import:media</code> is faster and
+      handles iPhone HEIC files.
     </div>
     <div id="gallery-upload-summary" class="upload-tray-summary"></div>
     <ul id="gallery-upload-list" class="upload-tray-list"></ul>
