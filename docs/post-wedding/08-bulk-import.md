@@ -284,9 +284,10 @@ as placeholder tiles. That is what the CLI is for.
 
 ## 9. Verification status
 
-Automated: 46 unit tests (arg parsing, scanning, planning, the run loop's
-taxonomy and ordering, the HTTP transport contract) and 7 integration tests
-driving the whole pipeline against both real sinks. `npm test` covers them.
+Automated: 50 unit tests (arg parsing, scanning, planning, the run loop's
+taxonomy and ordering, signal handling, the HTTP transport contract) and 7
+integration tests driving the whole pipeline against both real sinks. `npm test`
+covers them.
 
 Checked by hand against real files, because these are the parts a synthetic
 fixture cannot prove:
@@ -300,22 +301,57 @@ fixture cannot prove:
 | ICC profile retained | ✅ a Display-P3 profile survives `vips keep=icc` and the WebP ICCP filter into `display.webp`, while its EXIF does not |
 | `--strip-original` | ✅ EXIF removed, ICC kept, image intact |
 | `--url` end to end | ✅ against a live server: dry run without a prompt, correct `sort_order`, publicly-served display variants, second run imports nothing |
+| **Video, whole path** (ffmpeg 8.1.2) | ✅ `kind=video`, `duration_seconds` 15.651 and 1920×1080 exactly matching `core/mp4-probe.js`; poster a decodable 1920×1080 JPEG, metadata-free (starts `FFD8 FFDB` — SOI straight into DQT, no APP segments at all), 473KB against the 1MB cap |
+| **Poster frame parity with the browser** | ✅ the stored poster differs from an independently ffmpeg-extracted 0.5s frame by mean 2.5/255 per channel (pure JPEG q0.8 loss), vs 63.6 against a 5.0s frame — so it really is the `min(0.5, duration/2)` frame `extractPoster()` grabs |
+| **Video original GPS blanked by the local sink** | ✅ an Apple `©xyz` atom spliced into a real playable clip comes back as 18 spaces; the coordinate string is absent from the stored file and `ffprobe` reports `location=` empty |
+| `--videos=require` with no ffmpeg | ✅ aborts before scanning, exit 2, install hint; `--videos=skip` (default) skips the file and imports the rest |
+| **SIGINT/SIGTERM mid-run** | ✅ 211-file import interrupted: files in flight finish, exit **130**, zero rows in `uploading`, no `itemDir` without a row, manifest names exactly the approved rows, re-run imports only the 124 missed with no duplicates and dense `sort_order` |
+| **Quality ladder against 12MP** | ✅ no rung fires — see the headroom table below |
+| **Temp disk bounded by `--concurrency`** | ✅ peak work dirs exactly 1/3/7 at `--concurrency=1/3/7` (1.0/3.1/7.1MB, ~1MB per file in flight), zero left behind |
+| **Eyes on the result** | ✅ admin Gallery tab and `/gallery` Official both render real thumbnails and posters, lightbox opens a true 2000×1333 `display`, inline captions save (`PATCH /api/admin/media/:id`) and reach the guest page, **zero rows with `needs_display=1`**, zero console errors, zero failed requests |
+
+### Measured headroom — the ladder does not fire
+
+`QUALITY_LADDER` in `scripts/lib/media-variants.js` existed because the original
+sizing was measured on synthetic gradients. Re-measured on real input:
+
+| Source | display | vs 4MB `DISPLAY_MAX` | thumb | vs 500KB `THUMB_MAX` |
+|---|---|---|---|---|
+| 211 real photos (68 of them full 2000px) | median 113KB, p95 540KB, **max 798KB** | 19.5% used, **5.1× headroom** | median 11KB, **max 42KB** | 8.5% used, **11.8× headroom** |
+| Synthetic 12MP (4032×3024) incompressible noise | **1039KB** | 25.4% used, **3.9× headroom** | — | — |
+
+No rung fired in any case, and the code comment's "~800KB at 2000px" estimate was
+accurate to the byte (real max 798KB). Blurred noise is *harder* than a real photo
+at display size and much *easier* at thumb size, so treat 3.9× as the conservative
+bound and ignore its thumb figure.
+
+**On base quality:** display q0.82 should stay. The cap is a safety limit, not a
+target — raising quality to consume the headroom would roughly double the bytes of
+the one variant served on every gallery scroll, for a difference nobody will see
+on a phone. The ladder is now known to be pure insurance; leave it.
+
+### Throughput
+
+Measured on vips 8.17, default concurrency 7 (8 cores):
+
+| Input | Wall | Per photo |
+|---|---|---|
+| 200 photos, 2000×1333 (38MB) | **9.1s** | 46ms |
+| 200 photos, 4032×3024 12MP (1.5GB) | **22.7s** | 113ms |
+
+The plan's "~30s for 200 photos" was accurate for real camera frames.
 
 **Still unverified**, for want of the right thing to test with — flag these if
 they matter:
 
-1. **ffmpeg argv.** Written from the spec; ffmpeg was not installed on the
-   machine this was built on. The first video import is the real test. Photos are
-   unaffected — a missing ffmpeg skips videos per-file with an install hint.
-2. **Real 12MP display sizes.** Only 2000px sources were available, so the
-   quality step-down ladder has never actually needed a rung. It exists for
-   exactly this gap; if it fires, the run reports `steppedDown`.
-3. **ImageMagick 6 (`convert`).** Only IM7 (`magick`) was installed. The
+1. **ImageMagick 6 (`convert`).** Only IM7 (`magick`) was installed. The
    operators used are IM6-compatible in principle but unexercised.
-4. **A real iPhone HEIC.** The HEIC tested was ImageMagick-produced. Backends are
+2. **A real iPhone HEIC.** The HEIC tested was ImageMagick-produced. Backends are
    known to disagree about iPhone HEIC orientation (vips/magick vs sips), which is
    why the reported dimensions are cross-checked against the largest derived
    variant rather than trusted.
+3. **The owner's own photo directory.** The final smoke test — `--dry-run`, a real
+   import, then eyes on the gallery — is still theirs to run.
 
 ## 10. Note for whoever edits the CSS
 
