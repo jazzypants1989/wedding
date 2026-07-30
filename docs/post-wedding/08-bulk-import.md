@@ -341,6 +341,30 @@ Measured on vips 8.17, default concurrency 7 (8 cores):
 
 The plan's "~30s for 200 photos" was accurate for real camera frames.
 
+### Open decision: a skipped file does not affect the exit code
+
+When a backend breaks, the importer degrades the way it should — the file is
+skipped per-file as `BACKEND_FAILED` with the backend's own error quoted in full,
+the rest of the directory still imports, nothing is left half-written. **But the
+run still exits 0**, because plan-time skips never reach the exit code. A wrapper
+that trusts the exit code would read 200 undecodable photos as a clean import of
+nothing.
+
+Splitting environmental skips (`BACKEND_FAILED`, `UNREADABLE_DIMENSIONS`) from
+benign ones (`ALREADY_IMPORTED`, and the `.DS_Store`-style `UNSUPPORTED_SOURCE`)
+would fix it. Which codes belong on which side is an open decision, not an
+oversight — left alone deliberately.
+
+### If HEIC stops working, suspect libheif rather than this code
+
+Seen once, and worth a line because the symptom looks like an importer bug:
+`brew install ffmpeg` bumped x265 4.1 → 4.2, renaming its dylib (`libx265.215` →
+`.216`). `libheif` was still linked against the old name, so it stopped loading,
+taking both vips's `vips-heif.dylib` and ImageMagick's `heic` coder with it — no
+code change, every HEIC skipping. `brew reinstall libheif` fixes it; `vipsheader
+some.heic` confirms. `sips` is immune (Apple's own decoder, not libheif), so
+`WEDDING_IMAGE_BACKEND=sips` is a fallback at the cost of larger variants.
+
 **Still unverified**, for want of the right thing to test with — flag these if
 they matter:
 
