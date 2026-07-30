@@ -148,6 +148,31 @@
       .stat span {
         color: var(--dim);
       }
+      /* The two numbers the report actually decides on. */
+      .stat.big b {
+        font-size: 19px;
+      }
+      .stat.big.met b {
+        color: var(--ok);
+      }
+      .stat.big.off b {
+        color: var(--dim);
+      }
+      /* Everything that is volume rather than evidence. */
+      .stat.mini {
+        color: var(--dim);
+        font-size: 12px;
+        max-width: 46ch;
+        line-height: 1.3;
+      }
+      .stat.mini b {
+        color: var(--dim);
+        font-size: 12px;
+        font-weight: 400;
+      }
+      .stat.mini b.nudge {
+        color: var(--warn);
+      }
       .saved {
         color: var(--dim);
         min-width: 11ch;
@@ -189,6 +214,26 @@
       .banner.note b {
         color: var(--ink);
         font-weight: 400;
+      }
+      /* The one line that says what the meter above is for. */
+      .banner.meter {
+        background: #12161d;
+        color: var(--dim);
+        padding: 5px 12px;
+        font-size: 12px;
+      }
+      .banner.meter b {
+        color: var(--ink);
+        font-weight: 400;
+      }
+      .banner.meter.stale {
+        background: #241d10;
+        color: var(--warn);
+      }
+      .banner.nudge {
+        background: #24200f;
+        border-bottom-color: var(--warn);
+        color: var(--warn);
       }
 
       /* ---- the working area: crop left, exemplars right ---- */
@@ -259,6 +304,29 @@
         outline: none;
         border-color: var(--ok);
       }
+      /* Roster autocomplete. Present only when label-data.js carried a roster. */
+      .namebox .suggest {
+        flex: 1 1 100%;
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .chip {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 2px 9px;
+        cursor: pointer;
+        background: var(--panel-2);
+        color: var(--ink);
+      }
+      .chip:hover,
+      .chip.on {
+        border-color: var(--ok);
+        color: var(--ok);
+      }
+      .namebox .picked {
+        color: var(--ok);
+      }
       .members {
         flex: 1 1 auto;
         min-height: 0;
@@ -316,6 +384,81 @@
       }
       .m .tag.x {
         color: var(--bad);
+      }
+      .m .tag.skip {
+        color: var(--warn);
+      }
+      .m.skipped img,
+      .m.skipped .noimg {
+        opacity: 0.45;
+        filter: saturate(0.4);
+      }
+
+      /* ---- "also in this photograph" strip ---- */
+      #siblings {
+        flex: 0 0 auto;
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+        overflow-x: auto;
+        padding: 6px 0 2px;
+        border-top: 1px solid var(--line);
+      }
+      #siblings .sibhead {
+        flex: 0 0 auto;
+        color: var(--dim);
+        max-width: 22ch;
+        padding-top: 4px;
+        line-height: 1.35;
+      }
+      .sib {
+        position: relative;
+        flex: 0 0 auto;
+        width: 64px;
+        height: 64px;
+        border: 2px solid transparent;
+        border-radius: 6px;
+        overflow: hidden;
+        cursor: pointer;
+        background: #232a35;
+        padding: 0;
+      }
+      .sib img,
+      .sib .noimg {
+        display: block;
+        width: 60px;
+        height: 60px;
+        object-fit: cover;
+        background: #232a35;
+      }
+      .sib:hover {
+        border-color: var(--accent);
+      }
+      .sib.here {
+        border-color: var(--accent);
+        cursor: default;
+      }
+      .sib[data-pool="B"] {
+        border-bottom-color: var(--poolB);
+      }
+      .sib .sl {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: #000d;
+        color: var(--ok);
+        font-size: 11px;
+        text-align: center;
+      }
+      .sib .sl.x {
+        color: var(--bad);
+      }
+      .sib .sl.skip {
+        color: var(--warn);
+      }
+      .sib .sl.none {
+        color: var(--dim);
       }
 
       /* ---- exemplar rail: what the crop is compared against ---- */
@@ -493,6 +636,9 @@
       .seg.done {
         background: var(--ok);
       }
+      .seg.skip {
+        background: var(--warn);
+      }
       .seg.cur {
         background: var(--accent);
         min-width: 3px;
@@ -572,8 +718,22 @@
       .cell .lab.x {
         color: var(--bad);
       }
+      .cell .lab.skip {
+        color: var(--warn);
+      }
       .cell.done img {
         opacity: 0.5;
+      }
+      .cell.skipped img {
+        opacity: 0.35;
+        filter: saturate(0.3);
+      }
+      #grid-sentinel {
+        height: 1px;
+      }
+      #grid-more {
+        color: var(--dim);
+        padding: 10px 0 4px;
       }
 
       /* ---- footer / keymap ---- */
@@ -615,6 +775,21 @@
       }
       dialog code {
         color: var(--warn);
+      }
+      /* The second file names real people. It gets the loudest box on screen. */
+      .danger {
+        border: 1px solid var(--bad);
+        border-radius: 6px;
+        background: #2b1616;
+        padding: 8px 10px;
+        margin-top: 8px;
+      }
+      .danger p {
+        color: #ffbdbd;
+        margin: 4px 0;
+      }
+      .danger label {
+        color: var(--ink);
       }
       textarea {
         width: 100%;
@@ -681,9 +856,11 @@ tmp/session1/
         <div class="tab" data-pool="B" id="tabB"></div>
       </div>
       <div class="stats">
-        <span class="stat"><b id="s-labelled">0</b> <span>labelled</span></span>
-        <span class="stat"><b id="s-people">0</b> <span>people</span></span>
-        <span class="stat"><b id="s-three">0</b> <span>with 3+</span></span>
+        <span class="stat big" id="stat-pairs"
+          ><b id="s-pairs">0</b> <span>cross-hour pairs in A</span></span
+        >
+        <span class="stat big" id="stat-peoplea"><b id="s-peoplea">0</b> <span>people in them</span></span>
+        <span class="stat mini" id="s-mini"></span>
         <span class="saved" id="saved">—</span>
         <button id="btn-save" class="primary">Save labels.json</button>
       </div>
@@ -692,6 +869,8 @@ tmp/session1/
     <div id="resume" class="banner resume hide"></div>
     <div id="mismatch" class="banner warn hide"></div>
     <div id="stopbar" class="banner stop hide"></div>
+    <div id="nudgebar" class="banner nudge hide"></div>
+    <div id="meterbar" class="banner meter hide"></div>
     <div id="privacy" class="banner note hide"></div>
 
     <main id="work" class="hide">
@@ -710,8 +889,11 @@ tmp/session1/
           <span class="hint"
             ><kbd>↵</kbd> create · <kbd>Esc</kbd> cancel · never written to labels.json</span
           >
+          <span class="picked hide" id="name-picked"></span>
+          <div class="suggest hide" id="name-suggest"></div>
         </div>
         <div class="members" id="stage-members"></div>
+        <div id="siblings" class="hide"></div>
       </section>
       <aside id="rail">
         <div class="rail-head">
@@ -740,6 +922,8 @@ tmp/session1/
         <span><b><kbd>g</kbd></b> or <b><kbd>Esc</kbd></b> back to labelling · click a crop to jump to it</span>
       </div>
       <div class="grid" id="grid"></div>
+      <div id="grid-more" class="hide"></div>
+      <div id="grid-sentinel"></div>
     </div>
 
     <div id="ribbonwrap" class="hide">
@@ -748,20 +932,22 @@ tmp/session1/
     </div>
 
     <footer id="footer" class="hide">
-      <span><b><kbd>1</kbd>…<kbd>9</kbd><kbd>0</kbd></b> person</span>
+      <span><b><kbd>1</kbd>…<kbd>9</kbd><kbd>0</kbd></b> person (most-labelled first)</span>
       <span><b><kbd>,</kbd><kbd>.</kbd></b> page hotkeys</span>
       <span><b><kbd>n</kbd></b> new person</span>
       <span><b><kbd>/</kbd></b> filter</span>
       <span><b><kbd>x</kbd></b> not a face</span>
-      <span><b><kbd>s</kbd>/<kbd>?</kbd></b> skip</span>
+      <span><b><kbd>s</kbd>/<kbd>?</kbd></b> skip / un-skip (recorded, exported)</span>
+      <span id="foot-c" class="hide"><b><kbd>c</kbd></b> tight crop ⇄ context</span>
       <span><b><kbd>u</kbd></b> undo</span>
-      <span><b><kbd>j</kbd><kbd>k</kbd>/<kbd>↓</kbd><kbd>↑</kbd></b> next/prev</span>
-      <span><b><kbd>↵</kbd></b> next unlabelled</span>
+      <span><b><kbd>j</kbd><kbd>k</kbd>/<kbd>↓</kbd><kbd>↑</kbd></b> next/prev unit</span>
+      <span><b><kbd>↵</kbd></b> next unlabelled (skips are stepped over)</span>
       <span><b><kbd>Tab</kbd></b> pool</span>
       <span><b><kbd>g</kbd></b> browse</span>
       <span id="foot-b"
-        ><b><kbd>←</kbd><kbd>→</kbd></b> member · <b><kbd>space</kbd></b> exclude ·
-        <b><kbd>o</kbd></b> only · <b><kbd>a</kbd></b> all</span
+        ><b><kbd>←</kbd><kbd>→</kbd></b> or <b><kbd>h</kbd><kbd>l</kbd></b> member ·
+        <b><kbd>space</kbd></b> exclude (recorded) · <b><kbd>o</kbd></b> only ·
+        <b><kbd>a</kbd></b> all</span
       >
       <span><b>shift-click</b> = set exemplar</span>
     </footer>
@@ -784,6 +970,23 @@ tmp/session1/
           <span id="forget-n">0</span> display names held in this browser once I
           save</label
         >
+      </div>
+      <div class="danger hide" id="ident-box">
+        <label
+          ><input type="checkbox" id="dlg-identities" /> Also write
+          <code>identities.json</code> — a second file mapping each person key to the
+          name I typed</label
+        >
+        <p>
+          That second file <b>names identifiable people</b>. It belongs beside this page in
+          <code>tmp/</code>, it is never committed, quoted or summarised, and
+          <code>labels.json</code> is byte-for-byte identical whether this box is ticked or
+          not. Its person keys are the same shuffled keys as the file above, so the two join.
+        </p>
+        <p id="ident-hold" class="hide">
+          The names are needed to write it, so they will not be forgotten until it has
+          actually been saved.
+        </p>
       </div>
       <div class="row">
         <button id="dlg-pick" class="primary hide">Save directly to a folder…</button>
@@ -832,6 +1035,74 @@ tmp/session1/
 
         var faceById = new Map()
         for (var i = 0; i < DATA.faces.length; i++) faceById.set(DATA.faces[i].id, DATA.faces[i])
+
+        // ---------- version 2 additions, every one of them optional ----------
+        // This page ships beside a batch that may be older than it. Every feature
+        // that needs a version-2 field checks for the field, not for the version
+        // number, and hides itself when it is absent. A version-1 label-data.js
+        // must still produce exactly the session it produced before.
+        /** 16 lowercase hex characters, checked a character at a time. */
+        function isHex16(s) {
+          if (typeof s !== "string" || s.length !== 16) return false
+          for (var hi = 0; hi < 16; hi++) {
+            var c = s.charCodeAt(hi)
+            var digit = c >= 48 && c <= 57
+            var lower = c >= 97 && c <= 102
+            if (!digit && !lower) return false
+          }
+          return true
+        }
+        var DATASET_ID = isHex16(DATA.datasetId) ? DATA.datasetId : null
+        /** photos[photoId] = { t, frame }. Absent in version 1. */
+        var PHOTOS = Array.isArray(DATA.photos) ? DATA.photos : null
+        var HAS_PHOTOS = PHOTOS !== null && PHOTOS.length > 0
+        /** [{ id, name }] — autocomplete only, never exported to labels.json. */
+        var ROSTER = Array.isArray(DATA.roster) && DATA.roster.length > 0 ? DATA.roster : null
+        var HAS_CONTEXT = false
+        for (var ci = 0; ci < DATA.faces.length; ci++) {
+          if (typeof DATA.faces[ci].context === "string" && DATA.faces[ci].context !== "") {
+            HAS_CONTEXT = true
+            break
+          }
+        }
+
+        /** The photograph record behind a face, or null when it cannot be known. */
+        function photoOf(faceId) {
+          if (!HAS_PHOTOS) return null
+          var f = faceById.get(faceId)
+          if (!f) return null
+          var p = PHOTOS[f.photoId]
+          return p ? p : null
+        }
+        /** Capture time in ms, or null. A face whose photo has no usable EXIF
+         *  date cannot enter a time-separated pair at all. */
+        function timeOf(faceId) {
+          var p = photoOf(faceId)
+          if (!p) return null
+          return typeof p.t === "number" ? p.t : null
+        }
+        /** The duplicate-class ROOT photo id: two faces whose frames are equal
+         *  came from the same shot, however many files that shot produced. */
+        function frameOf(faceId) {
+          var f = faceById.get(faceId)
+          if (!f) return -1
+          var p = photoOf(faceId)
+          if (p && typeof p.frame === "number") return p.frame
+          return f.photoId
+        }
+
+        /** photoId -> face ids, in the order the batch listed them. Powers the
+         *  "also in this photograph" strip. */
+        var byPhoto = new Map()
+        for (var bi = 0; bi < DATA.faces.length; bi++) {
+          var bf = DATA.faces[bi]
+          var bucket = byPhoto.get(bf.photoId)
+          if (!bucket) {
+            bucket = []
+            byPhoto.set(bf.photoId, bucket)
+          }
+          bucket.push(bf.id)
+        }
 
         // Presentation order is fixed and not the labeller's to change. Faces the
         // batch forgot to list are appended rather than dropped.
@@ -882,11 +1153,35 @@ tmp/session1/
           if (DATA.faces[pi].pool === "B") POOL_TOTAL.B++
           else POOL_TOTAL.A++
         }
+        /** faceId -> { pool, index } into UNITS. The sibling strip crosses pools,
+         *  so clicking a sibling has to be able to find its unit anywhere. */
+        var unitOfFace = new Map()
+        ;(function () {
+          var pools = ["A", "B"]
+          for (var q1 = 0; q1 < pools.length; q1++) {
+            var list = UNITS[pools[q1]]
+            for (var q2 = 0; q2 < list.length; q2++) {
+              var mem = list[q2].members
+              for (var q3 = 0; q3 < mem.length; q3++) {
+                unitOfFace.set(mem[q3], { pool: pools[q1], index: q2 })
+              }
+            }
+          }
+        })()
 
         // ---------- persisted state ----------
         // file:// has a null origin shared by every local page, hence the namespace
-        // and the dataset fingerprint.
-        var FINGERPRINT =
+        // and the dataset identity.
+        //
+        // The legacy fingerprint below is kept ONLY to recognise work saved by an
+        // older copy of this page. It is not a fingerprint: ORDER is a fixed
+        // shuffle of the faces, so its length and its endpoints are determined by
+        // the face COUNT alone, and the whole string collapses to "v1-n<count>".
+        // Two different runs that happened to detect the same number of faces were
+        // indistinguishable, and "Resume" would then attach one run's labels to
+        // another run's crops — silently, because face ids are just small
+        // integers and every one of them exists in both runs.
+        var LEGACY_FINGERPRINT =
           "v" +
           (DATA.version || 0) +
           "-n" +
@@ -897,12 +1192,18 @@ tmp/session1/
           (ORDER[0] || 0) +
           "-" +
           (ORDER[ORDER.length - 1] || 0)
-        var STORE_KEY = "wedding.session1.label.v1"
+        var LEGACY_STORE_KEY = "wedding.session1.label.v1"
         // Display names live under their OWN key, never inside the labels record.
         // localStorage is a worse place for them than tmp/ — it survives
         // `rm -rf tmp/session1`, it is not gitignored, and nothing sweeps it — so
         // they have to be clearable precisely, on their own, in one click.
-        var NAMES_KEY = "wedding.session1.label.names.v1"
+        var LEGACY_NAMES_KEY = "wedding.session1.label.names.v1"
+        // One localStorage slot PER DATASET. Two runs labelled on one machine used
+        // to share a slot, so opening the second destroyed the first's unexported
+        // work on the first keystroke.
+        var STORE_KEY = DATASET_ID ? LEGACY_STORE_KEY + "." + DATASET_ID : LEGACY_STORE_KEY
+        var NAMES_KEY = DATASET_ID ? LEGACY_NAMES_KEY + "." + DATASET_ID : LEGACY_NAMES_KEY
+        var CONTEXT_PREF_KEY = "wedding.session1.label.context.v1"
 
         var state = {
           labels: {}, // faceId(string) -> "p1" | "x"
@@ -910,27 +1211,57 @@ tmp/session1/
           pool: "A",
           cursor: { A: 0, B: 0 },
           hotkeyBase: 0,
+          /** Face ids the labeller explicitly refused. A refusal is evidence —
+           *  it is the only thing that separates "I looked and could not tell"
+           *  from "never reached", so it is a state, not a navigation key. */
+          skipped: new Set(),
+          /** groupId(string) -> face ids carved OUT of that group by space/o.
+           *  A purity judgement about the model's own grouping. */
+          excluded: {},
+          /** Faces labelled since the last export. Nudge material. */
+          unexported: 0,
         }
-        var excluded = new Set() // face ids held out of the current group assignment
+        /** Transient, per-unit: face ids held out of the NEXT keystroke. Recorded
+         *  into state.excluded when that keystroke lands, then cleared. */
+        var carveOut = new Set()
         var memberCursor = 0
         var history = []
-        /** person key -> a name the owner typed. UI only. Never exported, never
-         *  written to a file, never sent anywhere. */
+        /** person key -> a name the owner typed. UI only. Never in labels.json;
+         *  written to identities.json only on an explicit, default-off opt-in. */
         var names = {}
+        /** person key -> roster guest id, or null when the name was free text. */
+        var nameIds = {}
         var pendingName = "" // consumed by the next assign("@new")
+        var pendingGuestId = null // ditto
         var filterText = "" // type-to-filter over keys and names
+        var showContext = false // `c` — stage shows the wider context image
+
+        function sortedNums(set) {
+          var out = []
+          set.forEach(function (v) {
+            out.push(v)
+          })
+          out.sort(function (a, b) {
+            return a - b
+          })
+          return out
+        }
 
         function save() {
           try {
             localStorage.setItem(
               STORE_KEY,
               JSON.stringify({
-                fingerprint: FINGERPRINT,
+                fingerprint: LEGACY_FINGERPRINT,
+                datasetId: DATASET_ID,
                 savedAt: Date.now(),
                 labels: state.labels,
                 exemplars: state.exemplars,
                 pool: state.pool,
                 cursor: state.cursor,
+                skipped: sortedNums(state.skipped),
+                excluded: state.excluded,
+                unexported: state.unexported,
               }),
             )
             flashSaved()
@@ -954,10 +1285,10 @@ tmp/session1/
           }, 900)
         }
 
-        function loadStored() {
+        function readJson(key) {
           var raw = null
           try {
-            raw = localStorage.getItem(STORE_KEY)
+            raw = localStorage.getItem(key)
           } catch (err) {
             return null
           }
@@ -967,6 +1298,43 @@ tmp/session1/
           } catch (err) {
             return null
           }
+        }
+        function dropKeys(keys) {
+          for (var dk = 0; dk < keys.length; dk++) {
+            try {
+              localStorage.removeItem(keys[dk])
+            } catch (err) {
+              /* nothing to do */
+            }
+          }
+        }
+
+        /** The dataset-namespaced slot first; the old shared slot only if the new
+         *  one is empty, so work saved by an older copy of this page is still
+         *  offered rather than orphaned. `legacy` is carried through because a
+         *  legacy record can only ever be WEAKLY matched — it predates datasetId. */
+        function loadStored() {
+          var rec = readJson(STORE_KEY)
+          if (rec) return { rec: rec, key: STORE_KEY, legacy: false }
+          if (STORE_KEY !== LEGACY_STORE_KEY) {
+            var old = readJson(LEGACY_STORE_KEY)
+            if (old) return { rec: old, key: LEGACY_STORE_KEY, legacy: true }
+          }
+          return null
+        }
+
+        /** "exact" — the data file and the saved session name the same dataset.
+         *  "weak"  — only the count-based legacy fingerprint agrees, which two
+         *            different runs of equal size would also do.
+         *  "none"  — a different dataset. Resuming would attach these labels to
+         *            somebody else's crops, so it is refused outright.
+         */
+        function matchStrength(rec) {
+          if (!rec) return "none"
+          if (DATASET_ID !== null && isHex16(rec.datasetId)) {
+            return rec.datasetId === DATASET_ID ? "exact" : "none"
+          }
+          return rec.fingerprint === LEGACY_FINGERPRINT ? "weak" : "none"
         }
 
         // ---------- display names ----------
@@ -983,35 +1351,31 @@ tmp/session1/
             }
             localStorage.setItem(
               NAMES_KEY,
-              JSON.stringify({ fingerprint: FINGERPRINT, savedAt: Date.now(), names: names }),
+              JSON.stringify({
+                fingerprint: LEGACY_FINGERPRINT,
+                datasetId: DATASET_ID,
+                savedAt: Date.now(),
+                names: names,
+                ids: nameIds,
+              }),
             )
           } catch (err) {
             /* a full or disabled localStorage costs a convenience, not the run */
           }
         }
         function loadStoredNames() {
-          var raw = null
-          try {
-            raw = localStorage.getItem(NAMES_KEY)
-          } catch (err) {
-            return null
-          }
-          if (!raw) return null
-          try {
-            var parsed = JSON.parse(raw)
-            if (parsed && parsed.names && typeof parsed.names === "object") return parsed
-          } catch (err) {
-            return null
+          var parsed = readJson(NAMES_KEY)
+          if (parsed && parsed.names && typeof parsed.names === "object") return parsed
+          if (NAMES_KEY !== LEGACY_NAMES_KEY) {
+            var old = readJson(LEGACY_NAMES_KEY)
+            if (old && old.names && typeof old.names === "object") return old
           }
           return null
         }
         function forgetNames() {
           names = {}
-          try {
-            localStorage.removeItem(NAMES_KEY)
-          } catch (err) {
-            /* nothing to do */
-          }
+          nameIds = {}
+          dropKeys([NAMES_KEY, LEGACY_NAMES_KEY])
           render()
         }
         function displayName(key) {
@@ -1030,6 +1394,24 @@ tmp/session1/
         }
 
         // ---------- derived ----------
+        /** RAIL ORDER, and therefore HOTKEY ORDER. The rule, in full:
+         *
+         *    label count DESCENDING, ties broken by person number ASCENDING.
+         *
+         *  It was person number ascending alone, over a positional ten-slot page.
+         *  That made the digit a person is on a function of how many people exist,
+         *  so creating p7 pushed p8…p17 down one slot and every digit the labeller
+         *  had memorised moved — mid-session, silently, at the exact moment they
+         *  were least able to notice, because creating a person is what you do
+         *  when you are already unsure.
+         *
+         *  Under this rule a NEW person always has the lowest count and the
+         *  highest number, so they sort last among their equals and land at the
+         *  END of the list: nobody above them moves. A digit changes only when a
+         *  COUNT changes and only for the two people who actually swapped, and
+         *  the people you press most stay on page one, which is the page you are
+         *  looking at.
+         */
         function personKeys() {
           var counts = new Map()
           for (var id in state.labels) {
@@ -1039,6 +1421,8 @@ tmp/session1/
           }
           var keys = Array.from(counts.keys())
           keys.sort(function (a, b) {
+            var d = (counts.get(b) || 0) - (counts.get(a) || 0)
+            if (d !== 0) return d
             return Number(a.slice(1)) - Number(b.slice(1))
           })
           return { keys: keys, counts: counts }
@@ -1080,13 +1464,131 @@ tmp/session1/
           for (var id in state.labels) if (state.labels[id] === "x") n++
           return n
         }
+        /** Faces in this pool carrying a PERSON label. "x" is excluded from every
+         *  count that implies progress: a not-a-face mark is work done and it is
+         *  worth doing, but it contributes nothing to the measurement, and a
+         *  meter that counts it can read "finished" on a run of picture frames. */
         function poolLabelled(pool) {
           var n = 0
           for (var id in state.labels) {
+            if (state.labels[id] === "x") continue
             var f = faceById.get(Number(id))
             if (f && f.pool === pool) n++
           }
           return n
+        }
+        function poolNotFace(pool) {
+          var n = 0
+          for (var id in state.labels) {
+            if (state.labels[id] !== "x") continue
+            var f = faceById.get(Number(id))
+            if (f && f.pool === pool) n++
+          }
+          return n
+        }
+
+        // ---------- the stopping rule ----------
+        // The report's headline is the CROSS-HOUR stratum of pool A: same-person
+        // pairs from different shots, more than an hour apart. Everything else it
+        // prints is context. So that is what the meter counts, because a meter
+        // that counts something else will read "done" in states where the
+        // headline comes back UNDECIDED — and it did: the old meter counted both
+        // pools and counted "x", and pool B assigns a whole detector group per
+        // keystroke, so 250 could be reached having labelled a couple of dozen
+        // crops in A and nothing that pairs across an hour.
+        var HOUR_MS = 3600000
+        var GOAL_PAIRS_A = 40
+        var GOAL_PEOPLE_A = 8
+        var GOAL_POOL_A = Math.min(150, POOL_TOTAL.A)
+
+        /** person key -> face ids in POOL A carrying that label. Maintained on
+         *  every assign and undo so the meter never walks all the labels. */
+        var poolAByPerson = new Map()
+        /** person key -> qualifying pair count, invalidated per person. */
+        var pairCache = new Map()
+
+        function indexAdd(key, faceId) {
+          var list = poolAByPerson.get(key)
+          if (!list) {
+            list = []
+            poolAByPerson.set(key, list)
+          }
+          if (list.indexOf(faceId) < 0) list.push(faceId)
+          pairCache.delete(key)
+        }
+        function indexRemove(key, faceId) {
+          var list = poolAByPerson.get(key)
+          if (!list) return
+          var at = list.indexOf(faceId)
+          if (at >= 0) list.splice(at, 1)
+          if (list.length === 0) poolAByPerson.delete(key)
+          pairCache.delete(key)
+        }
+        /** The single funnel for every write to state.labels. Keeping the pair
+         *  index correct depends on nothing else ever touching that object. */
+        function setLabel(faceId, value) {
+          var k = String(faceId)
+          var was = state.labels[k]
+          var f = faceById.get(faceId)
+          var inA = !!f && f.pool === "A"
+          if (inA && was !== undefined && was !== "x") indexRemove(was, faceId)
+          if (value === undefined) delete state.labels[k]
+          else state.labels[k] = value
+          if (inA && value !== undefined && value !== "x") indexAdd(value, faceId)
+        }
+        function rebuildPairIndex() {
+          poolAByPerson = new Map()
+          pairCache = new Map()
+          for (var id in state.labels) {
+            var v = state.labels[id]
+            if (v === "x") continue
+            var f = faceById.get(Number(id))
+            if (f && f.pool === "A") indexAdd(v, Number(id))
+          }
+        }
+
+        /** Same-person pairs for ONE person that the report would actually count:
+         *  both faces in pool A, from DIFFERENT shots (equal frame roots are one
+         *  shot, however many files it produced), both times known, more than an
+         *  hour apart. O(m²) in that person's own faces, memoised, and m is a
+         *  couple of dozen at the very most. */
+        function personPairs(key) {
+          if (!HAS_PHOTOS) return 0
+          var hit = pairCache.get(key)
+          if (hit !== undefined) return hit
+          var list = poolAByPerson.get(key)
+          var n = 0
+          if (list && list.length > 1) {
+            for (var a = 0; a < list.length; a++) {
+              var ta = timeOf(list[a])
+              if (ta === null) continue
+              var fa = frameOf(list[a])
+              for (var b = a + 1; b < list.length; b++) {
+                var tb = timeOf(list[b])
+                if (tb === null) continue
+                if (frameOf(list[b]) === fa) continue
+                if (Math.abs(ta - tb) > HOUR_MS) n++
+              }
+            }
+          }
+          pairCache.set(key, n)
+          return n
+        }
+        /** { sameA, peopleA, available }. `available` is false on a version-1
+         *  label-data.js, which carries no photo times and therefore cannot say
+         *  which pairs are an hour apart. */
+        function pairMeter() {
+          if (!HAS_PHOTOS) return { sameA: 0, peopleA: 0, available: false }
+          var sameA = 0
+          var peopleA = 0
+          poolAByPerson.forEach(function (_list, key) {
+            var n = personPairs(key)
+            if (n > 0) {
+              sameA += n
+              peopleA++
+            }
+          })
+          return { sameA: sameA, peopleA: peopleA, available: true }
         }
 
         function units() {
@@ -1106,37 +1608,92 @@ tmp/session1/
           var base = unlabelledOf(u)
           return base.length > 0 ? base : u.members.slice()
         }
-        /** What a keystroke acts on: the members in play, minus anything excluded. */
+        /** What a keystroke acts on: the members in play, minus anything carved out. */
         function targets(u) {
           return memberRing(u).filter(function (id) {
-            return !excluded.has(id)
+            return !carveOut.has(id)
+          })
+        }
+        /** Unlabelled AND not refused — what "still to do" actually means once a
+         *  refusal is a state rather than a keypress that did nothing. */
+        function outstandingOf(u) {
+          return unlabelledOf(u).filter(function (id) {
+            return !state.skipped.has(id)
           })
         }
 
         // ---------- actions ----------
+        /** Record the carve-outs this keystroke is about to act under. `space`/`o`
+         *  say "this face does not belong with the rest of the model's group",
+         *  which is a purity judgement about the grouping and was previously
+         *  thrown away the instant the keystroke landed. */
+        function recordCarveOut(u, entry) {
+          if (u.group === null || u.group === undefined) return
+          var gk = String(u.group)
+          var before = state.excluded[gk]
+          entry.exGroup = gk
+          entry.exPrev = before ? before.slice() : null
+          var out = new Set(before || [])
+          var ring = memberRing(u)
+          for (var ri = 0; ri < ring.length; ri++) {
+            // Carved out now → remembered. Included now → the labeller changed
+            // their mind, so the earlier carve-out is withdrawn.
+            if (carveOut.has(ring[ri])) out.add(ring[ri])
+            else out.delete(ring[ri])
+          }
+          if (out.size === 0) delete state.excluded[gk]
+          else state.excluded[gk] = sortedNums(out)
+        }
+        function restoreCarveOut(entry) {
+          if (!entry.exGroup) return
+          if (entry.exPrev === null) delete state.excluded[entry.exGroup]
+          else state.excluded[entry.exGroup] = entry.exPrev
+        }
+
         function assign(value) {
           var u = curUnit()
           if (!u) return
           var ids = targets(u)
           if (ids.length === 0) return
-          var entry = { pool: state.pool, cursor: state.cursor[state.pool], prev: [], newKey: null }
+          // A name typed but not committed with Enter has no bearing on an
+          // assignment to somebody who already exists.
+          if (value !== "@new") closeNameBox()
+          var entry = {
+            pool: state.pool,
+            cursor: state.cursor[state.pool],
+            prev: [],
+            newKey: null,
+            unskipped: [],
+            exGroup: null,
+            exPrev: null,
+          }
           if (value === "@new") {
             value = nextPersonKey()
             entry.newKey = value
             if (pendingName !== "") {
               names[value] = pendingName
+              nameIds[value] = pendingGuestId
               saveNames()
             }
             pendingName = ""
+            pendingGuestId = null
           }
+          recordCarveOut(u, entry)
           for (var i2 = 0; i2 < ids.length; i2++) {
             entry.prev.push({ id: ids[i2], value: state.labels[String(ids[i2])] })
-            state.labels[String(ids[i2])] = value
+            setLabel(ids[i2], value)
+            // A judgement supersedes a refusal: labelling a face you had skipped
+            // means you can tell after all.
+            if (state.skipped.has(ids[i2])) {
+              state.skipped.delete(ids[i2])
+              entry.unskipped.push(ids[i2])
+            }
           }
           if (value !== "x" && state.exemplars[value] === undefined) state.exemplars[value] = ids[0]
+          state.unexported += ids.length
           history.push(entry)
           if (history.length > 400) history.shift()
-          excluded.clear()
+          carveOut.clear()
           memberCursor = 0
           clearFilter()
           if (entry.newKey) {
@@ -1151,25 +1708,89 @@ tmp/session1/
           render()
         }
 
+        /** `s` / `?`. A toggle, because the only way to correct a mis-skip is to
+         *  be able to take it back, and it is undoable like everything else. */
+        function toggleSkip() {
+          var u = curUnit()
+          if (!u) return
+          var ids = targets(u).filter(function (id) {
+            return state.labels[String(id)] === undefined
+          })
+          if (ids.length === 0) {
+            step(1)
+            render()
+            return
+          }
+          var allSkipped = true
+          for (var s1 = 0; s1 < ids.length; s1++) {
+            if (!state.skipped.has(ids[s1])) allSkipped = false
+          }
+          var entry = {
+            pool: state.pool,
+            cursor: state.cursor[state.pool],
+            prev: [],
+            newKey: null,
+            unskipped: [],
+            skipAdded: [],
+            exGroup: null,
+            exPrev: null,
+          }
+          for (var s2 = 0; s2 < ids.length; s2++) {
+            if (allSkipped) {
+              state.skipped.delete(ids[s2])
+              entry.unskipped.push(ids[s2])
+            } else if (!state.skipped.has(ids[s2])) {
+              state.skipped.add(ids[s2])
+              entry.skipAdded.push(ids[s2])
+            }
+          }
+          // A refusal is exported and is therefore unexported work like any other.
+          state.unexported += entry.skipAdded.length
+          history.push(entry)
+          if (history.length > 400) history.shift()
+          carveOut.clear()
+          memberCursor = 0
+          if (!allSkipped) step(1)
+          save()
+          render()
+        }
+
         function undo() {
           var e = history.pop()
           if (!e) return
+          var wasPool = state.pool
           state.pool = e.pool
           state.cursor[e.pool] = e.cursor
           for (var i3 = 0; i3 < e.prev.length; i3++) {
             var p = e.prev[i3]
-            if (p.value === undefined) delete state.labels[String(p.id)]
-            else state.labels[String(p.id)] = p.value
+            setLabel(p.id, p.value)
           }
+          var undone = e.prev.length + (e.skipAdded ? e.skipAdded.length : 0)
+          state.unexported = Math.max(0, state.unexported - undone)
+          for (var i3b = 0; i3b < e.unskipped.length; i3b++) state.skipped.add(e.unskipped[i3b])
+          if (e.skipAdded) {
+            for (var i3c = 0; i3c < e.skipAdded.length; i3c++) state.skipped.delete(e.skipAdded[i3c])
+          }
+          restoreCarveOut(e)
           if (e.newKey) {
             delete state.exemplars[e.newKey]
             if (names[e.newKey] !== undefined) {
               delete names[e.newKey]
+              delete nameIds[e.newKey]
               saveNames()
             }
           }
-          excluded.clear()
+          carveOut.clear()
           memberCursor = 0
+          // The ribbon and the grid are built PER POOL and index into that pool's
+          // unit list. Undoing across a pool boundary used to leave both of them
+          // addressing the other pool's units — the same rebuild switchPool has
+          // always done, which undo simply never did.
+          if (wasPool !== state.pool) {
+            buildRibbon()
+            if (gridOpen) buildGrid()
+            else dropGrid()
+          }
           save()
           render()
         }
@@ -1180,31 +1801,53 @@ tmp/session1/
           if (n < 0) n = 0
           if (n > list.length - 1) n = list.length - 1
           state.cursor[state.pool] = n
-          excluded.clear()
+          carveOut.clear()
           memberCursor = 0
         }
         function jumpNextUnlabelled() {
           var list = units()
           for (var i4 = state.cursor[state.pool] + 1; i4 < list.length; i4++) {
-            if (unlabelledOf(list[i4]).length > 0) {
+            if (outstandingOf(list[i4]).length > 0) {
               state.cursor[state.pool] = i4
-              excluded.clear()
+              carveOut.clear()
               memberCursor = 0
               return
             }
           }
           for (var i5 = 0; i5 < list.length; i5++) {
-            if (unlabelledOf(list[i5]).length > 0) {
+            if (outstandingOf(list[i5]).length > 0) {
               state.cursor[state.pool] = i5
-              excluded.clear()
+              carveOut.clear()
               memberCursor = 0
               return
             }
           }
         }
+        /** Jump to whichever unit holds a face — possibly in the other pool, which
+         *  is where the sibling strip usually points. */
+        function jumpToFace(faceId) {
+          var at = unitOfFace.get(faceId)
+          if (!at) return
+          if (at.pool !== state.pool) {
+            state.pool = at.pool
+            state.cursor[at.pool] = at.index
+            carveOut.clear()
+            memberCursor = 0
+            buildRibbon()
+            if (gridOpen) buildGrid()
+            else dropGrid()
+            save()
+            render()
+            return
+          }
+          state.cursor[state.pool] = at.index
+          carveOut.clear()
+          memberCursor = 0
+          render()
+        }
         function switchPool() {
           state.pool = state.pool === "A" ? "B" : "A"
-          excluded.clear()
+          carveOut.clear()
           memberCursor = 0
           // The grid is per-pool and expensive at 600 crops; rebuild it only if
           // it is actually on screen, otherwise drop it and rebuild on demand.
@@ -1216,12 +1859,21 @@ tmp/session1/
         }
 
         // ---------- rendering ----------
-        function cropImg(faceId, cls) {
+        /** Which file a face is drawn from. Only the STAGE ever shows the wider
+         *  context image: the rail and the grid are comparisons, and comparing
+         *  two differently-framed pictures is a different and harder task. */
+        function srcFor(faceId, wantContext) {
+          var f = faceById.get(faceId)
+          if (!f) return ""
+          if (wantContext && typeof f.context === "string" && f.context !== "") return f.context
+          return f.crop ? f.crop : ""
+        }
+        function cropImg(faceId, cls, wantContext) {
           var f = faceById.get(faceId)
           var img = document.createElement("img")
           img.loading = "lazy"
           img.alt = "face " + faceId
-          img.src = f && f.crop ? f.crop : ""
+          img.src = srcFor(faceId, wantContext === true)
           img.addEventListener("error", function () {
             var ph = document.createElement("div")
             ph.className = "noimg"
@@ -1234,34 +1886,56 @@ tmp/session1/
 
         var SLOTS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
 
-        function renderExemplars() {
-          var box = $("exemplars")
-          box.textContent = ""
-          var pk = shownKeys()
-          var filtering = filterText !== ""
-          $("act-x").textContent = ""
-          $("act-x").appendChild(kbdSpan("x"))
-          $("act-x").appendChild(document.createTextNode(" not a face (" + notFaceCount() + ")"))
+        /** Tiles, kept ACROSS renders and keyed by person. The rail used to be
+         *  torn down and rebuilt on every keystroke — every tile, every <img>,
+         *  several hundred elements per label — and then forced two
+         *  scrollIntoView calls, which could move the rail under the pointer
+         *  between a hover and a click. Now the DOM is only reordered when the
+         *  set or order of people changes, the images survive, and the scroll
+         *  moves only when the hotkey window is genuinely off screen. */
+        var exTiles = new Map()
+        var exSig = null
 
-          // First run: the rail is the only place that can say what to do, and a
-          // blank panel says nothing.
-          if (pk.keys.length === 0 && !filtering) {
-            var em = document.createElement("div")
-            em.className = "empty"
-            em.appendChild(document.createTextNode("Nothing labelled yet. Look at the crop, press "))
-            em.appendChild(kbdSpan("n"))
-            em.appendChild(
-              document.createTextNode(
-                " to start a new person (you can give them a name) — then press that person's digit whenever their face comes round again, and ",
-              ),
-            )
-            em.appendChild(kbdSpan("x"))
-            em.appendChild(document.createTextNode(" for anything that is not a face."))
-            box.appendChild(em)
-            $("rail-page").textContent = "none yet"
-            return
-          }
-          if (pk.keys.length === 0) {
+        function makeExTile(key) {
+          var el = document.createElement("div")
+          // A persistent <img> rather than cropImg's: cropImg REPLACES itself with
+          // a placeholder div on error, which would strand the reference this
+          // tile is reused through. Here a failed load just goes blank.
+          var img = document.createElement("img")
+          img.loading = "lazy"
+          img.alt = ""
+          el.appendChild(img)
+          var cap = document.createElement("div")
+          cap.className = "cap"
+          var b = document.createElement("b")
+          cap.appendChild(b)
+          var sub = document.createElement("div")
+          sub.className = "sub"
+          cap.appendChild(sub)
+          el.appendChild(cap)
+          var hot = document.createElement("span")
+          hot.className = "hot hide"
+          el.appendChild(hot)
+          el.addEventListener("click", function () {
+            assign(key)
+          })
+          return { el: el, img: img, b: b, sub: sub, hot: hot, face: undefined }
+        }
+
+        /** Scroll `el` into `box` only if it is not already visible. */
+        function ensureVisible(box, el) {
+          if (!el || !el.getBoundingClientRect) return
+          var br = box.getBoundingClientRect()
+          var er = el.getBoundingClientRect()
+          if (er.top < br.top) box.scrollTop += er.top - br.top
+          else if (er.bottom > br.bottom) box.scrollTop += er.bottom - br.bottom
+        }
+
+        function railEmpty(box, filtering) {
+          exSig = null
+          exTiles = new Map()
+          box.textContent = ""
+          if (filtering) {
             var none = document.createElement("div")
             none.className = "empty"
             none.textContent = "Nobody matches that. Esc clears the filter."
@@ -1269,53 +1943,74 @@ tmp/session1/
             $("rail-page").textContent = "no match"
             return
           }
+          // First run: the rail is the only place that can say what to do, and a
+          // blank panel says nothing.
+          var em = document.createElement("div")
+          em.className = "empty"
+          em.appendChild(document.createTextNode("Nothing labelled yet. Look at the crop, press "))
+          em.appendChild(kbdSpan("n"))
+          em.appendChild(
+            document.createTextNode(
+              " to start a new person (you can give them a name) — then press that person's digit whenever their face comes round again, ",
+            ),
+          )
+          em.appendChild(kbdSpan("x"))
+          em.appendChild(document.createTextNode(" for anything that is not a face, and "))
+          em.appendChild(kbdSpan("s"))
+          em.appendChild(
+            document.createTextNode(
+              " for one you genuinely cannot call — a skip is recorded and exported, so it counts as an answer rather than a gap.",
+            ),
+          )
+          box.appendChild(em)
+          $("rail-page").textContent = "none yet"
+        }
+
+        function renderExemplars() {
+          var box = $("exemplars")
+          var pk = shownKeys()
+          var filtering = filterText !== ""
+          $("act-x").textContent = ""
+          $("act-x").appendChild(kbdSpan("x"))
+          $("act-x").appendChild(document.createTextNode(" not a face (" + notFaceCount() + ")"))
+
+          if (pk.keys.length === 0) {
+            railEmpty(box, filtering)
+            return
+          }
+
+          // Reorder the DOM only when the ordered key list itself changed.
+          var sig = pk.keys.join(",")
+          if (sig !== exSig) {
+            exSig = sig
+            // A tile survives for as long as its PERSON does, not for as long as
+            // the filter shows them — otherwise every keystroke into the filter
+            // box throws away and refetches the images it just hid.
+            var keep = new Map()
+            exTiles.forEach(function (tile, k) {
+              if (pk.counts.has(k)) keep.set(k, tile)
+            })
+            var frag = document.createDocumentFragment()
+            for (var r1 = 0; r1 < pk.keys.length; r1++) {
+              var k1 = pk.keys[r1]
+              var t1 = keep.get(k1)
+              if (!t1) {
+                t1 = makeExTile(k1)
+                keep.set(k1, t1)
+              }
+              frag.appendChild(t1.el)
+            }
+            box.textContent = ""
+            box.appendChild(frag)
+            exTiles = keep
+          }
 
           var firstHot = null
           var lastHot = null
-          var addTile = function (key, count, faceId, slotIdx, top) {
-            var el = document.createElement("div")
-            el.className =
-              "ex" +
-              (count >= 3 ? " three" : "") +
-              (slotIdx >= 0 || top || filtering ? "" : " off") +
-              (top ? " top" : "")
-            if (faceId !== null && faceId !== undefined) el.appendChild(cropImg(faceId))
-            else {
-              var ph = document.createElement("div")
-              ph.className = "noimg"
-              el.appendChild(ph)
-            }
-            var nm = displayName(key)
-            var cap = document.createElement("div")
-            cap.className = "cap"
-            var b = document.createElement("b")
-            b.textContent = nm ? nm : key
-            b.title = nm ? nm + " (" + key + ")" : key
-            cap.appendChild(b)
-            var sub = document.createElement("div")
-            sub.className = "sub"
-            sub.textContent = (nm ? key + " · " : "") + "×" + count
-            cap.appendChild(sub)
-            el.appendChild(cap)
-            if (slotIdx >= 0 || top) {
-              var hot = document.createElement("span")
-              hot.className = "hot"
-              hot.textContent = top ? "↵" : SLOTS[slotIdx]
-              el.appendChild(hot)
-              if (!top) {
-                if (firstHot === null) firstHot = el
-                lastHot = el
-              }
-            }
-            el.title = "assign current to " + (nm ? nm + " (" + key + ")" : key)
-            el.addEventListener("click", function () {
-              assign(key)
-            })
-            box.appendChild(el)
-          }
-
           for (var i6 = 0; i6 < pk.keys.length; i6++) {
             var key = pk.keys[i6]
+            var t = exTiles.get(key)
+            if (!t) continue
             // Filtering takes over the rail: digits are being typed into the
             // filter box, so the only key that assigns is Enter, on the top match.
             var slot = filtering
@@ -1323,7 +2018,34 @@ tmp/session1/
               : i6 >= state.hotkeyBase && i6 < state.hotkeyBase + 10
                 ? i6 - state.hotkeyBase
                 : -1
-            addTile(key, pk.counts.get(key), exemplarFor(key), slot, filtering && i6 === 0)
+            var top = filtering && i6 === 0
+            var count = pk.counts.get(key) || 0
+            var faceId = exemplarFor(key)
+            t.el.className =
+              "ex" +
+              (count >= 3 ? " three" : "") +
+              (slot >= 0 || top || filtering ? "" : " off") +
+              (top ? " top" : "")
+            if (t.face !== faceId) {
+              t.face = faceId
+              t.img.src = faceId === null || faceId === undefined ? "" : srcFor(faceId, false)
+              t.img.alt = "face " + faceId
+            }
+            var nm = displayName(key)
+            t.b.textContent = nm ? nm : key
+            t.b.title = nm ? nm + " (" + key + ")" : key
+            t.sub.textContent = (nm ? key + " · " : "") + "×" + count
+            if (slot >= 0 || top) {
+              t.hot.classList.remove("hide")
+              t.hot.textContent = top ? "↵" : SLOTS[slot]
+              if (!top) {
+                if (firstHot === null) firstHot = t.el
+                lastHot = t.el
+              }
+            } else {
+              t.hot.classList.add("hide")
+            }
+            t.el.title = "assign current to " + (nm ? nm + " (" + key + ")" : key)
           }
 
           if (filtering) {
@@ -1342,9 +2064,10 @@ tmp/session1/
           }
           // Keep the whole hotkey window on screen, biased to the top: bring the
           // last one into view, then the first, so a window taller than the rail
-          // ends up flush at the top rather than cut off at the bottom.
-          if (lastHot && lastHot.scrollIntoView) lastHot.scrollIntoView({ block: "nearest" })
-          if (firstHot && firstHot.scrollIntoView) firstHot.scrollIntoView({ block: "nearest" })
+          // ends up flush at the top rather than cut off at the bottom. Both are
+          // no-ops when the window is already visible, which is nearly always.
+          ensureVisible(box, lastHot)
+          ensureVisible(box, firstHot)
         }
 
         // ---------- name entry ----------
@@ -1353,17 +2076,88 @@ tmp/session1/
           var input = $("name-input")
           box.classList.remove("hide")
           input.value = ""
+          pendingGuestId = null
+          renderSuggest()
           input.focus()
         }
         function closeNameBox() {
           $("namebox").classList.add("hide")
           $("name-input").value = ""
+          pendingGuestId = null
+          renderSuggest()
         }
         function commitNewPerson() {
-          var raw = $("name-input").value
-          pendingName = String(raw).trim().slice(0, 40)
-          closeNameBox()
+          var raw = String($("name-input").value).trim().slice(0, 40)
+          pendingName = raw
+          // An exact roster hit wins even if no suggestion was clicked — typing
+          // the whole name out is the same act as picking it.
+          if (ROSTER && raw !== "") {
+            var lower = raw.toLowerCase()
+            for (var ri = 0; ri < ROSTER.length; ri++) {
+              var g = ROSTER[ri]
+              if (g && typeof g.name === "string" && g.name.toLowerCase() === lower) {
+                pendingGuestId = typeof g.id === "number" ? g.id : null
+                break
+              }
+            }
+          }
+          if (raw === "") pendingGuestId = null
+          $("namebox").classList.add("hide")
+          $("name-input").value = ""
+          renderSuggest()
           assign("@new")
+        }
+
+        /** Roster autocomplete: substring match with indexOf, no regex, capped so
+         *  the box cannot become a directory of the guest list. The roster is a
+         *  convenience — with no roster this is a plain text box and every
+         *  guestId is null. */
+        var SUGGEST_MAX = 8
+        function rosterMatches(text) {
+          if (!ROSTER) return []
+          var needle = text.trim().toLowerCase()
+          if (needle === "") return []
+          var hits = []
+          for (var si = 0; si < ROSTER.length && hits.length < SUGGEST_MAX; si++) {
+            var g = ROSTER[si]
+            if (!g || typeof g.name !== "string") continue
+            if (g.name.toLowerCase().indexOf(needle) >= 0) hits.push(g)
+          }
+          return hits
+        }
+        function renderSuggest() {
+          var wrap = $("name-suggest")
+          var picked = $("name-picked")
+          wrap.textContent = ""
+          if (!ROSTER || $("namebox").classList.contains("hide")) {
+            wrap.classList.add("hide")
+            picked.classList.add("hide")
+            return
+          }
+          var hits = rosterMatches($("name-input").value)
+          wrap.classList.toggle("hide", hits.length === 0)
+          for (var hi = 0; hi < hits.length; hi++) {
+            ;(function (g) {
+              var chip = document.createElement("button")
+              chip.type = "button"
+              chip.className = "chip" + (pendingGuestId === g.id ? " on" : "")
+              chip.textContent = g.name
+              chip.addEventListener("mousedown", function (ev) {
+                // mousedown, not click: the input's blur must not race the pick.
+                ev.preventDefault()
+                $("name-input").value = String(g.name).slice(0, 40)
+                pendingGuestId = typeof g.id === "number" ? g.id : null
+                renderSuggest()
+                $("name-input").focus()
+              })
+              wrap.appendChild(chip)
+            })(hits[hi])
+          }
+          if (pendingGuestId === null) picked.classList.add("hide")
+          else {
+            picked.classList.remove("hide")
+            picked.textContent = "matched to a guest record"
+          }
         }
 
         // ---------- type-to-filter ----------
@@ -1458,18 +2252,32 @@ tmp/session1/
           st.className = "status" + (remaining === 0 ? " done" : "")
           if (u.members.length === 1) {
             var only = state.labels[String(u.members[0])]
-            st.textContent =
-              only === undefined ? "not labelled yet" : "labelled " + only + " — a keystroke overwrites it"
+            if (only !== undefined) st.textContent = "labelled " + only + " — a keystroke overwrites it"
+            else if (state.skipped.has(u.members[0]))
+              st.textContent = "skipped — s takes the skip back, a digit still labels it"
+            else st.textContent = "not labelled yet"
           } else if (remaining === 0) {
             st.textContent = "all " + u.members.length + " labelled — a keystroke overwrites them"
           } else {
-            st.textContent = remaining + " of " + u.members.length + " members still unlabelled"
+            var out = outstandingOf(u).length
+            st.textContent =
+              remaining +
+              " of " +
+              u.members.length +
+              " members still unlabelled" +
+              (out < remaining ? " (" + (remaining - out) + " skipped)" : "")
           }
           top.appendChild(st)
           var photo = document.createElement("span")
           photo.className = "hint"
           photo.textContent = "photo " + (faceById.get(u.members[0]) || {}).photoId
           top.appendChild(photo)
+          if (HAS_CONTEXT) {
+            var ctx = document.createElement("span")
+            ctx.className = "hint"
+            ctx.textContent = showContext ? "context view (c)" : "tight crop (c)"
+            top.appendChild(ctx)
+          }
           meta.appendChild(top)
 
           // One line of guidance per pool, not a paragraph.
@@ -1489,22 +2297,31 @@ tmp/session1/
           meta.appendChild(bottom)
 
           var solo = u.members.length === 1
-          mem.style.setProperty("--msize", memberSize(u.members.length))
           var active = memberRing(u)
+          // The sibling strip takes vertical space out of the stage, so it has to
+          // exist before memberSize() measures what is left.
+          renderSiblings(u, active)
+          mem.style.setProperty("--msize", memberSize(u.members.length))
           for (var mi = 0; mi < u.members.length; mi++) {
             ;(function (id) {
               var cell = document.createElement("div")
               var cls = "m" + (solo ? " solo" : "")
-              if (excluded.has(id)) cls += " out"
+              if (carveOut.has(id)) cls += " out"
+              if (state.labels[String(id)] === undefined && state.skipped.has(id)) cls += " skipped"
               if (!solo && active.indexOf(id) === memberCursor % active.length) cls += " cur"
               cell.className = cls
-              cell.appendChild(cropImg(id))
+              cell.appendChild(cropImg(id, null, showContext))
               var lab = state.labels[String(id)]
               if (lab !== undefined) {
                 var t = document.createElement("span")
                 t.className = "tag" + (lab === "x" ? " x" : "")
                 t.textContent = lab
                 cell.appendChild(t)
+              } else if (state.skipped.has(id)) {
+                var sk = document.createElement("span")
+                sk.className = "tag skip"
+                sk.textContent = "skip"
+                cell.appendChild(sk)
               }
               cell.addEventListener("click", function (ev) {
                 if (ev.shiftKey) {
@@ -1512,12 +2329,76 @@ tmp/session1/
                   return
                 }
                 if (solo) return
-                if (excluded.has(id)) excluded.delete(id)
-                else excluded.add(id)
+                if (carveOut.has(id)) carveOut.delete(id)
+                else carveOut.add(id)
                 render()
               })
               mem.appendChild(cell)
             })(u.members[mi])
+          }
+        }
+
+        /** "Also in this photograph." photoId was already on every face and was
+         *  only ever shown as grey text. Two faces in one frame are the single
+         *  cheapest disambiguation available — the person you cannot place is
+         *  usually standing next to somebody you have already named.
+         *
+         *  Context ONLY. It renders across pools and clicking JUMPS, but there is
+         *  deliberately no assign-all here, least of all in pool A: pool A's fixed
+         *  shuffle exists so the labeller cannot pick the easy crops, and a
+         *  "label everyone in this photo" button is exactly that cherry-pick
+         *  wearing a different hat. */
+        function renderSiblings(u, active) {
+          var strip = $("siblings")
+          strip.textContent = ""
+          var focus = active.length > 0 ? active[memberCursor % active.length] : u.members[0]
+          var f = faceById.get(focus)
+          if (!f) {
+            strip.classList.add("hide")
+            return
+          }
+          var all = byPhoto.get(f.photoId) || []
+          var sibs = []
+          for (var qi = 0; qi < all.length; qi++) if (all[qi] !== focus) sibs.push(all[qi])
+          if (sibs.length === 0) {
+            strip.classList.add("hide")
+            return
+          }
+          strip.classList.remove("hide")
+          var head = document.createElement("div")
+          head.className = "sibhead"
+          head.textContent =
+            "also in photo " +
+            f.photoId +
+            " — " +
+            sibs.length +
+            " other face(s). Context only; click to go there."
+          strip.appendChild(head)
+          for (var sj = 0; sj < sibs.length; sj++) {
+            ;(function (id) {
+              var sf = faceById.get(id)
+              var at = unitOfFace.get(id)
+              var cell = document.createElement("button")
+              cell.type = "button"
+              cell.className =
+                "sib" + (at && at.pool === state.pool && at.index === state.cursor[state.pool] ? " here" : "")
+              if (sf) cell.setAttribute("data-pool", sf.pool)
+              cell.appendChild(cropImg(id))
+              var lab = state.labels[String(id)]
+              var tag = document.createElement("span")
+              if (lab !== undefined) tag.className = "sl" + (lab === "x" ? " x" : "")
+              else if (state.skipped.has(id)) tag.className = "sl skip"
+              else tag.className = "sl none"
+              tag.textContent =
+                lab !== undefined ? lab : state.skipped.has(id) ? "skip" : sf ? sf.pool : "—"
+              cell.appendChild(tag)
+              cell.title =
+                "face " + id + (sf ? " · pool " + sf.pool : "") + " · click to jump (does not assign)"
+              cell.addEventListener("click", function () {
+                jumpToFace(id)
+              })
+              strip.appendChild(cell)
+            })(sibs[sj])
           }
         }
 
@@ -1554,22 +2435,29 @@ tmp/session1/
           var list = units()
           var cur = state.cursor[state.pool]
           var doneUnits = 0
+          var skipUnits = 0
           for (var ri = 0; ri < segEls.length; ri++) {
             var s = segEls[ri]
             var total = 0
             var done = 0
+            var skipped = 0
             var here = false
             for (var rj = s.lo; rj < s.hi && rj < list.length; rj++) {
               var u = list[rj]
               var left = unlabelledOf(u).length
+              var out = outstandingOf(u).length
               total += u.members.length
               done += u.members.length - left
+              skipped += left - out
               if (left === 0) doneUnits++
+              else if (out === 0) skipUnits++
               if (rj === cur) here = true
             }
             var cls = "seg"
-            if (total > 0 && done === total) cls += " done"
-            else if (done > 0) cls += " some"
+            // Settled-by-refusal reads differently from settled-by-judgement:
+            // amber, so a run of skips is visible as a run of skips.
+            if (total > 0 && done + skipped === total) cls += skipped > 0 ? " done skip" : " done"
+            else if (done > 0 || skipped > 0) cls += " some"
             if (here) cls += " cur"
             s.el.className = cls
           }
@@ -1581,27 +2469,56 @@ tmp/session1/
             " / " +
             list.length +
             (state.pool === "A" ? " crops" : " groups") +
-            " done · g = browse"
+            " done" +
+            (skipUnits > 0 ? " · " + skipUnits + " skipped" : "") +
+            " · g = browse"
         }
 
         // ---------- browsable grid (opt-in) ----------
+        // Built in CHUNKS, the same way contact-sheet.html does it: several
+        // hundred units created in one synchronous pass is a visibly frozen tab,
+        // and the browser will not lazy-load images it has not been given layout
+        // for, so an eager build also fetches every crop at once.
+        var GRID_CHUNK = 40
         var unitEls = []
         var cellEls = new Map()
         var gridBuilt = false
         var gridOpen = false
+        var gridDrawn = 0
         function dropGrid() {
           $("grid").textContent = ""
+          $("grid-more").classList.add("hide")
           unitEls = []
           cellEls = new Map()
           gridBuilt = false
+          gridDrawn = 0
         }
-        function buildGrid() {
-          var grid = $("grid")
-          grid.textContent = ""
-          unitEls = []
-          cellEls = new Map()
+        function paintCell(id, refs) {
+          var lab = state.labels[String(id)]
+          if (lab === undefined) {
+            if (state.skipped.has(id)) {
+              refs.lab.className = "lab skip"
+              refs.lab.textContent = "skip"
+              refs.cell.className = "cell skipped"
+            } else {
+              refs.lab.className = "lab hide"
+              refs.cell.className = "cell"
+            }
+          } else {
+            refs.lab.className = "lab" + (lab === "x" ? " x" : "")
+            refs.lab.textContent = lab
+            refs.cell.className = "cell done"
+          }
+        }
+        function gridChunk() {
           var list = units()
-          for (var ui = 0; ui < list.length; ui++) {
+          if (gridDrawn >= list.length) {
+            $("grid-more").classList.add("hide")
+            return
+          }
+          var end = Math.min(gridDrawn + GRID_CHUNK, list.length)
+          var frag = document.createDocumentFragment()
+          for (var ui = gridDrawn; ui < end; ui++) {
             ;(function (u, index) {
               var block = document.createElement("div")
               block.className = "unit" + (u.group !== null ? " grouped" : "")
@@ -1620,50 +2537,78 @@ tmp/session1/
                       return
                     }
                     state.cursor[state.pool] = index
-                    excluded.clear()
+                    carveOut.clear()
                     memberCursor = 0
                     render()
                   })
-                  cellEls.set(id, { cell: cell, lab: lab })
+                  var refs = { cell: cell, lab: lab }
+                  cellEls.set(id, refs)
+                  paintCell(id, refs)
                   block.appendChild(cell)
                 })(u.members[mi2])
               }
+              if (index === state.cursor[state.pool]) block.classList.add("cur")
               unitEls.push(block)
-              grid.appendChild(block)
+              frag.appendChild(block)
             })(list[ui], ui)
           }
+          $("grid").appendChild(frag)
+          gridDrawn = end
+          var more = $("grid-more")
+          if (gridDrawn >= list.length) more.classList.add("hide")
+          else {
+            more.classList.remove("hide")
+            more.textContent = gridDrawn + " of " + list.length + " — scroll for more"
+          }
+        }
+        function fillGridViewport() {
+          if (!gridOpen || !gridBuilt) return
+          for (var guard = 0; guard < 40; guard++) {
+            if (gridDrawn >= units().length) return
+            var box = $("grid-sentinel").getBoundingClientRect()
+            if (box.top > window.innerHeight + 600) return
+            gridChunk()
+          }
+        }
+        function buildGrid() {
+          $("grid").textContent = ""
+          unitEls = []
+          cellEls = new Map()
+          gridDrawn = 0
           gridBuilt = true
+          gridChunk()
+          fillGridViewport()
         }
 
         function refreshGrid() {
-          if (!gridBuilt) return
+          // Once opened, this used to keep walking every cell of every unit on
+          // every keystroke for the rest of the session, whether or not the grid
+          // was on screen. It is an overview behind `g`, not a live view.
+          if (!gridOpen || !gridBuilt) return
           var list = units()
-          for (var ui2 = 0; ui2 < list.length; ui2++) {
+          for (var ui2 = 0; ui2 < unitEls.length; ui2++) {
             var block = unitEls[ui2]
             if (!block) continue
             var on = ui2 === state.cursor[state.pool]
             if (on) block.classList.add("cur")
             else block.classList.remove("cur")
             var u = list[ui2]
+            if (!u) continue
             for (var mi3 = 0; mi3 < u.members.length; mi3++) {
               var refs = cellEls.get(u.members[mi3])
-              if (!refs) continue
-              var lab = state.labels[String(u.members[mi3])]
-              if (lab === undefined) {
-                refs.lab.classList.add("hide")
-                refs.cell.classList.remove("done")
-              } else {
-                refs.lab.classList.remove("hide")
-                refs.lab.textContent = lab
-                refs.lab.className = "lab" + (lab === "x" ? " x" : "")
-                refs.cell.classList.add("done")
-              }
+              if (refs) paintCell(u.members[mi3], refs)
             }
           }
           $("grid-title").textContent =
             "All " + POOL_TOTAL[state.pool] + " pool " + state.pool + " crops, in the fixed order"
-          if (!gridOpen) return
-          var cur = unitEls[state.cursor[state.pool]]
+          // The cursor may sit past the last built chunk; draw up to it first.
+          var want = state.cursor[state.pool]
+          var spin = 0
+          while (gridDrawn <= want && gridDrawn < list.length && spin < 400) {
+            gridChunk()
+            spin++
+          }
+          var cur = unitEls[want]
           if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: "nearest" })
         }
 
@@ -1673,23 +2618,60 @@ tmp/session1/
           $("gridwrap").classList.toggle("hide", !gridOpen)
           $("work").classList.toggle("hide", gridOpen)
           render()
+          if (gridOpen) fillGridViewport()
         }
 
-        // SESSION-1 §3: stop at whichever comes first — enough people with 3+
-        // faces each, 250 labelled crops, or boredom.
+        // The fallback stopping rule, used only when the data file cannot support
+        // the real one. SESSION-1 §3: enough people with 3+ faces each, 250
+        // labelled crops, or boredom.
         var GOAL_CROPS = 250
         var GOAL_PEOPLE_3PLUS = 8
+        var NUDGE_AT = 50
 
         function renderHeader() {
           var pk = personKeys()
-          var labelled = Object.keys(state.labels).length
           var three = 0
           pk.counts.forEach(function (c) {
             if (c >= 3) three++
           })
-          $("s-labelled").textContent = labelled + " / " + GOAL_CROPS
-          $("s-people").textContent = String(pk.keys.length)
-          $("s-three").textContent = three + " / " + GOAL_PEOPLE_3PLUS
+          var meter = pairMeter()
+          var aLab = poolLabelled("A")
+          var bLab = poolLabelled("B")
+
+          $("s-pairs").textContent = meter.available ? meter.sameA + " / " + GOAL_PAIRS_A : "—"
+          $("s-peoplea").textContent = meter.available ? meter.peopleA + " / " + GOAL_PEOPLE_A : "—"
+          $("stat-pairs").className =
+            "stat big" + (!meter.available ? " off" : meter.sameA >= GOAL_PAIRS_A ? " met" : "")
+          $("stat-peoplea").className =
+            "stat big" + (!meter.available ? " off" : meter.peopleA >= GOAL_PEOPLE_A ? " met" : "")
+
+          // Volume, demoted. It is worth seeing and it is not the goal.
+          var mini = $("s-mini")
+          mini.textContent = ""
+          mini.appendChild(
+            document.createTextNode(
+              "A " +
+                aLab +
+                "/" +
+                GOAL_POOL_A +
+                " · B " +
+                bLab +
+                " · " +
+                pk.keys.length +
+                " people · " +
+                three +
+                " with 3+ · " +
+                notFaceCount() +
+                " not-a-face · " +
+                state.skipped.size +
+                " skipped · ",
+            ),
+          )
+          var un = document.createElement("b")
+          un.textContent = state.unexported + " unexported"
+          if (state.unexported >= NUDGE_AT) un.className = "nudge"
+          mini.appendChild(un)
+
           $("tabA").className = "tab" + (state.pool === "A" ? " on" : "")
           $("tabB").className = "tab" + (state.pool === "B" ? " on" : "")
           $("tabA").textContent = ""
@@ -1697,25 +2679,106 @@ tmp/session1/
           $("tabA").appendChild(document.createTextNode("POOL A "))
           $("tabB").appendChild(document.createTextNode("POOL B "))
           var sa = document.createElement("small")
-          sa.textContent = poolLabelled("A") + "/" + POOL_TOTAL.A + " · one at a time"
+          sa.textContent = aLab + "/" + POOL_TOTAL.A + " · one at a time"
           $("tabA").appendChild(sa)
           var sb = document.createElement("small")
-          sb.textContent = poolLabelled("B") + "/" + POOL_TOTAL.B + " · " + UNITS.B.length + " groups"
+          sb.textContent = bLab + "/" + POOL_TOTAL.B + " · " + UNITS.B.length + " groups"
           $("tabB").appendChild(sb)
 
+          renderMeterBar(meter)
+          renderStopBar(meter, three)
+          renderNudge()
+          $("foot-b").style.display = state.pool === "B" ? "" : "none"
+          $("foot-c").classList.toggle("hide", !HAS_CONTEXT)
+        }
+
+        /** One line, because two numbers with no reason attached get optimised
+         *  around rather than toward. */
+        function renderMeterBar(meter) {
+          var bar = $("meterbar")
+          bar.textContent = ""
+          bar.classList.remove("hide")
+          if (!meter.available) {
+            bar.className = "banner meter stale"
+            bar.textContent =
+              "Pair meter unavailable: this label-data.js is version 1 and carries no photo times, so nothing here can tell which pairs are an hour apart. " +
+              "Falling back to the old count-of-crops rule. Regenerate the data file to get the real stopping rule back."
+            return
+          }
+          bar.className = "banner meter"
+          var msg = document.createElement("span")
+          msg.appendChild(document.createTextNode("Two faces of one person "))
+          var b1 = document.createElement("b")
+          b1.textContent = "more than an hour apart, from different shots"
+          msg.appendChild(b1)
+          msg.appendChild(
+            document.createTextNode(
+              ", are the only pairs that measure the recogniser rather than the shutter — a burst gives two near-identical descriptors and a flattering number. ",
+            ),
+          )
+          var b2 = document.createElement("b")
+          b2.textContent = "Eight people"
+          msg.appendChild(b2)
+          msg.appendChild(
+            document.createTextNode(
+              " is the guard against a measurement that is really about two individuals. Pool A only: pool B was labelled with the model's own grouping as an assist, so it cannot judge the model.",
+            ),
+          )
+          bar.appendChild(msg)
+        }
+
+        /** BOTH targets, not either. Forty pairs drawn from two people is exactly
+         *  the failure the people count exists to catch, and eight people
+         *  contributing one pair each is too thin to be a distribution. */
+        function renderStopBar(meter, three) {
           var stop = $("stopbar")
+          if (meter.available) {
+            if (meter.sameA >= GOAL_PAIRS_A && meter.peopleA >= GOAL_PEOPLE_A) {
+              stop.classList.remove("hide")
+              stop.textContent =
+                "Good enough to stop: " +
+                meter.sameA +
+                " cross-hour same-person pairs in pool A across " +
+                meter.peopleA +
+                " people. That is a measurable headline. Save labels.json now — more only makes it less noisy, and boredom is a legitimate stopping condition."
+            } else {
+              stop.classList.add("hide")
+            }
+            return
+          }
+          var labelled = poolLabelled("A") + poolLabelled("B")
           if (labelled >= GOAL_CROPS || three >= GOAL_PEOPLE_3PLUS) {
             stop.classList.remove("hide")
             stop.textContent =
-              "Good enough to stop: " +
+              "Good enough to stop (old rule, no photo times available): " +
               labelled +
               " crops labelled, " +
               three +
-              " people with 3+ faces. Save labels.json now — more only makes the measurement less noisy, and boredom is a legitimate stopping condition."
+              " people with 3+ faces. Whether the headline is measurable cannot be checked from this data file."
           } else {
             stop.classList.add("hide")
           }
-          $("foot-b").style.display = state.pool === "B" ? "" : "none"
+        }
+
+        function renderNudge() {
+          var bar = $("nudgebar")
+          bar.textContent = ""
+          if (state.unexported < NUDGE_AT) {
+            bar.classList.add("hide")
+            return
+          }
+          bar.classList.remove("hide")
+          bar.appendChild(
+            document.createTextNode(
+              state.unexported +
+                " labels have not been exported. labels.json is the most valuable artifact of this project and localStorage is not a backup — it is per-browser, per-profile, and one 'clear site data' from gone.",
+            ),
+          )
+          var btn = document.createElement("button")
+          btn.className = "primary"
+          btn.textContent = "Export now"
+          btn.addEventListener("click", openSave)
+          bar.appendChild(btn)
         }
 
         /** Names are held somewhere the project's "everything derived is tmp/"
@@ -1781,7 +2844,16 @@ tmp/session1/
             assign("x")
           } else if (k === "s" || k === "?") {
             ev.preventDefault()
-            step(1)
+            toggleSkip()
+          } else if (k === "c") {
+            if (!HAS_CONTEXT) return
+            ev.preventDefault()
+            showContext = !showContext
+            try {
+              localStorage.setItem(CONTEXT_PREF_KEY, showContext ? "1" : "0")
+            } catch (err) {
+              /* a preference is not worth failing a keystroke over */
+            }
             render()
           } else if (k === "u") {
             ev.preventDefault()
@@ -1838,8 +2910,8 @@ tmp/session1/
             var act3 = memberRing(u3)
             var id3 = act3[memberCursor % act3.length]
             if (id3 === undefined) return
-            if (excluded.has(id3)) excluded.delete(id3)
-            else excluded.add(id3)
+            if (carveOut.has(id3)) carveOut.delete(id3)
+            else carveOut.add(id3)
             render()
           } else if (k === "o") {
             ev.preventDefault()
@@ -1847,12 +2919,12 @@ tmp/session1/
             if (!u4) return
             var act4 = memberRing(u4)
             var keep = act4[memberCursor % act4.length]
-            excluded.clear()
-            for (var q = 0; q < act4.length; q++) if (act4[q] !== keep) excluded.add(act4[q])
+            carveOut.clear()
+            for (var q = 0; q < act4.length; q++) if (act4[q] !== keep) carveOut.add(act4[q])
             render()
           } else if (k === "a") {
             ev.preventDefault()
-            excluded.clear()
+            carveOut.clear()
             render()
           }
         }
@@ -1877,10 +2949,18 @@ tmp/session1/
           return map
         }
 
-        function buildLabelFile() {
+        /** The label file, plus — separately, and only for the caller that asks
+         *  for it — the identities that go with THIS permutation. The map is
+         *  applied ONCE and both files are built from it, because two calls to
+         *  scrambleMap() are two different permutations and the two files would
+         *  not join. */
+        function buildExport() {
           var pool = {}
+          var group = {}
           for (var i7 = 0; i7 < DATA.faces.length; i7++) {
-            pool[String(DATA.faces[i7].id)] = DATA.faces[i7].pool
+            var f = DATA.faces[i7]
+            pool[String(f.id)] = f.pool
+            group[String(f.id)] = typeof f.group === "number" ? f.group : null
           }
           var map = scrambleMap()
           var labels = {}
@@ -1888,13 +2968,47 @@ tmp/session1/
             var v = state.labels[id]
             labels[id] = v === "x" ? "x" : map[v] || v
           }
-          // Session1LabelFile.version is required. JSON.stringify would silently
-          // drop the key if the batch omitted it from label-data.js.
-          return {
-            version: typeof DATA.version === "number" ? DATA.version : 1,
-            labels: labels,
-            pool: pool,
+          var excludedOut = {}
+          var gkeys = Object.keys(state.excluded)
+          gkeys.sort(function (a, b) {
+            return Number(a) - Number(b)
+          })
+          for (var gi = 0; gi < gkeys.length; gi++) {
+            var arr = state.excluded[gkeys[gi]]
+            if (!arr || arr.length === 0) continue
+            var copy = arr.slice()
+            copy.sort(function (a, b) {
+              return a - b
+            })
+            excludedOut[gkeys[gi]] = copy
           }
+          // Version 2 is the SHAPE of this file, not the version of the input.
+          // A version-1 label-data.js still carries faces[].group, and skips and
+          // carve-outs are this page's own record, so all three are written
+          // whatever the input was. datasetId is the one field that cannot be
+          // invented, so it is present only when the input supplied it.
+          var file = { version: 2 }
+          if (DATASET_ID !== null) file.datasetId = DATASET_ID
+          file.labels = labels
+          file.pool = pool
+          file.group = group
+          file.skipped = sortedNums(state.skipped)
+          file.excluded = excludedOut
+
+          var identities = { version: 1, identities: {} }
+          if (DATASET_ID !== null) identities.datasetId = DATASET_ID
+          var pkeys = personKeys().keys
+          for (var ni = 0; ni < pkeys.length; ni++) {
+            var key = pkeys[ni]
+            var nm = names[key]
+            if (!nm) continue
+            var scrambled = map[key] || key
+            identities.identities[scrambled] = {
+              guestId: typeof nameIds[key] === "number" ? nameIds[key] : null,
+              name: nm,
+            }
+          }
+          return { file: file, identities: identities }
         }
 
         /** @param {string} s */
@@ -1928,13 +3042,27 @@ tmp/session1/
          *  absent, where this proves nothing UNEXPECTED is present at all.
          *  Returns a description of the problem, or null when the file is clean.
          */
+        var ALLOWED_TOP = ["version", "datasetId", "labels", "pool", "group", "skipped", "excluded"]
+        /** A face id as it appears INSIDE an array: a real, non-negative integer.
+         *  Object keys are strings and go through isDigits instead. */
+        function isFaceIdNumber(v) {
+          return typeof v === "number" && isFinite(v) && Math.floor(v) === v && v >= 0
+        }
+        function isPlainObject(v) {
+          return v !== null && typeof v === "object" && !Array.isArray(v)
+        }
         function fileLeak(file) {
           for (var top in file) {
-            if (top !== "version" && top !== "labels" && top !== "pool") {
+            if (ALLOWED_TOP.indexOf(top) < 0) {
               return 'unexpected top-level field "' + top + '"'
             }
           }
           if (typeof file.version !== "number") return "version is not a number"
+          if (file.datasetId !== undefined && !isHex16(file.datasetId)) {
+            return "datasetId is not 16 lowercase hex characters"
+          }
+          if (!isPlainObject(file.labels)) return "labels is not an object"
+          if (!isPlainObject(file.pool)) return "pool is not an object"
           for (var id in file.labels) {
             if (!isDigits(id)) return 'label key "' + id + '" is not a face id'
             var v = file.labels[id]
@@ -1947,15 +3075,72 @@ tmp/session1/
             var p = file.pool[pid]
             if (p !== "A" && p !== "B") return 'pool value "' + p + '" is neither A nor B'
           }
+          // group: face id -> model group id or null. Numbers and null only; a
+          // group id is the model's, so anything else is a bug or a smuggled
+          // string and either way it does not leave this page.
+          if (file.group !== undefined) {
+            if (!isPlainObject(file.group)) return "group is not an object"
+            for (var gid in file.group) {
+              if (!isDigits(gid)) return 'group key "' + gid + '" is not a face id'
+              var gv = file.group[gid]
+              if (gv === null) continue
+              if (typeof gv !== "number" || !isFinite(gv) || Math.floor(gv) !== gv) {
+                return 'group value for face ' + gid + " is neither an integer nor null"
+              }
+            }
+          }
+          // skipped: ascending face ids, no duplicates.
+          if (file.skipped !== undefined) {
+            if (!Array.isArray(file.skipped)) return "skipped is not an array"
+            for (var si2 = 0; si2 < file.skipped.length; si2++) {
+              if (!isFaceIdNumber(file.skipped[si2])) {
+                return "skipped[" + si2 + "] is not a face id"
+              }
+              if (si2 > 0 && file.skipped[si2] <= file.skipped[si2 - 1]) {
+                return "skipped is not sorted ascending without duplicates"
+              }
+            }
+          }
+          // excluded: group id -> ascending face ids, never empty.
+          if (file.excluded !== undefined) {
+            if (!isPlainObject(file.excluded)) return "excluded is not an object"
+            for (var ek in file.excluded) {
+              if (!isDigits(ek)) return 'excluded key "' + ek + '" is not a group id'
+              var list = file.excluded[ek]
+              if (!Array.isArray(list)) return "excluded[" + ek + "] is not an array"
+              if (list.length === 0) return "excluded[" + ek + "] is empty"
+              for (var ei = 0; ei < list.length; ei++) {
+                if (!isFaceIdNumber(list[ei])) {
+                  return "excluded[" + ek + "][" + ei + "] is not a face id"
+                }
+                if (ei > 0 && list[ei] <= list[ei - 1]) {
+                  return "excluded[" + ek + "] is not sorted ascending without duplicates"
+                }
+              }
+            }
+          }
           return null
         }
 
+        /** Both files, built together from ONE permutation when the dialog opens.
+         *  identitiesText is held whether or not the box is ticked, and only
+         *  written when it is — so ticking the box changes nothing about
+         *  labels.json, which is exactly the guarantee the box needs to make. */
+        var identitiesText = ""
+        var identitiesWritten = false
+        function identitiesWanted() {
+          return $("dlg-identities").checked && identitiesText !== ""
+        }
         function renderSave() {
-          var file = buildLabelFile()
+          var built = buildExport()
+          var file = built.file
           var json = JSON.stringify(file, null, 2)
           var problem = fileLeak(file)
           var blocked = problem !== null
           $("dlg-json").value = blocked ? "" : json
+          var identCount = Object.keys(built.identities.identities).length
+          identitiesText = blocked || identCount === 0 ? "" : JSON.stringify(built.identities, null, 2)
+          identitiesWritten = false
           // A structural failure is a bug in this page, not something the owner
           // did, so no "fix it yourself" escape is offered — there isn't one.
           // Names never enter buildLabelFile, so forgetting them cannot help.
@@ -1968,6 +3153,13 @@ tmp/session1/
           var n = nameCount()
           $("forget-n").textContent = String(n)
           $("forget-row").classList.toggle("hide", n === 0 || blocked)
+          $("ident-box").classList.toggle("hide", identCount === 0 || blocked)
+          syncIdentityUi()
+        }
+        function syncIdentityUi() {
+          var on = $("dlg-identities").checked && identitiesText !== ""
+          $("ident-hold").classList.toggle("hide", !on)
+          $("dlg-download").textContent = on ? "Download both files" : "Download labels.json"
         }
         function openSave() {
           renderSave()
@@ -1976,30 +3168,52 @@ tmp/session1/
 
         /** Every export path funnels through here: saving is the moment the names
          *  have done their job, so forgetting them is the default and the choice
-         *  is on screen rather than in a preference. */
+         *  is on screen rather than in a preference.
+         *
+         *  The one exception is the identities opt-in. Forgetting the names first
+         *  would leave nothing to write, so the forget waits until the second
+         *  file has actually been saved. */
         function afterExport(note) {
+          state.unexported = 0
+          save()
+          render()
+          if (identitiesWanted() && !identitiesWritten) {
+            $("dlg-note").textContent =
+              note + " · names kept until identities.json is saved — use Download"
+            return
+          }
           if (nameCount() > 0 && $("dlg-forget").checked) {
             var n = nameCount()
             forgetNames()
             $("forget-row").classList.add("hide")
+            $("ident-box").classList.add("hide")
             $("dlg-note").textContent = note + " · " + n + " display name(s) forgotten"
             return
           }
           $("dlg-note").textContent = note
         }
-        function download() {
-          var blob = new Blob([$("dlg-json").value], { type: "application/json" })
+        function saveBlob(text, filename) {
+          var blob = new Blob([text], { type: "application/json" })
           var url = URL.createObjectURL(blob)
           var a = document.createElement("a")
           a.href = url
-          a.download = "labels.json"
+          a.download = filename
           document.body.appendChild(a)
           a.click()
           document.body.removeChild(a)
           setTimeout(function () {
             URL.revokeObjectURL(url)
           }, 2000)
-          afterExport("downloaded — now move it next to this page")
+        }
+        function download() {
+          saveBlob($("dlg-json").value, "labels.json")
+          var note = "downloaded — now move it next to this page"
+          if (identitiesWanted()) {
+            saveBlob(identitiesText, "identities.json")
+            identitiesWritten = true
+            note = "both downloaded — move them next to this page; identities.json is never committed"
+          }
+          afterExport(note)
         }
         function copyJson() {
           var ta = $("dlg-json")
@@ -2032,10 +3246,57 @@ tmp/session1/
             var w = await handle.createWritable()
             await w.write($("dlg-json").value)
             await w.close()
+            if (identitiesWanted()) {
+              var h2 = await window.showSaveFilePicker({
+                suggestedName: "identities.json",
+                types: [{ description: "JSON", accept: { "application/json": [".json"] } }],
+              })
+              var w2 = await h2.createWritable()
+              await w2.write(identitiesText)
+              await w2.close()
+              identitiesWritten = true
+            }
             afterExport("written")
           } catch (err) {
             $("dlg-note").textContent = "picker unavailable or cancelled — use Download"
           }
+        }
+
+        /** A saved session that does NOT belong to this dataset cannot be turned
+         *  into a labels.json here: pool, group and datasetId would all be taken
+         *  from the run currently open, which is the wrong run. So it is dumped
+         *  verbatim instead, opaque keys only, for whoever opens the right one. */
+        function rescueLeak(rec) {
+          if (!isPlainObject(rec)) return "saved record is not an object"
+          if (!isPlainObject(rec.labels)) return "saved record has no labels object"
+          for (var id in rec.labels) {
+            if (!isDigits(id)) return 'label key "' + id + '" is not a face id'
+            var v = rec.labels[id]
+            if (v !== "x" && !isPersonKey(v)) return 'label value "' + v + '" is neither "x" nor p<n>'
+          }
+          if (rec.datasetId !== undefined && rec.datasetId !== null && !isHex16(rec.datasetId)) {
+            return "datasetId is not 16 lowercase hex characters"
+          }
+          return null
+        }
+        function rescueDownload(rec) {
+          var problem = rescueLeak(rec)
+          if (problem !== null) {
+            window.alert("Cannot export that saved session: " + problem)
+            return false
+          }
+          var out = {
+            note: "orphaned session-1 labelling state, rescued from localStorage. Not a labels.json.",
+            datasetId: rec.datasetId === undefined ? null : rec.datasetId,
+            fingerprint: rec.fingerprint === undefined ? null : rec.fingerprint,
+            savedAt: rec.savedAt === undefined ? null : rec.savedAt,
+            labels: rec.labels,
+            pool: rec.pool === undefined ? null : rec.pool,
+            skipped: Array.isArray(rec.skipped) ? rec.skipped : [],
+            excluded: isPlainObject(rec.excluded) ? rec.excluded : {},
+          }
+          saveBlob(JSON.stringify(out, null, 2), "labels-rescued.json")
+          return true
         }
 
         // ---------- boot ----------
@@ -2046,10 +3307,89 @@ tmp/session1/
           $("footer").classList.remove("hide")
         }
 
-        var stored = loadStored()
+        var loaded = loadStored()
+        var stored = loaded ? loaded.rec : null
         var storedNames = loadStoredNames()
+
+        /** Everything a session owns, back to nothing. "Start over" used to clear
+         *  the two localStorage keys and leave state.labels exactly as it was —
+         *  so the discarded labels were still rendered, still in the exemplar
+         *  rail, and were written straight back to storage by the first
+         *  keystroke. Against a DIFFERENT dataset that silently attaches one
+         *  run's labels to another run's crops, which is the worst outcome this
+         *  page can produce, so the reset is total and lives in one place. */
+        function resetSession() {
+          state.labels = {}
+          state.exemplars = {}
+          state.pool = "A"
+          state.cursor = { A: 0, B: 0 }
+          state.hotkeyBase = 0
+          state.skipped = new Set()
+          state.excluded = {}
+          state.unexported = 0
+          carveOut.clear()
+          memberCursor = 0
+          history.length = 0
+          names = {}
+          nameIds = {}
+          pendingName = ""
+          pendingGuestId = null
+          filterText = ""
+          $("rail-filter").value = ""
+          exTiles = new Map()
+          exSig = null
+          rebuildPairIndex()
+          dropGrid()
+        }
+
+        /** Adopt a saved record into the live session. Only ever called after the
+         *  record has been matched against this dataset. */
+        function adoptStored(rec, recNames) {
+          resetSession()
+          var labels = rec.labels || {}
+          for (var id in labels) setLabel(Number(id), labels[id])
+          state.exemplars = rec.exemplars || {}
+          if (Array.isArray(rec.skipped)) {
+            for (var si3 = 0; si3 < rec.skipped.length; si3++) {
+              if (isFaceIdNumber(rec.skipped[si3])) state.skipped.add(rec.skipped[si3])
+            }
+          }
+          if (isPlainObject(rec.excluded)) {
+            for (var ek2 in rec.excluded) {
+              if (Array.isArray(rec.excluded[ek2]) && rec.excluded[ek2].length > 0) {
+                state.excluded[ek2] = rec.excluded[ek2].slice()
+              }
+            }
+          }
+          if (typeof rec.unexported === "number" && rec.unexported >= 0) {
+            state.unexported = Math.floor(rec.unexported)
+          }
+          if (recNames && recNames.names) {
+            names = recNames.names
+            nameIds = recNames.ids && typeof recNames.ids === "object" ? recNames.ids : {}
+          }
+          if (rec.pool === "A" || rec.pool === "B") state.pool = rec.pool
+          if (rec.cursor) {
+            state.cursor.A = Math.min(rec.cursor.A || 0, Math.max(0, UNITS.A.length - 1))
+            state.cursor.B = Math.min(rec.cursor.B || 0, Math.max(0, UNITS.B.length - 1))
+          }
+        }
+
+        var booted = false
+        var resizeTimer = null
         function start() {
+          if (booted) {
+            buildRibbon()
+            render()
+            return
+          }
+          booted = true
           show()
+          try {
+            showContext = HAS_CONTEXT && localStorage.getItem(CONTEXT_PREF_KEY) === "1"
+          } catch (err) {
+            showContext = false
+          }
           buildRibbon()
           render()
           document.addEventListener("keydown", onKey)
@@ -2069,7 +3409,15 @@ tmp/session1/
               closeNameBox()
             }
           })
-          $("name-input").addEventListener("blur", closeNameBox)
+          $("name-input").addEventListener("input", renderSuggest)
+          // NO commit-on-blur, and no discard-on-blur either. Blur is ambiguous —
+          // a scrollbar drag, a window switch, opening devtools — and the two
+          // obvious readings of it are both wrong: committing creates a person
+          // from a stray click, and closing (which is what this did) threw the
+          // typed name away and then let the same click assign the crop to
+          // somebody who already existed. So the box simply stays open with the
+          // text intact. Only Enter creates and only Escape cancels; clicking an
+          // exemplar is an explicit choice of an existing person and closes it.
           $("rail-filter").addEventListener("input", onFilterInput)
           $("rail-filter").addEventListener("keydown", onFilterKey)
           $("dlg-close").addEventListener("click", function () {
@@ -2077,6 +3425,7 @@ tmp/session1/
           })
           $("dlg-download").addEventListener("click", download)
           $("dlg-copy").addEventListener("click", copyJson)
+          $("dlg-identities").addEventListener("change", syncIdentityUi)
           if (typeof window.showSaveFilePicker === "function") {
             $("dlg-pick").classList.remove("hide")
             $("dlg-pick").addEventListener("click", pickAndSave)
@@ -2086,6 +3435,32 @@ tmp/session1/
           })
           $("tabB").addEventListener("click", function () {
             if (state.pool !== "B") switchPool()
+          })
+          // memberSize() measures the stage, so a window resize invalidates it.
+          // Same idiom as contact-sheet.html: recompute on resize, coalesced.
+          window.addEventListener("resize", function () {
+            if (resizeTimer) clearTimeout(resizeTimer)
+            resizeTimer = setTimeout(function () {
+              resizeTimer = null
+              if (gridOpen) fillGridViewport()
+              else renderStage()
+            }, 120)
+          })
+          $("gridwrap").addEventListener("scroll", fillGridViewport, { passive: true })
+          if (typeof IntersectionObserver === "function") {
+            new IntersectionObserver(function (entries) {
+              for (var oi2 = 0; oi2 < entries.length; oi2++) {
+                if (entries[oi2].isIntersecting) fillGridViewport()
+              }
+            }).observe($("grid-sentinel"))
+          }
+          // labels.json is the most valuable artifact of the project and
+          // localStorage is not a backup.
+          window.addEventListener("beforeunload", function (ev) {
+            if (state.unexported <= 0) return
+            ev.preventDefault()
+            ev.returnValue = ""
+            return ""
           })
           if (strays > 0) {
             var mm = $("mismatch")
@@ -2099,81 +3474,88 @@ tmp/session1/
         var storedNameCount = storedNames ? Object.keys(storedNames.names).length : 0
         if (stored && stored.labels && Object.keys(stored.labels).length > 0) {
           var bar = $("resume")
+          var match = matchStrength(stored)
+          var storedCount = Object.keys(stored.labels).length
           bar.classList.remove("hide")
-          var same = stored.fingerprint === FINGERPRINT
+          if (match !== "exact") bar.className = "banner warn"
+
           var msg = document.createElement("span")
           var when = new Date(stored.savedAt || Date.now())
+          var lead =
+            match === "none"
+              ? "Saved work found, but it belongs to a DIFFERENT dataset. Resuming is refused: face ids are small integers that exist in every run, so this would attach one run's labels to another run's crops with nothing to show that it had happened. "
+              : match === "weak"
+                ? "Saved work found. It could only be matched by the OLD fingerprint, which is a function of the face count alone — two different runs with the same number of faces look identical to it, so check this is the run you think it is. "
+                : "Saved work found: "
           msg.textContent =
-            (same ? "Saved work found: " : "Saved work found, but from a DIFFERENT dataset: ") +
-            Object.keys(stored.labels).length +
+            lead +
+            storedCount +
             " labels, last saved " +
             when.toLocaleString() +
             "." +
             (storedNameCount > 0
-              ? " " +
-                storedNameCount +
-                " display name(s) are stored alongside them and would be restored too."
+              ? " " + storedNameCount + " display name(s) are stored alongside them."
               : " No display names are stored.")
           bar.appendChild(msg)
-          var resumeBtn = document.createElement("button")
-          resumeBtn.className = "primary"
-          resumeBtn.textContent = "Resume"
-          resumeBtn.addEventListener("click", function () {
-            state.labels = stored.labels || {}
-            state.exemplars = stored.exemplars || {}
-            names = storedNames ? storedNames.names : {}
-            if (stored.pool === "A" || stored.pool === "B") state.pool = stored.pool
-            if (stored.cursor) {
-              state.cursor.A = Math.min(stored.cursor.A || 0, Math.max(0, UNITS.A.length - 1))
-              state.cursor.B = Math.min(stored.cursor.B || 0, Math.max(0, UNITS.B.length - 1))
-            }
-            bar.classList.add("hide")
-            start()
-            save()
-          })
-          bar.appendChild(resumeBtn)
+
+          if (match !== "none") {
+            var resumeBtn = document.createElement("button")
+            resumeBtn.className = "primary"
+            resumeBtn.textContent = "Resume"
+            resumeBtn.addEventListener("click", function () {
+              adoptStored(stored, storedNames)
+              bar.classList.add("hide")
+              start()
+              save()
+            })
+            bar.appendChild(resumeBtn)
+
+            var exportOld = document.createElement("button")
+            exportOld.textContent = "Export them first"
+            exportOld.addEventListener("click", function () {
+              // Load them, BOOT, then open the dialog. It used to assign
+              // state.labels and open the dialog without ever calling show() or
+              // start(), which left the page with no header, no key handling and
+              // no Save button once the dialog closed. The banner deliberately
+              // stays up, so "Start over" is still reachable afterwards.
+              adoptStored(stored, storedNames)
+              start()
+              openSave()
+            })
+            bar.appendChild(exportOld)
+          } else {
+            var rescueBtn = document.createElement("button")
+            rescueBtn.className = "primary"
+            rescueBtn.textContent = "Download them as labels-rescued.json"
+            rescueBtn.addEventListener("click", function () {
+              rescueDownload(stored)
+            })
+            bar.appendChild(rescueBtn)
+          }
+
           var freshBtn = document.createElement("button")
           freshBtn.textContent = "Start over (discards them)"
           freshBtn.addEventListener("click", function () {
             if (
               !window.confirm(
                 "Discard " +
-                  Object.keys(stored.labels).length +
+                  storedCount +
                   " saved labels" +
                   (storedNameCount > 0 ? " and " + storedNameCount + " display name(s)" : "") +
                   "?",
               )
             )
               return
-            try {
-              localStorage.removeItem(STORE_KEY)
-              localStorage.removeItem(NAMES_KEY)
-            } catch (err) {
-              /* nothing to do */
-            }
-            names = {}
+            dropKeys([STORE_KEY, NAMES_KEY, loaded.key, LEGACY_NAMES_KEY])
+            resetSession()
             bar.classList.add("hide")
             start()
           })
           bar.appendChild(freshBtn)
-          var exportOld = document.createElement("button")
-          exportOld.textContent = "Export them first"
-          exportOld.addEventListener("click", function () {
-            state.labels = stored.labels || {}
-            openSave()
-          })
-          bar.appendChild(exportOld)
-          if (!same) bar.classList.add("warn")
         } else {
           // Names with no labels to attach to are leftovers from a session that
           // was discarded. Nothing can use them, so nothing should keep them.
-          if (storedNameCount > 0) {
-            try {
-              localStorage.removeItem(NAMES_KEY)
-            } catch (err) {
-              /* nothing to do */
-            }
-          }
+          if (storedNameCount > 0) dropKeys([NAMES_KEY, LEGACY_NAMES_KEY])
           start()
         }
       })()
