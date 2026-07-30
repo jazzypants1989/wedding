@@ -39,7 +39,10 @@ const DATA_DIR = path.dirname(DB_PATH)
 const CACHE_DIR = path.join(DATA_DIR, ".seed-cache")
 const BASE_URL = process.env.BASE_URL || "http://localhost:3000"
 
-const DEMO_CODE = "LOVEBIRDS" // household invite code guests type to log in trusted
+// Household invite code guests type to log in trusted. Must be exactly 8
+// alphanumeric chars — validateInviteCode() rejects anything else and the
+// auth sheet's input is maxlength="8", so a longer code is untypeable.
+const DEMO_CODE = "LOVEBIRD"
 const MANIFEST_KEY = "seed_demo_manifest"
 const EMAIL_MARKER = "@seed.demo" // marks demo accounts/guests for cleanup
 
@@ -218,7 +221,11 @@ function cleanupPriorDemo(db) {
   // account the *user* registered during the walkthrough (no @seed.demo email),
   // plus any media they uploaded, so a reseed doesn't leave orphans behind.
   const householdRow = /** @type {{ id: number } | undefined} */ (
-    db.prepare("SELECT id FROM guests WHERE invite_code = ?").get(DEMO_CODE)
+    db
+      .prepare(
+        "SELECT id FROM guests WHERE invite_code = ? OR email LIKE ? LIMIT 1",
+      )
+      .get(DEMO_CODE, "%" + EMAIL_MARKER)
   )
   const householdId = householdRow ? householdRow.id : null
 
@@ -244,7 +251,11 @@ function cleanupPriorDemo(db) {
   db.prepare(
     `DELETE FROM accounts WHERE contact_email LIKE ? OR (? IS NOT NULL AND guest_id = ?)`,
   ).run("%" + EMAIL_MARKER, householdId, householdId)
-  db.prepare("DELETE FROM guests WHERE invite_code = ?").run(DEMO_CODE)
+  // Match on the email marker as well as the code so a household seeded under
+  // an older DEMO_CODE still gets wiped instead of lingering as a duplicate.
+  db.prepare(
+    "DELETE FROM guests WHERE invite_code = ? OR email LIKE ?",
+  ).run(DEMO_CODE, "%" + EMAIL_MARKER)
   db.prepare("DELETE FROM app_state WHERE key = ?").run(MANIFEST_KEY)
 }
 

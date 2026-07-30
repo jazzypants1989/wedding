@@ -172,6 +172,10 @@ dialog {
   border: none;
   border-radius: var(--radius-md);
   padding: var(--spacing-lg);
+  /* The universal reset (layout.css) zeroes margin on *, which overrides the UA
+     stylesheet's `dialog:modal { margin: auto }` — without this every showModal()
+     dialog renders pinned to the viewport's top-left corner. */
+  margin: auto;
   width: 90%;
   max-width: var(--container-md);
   max-height: 90vh;
