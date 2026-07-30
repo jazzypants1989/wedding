@@ -295,6 +295,18 @@ export interface BuildVariantsOptions {
   format?: "auto" | "jpeg"
   /** Which variant set to produce. Defaults to the guest/official pair. */
   section?: MediaSection
+  /**
+   * Also remove EXIF/XMP/IPTC from the stored original. Lossless, and only for
+   * JPEG/PNG/WebP — a HEIC original is left alone with a warning. Off by
+   * default: byte-for-byte is exactly what the browser uploader stores.
+   */
+  stripOriginal?: boolean
+  /**
+   * HEIC originals: `keep` stores the .heic untouched (default — the server
+   * accepts it, it is admin-only, and re-encoding inflates it); `jpeg` stores a
+   * native-size, metadata-free JPEG instead.
+   */
+  heicOriginal?: "keep" | "jpeg"
 }
 
 /** Resolve both backends once, honouring the env overrides. */
@@ -332,6 +344,65 @@ export function buildMediaVariants(
 
 /** Short random token for scratch filenames. */
 export function randomWorkName(): string
+
+// --- Import sinks (scripts/lib/sink-local.js, sink-http.js) ---
+
+/** Read-only capacity check, run once before any file is touched. */
+export interface SinkPreflight {
+  ok: boolean
+  /** Free bytes on the data volume; null when the sink can't see it. */
+  freeBytes: number | null
+  /** Bytes of originals already stored; null when unknown. */
+  storedBytes: number | null
+  /** Why `ok` is false, or a caveat worth printing when it is true. */
+  message?: string
+}
+
+export interface SinkSession {
+  id: number
+  fileKey: string
+}
+
+/**
+ * The one interface the CLI writes against, so scanning, hashing, variant
+ * generation, the manifest and reporting are all written once. `local` writes
+ * rows and files directly; `http` drives the real upload API as an admin.
+ */
+export interface ImportSink {
+  name: "local" | "http"
+  /** Capacity check. Never writes, so --dry-run can call it. */
+  preflight(): Promise<SinkPreflight>
+  createSession(input: {
+    kind: MediaKind
+    originalBytes: number
+    section: MediaSection
+  }): Promise<SinkSession>
+  putVariant(
+    id: number,
+    variant: string,
+    file: { path: string; bytes: number; contentType: string },
+  ): Promise<{ bytes: number }>
+  finalize(
+    id: number,
+    input: {
+      width: number
+      height: number
+      durationS: number | null
+      caption: string | null
+    },
+  ): Promise<{ id: number; status: string }>
+  /** Throw away a created-but-unfinalized session (SIGINT, mid-file failure). */
+  discard(id: number): Promise<void>
+  /** Set sort_order across the official section. */
+  applyOrder(orderedIds: number[]): Promise<{ ok: boolean; message?: string }>
+  close(): Promise<void>
+}
+
+/** Build the local sink. `readOnly` keeps --dry-run off every write path. */
+export function createLocalSink(options?: {
+  readOnly?: boolean
+  databasePath?: string
+}): ImportSink
 
 // --- Idempotency manifest (scripts/lib/import-manifest.js) ---
 
@@ -394,3 +465,134 @@ export function hashFile(filePath: string): Promise<string>
 
 /** Canonical origin key — trailing slashes must not create a second bucket. */
 export function normalizeOrigin(origin: string): string
+
+// --- The CLI (scripts/import-media.js) ---
+
+/** Everything the run needs, after parsing and defaulting. */
+export interface ImportArgs {
+  /** Absolute; always a positional argument, never guessed. */
+  dir: string
+  section: "official" | "guest"
+  dryRun: boolean
+  /** Normalized origin (no trailing slash), or null for the local sink. */
+  url: string | null
+  recursive: boolean
+  order: "name" | "mtime"
+  captions: "none" | "sidecar"
+  concurrency: number
+  manifestPath: string
+  reportPath: string | null
+  force: boolean
+  skipReorder: boolean
+  stripOriginal: boolean
+  heicOriginal: "keep" | "jpeg"
+  videos: "skip" | "require"
+  verbose: boolean
+}
+
+/** One file the scan found, with the relative path ordering is done on. */
+export interface ScannedFile {
+  absolute: string
+  /** Path relative to the scan root, with "/" separators. Used for sorting. */
+  relative: string
+  name: string
+}
+
+/** A file that will be imported. */
+export interface PlannedItem {
+  skipped: false
+  file: ScannedFile
+  plan: MediaPlanOk
+  sha256: string
+  caption: string | null
+}
+
+/** Why the CLI passed over a file. Adds the one reason the media layer can't know. */
+export type ImportSkipCode = MediaImportErrorCode | "ALREADY_IMPORTED"
+
+export interface SkippedItem {
+  skipped: true
+  file: ScannedFile
+  code: ImportSkipCode
+  message: string
+}
+
+/** The machine-readable run summary, also written by --report. */
+export interface ImportReport {
+  startedAt: string
+  finishedAt: string | null
+  dir: string
+  section: string
+  sink: "local" | "http"
+  dryRun: boolean
+  imported: {
+    file: string
+    id: number
+    fileKey: string
+    sha256: string
+    bytes: number
+    width: number
+    height: number
+  }[]
+  skipped: { file: string; code: string; message: string }[]
+  failed: { file: string; code: string; message: string; detail: string | null }[]
+  /** Files the run never reached, because it was interrupted. */
+  unattempted: string[]
+  warnings: string[]
+  /** 0 clean, 1 some files failed, 2 aborted. */
+  exitCode: number
+}
+
+/**
+ * Injection points, so the integration test can drive the whole pipeline with a
+ * stub variant builder. The repo's media fixtures are synthetic magic-byte stubs
+ * (binary files are deliberately not checked in), so no real backend can decode
+ * them — but everything downstream of generation is the real code path.
+ */
+export interface ImportDeps {
+  probeBackends?: typeof probeBackends
+  planMediaFile?: typeof planMediaFile
+  buildMediaVariants?: typeof buildMediaVariants
+  hashFile?: typeof hashFile
+  createSink?: (args: ImportArgs) => ImportSink
+  stdout?: { write(chunk: string): unknown }
+  stderr?: { write(chunk: string): unknown }
+  now?: () => string
+}
+
+/** Parse argv (without node and the script path). */
+export function parseImportArgs(
+  argv: string[],
+): { valid: true; value: ImportArgs } | { valid: false; error: string }
+
+/** Every file under `dir`, sorted by relative path in code-unit order. */
+export function scanDirectory(
+  dir: string,
+  options?: { recursive?: boolean },
+): ScannedFile[]
+
+/** Read and hash every file, splitting them into "will import" and "skipped". */
+export function buildImportPlan(
+  input: {
+    files: ScannedFile[]
+    backends: MediaBackends
+    manifest: ImportManifest
+    origin: string
+    force: boolean
+    captions: "none" | "sidecar"
+    order: "name" | "mtime"
+    concurrency: number
+  },
+  deps?: ImportDeps,
+): Promise<{ items: PlannedItem[]; skipped: SkippedItem[] }>
+
+/** The preflight + plan block, as lines. */
+export function formatPlanReport(
+  args: ImportArgs,
+  backends: MediaBackends,
+  preflight: SinkPreflight,
+  plan: { items: PlannedItem[]; skipped: SkippedItem[] },
+): string[]
+
+/** Do the import. Never throws for a per-file problem; the report says what happened. */
+export function runImport(args: ImportArgs, deps?: ImportDeps): Promise<ImportReport>

@@ -20,6 +20,7 @@
     "setup": "node scripts/setup-admin.js",
     "seed": "node scripts/seed-preview.js",
     "seed:demo": "node scripts/seed-demo.js",
+    "import:media": "node scripts/import-media.js",
     "export": "node scripts/export-archive.js",
     "deploy": "node scripts/deploy.js"
   },

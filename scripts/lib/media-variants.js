@@ -325,11 +325,13 @@ function formatBytes(bytes) {
  * cap, then strip metadata and verify the result is something the server will
  * accept.
  * @param {Types.ImageBackend} backend
- * @param {{ name: string, sourcePath: string, workDir: string, orientation: number, sourceWidth: number, sourceHeight: number, format: "jpeg" | "webp" }} options
+ * @param {{ name: string, sourcePath: string, workDir: string, orientation: number, sourceWidth: number, sourceHeight: number, format: "jpeg" | "webp", spec?: { maxEdge: number, quality: number, capBytes: number } }} options
  * @returns {Promise<Types.VariantArtifact>}
  */
 async function buildOneVariant(backend, options) {
-  const spec = VARIANT_SPECS[options.name]
+  // An explicit spec covers the one output that isn't a named variant: a HEIC
+  // original re-encoded to JPEG at native size for --heic-original=jpeg.
+  const spec = options.spec ?? VARIANT_SPECS[options.name]
   const ext = options.format === "webp" ? "webp" : "jpg"
   const outPath = path.join(options.workDir, options.name + "." + ext)
   const midPath = path.join(options.workDir, options.name + "-rotated.jpg")
@@ -443,6 +445,98 @@ function linkSource(sourcePath, workDir, ext) {
   return linkPath
 }
 
+/**
+ * The `original` artifact. Byte-for-byte by default, which is exact parity with
+ * the browser uploader — it PUTs the raw File, and image originals are never
+ * served publicly (core/media-serve.js excludes them from PUBLIC_VARIANTS, and
+ * they go out admin-only as private, no-store, attachment). So the EXIF in them
+ * is not a regression; it is the status quo, and the two flags here are opt-ins
+ * for someone who wants the archive clean too.
+ * @param {Types.ImageBackend} backend
+ * @param {Types.MediaPlanOk} plan
+ * @param {Types.BuiltMedia} built
+ * @param {{ workDir: string, linkedPath: string, stripOriginal: boolean, heicOriginal: "keep" | "jpeg" }} options
+ * @returns {Promise<Types.VariantArtifact>}
+ */
+async function buildOriginalArtifact(backend, plan, built, options) {
+  /** @param {string} filePath @param {Types.SourceSniff} sniffed @param {number} bytes */
+  const artifactFor = (filePath, sniffed, bytes) => ({
+    name: "original",
+    path: filePath,
+    bytes,
+    contentType: MIME_FOR_SNIFF[sniffed],
+    width: built.width,
+    height: built.height,
+    quality: null,
+    steppedDown: false,
+    warnings: [],
+  })
+
+  // Video GPS needs nothing here: the sink blanks it in place with
+  // core/mp4-meta.js at finalize, exactly as api/media.js does.
+  if (plan.kind === MEDIA_KIND.VIDEO) {
+    return artifactFor(plan.sourcePath, plan.sniffed, plan.originalBytes)
+  }
+
+  if (plan.sniffed === "heic" && options.heicOriginal === "jpeg") {
+    // Native size, high quality — this replaces the archival copy, so the only
+    // loss should be the re-encode itself. HEIC is roughly half the size of an
+    // equivalent JPEG, so expect the stored original to grow.
+    const transcoded = await buildOneVariant(backend, {
+      name: "original",
+      sourcePath: options.linkedPath,
+      workDir: options.workDir,
+      orientation: plan.orientation,
+      sourceWidth: plan.width,
+      sourceHeight: plan.height,
+      format: "jpeg",
+      spec: {
+        maxEdge: Math.max(plan.width, plan.height),
+        quality: 0.92,
+        capBytes: MEDIA_LIMITS.IMAGE_ORIGINAL_MAX,
+      },
+    })
+    built.warnings.push(
+      `Stored the original as JPEG rather than HEIC (${formatBytes(plan.originalBytes)} → ${formatBytes(transcoded.bytes)}).`,
+    )
+    return { ...transcoded, width: built.width, height: built.height, warnings: [] }
+  }
+
+  if (!options.stripOriginal) {
+    return artifactFor(plan.sourcePath, plan.sniffed, plan.originalBytes)
+  }
+
+  if (plan.sniffed === "heic") {
+    // The metadata filter understands JPEG, PNG and WebP containers. Rewriting
+    // HEIC's ISO-BMFF boxes losslessly is a different job; refusing beats
+    // silently storing a file the user was told had been cleaned.
+    built.warnings.push(
+      `--strip-original can't clean a HEIC container losslessly — ${path.basename(plan.sourcePath)}'s original keeps its metadata. Pass --heic-original=jpeg to store a stripped JPEG instead.`,
+    )
+    return artifactFor(plan.sourcePath, plan.sniffed, plan.originalBytes)
+  }
+
+  const cleaned = stripImageMetadata(fs.readFileSync(plan.sourcePath))
+  if (hasImageMetadata(cleaned)) {
+    throw new MediaImportError(
+      "STRIP_FAILED",
+      `Couldn't strip ${path.basename(plan.sourcePath)}'s original — refusing to store it as though it had been cleaned.`,
+      { file: plan.sourcePath },
+    )
+  }
+  const sniffed = sniffMagic(cleaned.subarray(0, SNIFF_BYTES))
+  if (sniffed !== plan.sniffed) {
+    throw new MediaImportError(
+      "VARIANT_FORMAT_MISMATCH",
+      `Stripping ${path.basename(plan.sourcePath)} turned a ${plan.sniffed} into ${sniffed || "an unrecognized format"}.`,
+      { file: plan.sourcePath },
+    )
+  }
+  const outPath = path.join(options.workDir, "original." + plan.originalExt)
+  fs.writeFileSync(outPath, cleaned)
+  return artifactFor(outPath, plan.sniffed, cleaned.length)
+}
+
 /** @type {Types.buildMediaVariants} */
 export async function buildMediaVariants(plan, backends, options = {}) {
   if (!backends.image) {
@@ -554,17 +648,14 @@ export async function buildMediaVariants(plan, backends, options = {}) {
 
     // The original goes last, matching media-uploader.js: the big retryable
     // upload is the tail of the sequence.
-    built.artifacts.push({
-      name: "original",
-      path: plan.sourcePath,
-      bytes: plan.originalBytes,
-      contentType: MIME_FOR_SNIFF[plan.sniffed],
-      width: built.width,
-      height: built.height,
-      quality: null,
-      steppedDown: false,
-      warnings: [],
-    })
+    built.artifacts.push(
+      await buildOriginalArtifact(backends.image, plan, built, {
+        workDir,
+        linkedPath: linked,
+        stripOriginal: options.stripOriginal === true,
+        heicOriginal: options.heicOriginal ?? "keep",
+      }),
+    )
     return built
   } catch (err) {
     await built.dispose()
