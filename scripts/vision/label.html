@@ -14,6 +14,14 @@
       measurement only needs "same person or not", and a list of real names
       attached to faces has no business being written into tmp/.
 
+      LAYOUT. The judgement is "is this crop the same person as one of those?",
+      so the two things that judgement needs are the two things that get the
+      space: the current crop, large, in the middle; the exemplars, large enough
+      to recognise a person by, in the right-hand rail. Everything else is
+      secondary — progress is a ribbon, and the full contact grid is behind `g`,
+      because at 600 crops a wall of 60px tiles is noise competing with the task
+      rather than an overview of it.
+
       Scaffolding: this code is thrown away. Its interaction design is not.
     -->
     <style>
@@ -30,6 +38,8 @@
         --bad: #ff7a7a;
         --poolA: #7cc4ff;
         --poolB: #c9a2ff;
+        /* Set per unit by renderStage — how big the crops under judgement are. */
+        --msize: 140px;
       }
       * {
         box-sizing: border-box;
@@ -50,6 +60,7 @@
           monospace;
         display: flex;
         flex-direction: column;
+        overflow: hidden;
       }
       button {
         font: inherit;
@@ -66,6 +77,12 @@
       button.primary {
         background: #1f3a52;
         border-color: var(--accent);
+      }
+      button:disabled,
+      button:disabled:hover {
+        opacity: 0.4;
+        cursor: not-allowed;
+        border-color: var(--line);
       }
       kbd {
         display: inline-block;
@@ -88,6 +105,7 @@
         padding: 8px 12px;
         background: var(--panel);
         border-bottom: 1px solid var(--line);
+        flex: 0 0 auto;
       }
       .title {
         font-weight: 700;
@@ -146,6 +164,7 @@
         gap: 12px;
         align-items: center;
         flex-wrap: wrap;
+        flex: 0 0 auto;
       }
       .banner.resume {
         background: #2a2410;
@@ -161,24 +180,201 @@
         border-bottom-color: var(--bad);
         color: #ffbdbd;
       }
+      /* Quiet, but always on screen while names are held. */
+      .banner.note {
+        background: #141b24;
+        color: var(--dim);
+        padding: 6px 12px;
+      }
+      .banner.note b {
+        color: var(--ink);
+        font-weight: 400;
+      }
 
-      /* ---- exemplars ---- */
-      .exemplars {
+      /* ---- the working area: crop left, exemplars right ---- */
+      #work {
+        flex: 1 1 auto;
+        min-height: 0;
         display: flex;
-        gap: 6px;
-        overflow-x: auto;
-        padding: 8px 12px;
+      }
+
+      /* ---- stage: the crop under judgement ---- */
+      #stage {
+        flex: 1 1 auto;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 12px 18px 14px;
+        background: var(--panel-2);
+      }
+      #stage-meta {
+        flex: 0 0 auto;
+      }
+      #stage-meta .line {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        align-items: baseline;
+      }
+      .pos {
+        font-size: 16px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+      }
+      .status {
+        color: var(--ink);
+      }
+      .status.done {
+        color: var(--warn);
+      }
+      .hint {
+        color: var(--dim);
+      }
+      /* Name entry, shown only while `n` is creating a person. */
+      .namebox {
+        flex: 0 0 auto;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+        padding: 8px 10px;
+        border: 1px solid var(--ok);
+        border-radius: 6px;
+        background: #12241a;
+      }
+      .namebox label {
+        color: var(--ok);
+      }
+      .namebox input {
+        font: inherit;
+        color: var(--ink);
+        background: #0b0e13;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 5px 8px;
+        width: 240px;
+      }
+      .namebox input:focus {
+        outline: none;
+        border-color: var(--ok);
+      }
+      .members {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: auto;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-content: center;
+        justify-content: center;
+      }
+      .m {
+        position: relative;
+        border: 3px solid transparent;
+        border-radius: 8px;
+        padding: 0;
+        cursor: pointer;
+        flex: 0 0 auto;
+      }
+      .m img,
+      .m .noimg {
+        display: block;
+        width: var(--msize);
+        height: var(--msize);
+        object-fit: cover;
+        border-radius: 5px;
+        background: #232a35;
+      }
+      .m.cur {
+        border-color: var(--accent);
+      }
+      .m.out img,
+      .m.out .noimg {
+        opacity: 0.2;
+      }
+      .m.out::after {
+        content: "excluded";
+        position: absolute;
+        left: 2px;
+        right: 2px;
+        bottom: 6px;
+        text-align: center;
+        background: #000c;
+        color: var(--bad);
+        font-size: 11px;
+      }
+      .m .tag {
+        position: absolute;
+        top: 5px;
+        right: 5px;
+        background: #000d;
+        border-radius: 3px;
+        padding: 1px 5px;
+        font-size: 12px;
+        color: var(--ok);
+      }
+      .m .tag.x {
+        color: var(--bad);
+      }
+
+      /* ---- exemplar rail: what the crop is compared against ---- */
+      #rail {
+        flex: 0 0 auto;
+        width: clamp(300px, 34vw, 520px);
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
         background: var(--panel);
+        border-left: 1px solid var(--line);
+      }
+      .rail-head {
+        flex: 0 0 auto;
+        display: flex;
+        gap: 10px;
+        align-items: baseline;
+        justify-content: space-between;
+        padding: 9px 12px 7px;
         border-bottom: 1px solid var(--line);
-        align-items: flex-start;
-        min-height: 92px;
+        color: var(--dim);
+      }
+      .rail-head b {
+        color: var(--ink);
+        letter-spacing: 0.08em;
+        font-weight: 700;
+      }
+      #rail-page {
+        margin-left: auto;
+      }
+      #rail-filter {
+        font: inherit;
+        color: var(--ink);
+        background: #0b0e13;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 3px 7px;
+        width: 140px;
+        min-width: 0;
+      }
+      #rail-filter:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+      .exemplars {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 10px 12px;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+        grid-auto-rows: min-content;
+        gap: 9px;
+        align-content: start;
       }
       .ex {
         position: relative;
-        width: 68px;
-        flex: 0 0 auto;
         border: 1px solid var(--line);
-        border-radius: 5px;
+        border-radius: 6px;
         overflow: hidden;
         cursor: pointer;
         background: var(--panel-2);
@@ -187,151 +383,157 @@
       .ex:hover {
         border-color: var(--accent);
       }
-      .ex img {
-        display: block;
-        width: 68px;
-        height: 68px;
-        object-fit: cover;
+      .ex.off {
+        opacity: 0.5;
       }
+      .ex img,
       .ex .noimg {
-        width: 68px;
-        height: 68px;
+        display: block;
+        width: 100%;
+        aspect-ratio: 1;
+        object-fit: cover;
         background: #232a35;
       }
       .ex .cap {
-        font-size: 11px;
-        padding: 1px 2px;
+        font-size: 12px;
+        padding: 2px 4px 3px;
         color: var(--dim);
       }
       .ex .cap b {
+        display: block;
         color: var(--ink);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .ex .cap .sub {
+        font-size: 11px;
+        color: var(--dim);
       }
       .ex.three .cap b {
         color: var(--ok);
       }
-      .ex .hot {
-        position: absolute;
-        top: 2px;
-        left: 2px;
-        background: #000b;
-        color: var(--accent);
-        border-radius: 3px;
-        padding: 0 4px;
-        font-size: 11px;
-      }
-      .ex.newperson {
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        height: 90px;
-        color: var(--ok);
-        border-style: dashed;
-      }
-      .ex.notface {
-        color: var(--bad);
-      }
-      .exhint {
-        color: var(--dim);
-        align-self: center;
-        padding: 0 6px;
-      }
-
-      /* ---- stage ---- */
-      .stage {
-        display: flex;
-        gap: 14px;
-        padding: 10px 12px;
-        background: var(--panel-2);
-        border-bottom: 1px solid var(--line);
-        align-items: flex-start;
-        min-height: 150px;
-      }
-      .stage .meta {
-        min-width: 200px;
-      }
-      .stage .meta h2 {
-        margin: 0 0 4px;
-        font-size: 14px;
-      }
-      .stage .meta p {
-        margin: 2px 0;
-        color: var(--dim);
-      }
-      .members {
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-      }
-      .m {
-        position: relative;
-        border: 2px solid transparent;
-        border-radius: 6px;
-        padding: 2px;
-        cursor: pointer;
-      }
-      .m img,
-      .m .noimg {
-        display: block;
-        width: 118px;
-        height: 118px;
-        object-fit: cover;
-        border-radius: 4px;
-        background: #232a35;
-      }
-      .m.solo img,
-      .m.solo .noimg {
-        width: 190px;
-        height: 190px;
-      }
-      .m.cur {
+      .ex.top {
         border-color: var(--accent);
       }
-      .m.out img,
-      .m.out .noimg {
-        opacity: 0.25;
-      }
-      .m.out::after {
-        content: "excluded";
+      .ex .hot {
         position: absolute;
-        left: 2px;
-        right: 2px;
-        bottom: 4px;
-        text-align: center;
+        top: 3px;
+        left: 3px;
         background: #000c;
-        color: var(--bad);
-        font-size: 11px;
-      }
-      .m .tag {
-        position: absolute;
-        top: 4px;
-        right: 4px;
-        background: #000c;
+        color: var(--accent);
         border-radius: 3px;
-        padding: 0 4px;
-        font-size: 11px;
-        color: var(--ok);
+        padding: 1px 6px;
+        font-size: 13px;
+        font-weight: 700;
       }
-      .m .tag.x {
+      .empty {
+        grid-column: 1 / -1;
+        color: var(--dim);
+        padding: 10px 2px;
+        line-height: 1.7;
+      }
+      .empty b {
+        color: var(--ink);
+        font-weight: 400;
+      }
+      .rail-acts {
+        flex: 0 0 auto;
+        display: flex;
+        gap: 8px;
+        padding: 10px 12px;
+        border-top: 1px solid var(--line);
+      }
+      .act {
+        flex: 1 1 0;
+        padding: 9px 4px;
+        text-align: center;
+        border: 1px dashed var(--line);
+        border-radius: 6px;
+        cursor: pointer;
+        background: var(--panel-2);
+      }
+      .act:hover {
+        border-style: solid;
+      }
+      .act.new {
+        color: var(--ok);
+        border-color: #2f5f45;
+      }
+      .act.notface {
         color: var(--bad);
       }
 
-      /* ---- grid ---- */
-      .gridwrap {
-        flex: 1;
+      /* ---- progress ribbon (replaces the wall of thumbnails) ---- */
+      #ribbonwrap {
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 7px 12px;
+        background: var(--panel);
+        border-top: 1px solid var(--line);
+      }
+      #ribbon {
+        flex: 1 1 auto;
+        min-width: 0;
+        display: flex;
+        gap: 1px;
+        height: 14px;
+      }
+      .seg {
+        flex: 1 1 0;
+        min-width: 0;
+        border-radius: 1px;
+        background: #262d38;
+      }
+      .seg.some {
+        background: #3f7a5c;
+      }
+      .seg.done {
+        background: var(--ok);
+      }
+      .seg.cur {
+        background: var(--accent);
+        min-width: 3px;
+        box-shadow: 0 0 0 1px var(--accent);
+      }
+      #ribbon-note {
+        color: var(--dim);
+        white-space: nowrap;
+      }
+
+      /* ---- browsable grid: opt-in, `g` ---- */
+      #gridwrap {
+        flex: 1 1 auto;
+        min-height: 0;
         overflow-y: auto;
-        padding: 10px 12px 24px;
+        padding: 0 14px 24px;
+      }
+      .gridbar {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        padding: 10px 0;
+        background: var(--bg);
+        color: var(--dim);
+        border-bottom: 1px solid var(--line);
+        margin-bottom: 10px;
       }
       .grid {
         display: flex;
         flex-wrap: wrap;
-        gap: 6px;
+        gap: 8px;
       }
       .unit {
         display: flex;
-        gap: 3px;
-        padding: 3px;
+        gap: 4px;
+        padding: 4px;
         border: 1px solid transparent;
-        border-radius: 5px;
+        border-radius: 6px;
       }
       .unit.grouped {
         border-color: #3d3155;
@@ -343,17 +545,17 @@
       }
       .cell {
         position: relative;
-        width: 58px;
-        height: 58px;
+        width: 96px;
+        height: 96px;
         cursor: pointer;
-        border-radius: 4px;
+        border-radius: 5px;
         overflow: hidden;
       }
       .cell img,
       .cell .noimg {
         display: block;
-        width: 58px;
-        height: 58px;
+        width: 96px;
+        height: 96px;
         object-fit: cover;
         background: #232a35;
       }
@@ -364,23 +566,24 @@
         bottom: 0;
         background: #000d;
         color: var(--ok);
-        font-size: 10px;
+        font-size: 12px;
         text-align: center;
       }
       .cell .lab.x {
         color: var(--bad);
       }
       .cell.done img {
-        opacity: 0.55;
+        opacity: 0.5;
       }
 
       /* ---- footer / keymap ---- */
       footer {
+        flex: 0 0 auto;
         background: var(--panel);
         border-top: 1px solid var(--line);
         padding: 7px 12px;
         display: flex;
-        gap: 16px;
+        gap: 14px;
         flex-wrap: wrap;
         color: var(--dim);
       }
@@ -433,6 +636,7 @@
       #missing {
         padding: 24px;
         max-width: 780px;
+        overflow-y: auto;
       }
       #missing h1 {
         font-size: 18px;
@@ -488,31 +692,78 @@ tmp/session1/
     <div id="resume" class="banner resume hide"></div>
     <div id="mismatch" class="banner warn hide"></div>
     <div id="stopbar" class="banner stop hide"></div>
+    <div id="privacy" class="banner note hide"></div>
 
-    <div class="exemplars hide" id="exemplars"></div>
+    <main id="work" class="hide">
+      <section id="stage">
+        <div id="stage-meta"></div>
+        <div class="namebox hide" id="namebox">
+          <label for="name-input">New person — a name only you see:</label>
+          <input
+            id="name-input"
+            type="text"
+            maxlength="40"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="optional — leave blank for just a number"
+          />
+          <span class="hint"
+            ><kbd>↵</kbd> create · <kbd>Esc</kbd> cancel · never written to labels.json</span
+          >
+        </div>
+        <div class="members" id="stage-members"></div>
+      </section>
+      <aside id="rail">
+        <div class="rail-head">
+          <b>EXEMPLARS</b>
+          <input
+            id="rail-filter"
+            type="text"
+            maxlength="40"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="/ filter"
+          />
+          <span id="rail-page"></span>
+        </div>
+        <div class="exemplars" id="exemplars"></div>
+        <div class="rail-acts">
+          <div class="act new" id="act-new"><kbd>n</kbd> new person</div>
+          <div class="act notface" id="act-x"><kbd>x</kbd> not a face</div>
+        </div>
+      </aside>
+    </main>
 
-    <div class="stage hide" id="stage">
-      <div class="meta" id="stage-meta"></div>
-      <div class="members" id="stage-members"></div>
+    <div id="gridwrap" class="hide">
+      <div class="gridbar">
+        <span id="grid-title"></span>
+        <span><b><kbd>g</kbd></b> or <b><kbd>Esc</kbd></b> back to labelling · click a crop to jump to it</span>
+      </div>
+      <div class="grid" id="grid"></div>
     </div>
 
-    <div class="gridwrap hide" id="gridwrap"><div class="grid" id="grid"></div></div>
+    <div id="ribbonwrap" class="hide">
+      <div id="ribbon"></div>
+      <span id="ribbon-note"></span>
+    </div>
 
     <footer id="footer" class="hide">
-      <span><b><kbd>1</kbd>…<kbd>9</kbd><kbd>0</kbd></b> assign to person</span>
-      <span><b><kbd>,</kbd><kbd>.</kbd></b> shift hotkeys</span>
+      <span><b><kbd>1</kbd>…<kbd>9</kbd><kbd>0</kbd></b> person</span>
+      <span><b><kbd>,</kbd><kbd>.</kbd></b> page hotkeys</span>
       <span><b><kbd>n</kbd></b> new person</span>
+      <span><b><kbd>/</kbd></b> filter</span>
       <span><b><kbd>x</kbd></b> not a face</span>
       <span><b><kbd>s</kbd>/<kbd>?</kbd></b> skip</span>
       <span><b><kbd>u</kbd></b> undo</span>
       <span><b><kbd>j</kbd><kbd>k</kbd>/<kbd>↓</kbd><kbd>↑</kbd></b> next/prev</span>
       <span><b><kbd>↵</kbd></b> next unlabelled</span>
-      <span><b><kbd>Tab</kbd></b> switch pool</span>
+      <span><b><kbd>Tab</kbd></b> pool</span>
+      <span><b><kbd>g</kbd></b> browse</span>
       <span id="foot-b"
         ><b><kbd>←</kbd><kbd>→</kbd></b> member · <b><kbd>space</kbd></b> exclude ·
-        <b><kbd>o</kbd></b> only this · <b><kbd>a</kbd></b> all back</span
+        <b><kbd>o</kbd></b> only · <b><kbd>a</kbd></b> all</span
       >
-      <span><b>shift-click</b> a crop = make it that person's exemplar</span>
+      <span><b>shift-click</b> = set exemplar</span>
     </footer>
 
     <dialog id="savedlg">
@@ -522,6 +773,18 @@ tmp/session1/
         page. A browser download lands in <code>~/Downloads</code>, so move it:
       </p>
       <pre style="margin: 0"><code>mv ~/Downloads/labels.json tmp/session1/labels.json</code></pre>
+      <p id="dlg-privacy">
+        Opaque keys only. Any display names you typed stay in this browser, and the
+        person numbering below is deliberately shuffled, so nothing in the file says
+        who anyone is or what order they turned up in.
+      </p>
+      <div class="row hide" id="forget-row">
+        <label
+          ><input type="checkbox" id="dlg-forget" checked /> Forget the
+          <span id="forget-n">0</span> display names held in this browser once I
+          save</label
+        >
+      </div>
       <div class="row">
         <button id="dlg-pick" class="primary hide">Save directly to a folder…</button>
         <button id="dlg-download" class="primary">Download labels.json</button>
@@ -635,6 +898,11 @@ tmp/session1/
           "-" +
           (ORDER[ORDER.length - 1] || 0)
         var STORE_KEY = "wedding.session1.label.v1"
+        // Display names live under their OWN key, never inside the labels record.
+        // localStorage is a worse place for them than tmp/ — it survives
+        // `rm -rf tmp/session1`, it is not gitignored, and nothing sweeps it — so
+        // they have to be clearable precisely, on their own, in one click.
+        var NAMES_KEY = "wedding.session1.label.names.v1"
 
         var state = {
           labels: {}, // faceId(string) -> "p1" | "x"
@@ -646,6 +914,11 @@ tmp/session1/
         var excluded = new Set() // face ids held out of the current group assignment
         var memberCursor = 0
         var history = []
+        /** person key -> a name the owner typed. UI only. Never exported, never
+         *  written to a file, never sent anywhere. */
+        var names = {}
+        var pendingName = "" // consumed by the next assign("@new")
+        var filterText = "" // type-to-filter over keys and names
 
         function save() {
           try {
@@ -696,6 +969,66 @@ tmp/session1/
           }
         }
 
+        // ---------- display names ----------
+        function nameCount() {
+          var n = 0
+          for (var k in names) if (names[k]) n++
+          return n
+        }
+        function saveNames() {
+          try {
+            if (nameCount() === 0) {
+              localStorage.removeItem(NAMES_KEY)
+              return
+            }
+            localStorage.setItem(
+              NAMES_KEY,
+              JSON.stringify({ fingerprint: FINGERPRINT, savedAt: Date.now(), names: names }),
+            )
+          } catch (err) {
+            /* a full or disabled localStorage costs a convenience, not the run */
+          }
+        }
+        function loadStoredNames() {
+          var raw = null
+          try {
+            raw = localStorage.getItem(NAMES_KEY)
+          } catch (err) {
+            return null
+          }
+          if (!raw) return null
+          try {
+            var parsed = JSON.parse(raw)
+            if (parsed && parsed.names && typeof parsed.names === "object") return parsed
+          } catch (err) {
+            return null
+          }
+          return null
+        }
+        function forgetNames() {
+          names = {}
+          try {
+            localStorage.removeItem(NAMES_KEY)
+          } catch (err) {
+            /* nothing to do */
+          }
+          render()
+        }
+        function displayName(key) {
+          var n = names[key]
+          return n ? n : null
+        }
+        /** Does this string contain a letter? Used to decide whether a typed name
+         *  is distinctive enough for the leak assertion to test against — "12"
+         *  occurs in any labels.json by construction, "Al" does not. */
+        function hasLetter(s) {
+          for (var i8 = 0; i8 < s.length; i8++) {
+            var c = s.charCodeAt(i8)
+            if ((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c > 127) return true
+          }
+          return false
+        }
+
         // ---------- derived ----------
         function personKeys() {
           var counts = new Map()
@@ -709,6 +1042,20 @@ tmp/session1/
             return Number(a.slice(1)) - Number(b.slice(1))
           })
           return { keys: keys, counts: counts }
+        }
+        /** The people currently addressable: everyone, or the filter's matches.
+         *  Substring match over the key and the typed name — indexOf, no regex. */
+        function shownKeys() {
+          var pk = personKeys()
+          if (filterText === "") return pk
+          var needle = filterText.toLowerCase()
+          var hits = []
+          for (var fk = 0; fk < pk.keys.length; fk++) {
+            var key = pk.keys[fk]
+            var hay = (key + " " + (names[key] || "")).toLowerCase()
+            if (hay.indexOf(needle) >= 0) hits.push(key)
+          }
+          return { keys: hits, counts: pk.counts }
         }
         function nextPersonKey() {
           var used = new Set()
@@ -776,6 +1123,11 @@ tmp/session1/
           if (value === "@new") {
             value = nextPersonKey()
             entry.newKey = value
+            if (pendingName !== "") {
+              names[value] = pendingName
+              saveNames()
+            }
+            pendingName = ""
           }
           for (var i2 = 0; i2 < ids.length; i2++) {
             entry.prev.push({ id: ids[i2], value: state.labels[String(ids[i2])] })
@@ -786,6 +1138,7 @@ tmp/session1/
           if (history.length > 400) history.shift()
           excluded.clear()
           memberCursor = 0
+          clearFilter()
           if (entry.newKey) {
             var pk = personKeys().keys
             var idx = pk.indexOf(entry.newKey)
@@ -808,7 +1161,13 @@ tmp/session1/
             if (p.value === undefined) delete state.labels[String(p.id)]
             else state.labels[String(p.id)] = p.value
           }
-          if (e.newKey) delete state.exemplars[e.newKey]
+          if (e.newKey) {
+            delete state.exemplars[e.newKey]
+            if (names[e.newKey] !== undefined) {
+              delete names[e.newKey]
+              saveNames()
+            }
+          }
           excluded.clear()
           memberCursor = 0
           save()
@@ -847,7 +1206,11 @@ tmp/session1/
           state.pool = state.pool === "A" ? "B" : "A"
           excluded.clear()
           memberCursor = 0
-          buildGrid()
+          // The grid is per-pool and expensive at 600 crops; rebuild it only if
+          // it is actually on screen, otherwise drop it and rebuild on demand.
+          if (gridOpen) buildGrid()
+          else dropGrid()
+          buildRibbon()
           save()
           render()
         }
@@ -874,31 +1237,77 @@ tmp/session1/
         function renderExemplars() {
           var box = $("exemplars")
           box.textContent = ""
-          var pk = personKeys()
+          var pk = shownKeys()
+          var filtering = filterText !== ""
+          $("act-x").textContent = ""
+          $("act-x").appendChild(kbdSpan("x"))
+          $("act-x").appendChild(document.createTextNode(" not a face (" + notFaceCount() + ")"))
 
-          var addTile = function (key, count, faceId, slotIdx) {
+          // First run: the rail is the only place that can say what to do, and a
+          // blank panel says nothing.
+          if (pk.keys.length === 0 && !filtering) {
+            var em = document.createElement("div")
+            em.className = "empty"
+            em.appendChild(document.createTextNode("Nothing labelled yet. Look at the crop, press "))
+            em.appendChild(kbdSpan("n"))
+            em.appendChild(
+              document.createTextNode(
+                " to start a new person (you can give them a name) — then press that person's digit whenever their face comes round again, and ",
+              ),
+            )
+            em.appendChild(kbdSpan("x"))
+            em.appendChild(document.createTextNode(" for anything that is not a face."))
+            box.appendChild(em)
+            $("rail-page").textContent = "none yet"
+            return
+          }
+          if (pk.keys.length === 0) {
+            var none = document.createElement("div")
+            none.className = "empty"
+            none.textContent = "Nobody matches that. Esc clears the filter."
+            box.appendChild(none)
+            $("rail-page").textContent = "no match"
+            return
+          }
+
+          var firstHot = null
+          var lastHot = null
+          var addTile = function (key, count, faceId, slotIdx, top) {
             var el = document.createElement("div")
-            el.className = "ex" + (count >= 3 ? " three" : "")
+            el.className =
+              "ex" +
+              (count >= 3 ? " three" : "") +
+              (slotIdx >= 0 || top || filtering ? "" : " off") +
+              (top ? " top" : "")
             if (faceId !== null && faceId !== undefined) el.appendChild(cropImg(faceId))
             else {
               var ph = document.createElement("div")
               ph.className = "noimg"
               el.appendChild(ph)
             }
+            var nm = displayName(key)
             var cap = document.createElement("div")
             cap.className = "cap"
             var b = document.createElement("b")
-            b.textContent = key
+            b.textContent = nm ? nm : key
+            b.title = nm ? nm + " (" + key + ")" : key
             cap.appendChild(b)
-            cap.appendChild(document.createTextNode(" ×" + count))
+            var sub = document.createElement("div")
+            sub.className = "sub"
+            sub.textContent = (nm ? key + " · " : "") + "×" + count
+            cap.appendChild(sub)
             el.appendChild(cap)
-            if (slotIdx >= 0) {
+            if (slotIdx >= 0 || top) {
               var hot = document.createElement("span")
               hot.className = "hot"
-              hot.textContent = SLOTS[slotIdx]
+              hot.textContent = top ? "↵" : SLOTS[slotIdx]
               el.appendChild(hot)
+              if (!top) {
+                if (firstHot === null) firstHot = el
+                lastHot = el
+              }
             }
-            el.title = "assign current to " + key
+            el.title = "assign current to " + (nm ? nm + " (" + key + ")" : key)
             el.addEventListener("click", function () {
               assign(key)
             })
@@ -907,39 +1316,114 @@ tmp/session1/
 
           for (var i6 = 0; i6 < pk.keys.length; i6++) {
             var key = pk.keys[i6]
-            var slot = i6 >= state.hotkeyBase && i6 < state.hotkeyBase + 10 ? i6 - state.hotkeyBase : -1
-            addTile(key, pk.counts.get(key), exemplarFor(key), slot)
+            // Filtering takes over the rail: digits are being typed into the
+            // filter box, so the only key that assigns is Enter, on the top match.
+            var slot = filtering
+              ? -1
+              : i6 >= state.hotkeyBase && i6 < state.hotkeyBase + 10
+                ? i6 - state.hotkeyBase
+                : -1
+            addTile(key, pk.counts.get(key), exemplarFor(key), slot, filtering && i6 === 0)
           }
 
-          var nw = document.createElement("div")
-          nw.className = "ex newperson"
-          nw.textContent = "n · new person"
-          nw.addEventListener("click", function () {
-            assign("@new")
-          })
-          box.appendChild(nw)
-
-          var nf = document.createElement("div")
-          nf.className = "ex newperson notface"
-          nf.textContent = "x · not a face (" + notFaceCount() + ")"
-          nf.addEventListener("click", function () {
-            assign("x")
-          })
-          box.appendChild(nf)
-
-          if (pk.keys.length > 10) {
-            var hint = document.createElement("div")
-            hint.className = "exhint"
-            hint.textContent =
+          if (filtering) {
+            $("rail-page").textContent = pk.keys.length + " match · ↵ = first"
+          } else if (pk.keys.length > 10) {
+            $("rail-page").textContent =
               "hotkeys " +
               (state.hotkeyBase + 1) +
               "–" +
               Math.min(state.hotkeyBase + 10, pk.keys.length) +
               " of " +
               pk.keys.length +
-              "  ( , / . )"
-            box.appendChild(hint)
+              " ( , . )"
+          } else {
+            $("rail-page").textContent = pk.keys.length + " so far"
           }
+          // Keep the whole hotkey window on screen, biased to the top: bring the
+          // last one into view, then the first, so a window taller than the rail
+          // ends up flush at the top rather than cut off at the bottom.
+          if (lastHot && lastHot.scrollIntoView) lastHot.scrollIntoView({ block: "nearest" })
+          if (firstHot && firstHot.scrollIntoView) firstHot.scrollIntoView({ block: "nearest" })
+        }
+
+        // ---------- name entry ----------
+        function openNameBox() {
+          var box = $("namebox")
+          var input = $("name-input")
+          box.classList.remove("hide")
+          input.value = ""
+          input.focus()
+        }
+        function closeNameBox() {
+          $("namebox").classList.add("hide")
+          $("name-input").value = ""
+        }
+        function commitNewPerson() {
+          var raw = $("name-input").value
+          pendingName = String(raw).trim().slice(0, 40)
+          closeNameBox()
+          assign("@new")
+        }
+
+        // ---------- type-to-filter ----------
+        function openFilter() {
+          var input = $("rail-filter")
+          input.focus()
+          input.select()
+        }
+        function clearFilter() {
+          if (filterText === "" && $("rail-filter").value === "") return
+          filterText = ""
+          $("rail-filter").value = ""
+        }
+        function onFilterInput() {
+          filterText = $("rail-filter").value.trim()
+          renderExemplars()
+        }
+        function onFilterKey(ev) {
+          if (ev.key === "Escape") {
+            ev.preventDefault()
+            clearFilter()
+            $("rail-filter").blur()
+            renderExemplars()
+          } else if (ev.key === "Enter") {
+            ev.preventDefault()
+            var hits = shownKeys().keys
+            $("rail-filter").blur()
+            if (hits.length > 0) assign(hits[0])
+            else {
+              clearFilter()
+              renderExemplars()
+            }
+          }
+        }
+
+        function kbdSpan(text) {
+          var k = document.createElement("kbd")
+          k.textContent = text
+          return k
+        }
+
+        /** How big the crops under judgement get: the largest square that fits n
+         *  of them in the stage without scrolling. One crop takes the whole
+         *  space, because it is the whole point of the screen; a large group
+         *  trades size for showing every member at once, which is what a bulk
+         *  keystroke needs. Capped at 400 — the source is 112×112 and past that
+         *  it is only bigger, not clearer. */
+        var GAP = 10
+        var CHROME = 6 // the .m border, top and bottom
+        function memberSize(n) {
+          var box = $("stage-members")
+          var w = box.clientWidth || 820
+          var h = box.clientHeight || 520
+          for (var s = 400; s > 96; s -= 2) {
+            var cols = Math.floor((w + GAP) / (s + GAP + CHROME))
+            if (cols < 1) continue
+            var rows = Math.ceil(n / cols)
+            if (rows * (s + GAP + CHROME) <= h + GAP) return s + "px"
+          }
+          return "96px"
         }
 
         function renderStage() {
@@ -953,42 +1437,59 @@ tmp/session1/
             meta.textContent = "Pool " + state.pool + " is empty."
             return
           }
-          var h = document.createElement("h2")
-          h.textContent =
+
+          var top = document.createElement("div")
+          top.className = "line"
+          var pos = document.createElement("span")
+          pos.className = "pos"
+          pos.textContent =
             "Pool " +
             state.pool +
             " · " +
             (state.cursor[state.pool] + 1) +
-            " / " +
+            " of " +
             list.length +
-            (u.group !== null ? "  · group " + u.group + " (" + u.members.length + " faces)" : "")
-          h.style.color = state.pool === "A" ? "var(--poolA)" : "var(--poolB)"
-          meta.appendChild(h)
-          var lines = []
-          if (state.pool === "A") {
-            lines.push("uniform sample — the headline separation number")
-            lines.push("comes from pool A only. One crop at a time.")
-          } else if (u.group !== null) {
-            lines.push("group-assisted bulk labelling.")
-            lines.push("One keystroke assigns every included member.")
-            lines.push("space = exclude the highlighted one, o = only it.")
-          } else {
-            lines.push("pool B, ungrouped singleton.")
-          }
+            (u.group !== null ? " · group " + u.group + ", " + u.members.length + " faces" : "")
+          pos.style.color = state.pool === "A" ? "var(--poolA)" : "var(--poolB)"
+          top.appendChild(pos)
+
           var remaining = unlabelledOf(u).length
-          lines.push(
-            remaining === 0
-              ? "unit complete — a keystroke here overwrites it"
-              : remaining + " of " + u.members.length + " still unlabelled",
-          )
-          lines.push("photo " + (faceById.get(u.members[0]) || {}).photoId)
-          for (var li = 0; li < lines.length; li++) {
-            var p = document.createElement("p")
-            p.textContent = lines[li]
-            meta.appendChild(p)
+          var st = document.createElement("span")
+          st.className = "status" + (remaining === 0 ? " done" : "")
+          if (u.members.length === 1) {
+            var only = state.labels[String(u.members[0])]
+            st.textContent =
+              only === undefined ? "not labelled yet" : "labelled " + only + " — a keystroke overwrites it"
+          } else if (remaining === 0) {
+            st.textContent = "all " + u.members.length + " labelled — a keystroke overwrites them"
+          } else {
+            st.textContent = remaining + " of " + u.members.length + " members still unlabelled"
           }
+          top.appendChild(st)
+          var photo = document.createElement("span")
+          photo.className = "hint"
+          photo.textContent = "photo " + (faceById.get(u.members[0]) || {}).photoId
+          top.appendChild(photo)
+          meta.appendChild(top)
+
+          // One line of guidance per pool, not a paragraph.
+          var bottom = document.createElement("div")
+          bottom.className = "line"
+          var hint = document.createElement("span")
+          hint.className = "hint"
+          if (state.pool === "A") {
+            hint.textContent = "Uniform sample — the headline separation number comes from pool A alone."
+          } else if (u.group !== null) {
+            hint.textContent =
+              "One keystroke labels every included member — space excludes the highlighted one, o keeps only it."
+          } else {
+            hint.textContent = "Pool B singleton — the detector grouped it with nothing."
+          }
+          bottom.appendChild(hint)
+          meta.appendChild(bottom)
 
           var solo = u.members.length === 1
+          mem.style.setProperty("--msize", memberSize(u.members.length))
           var active = memberRing(u)
           for (var mi = 0; mi < u.members.length; mi++) {
             ;(function (id) {
@@ -1028,8 +1529,72 @@ tmp/session1/
           render()
         }
 
+        // ---------- progress ribbon ----------
+        // What the thumbnail wall was actually being used for — "how far along am
+        // I, and where am I" — in one strip, at any dataset size.
+        var SEG_MAX = 240
+        var segEls = []
+        function buildRibbon() {
+          var wrap = $("ribbon")
+          wrap.textContent = ""
+          segEls = []
+          var n = units().length
+          var count = Math.min(n, SEG_MAX)
+          for (var si = 0; si < count; si++) {
+            var lo = Math.floor((si * n) / count)
+            var hi = Math.floor(((si + 1) * n) / count)
+            if (hi <= lo) hi = lo + 1
+            var d = document.createElement("div")
+            d.className = "seg"
+            segEls.push({ el: d, lo: lo, hi: hi })
+            wrap.appendChild(d)
+          }
+        }
+        function refreshRibbon() {
+          var list = units()
+          var cur = state.cursor[state.pool]
+          var doneUnits = 0
+          for (var ri = 0; ri < segEls.length; ri++) {
+            var s = segEls[ri]
+            var total = 0
+            var done = 0
+            var here = false
+            for (var rj = s.lo; rj < s.hi && rj < list.length; rj++) {
+              var u = list[rj]
+              var left = unlabelledOf(u).length
+              total += u.members.length
+              done += u.members.length - left
+              if (left === 0) doneUnits++
+              if (rj === cur) here = true
+            }
+            var cls = "seg"
+            if (total > 0 && done === total) cls += " done"
+            else if (done > 0) cls += " some"
+            if (here) cls += " cur"
+            s.el.className = cls
+          }
+          $("ribbon-note").textContent =
+            "pool " +
+            state.pool +
+            ": " +
+            doneUnits +
+            " / " +
+            list.length +
+            (state.pool === "A" ? " crops" : " groups") +
+            " done · g = browse"
+        }
+
+        // ---------- browsable grid (opt-in) ----------
         var unitEls = []
         var cellEls = new Map()
+        var gridBuilt = false
+        var gridOpen = false
+        function dropGrid() {
+          $("grid").textContent = ""
+          unitEls = []
+          cellEls = new Map()
+          gridBuilt = false
+        }
         function buildGrid() {
           var grid = $("grid")
           grid.textContent = ""
@@ -1067,9 +1632,11 @@ tmp/session1/
               grid.appendChild(block)
             })(list[ui], ui)
           }
+          gridBuilt = true
         }
 
         function refreshGrid() {
+          if (!gridBuilt) return
           var list = units()
           for (var ui2 = 0; ui2 < list.length; ui2++) {
             var block = unitEls[ui2]
@@ -1093,8 +1660,19 @@ tmp/session1/
               }
             }
           }
+          $("grid-title").textContent =
+            "All " + POOL_TOTAL[state.pool] + " pool " + state.pool + " crops, in the fixed order"
+          if (!gridOpen) return
           var cur = unitEls[state.cursor[state.pool]]
           if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: "nearest" })
+        }
+
+        function toggleGrid() {
+          gridOpen = !gridOpen
+          if (gridOpen && !gridBuilt) buildGrid()
+          $("gridwrap").classList.toggle("hide", !gridOpen)
+          $("work").classList.toggle("hide", gridOpen)
+          render()
         }
 
         // SESSION-1 §3: stop at whichever comes first — enough people with 3+
@@ -1140,10 +1718,38 @@ tmp/session1/
           $("foot-b").style.display = state.pool === "B" ? "" : "none"
         }
 
+        /** Names are held somewhere the project's "everything derived is tmp/"
+         *  rule does not reach, so their existence is stated on screen the whole
+         *  time they exist, with the undo right there. */
+        function renderPrivacy() {
+          var bar = $("privacy")
+          bar.textContent = ""
+          var n = nameCount()
+          if (n === 0) {
+            bar.classList.add("hide")
+            return
+          }
+          bar.classList.remove("hide")
+          var msg = document.createElement("span")
+          msg.appendChild(document.createTextNode(n === 1 ? "1 display name is " : n + " display names are "))
+          msg.appendChild(document.createTextNode("held in this browser's localStorage — never in "))
+          var b = document.createElement("b")
+          b.textContent = "labels.json"
+          msg.appendChild(b)
+          msg.appendChild(document.createTextNode(", and not covered by deleting tmp/."))
+          bar.appendChild(msg)
+          var btn = document.createElement("button")
+          btn.textContent = "Forget names now"
+          btn.addEventListener("click", forgetNames)
+          bar.appendChild(btn)
+        }
+
         function render() {
           renderHeader()
+          renderPrivacy()
           renderExemplars()
           renderStage()
+          refreshRibbon()
           refreshGrid()
         }
 
@@ -1166,7 +1772,10 @@ tmp/session1/
           }
           if (k === "n") {
             ev.preventDefault()
-            assign("@new")
+            openNameBox()
+          } else if (k === "/") {
+            ev.preventDefault()
+            openFilter()
           } else if (k === "x") {
             ev.preventDefault()
             assign("x")
@@ -1192,6 +1801,18 @@ tmp/session1/
           } else if (k === "Tab") {
             ev.preventDefault()
             switchPool()
+          } else if (k === "g") {
+            ev.preventDefault()
+            toggleGrid()
+          } else if (k === "Escape") {
+            if ($("savedlg").open) return
+            if (!$("namebox").classList.contains("hide")) {
+              ev.preventDefault()
+              closeNameBox()
+            } else if (gridOpen) {
+              ev.preventDefault()
+              toggleGrid()
+            }
           } else if (k === ",") {
             ev.preventDefault()
             state.hotkeyBase = Math.max(0, state.hotkeyBase - 10)
@@ -1237,24 +1858,134 @@ tmp/session1/
         }
 
         // ---------- export ----------
+        /** p1 means "the first person I created", which is a fact about the
+         *  evening and about who turned up in the shuffle first. The measurement
+         *  only ever asks "same person or not", so any consistent relabelling is
+         *  the same file — permute, and the numbering carries nothing. */
+        function scrambleMap() {
+          var keys = personKeys().keys
+          var slots = []
+          for (var si = 0; si < keys.length; si++) slots.push(si + 1)
+          for (var sj = slots.length - 1; sj > 0; sj--) {
+            var sk = Math.floor(Math.random() * (sj + 1))
+            var tmp = slots[sj]
+            slots[sj] = slots[sk]
+            slots[sk] = tmp
+          }
+          var map = {}
+          for (var mi = 0; mi < keys.length; mi++) map[keys[mi]] = "p" + slots[mi]
+          return map
+        }
+
         function buildLabelFile() {
           var pool = {}
           for (var i7 = 0; i7 < DATA.faces.length; i7++) {
             pool[String(DATA.faces[i7].id)] = DATA.faces[i7].pool
           }
+          var map = scrambleMap()
+          var labels = {}
+          for (var id in state.labels) {
+            var v = state.labels[id]
+            labels[id] = v === "x" ? "x" : map[v] || v
+          }
           // Session1LabelFile.version is required. JSON.stringify would silently
           // drop the key if the batch omitted it from label-data.js.
           return {
             version: typeof DATA.version === "number" ? DATA.version : 1,
-            labels: state.labels,
+            labels: labels,
             pool: pool,
           }
         }
+
+        /** @param {string} s */
+        function isDigits(s) {
+          if (!s.length) return false
+          for (var i9 = 0; i9 < s.length; i9++) {
+            var d = s.charCodeAt(i9)
+            if (d < 48 || d > 57) return false
+          }
+          return true
+        }
+
+        /** A person key is "p" followed by a positive integer. */
+        function isPersonKey(s) {
+          return s.length > 1 && s.charAt(0) === "p" && isDigits(s.slice(1)) && s.charAt(1) !== "0"
+        }
+
+        /** The export is built from opaque keys only, so a name cannot reach it
+         *  by construction. This is the check that says so out loud, and refuses
+         *  to hand over a file that fails it.
+         *
+         *  It validates the STRUCTURE — every key and value against what
+         *  Session1LabelFile permits — rather than scanning the serialised text
+         *  for the names that were typed. Scanning the text was wrong twice
+         *  over. It false-positived: the JSON contains the words "version",
+         *  "labels" and "pool", so a name that is a substring of one of them
+         *  blocked the export outright. "Abe" is inside "labels", and so are
+         *  "Bel", "El" and "Ab" — ordinary names, hard-failing at the end of a
+         *  thirty-minute session with no remedy but discarding every name typed.
+         *  And it was the weaker check: it proved one known list of strings was
+         *  absent, where this proves nothing UNEXPECTED is present at all.
+         *  Returns a description of the problem, or null when the file is clean.
+         */
+        function fileLeak(file) {
+          for (var top in file) {
+            if (top !== "version" && top !== "labels" && top !== "pool") {
+              return 'unexpected top-level field "' + top + '"'
+            }
+          }
+          if (typeof file.version !== "number") return "version is not a number"
+          for (var id in file.labels) {
+            if (!isDigits(id)) return 'label key "' + id + '" is not a face id'
+            var v = file.labels[id]
+            if (v !== "x" && !isPersonKey(v)) {
+              return 'label value "' + v + '" is neither "x" nor p<n>'
+            }
+          }
+          for (var pid in file.pool) {
+            if (!isDigits(pid)) return 'pool key "' + pid + '" is not a face id'
+            var p = file.pool[pid]
+            if (p !== "A" && p !== "B") return 'pool value "' + p + '" is neither A nor B'
+          }
+          return null
+        }
+
+        function renderSave() {
+          var file = buildLabelFile()
+          var json = JSON.stringify(file, null, 2)
+          var problem = fileLeak(file)
+          var blocked = problem !== null
+          $("dlg-json").value = blocked ? "" : json
+          // A structural failure is a bug in this page, not something the owner
+          // did, so no "fix it yourself" escape is offered — there isn't one.
+          // Names never enter buildLabelFile, so forgetting them cannot help.
+          $("dlg-note").textContent = blocked
+            ? "EXPORT BLOCKED — " + problem + ". That is a bug in this page; nothing was written."
+            : ""
+          $("dlg-download").disabled = blocked
+          $("dlg-copy").disabled = blocked
+          $("dlg-pick").disabled = blocked
+          var n = nameCount()
+          $("forget-n").textContent = String(n)
+          $("forget-row").classList.toggle("hide", n === 0 || blocked)
+        }
         function openSave() {
-          var json = JSON.stringify(buildLabelFile(), null, 2)
-          $("dlg-json").value = json
-          $("dlg-note").textContent = ""
+          renderSave()
           $("savedlg").showModal()
+        }
+
+        /** Every export path funnels through here: saving is the moment the names
+         *  have done their job, so forgetting them is the default and the choice
+         *  is on screen rather than in a preference. */
+        function afterExport(note) {
+          if (nameCount() > 0 && $("dlg-forget").checked) {
+            var n = nameCount()
+            forgetNames()
+            $("forget-row").classList.add("hide")
+            $("dlg-note").textContent = note + " · " + n + " display name(s) forgotten"
+            return
+          }
+          $("dlg-note").textContent = note
         }
         function download() {
           var blob = new Blob([$("dlg-json").value], { type: "application/json" })
@@ -1268,12 +1999,12 @@ tmp/session1/
           setTimeout(function () {
             URL.revokeObjectURL(url)
           }, 2000)
-          $("dlg-note").textContent = "downloaded — now move it next to this page"
+          afterExport("downloaded — now move it next to this page")
         }
         function copyJson() {
           var ta = $("dlg-json")
           var done = function () {
-            $("dlg-note").textContent = "copied"
+            afterExport("copied")
           }
           if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(ta.value).then(done, function () {
@@ -1301,7 +2032,7 @@ tmp/session1/
             var w = await handle.createWritable()
             await w.write($("dlg-json").value)
             await w.close()
-            $("dlg-note").textContent = "written"
+            afterExport("written")
           } catch (err) {
             $("dlg-note").textContent = "picker unavailable or cancelled — use Download"
           }
@@ -1310,19 +2041,37 @@ tmp/session1/
         // ---------- boot ----------
         function show() {
           $("app-header").classList.remove("hide")
-          $("exemplars").classList.remove("hide")
-          $("stage").classList.remove("hide")
-          $("gridwrap").classList.remove("hide")
+          $("work").classList.remove("hide")
+          $("ribbonwrap").classList.remove("hide")
           $("footer").classList.remove("hide")
         }
 
         var stored = loadStored()
+        var storedNames = loadStoredNames()
         function start() {
           show()
-          buildGrid()
+          buildRibbon()
           render()
           document.addEventListener("keydown", onKey)
           $("btn-save").addEventListener("click", openSave)
+          $("act-new").addEventListener("click", function () {
+            assign("@new")
+          })
+          $("act-x").addEventListener("click", function () {
+            assign("x")
+          })
+          $("name-input").addEventListener("keydown", function (ev) {
+            if (ev.key === "Enter") {
+              ev.preventDefault()
+              commitNewPerson()
+            } else if (ev.key === "Escape") {
+              ev.preventDefault()
+              closeNameBox()
+            }
+          })
+          $("name-input").addEventListener("blur", closeNameBox)
+          $("rail-filter").addEventListener("input", onFilterInput)
+          $("rail-filter").addEventListener("keydown", onFilterKey)
           $("dlg-close").addEventListener("click", function () {
             $("savedlg").close()
           })
@@ -1347,6 +2096,7 @@ tmp/session1/
           }
         }
 
+        var storedNameCount = storedNames ? Object.keys(storedNames.names).length : 0
         if (stored && stored.labels && Object.keys(stored.labels).length > 0) {
           var bar = $("resume")
           bar.classList.remove("hide")
@@ -1358,7 +2108,12 @@ tmp/session1/
             Object.keys(stored.labels).length +
             " labels, last saved " +
             when.toLocaleString() +
-            "."
+            "." +
+            (storedNameCount > 0
+              ? " " +
+                storedNameCount +
+                " display name(s) are stored alongside them and would be restored too."
+              : " No display names are stored.")
           bar.appendChild(msg)
           var resumeBtn = document.createElement("button")
           resumeBtn.className = "primary"
@@ -1366,6 +2121,7 @@ tmp/session1/
           resumeBtn.addEventListener("click", function () {
             state.labels = stored.labels || {}
             state.exemplars = stored.exemplars || {}
+            names = storedNames ? storedNames.names : {}
             if (stored.pool === "A" || stored.pool === "B") state.pool = stored.pool
             if (stored.cursor) {
               state.cursor.A = Math.min(stored.cursor.A || 0, Math.max(0, UNITS.A.length - 1))
@@ -1379,12 +2135,23 @@ tmp/session1/
           var freshBtn = document.createElement("button")
           freshBtn.textContent = "Start over (discards them)"
           freshBtn.addEventListener("click", function () {
-            if (!window.confirm("Discard " + Object.keys(stored.labels).length + " saved labels?")) return
+            if (
+              !window.confirm(
+                "Discard " +
+                  Object.keys(stored.labels).length +
+                  " saved labels" +
+                  (storedNameCount > 0 ? " and " + storedNameCount + " display name(s)" : "") +
+                  "?",
+              )
+            )
+              return
             try {
               localStorage.removeItem(STORE_KEY)
+              localStorage.removeItem(NAMES_KEY)
             } catch (err) {
               /* nothing to do */
             }
+            names = {}
             bar.classList.add("hide")
             start()
           })
@@ -1398,6 +2165,15 @@ tmp/session1/
           bar.appendChild(exportOld)
           if (!same) bar.classList.add("warn")
         } else {
+          // Names with no labels to attach to are leftovers from a session that
+          // was discarded. Nothing can use them, so nothing should keep them.
+          if (storedNameCount > 0) {
+            try {
+              localStorage.removeItem(NAMES_KEY)
+            } catch (err) {
+              /* nothing to do */
+            }
+          }
           start()
         }
       })()
