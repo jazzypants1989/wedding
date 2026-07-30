@@ -482,3 +482,43 @@ export function makeMp4WithGps(opts = {}) {
   return { buffer, coord }
 }
 
+/** Signed 16.16 fixed-point, the way 3GPP `loci` stores a coordinate.
+ *  @param {number} deg @returns {Buffer} */
+function fixed1616(deg) {
+  const b = Buffer.alloc(4)
+  b.writeInt32BE(Math.round(deg * 65536), 0)
+  return b
+}
+
+/**
+ * A minimal MP4 carrying GPS in the 3GPP `loci` box (moov/udta/loci) — the
+ * carrier ffmpeg writes for `-metadata location=`, and the one neither Apple
+ * carrier covers. Byte layout copied from real `ffmpeg -metadata location=`
+ * output: [version/flags(4)][language(2)][name…\0][role(1)][lon(4)][lat(4)]
+ * [alt(4)][astronomical_body…\0][notes…\0], coordinates as signed 16.16.
+ * @param {{ longitude?: number, latitude?: number, name?: string }} [opts]
+ * @returns {{ buffer: Buffer, longitude: number, latitude: number, name: string }}
+ */
+export function makeMp4WithLoci(opts = {}) {
+  const longitude = opts.longitude ?? -98.7654
+  const latitude = opts.latitude ?? 12.3456
+  const name = opts.name ?? "Rose Garden"
+
+  const loci = box(
+    "loci",
+    Buffer.concat([
+      Buffer.alloc(4), // version + flags
+      u16(0x15c7), // language
+      Buffer.from(name + "\0", "latin1"),
+      Buffer.from([0]), // role: shooting location
+      fixed1616(longitude),
+      fixed1616(latitude),
+      fixed1616(0), // altitude
+      Buffer.from("earth\0", "latin1"),
+      Buffer.from("\0", "latin1"), // additional_notes
+    ]),
+  )
+  const moov = box("moov", box("udta", loci))
+  return { buffer: Buffer.concat([makeFtyp("isom", 16), moov]), longitude, latitude, name }
+}
+

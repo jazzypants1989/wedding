@@ -1,9 +1,22 @@
 /** @file In-place GPS blanking for MP4/QuickTime video originals. Called by
- *  media finalize before a video's bytes may be served publicly. Blanks both
- *  Apple GPS carriers with spaces (0x20) WITHOUT moving any byte — no re-mux —
- *  so every atom offset is preserved. Zero-dep, no regex (Buffer index reads +
- *  latin1 type compares). Prototype-validated; see review-adjudication.md B1
- *  and docs/post-wedding/03-media-pipeline.md §7.5. */
+ *  media finalize before a video's bytes may be served publicly. Blanks all
+ *  three GPS carriers WITHOUT moving any byte — no re-mux — so every atom offset
+ *  is preserved. Zero-dep, no regex (Buffer index reads + latin1 type compares).
+ *  Prototype-validated; see review-adjudication.md B1 and
+ *  docs/post-wedding/03-media-pipeline.md §7.5.
+ *
+ *  The two Apple carriers (`©xyz`, and the `com.apple.quicktime.location.ISO6709`
+ *  mdta key) hold coordinates as text and are blanked with spaces. The 3GPP
+ *  `loci` box holds them as binary 16.16 fixed-point and is zeroed instead:
+ *  spaces there would decode to 8225.98°, an out-of-range coordinate, where zero
+ *  is a well-formed "no location".
+ *
+ *  `loci` was added after it was found to survive a real import. ffmpeg writes it
+ *  for `-metadata location=`, so any clip a guest trimmed or re-encoded can carry
+ *  one, and a video's original IS its public `video` variant
+ *  (core/media-serve.js resolveServable) — the coordinates were recoverable from
+ *  the served bytes. iPhones use the Apple carriers, which is why this one was
+ *  missed. */
 /** @import * as Types from './types.js' */
 
 import fs from "node:fs"
@@ -14,23 +27,28 @@ import { childBoxes, findTopLevelBox, readBox } from "./mp4-boxes.js"
 const LOCATION_KEY = "com.apple.quicktime.location.ISO6709"
 // Legacy udta atom type: 0xA9 'x' 'y' 'z'  (latin1: "©xyz").
 const XYZ_TYPE = "©xyz"
+// 3GPP TS 26.244 location box, written by ffmpeg among others.
+const LOCI_TYPE = "loci"
 // Containers we descend into looking for udta/©xyz and meta.
 const CONTAINERS = new Set(["moov", "trak", "mdia", "minf", "udta"])
 const SPACE = 0x20
+const ZERO = 0x00
 
 /** @typedef {Types.Mp4Box} Box */
 
 /**
- * Blank [from, to) with spaces and record the region.
+ * Blank [from, to) and record the region. `fill` is a space for the text
+ * carriers and zero for `loci`'s binary fields.
  * @param {Buffer} buf
  * @param {number} from
  * @param {number} to
  * @param {string} type
  * @param {Types.BlankedRegion[]} regions
+ * @param {number} [fill]
  */
-function blank(buf, from, to, type, regions) {
+function blank(buf, from, to, type, regions, fill = SPACE) {
   if (to <= from || from < 0 || to > buf.length) return
-  buf.fill(SPACE, from, to)
+  buf.fill(fill, from, to)
   regions.push({ start: from, end: to, type })
 }
 
@@ -45,6 +63,23 @@ function blankXyz(buf, xyz, regions) {
   const from = xyz.contentStart + 4
   const to = Math.min(from + strLen, xyz.boxEnd)
   blank(buf, from, to, "©xyz", regions)
+}
+
+/**
+ * 3GPP `loci`: [version/flags(4)][language(2)][name…\0][role(1)]
+ * [longitude(4)][latitude(4)][altitude(4)][astronomical_body…\0][notes…\0], with
+ * the coordinates as signed 16.16 fixed-point.
+ *
+ * Everything after version/flags is zeroed rather than just the three numbers:
+ * `name` and `additional_notes` are free text describing the place ("Home"), so
+ * they are location data too, and the result still parses — empty strings, role
+ * 0, coordinates 0.0. Trailing zeroes past the shortened strings are inside the
+ * box and stop at its end, which is what keeps this a no-move rewrite.
+ * @param {Buffer} buf @param {Box} loci @param {Types.BlankedRegion[]} regions
+ */
+function blankLoci(buf, loci, regions) {
+  const from = loci.contentStart + 4 // keep version/flags
+  blank(buf, from, loci.boxEnd, LOCI_TYPE, regions, ZERO)
 }
 
 /**
@@ -135,6 +170,7 @@ function processMeta(buf, meta, regions) {
 function walk(buf, box, regions) {
   for (const child of childBoxes(buf, box.contentStart, box.boxEnd)) {
     if (child.type === XYZ_TYPE) blankXyz(buf, child, regions)
+    else if (child.type === LOCI_TYPE) blankLoci(buf, child, regions)
     else if (child.type === "meta") processMeta(buf, child, regions)
     else if (CONTAINERS.has(child.type)) walk(buf, child, regions)
   }
