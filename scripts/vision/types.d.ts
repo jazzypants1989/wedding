@@ -7,7 +7,7 @@
  * organisational tidiness, it is the constraint that keeps one implementation
  * usable in both venues.
  */
-import type { ImageBackend, RgbImage } from "../lib/types.js"
+import type { ImageBackend, MediaBackends, RgbImage } from "../lib/types.js"
 import type {
   DescriptorSet,
   Detection,
@@ -264,16 +264,73 @@ export interface Session1Timing {
  * blocked and there is deliberately no server.
  */
 export interface Session1LabelData {
+  /**
+   * 1 as session1.js writes it; 2 once scripts/vision/relabel-data.js has
+   * regenerated it. Every field marked "version 2" below is optional for that
+   * reason and for that reason only — a v2 file has all of them.
+   */
   version: number
+  /**
+   * Version 2. Sixteen lowercase hex characters: sha256 over every face's id,
+   * photo id and box. It identifies the DATA, which the thing it replaced did
+   * not — the v1 fingerprint was a function of the face COUNT alone, so two
+   * entirely different runs that happened to find the same number of faces were
+   * indistinguishable, and a labels.json could be joined to the wrong run with
+   * every id landing on somebody else's face and nothing said.
+   *
+   * Copied verbatim into labels.json so the report can refuse a mismatch.
+   */
+  datasetId?: string
   faces: Array<{
     id: number
     crop: string
+    /**
+     * Version 2. A wider crop of the same face — hair, clothing, neighbours —
+     * written by scripts/vision/context-crops.js. The tight aligned crop is what
+     * the recogniser sees and is often not enough for a human to tell two
+     * similar-looking guests apart.
+     *
+     * The KEY IS OMITTED when there is no such file, rather than set to null:
+     * the page offers the wider view by asking whether the key is present, and a
+     * null would be an offer of a file that was never written.
+     */
+    context?: string
     photoId: number
     /** Report A's headline number comes from pool A only. */
     pool: "A" | "B"
     /** Pool B's grouping, at a tight cutoff. Null for pool A and for singletons. */
     group: number | null
   }>
+  /**
+   * Version 2. Indexed BY photo id — `photos[face.photoId]` is that face's
+   * photograph — with one entry for every photograph in the run including the
+   * ones with no faces, so the index stays aligned. relabel-data.js asserts the
+   * ids really are 0..n-1 rather than assuming it.
+   *
+   * It exists so the labelling page can say "same shot" and "same evening"
+   * without shipping photos.jsonl, which carries hashes and file paths the page
+   * has no use for.
+   */
+  photos?: Array<{
+    /** capturedAtMs, or null where EXIF had no usable date. */
+    t: number | null
+    /**
+     * The duplicate-class ROOT photo id, by union-find over the exact and near
+     * duplicate pointers — the same transitive closure `frameRoots` computes for
+     * the report. Two photographs with the same `frame` are the same shot.
+     */
+    frame: number
+  }>
+  /**
+   * Version 2, and only when asked for with --roster. Autocomplete for the
+   * optional identities file; never written to labels.json, which stays opaque
+   * `p<n>` keys because the measurement only needs "same person or not".
+   *
+   * The key is omitted entirely when the guests table is unavailable or empty —
+   * an empty array would read as "there are no guests" rather than "no roster
+   * was loaded".
+   */
+  roster?: Array<{ id: number; name: string }>
   /**
    * Presentation order, fixed and shuffled. Cherry-picking easy frontal crops
    * produces a flattering number and a wrong decision, so the order is not the
@@ -330,6 +387,33 @@ export interface Session1LabelFile {
   labels: Record<string, string>
   /** Face id → the pool it was sampled into. Mirrors Session1LabelData. */
   pool: Record<string, "A" | "B">
+  /**
+   * Version 2. Copied from Session1LabelData so a labels.json can be refused
+   * against the run it was not made from. Optional because a version-1 file
+   * predates it and must keep loading unchanged.
+   */
+  datasetId?: string
+  /**
+   * Version 2. Face id → the model's group id, or null. Copied from
+   * Session1LabelData rather than recomputed, so it is what the labeller was
+   * actually shown. Unlocks the over-split rate (how many merge clicks one
+   * person cost) and what the shipped cutoff welded together.
+   */
+  group?: Record<string, number | null>
+  /**
+   * Version 2. Face ids the labeller explicitly refused, ascending. The
+   * distinction it records — "I looked and could not tell" versus "never
+   * reached" — is the only way to detect the failure the spec worries about,
+   * where a session's number is flattering because only the easy crops were
+   * labelled.
+   */
+  skipped?: number[]
+  /**
+   * Version 2. Group id → face ids the labeller carved OUT of that group. A
+   * purity judgement made during labelling and, before this, thrown away.
+   * Groups with no exclusions are omitted.
+   */
+  excluded?: Record<string, number[]>
 }
 
 export interface Session1Args {
@@ -346,6 +430,236 @@ export interface Session1Args {
   limit: number | null
   poolASize: number
 }
+
+// --- Context crops (scripts/vision/context-crops.js) ---
+
+/** An integer pixel rectangle inside a decoded buffer. */
+export interface PixelRect {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/**
+ * Parsed argv. `dir` is the photograph directory and is always typed on the
+ * command line (CLAUDE.md; SPEC §15 r1) — nothing here searches for images.
+ * `runDir` is an existing session-1 run, whose faces.jsonl supplies the ids and
+ * boxes. The detector is never called, because re-detecting would renumber the
+ * faces and face ids are the join key for every label already collected.
+ */
+export interface ContextCropArgs {
+  dir: string
+  runDir: string
+  /** Box expansion factor about its centre. 1 would be the tight crop again. */
+  margin: number
+  /** Output long edge. Never upsampled — a small face stays its own size. */
+  size: number
+  /** Photographs to stop after, counting only those with faces. Null for all. */
+  limit: number | null
+}
+
+export interface ContextCropResult {
+  exitCode: number
+  photos: number
+  written: number
+  /**
+   * Photographs whose decode came back a pixel or two off the size the run
+   * recorded, and whose boxes were scaled to match. See `resolveScale`.
+   */
+  rescaled: number
+  failures: Session1FailureRecord[]
+}
+
+/**
+ * The context crop's path relative to the run directory, with the SAME
+ * six-digit zero-padded id `cropName` uses in session1.js. One definition, which
+ * relabel-data.js imports: a producer and a consumer that disagree about this
+ * filename yield a labelling page pointing at images nobody wrote.
+ */
+export function contextName(id: number): string
+
+/**
+ * The detected box expanded about its own centre and clamped to the image.
+ * Clamped rather than shifted — a face at the edge of the frame stays at the
+ * edge of its context crop, because moving it inwards would show the labeller a
+ * composition the photograph does not have.
+ */
+export function expandBox(
+  box: { x: number; y: number; w: number; h: number },
+  margin: number,
+  width: number,
+  height: number,
+): PixelRect
+
+/** Copy a rectangle out of an RGB buffer. Throws if it is not inside the image. */
+export function cropRegion(image: RgbImage, rect: PixelRect): RgbImage
+
+/**
+ * How to map a box recorded in faces.jsonl onto the buffer just decoded.
+ *
+ * Boxes are in the pixels of the buffer the RUN decoded, so a backend that
+ * rounds its resize differently puts them a pixel or two out — harmless, and
+ * rescaled. A LARGE difference is not rounding: it means a different decode, and
+ * the likeliest is an orientation disagreement between backends (media-variants
+ * records one HEIC where vips and magick report 1600x2400 and sips 2400x1600).
+ * Rescaling through that produces a confident crop of the wrong region, so it
+ * refuses instead — a context crop of the wrong person is worse than a missing
+ * one, because the labeller cannot tell.
+ */
+export function resolveScale(
+  decoded: { width: number; height: number },
+  recorded: { width: number; height: number },
+): { ok: true; sx: number; sy: number } | { ok: false; reason: string }
+
+/**
+ * The `--source-edge` the run actually used, from timing.json. Not a default and
+ * not a flag: every box in faces.jsonl is expressed in the pixels of a buffer
+ * decoded at this value, so guessing it produces crops that are wrong by the
+ * ratio of two constants and look entirely plausible. Throws when absent.
+ */
+export function readSourceEdge(runDir: string): number
+
+export function runContextCrops(
+  args: ContextCropArgs,
+  deps?: {
+    backends?: MediaBackends
+    readPixels?: typeof readPixels
+    writePng?: typeof writePng
+    log?: (line: string) => void
+  },
+): Promise<ContextCropResult>
+
+// --- Regenerating label-data.js (scripts/vision/relabel-data.js) ---
+
+/**
+ * Parsed argv. `dir` is an existing run directory; nothing is re-detected and no
+ * photograph is read, so no photograph directory is needed or accepted.
+ */
+export interface RelabelArgs {
+  dir: string
+  /** Read guest names for the labelling page's autocomplete. Off by default. */
+  roster: boolean
+  /** Only consulted with `roster`. Opened READ-ONLY. */
+  databasePath: string
+  /** Reference context crops where they exist. `--no-context` turns it off. */
+  context: boolean
+}
+
+/**
+ * Pool, group and presentation order for every face.
+ *
+ * These are CARRIED OVER from the previous label-data.js, never re-shuffled.
+ * Pool A is a uniform sample and the only pool report A's headline number may be
+ * computed from; re-drawing it would move faces between the pools, invalidating
+ * labels already collected and the honesty of the number they support.
+ */
+export interface PoolAssignments {
+  pools: Map<number, { pool: "A" | "B"; group: number | null }>
+  order: number[]
+}
+
+/**
+ * Names are never written to labels.json — the measurement only needs "same
+ * person or not". They feed autocomplete for the separate, opt-in identities
+ * file. `ok: false` carries a reason to print, and the roster key is then
+ * omitted from label-data.js entirely rather than written empty.
+ */
+export type RosterResult =
+  | { ok: true; roster: Array<{ id: number; name: string }> }
+  | { ok: false; reason: string }
+
+export interface BuildLabelDataInput {
+  faces: readonly Session1FaceRecord[]
+  photos: readonly Session1PhotoRecord[]
+  assignments: PoolAssignments
+  /** True when a context crop for this face id exists on disk. */
+  hasContext: (id: number) => boolean
+  roster: Array<{ id: number; name: string }> | null
+}
+
+export interface RelabelResult {
+  exitCode: number
+  data: Session1LabelData
+  poolA: number
+  poolB: number
+  /** False when there was no previous file and the pools were re-derived. */
+  carried: boolean
+  contextCrops: number
+  /** Null when no roster was included. */
+  rosterSize: number | null
+}
+
+/**
+ * sha256 over the newline-joined `<id>:<photoId>:<x>,<y>,<w>,<h>` of every face,
+ * boxes at two decimal places, truncated to 16 hex characters. See
+ * `Session1LabelData.datasetId` for what it replaced and why.
+ */
+export function computeDatasetId(faces: readonly Session1FaceRecord[]): string
+
+/**
+ * The positional photo index — capture time and duplicate-frame root, one entry
+ * per photograph. Asserts that photo ids are exactly 0..n-1 rather than assuming
+ * it: an interrupted or `--limit`ed run is where that could stop being true, and
+ * a misaligned index shows the labeller one photograph's time beside another
+ * photograph's face, which is a wrong answer that looks like a right one.
+ */
+export function buildPhotoIndex(
+  photos: readonly Session1PhotoRecord[],
+): Array<{ t: number | null; frame: number }>
+
+/**
+ * The existing label-data.js, parsed back out of its `window.SESSION1_DATA = `
+ * assignment, or null when there is none.
+ */
+export function readPreviousLabelData(dir: string): Session1LabelData | null
+
+/**
+ * Pools and order lifted from a previous label-data.js and checked against the
+ * faces the run recorded. Every check is a refusal to guess: a face with no
+ * previous assignment cannot be given one, because dropping it would shrink the
+ * labelling set and inventing a pool for it would put a face into pool A that
+ * the uniform sample never drew.
+ */
+export function carryAssignments(
+  faces: readonly Session1FaceRecord[],
+  previous: Session1LabelData,
+): PoolAssignments
+
+/**
+ * The fallback for a run with no label-data.js at all: the same seeded sampling
+ * the batch did, from the seed and pool size timing.json recorded. Correct only
+ * if the run's configuration is what timing.json says it is, which is why the
+ * caller says so out loud. Carrying is always preferred.
+ */
+export function derivedAssignments(
+  faces: readonly Session1FaceRecord[],
+  timing: Session1Timing | null,
+): PoolAssignments
+
+/**
+ * Live guests, READ-ONLY, and deliberately not through db/connection.js — that
+ * module creates tables and runs migrations on connect, which is not something a
+ * scratch tool pointed at a production database may do.
+ */
+export function readRoster(databasePath: string): RosterResult
+
+export function buildLabelData(input: BuildLabelDataInput): Session1LabelData
+
+/**
+ * Temp file then rename, because rename is atomic within a directory. A
+ * half-written label-data.js is a labelling page that will not load, and the
+ * person holding it is the least equipped to work out why.
+ */
+export function writeLabelData(file: string, data: Session1LabelData): void
+
+export function runRelabel(
+  args: RelabelArgs,
+  deps?: {
+    log?: (line: string) => void
+    readRoster?: (databasePath: string) => RosterResult
+  },
+): Promise<RelabelResult>
 
 // --- The report (scripts/vision/session1-report.js) ---
 
