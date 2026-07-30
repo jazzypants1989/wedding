@@ -867,6 +867,56 @@ export interface JointGate {
 }
 
 /**
+ * One fold of the held-out gate estimate: cutoffs chosen with this fold's people
+ * hidden, scored on those people alone.
+ *
+ * `samePairs`/`diffPairs` are carried so a fold too thin to mean anything can be
+ * dropped by the same `MIN_STRATUM_PAIRS` rule report A uses on its own headline,
+ * rather than being averaged in and quietly widening the error bars.
+ */
+export interface HeldOutFold {
+  fold: number
+  cutoffs: Record<string, number>
+  adopted: string[]
+  auc: number
+  fprAt95Tpr: number
+  rank1: number
+  /** Held-out faces actually queried for rank-1. */
+  evaluated: number
+  samePairs: number
+  diffPairs: number
+}
+
+/**
+ * What the gate-selection PROCEDURE is worth on people it has not seen.
+ *
+ * ⚠ This is the number to quote, not `JointGate.result`. That one is the score
+ * of a winner chosen by searching ~60 candidates against the very set it is then
+ * reported on, so it is biased upward by however much of its margin was luck.
+ * The two are printed together on purpose: their difference is the optimism, and
+ * a reader who sees only the larger one has been misled by omission.
+ *
+ * `auc`/`rank1` are NaN when no fold was thick enough to score, which is a
+ * legitimate outcome on a small labelled set and must be said rather than
+ * papered over with a zero.
+ */
+export interface HeldOutGate {
+  /** Per fold, for inspection. The headline numbers below are POOLED, not averaged. */
+  folds: HeldOutFold[]
+  requestedFolds: number
+  /** Folds that contributed at least one held-out pair. */
+  contributingFolds: number
+  /** Pooled across every fold — the denominator the AUC actually rests on. */
+  samePairs: number
+  diffPairs: number
+  /** Pooled held-out faces queried for rank-1. */
+  evaluated: number
+  auc: number
+  fprAt95Tpr: number
+  rank1: number
+}
+
+/**
  * One line of the paste block at the end of the report.
  *
  * `note` is a comment for the reader of the terminal, NOT for the file: a tuned

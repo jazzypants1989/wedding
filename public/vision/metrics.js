@@ -253,8 +253,14 @@ export function groupingQuality(groups, labels) {
 }
 
 /** @type {Types.leaveOneOutRank1} */
-export function leaveOneOutRank1(set, labels) {
+export function leaveOneOutRank1(set, labels, options = {}) {
   const { dim, data } = set
+  // The mask restricts which faces are ASKED, never which people can answer.
+  // That distinction is the whole point of it: a held-out evaluation that also
+  // shrank the candidate pool would be measuring an easier problem — picking the
+  // right person out of six is not picking them out of thirty — and the number
+  // would not be comparable to the in-sample one it exists to be compared with.
+  const queryMask = options.queryMask ?? null
 
   /** @type {Map<string, number[]>} */
   const byLabel = new Map()
@@ -289,6 +295,7 @@ export function leaveOneOutRank1(set, labels) {
     if (idx.length < 2) continue
     const sum = /** @type {Float32Array} */ (sums.get(trueLabel))
     for (const i of idx) {
+      if (queryMask !== null && !queryMask[i]) continue
       // The prototype for the true person excludes the face being tested. Not
       // doing this is the classic way to measure a number far better than the
       // one the feature would actually deliver.

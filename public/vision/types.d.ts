@@ -362,8 +362,15 @@ export function groupingQuality(
 /**
  * Rank-1 accuracy against per-person prototypes, holding each face out of its
  * own prototype. This is the number that decides cluster-first vs label-first.
+ *
+ * `queryMask` restricts which faces are asked, by row. Prototypes are still
+ * built from every label in `labels`, so the candidate pool — and therefore the
+ * difficulty — is unchanged. That is what makes a held-out subset's rank-1
+ * comparable to the number measured over everybody; masking the prototypes too
+ * would quietly measure an easier problem and report it as the same one.
  */
 export function leaveOneOutRank1(
   set: DescriptorSet,
   labels: ReadonlyArray<string | null>,
+  options?: { queryMask?: ReadonlyArray<boolean> },
 ): Rank1Report

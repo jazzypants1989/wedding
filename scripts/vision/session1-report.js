@@ -510,14 +510,28 @@ export function sweepGrouping(set, options) {
  * clicks) and welding is the expensive one (unpicking two people is not), so the
  * choice is the best pair-F1 among the points that welded nobody — not the best
  * pair-F1.
+ *
+ * ⚠ When NO swept point is weld-free, there is no such choice, and the fallback
+ * below returns the best pair-F1 among all cannot-link points instead. That is
+ * the right thing to return — a recommendation has to come from somewhere — but
+ * it is a materially different claim, and a caller that prints the sentence at
+ * the top of this comment over it is stating a property the point does not have.
+ * So the flag is returned rather than inferred, and the print path must use it.
+ * It is also a finding in its own right: no cutoff separates these people
+ * without welding two of them together, which is an argument about the product
+ * shape and not a detail of the sweep.
  * @param {Types.SweepPoint[]} points
- * @returns {Types.SweepPoint | null}
+ * @returns {{ point: Types.SweepPoint, weldFree: boolean } | null}
  */
 export function bestSweepPoint(points) {
   const clean = points.filter((p) => p.cannotLink && p.quality.weldedGroups === 0)
-  const pool = clean.length > 0 ? clean : points.filter((p) => p.cannotLink)
+  const weldFree = clean.length > 0
+  const pool = weldFree ? clean : points.filter((p) => p.cannotLink)
   if (pool.length === 0) return null
-  return pool.reduce((best, p) => (p.quality.pairF1 > best.quality.pairF1 ? p : best))
+  return {
+    point: pool.reduce((best, p) => (p.quality.pairF1 > best.quality.pairF1 ? p : best)),
+    weldFree,
+  }
 }
 
 /**
@@ -580,6 +594,15 @@ const GATE_MAX_QUANTILES = [1, 0.98, 0.95, 0.9, 0.8, 0.7]
 const GATE_WORTH_IT = 0.002
 
 /**
+ * Folds for the held-out gate estimate. Five is the usual compromise: enough
+ * training people in each pass that the selection behaves like the real one,
+ * enough held-out people that a fold's AUC rests on more than a handful of
+ * pairs. It costs one full selection per fold, which is the whole reason this
+ * report takes tens of seconds rather than a few.
+ */
+const HELD_OUT_FOLDS = 5
+
+/**
  * A joint gate keeping less than this share of the labelled faces is not a
  * measurement any more — AUC over a handful of pairs is noise, and a
  * recommendation derived from noise is worse than the defaults it replaces.
@@ -633,23 +656,54 @@ function gateCandidates(faces, axis, defaultValue) {
  * Report A's headline AUC and report C's rank-1, recomputed over whichever faces
  * a cutoff set keeps. Both are needed: a gate that lifts AUC while destroying
  * rank-1 has thrown away the people the feature is for.
+ *
+ * The two optional narrowings exist for the held-out folds and are deliberately
+ * separate from `include`. A fold evaluates cutoffs chosen without its labels, so
+ * the PAIRS and the QUERIES must come from the held-out people only — but the
+ * prototypes those queries are ranked against must still come from everybody,
+ * or the fold would be measuring an easier problem than the in-sample number it
+ * is meant to be compared against.
  * @param {Types.LoadedRun} run
  * @param {string} stratumKey
  * @param {(face: Types.Session1FaceRecord) => boolean} include
- * @returns {{ auc: number, rank1: number, kept: number }}
+ * @param {object} [options]
+ * @param {(face: Types.Session1FaceRecord) => boolean} [options.pairsFrom] narrows the AUC pairs only
+ * @param {Set<number>} [options.queryFaceIds] narrows the rank-1 queries only
+ * @returns {{ auc: number, fprAt95Tpr: number, rank1: number, kept: number, evaluated: number, correct: number, samePairs: number, diffPairs: number, same: number[], diff: number[] }}
  */
-function scoreWithGate(run, stratumKey, include) {
-  const poolA = buildView(run, { pool: "A", requireLabel: true, include })
+function scoreWithGate(run, stratumKey, include, options = {}) {
+  const pairsFrom = options.pairsFrom
+  const poolA = buildView(run, {
+    pool: "A",
+    requireLabel: true,
+    include: pairsFrom ? (f) => include(f) && pairsFrom(f) : include,
+  })
   const spec = separationStrata(poolA).find((s) => s.key === stratumKey)
   const { same, diff } = pairDistances(poolA.set, {
     labels: poolA.labels,
     keep: spec ? (spec.keep ?? undefined) : undefined,
   })
+  const sep = separation(same, diff)
   const all = buildView(run, { requireLabel: true, include })
+  const wanted = options.queryFaceIds
+  const r1 = leaveOneOutRank1(
+    all.set,
+    all.labels,
+    wanted ? { queryMask: all.faceIds.map((id) => wanted.has(id)) } : undefined,
+  )
   return {
-    auc: separation(same, diff).auc,
-    rank1: leaveOneOutRank1(all.set, all.labels).rank1,
+    auc: sep.auc,
+    fprAt95Tpr: sep.fprAt95Tpr,
+    rank1: r1.rank1,
     kept: all.labels.length,
+    evaluated: r1.evaluated,
+    correct: r1.correct,
+    samePairs: same.length,
+    diffPairs: diff.length,
+    // Raw, for pooling across folds. A mean of per-fold AUCs is not the same
+    // quantity and is far noisier when the folds are thin; see `heldOutGate`.
+    same,
+    diff,
   }
 }
 
@@ -658,15 +712,32 @@ function scoreWithGate(run, stratumKey, include) {
  * @param {string} stratumKey
  * @returns {{ baseline: Types.GateSweepPoint, ungated: Types.GateSweepPoint, keys: Types.GateSweepKey[], joint: Types.JointGate, breakdown: Array<{ reason: string, n: number }>, defaults: Record<string, number> }}
  */
-export function reportD(run, stratumKey) {
-  const gateDefaults = allDefaults().gate
-  /** @type {Record<string, number>} */
-  const base = { minScore: 0, ...gateDefaults }
-  // The denominator is LABELLED faces, because that is what `kept` counts — a
-  // gate's effect on the unlabelled majority is real but unmeasurable here, and
-  // mixing the two denominators makes a ratio that means nothing.
-  const total = buildView(run, { requireLabel: true }).labels.length
+/** The wide-open end of every axis: what "this check is off" means, per key. */
+const GATE_WIDE_OPEN = {
+  minScore: 0,
+  minBoxPx: 0,
+  minBorderPx: -Infinity,
+  minEyeRatio: 0,
+  maxEyeRatio: Infinity,
+  maxResidual: Infinity,
+  maxAlignScale: Infinity,
+  maxOutside: Infinity,
+  minSharpness: 0,
+}
 
+/**
+ * The whole selection procedure — per-axis sweep, then the joint greedy walk —
+ * over whatever population it is handed. Extracted from `reportD` so a held-out
+ * fold can run the IDENTICAL procedure on the training people, which is the only
+ * way its result is a fair stand-in for what the full selection does.
+ * @param {Types.LoadedRun} run
+ * @param {string} stratumKey
+ * @param {Record<string, number>} base
+ * @param {number} total
+ * @param {(face: Types.Session1FaceRecord) => boolean} population
+ * @returns {{ keys: Types.GateSweepKey[], joint: Types.JointGate, baseline: ReturnType<typeof scoreWithGate> }}
+ */
+function selectGate(run, stratumKey, base, total, population) {
   /** @param {Record<string, number>} cutoffs */
   const withCutoffs = (cutoffs) => {
     /** @type {Set<number>} */
@@ -674,11 +745,10 @@ export function reportD(run, stratumKey) {
     for (const face of run.faces) {
       if (applyGate(face.signals, cutoffs).pass) passing.add(face.id)
     }
-    return scoreWithGate(run, stratumKey, (f) => passing.has(f.id))
+    return scoreWithGate(run, stratumKey, (f) => passing.has(f.id) && population(f))
   }
 
-  const baselineScore = withCutoffs(base)
-  const ungatedScore = scoreWithGate(run, stratumKey, () => true)
+  const baseline = withCutoffs(base)
 
   /** @type {Types.GateSweepKey[]} */
   const keys = []
@@ -690,17 +760,7 @@ export function reportD(run, stratumKey) {
       // One axis at a time, every other check wide open. Sweeping one cutoff
       // inside the full default gate measures the interaction, not the cutoff.
       /** @type {Record<string, number>} */
-      const only = {
-        minScore: 0,
-        minBoxPx: 0,
-        minBorderPx: -Infinity,
-        minEyeRatio: 0,
-        maxEyeRatio: Infinity,
-        maxResidual: Infinity,
-        maxAlignScale: Infinity,
-        maxOutside: Infinity,
-        minSharpness: 0,
-      }
+      const only = { ...GATE_WIDE_OPEN }
       only[axis.key] = value
       const scored = withCutoffs(only)
       points.push({ value, kept: scored.kept, total, auc: scored.auc, rank1: scored.rank1 })
@@ -708,7 +768,171 @@ export function reportD(run, stratumKey) {
     keys.push({ key: axis.key, signal: String(axis.signal), direction: axis.direction, defaultValue, points })
   }
 
-  const joint = jointGate({ keys, base, total, baseline: baselineScore, withCutoffs })
+  return { keys, joint: jointGate({ keys, base, total, baseline, withCutoffs }), baseline }
+}
+
+/**
+ * Labelled faces grouped by person, split into `k` folds of PEOPLE.
+ *
+ * Splitting by person rather than by face is the whole correctness argument: a
+ * random split of faces would put two faces of one person on opposite sides, and
+ * a same-person pair straddling the split is training data leaking into the test
+ * set through the back door.
+ *
+ * Assignment is largest-person-first round robin, which keeps the folds close to
+ * equal in FACES even though the person counts are equal — the face counts per
+ * person are wildly unequal, and a fold that happened to draw only small people
+ * would produce an AUC over a handful of pairs and call it a measurement.
+ * Deterministic by construction: no shuffling, so re-running the report cannot
+ * move the number.
+ * @param {Types.LoadedRun} run
+ * @param {number} k
+ * @returns {Array<Set<number>>} face ids per fold
+ */
+export function personFolds(run, k) {
+  const view = buildView(run, { requireLabel: true })
+  /** @type {Map<string, number[]>} */
+  const byPerson = new Map()
+  view.labels.forEach((label, row) => {
+    if (label === null) return
+    const list = byPerson.get(label)
+    if (list) list.push(view.faceIds[row])
+    else byPerson.set(label, [view.faceIds[row]])
+  })
+
+  const people = [...byPerson.entries()].sort((a, b) => b[1].length - a[1].length || (a[0] < b[0] ? -1 : 1))
+  const folds = Math.max(2, Math.min(k, people.length))
+  /** @type {Array<Set<number>>} */
+  const out = []
+  for (let i = 0; i < folds; i++) out.push(new Set())
+  people.forEach(([, faceIds], i) => {
+    // Serpentine, not plain modulo: plain modulo hands fold 0 the largest person
+    // of every cycle, so with a heavy-tailed face distribution fold 0 ends up
+    // systematically the biggest.
+    const cycle = Math.floor(i / folds)
+    const slot = cycle % 2 === 0 ? i % folds : folds - 1 - (i % folds)
+    for (const id of faceIds) out[slot].add(id)
+  })
+  return out
+}
+
+/**
+ * ⚠ THE THIRD BUG THIS FILE EXISTS TO NOT HAVE, and the one that flatters.
+ *
+ * `jointGate` picks nine cutoffs by maximising AUC + rank-1 over the labelled
+ * set, and then the report prints the AUC and rank-1 that same set achieved
+ * under them. That is selection and evaluation on one sample: the winner of a
+ * search over ~60 candidates is biased upward by however much of its margin was
+ * luck, and nothing in the numbers says which part that was. Left alone it turns
+ * a real but imperfect result into a spectacular-looking one, which is exactly
+ * the failure the rest of this file is organised around.
+ *
+ * So: run the IDENTICAL selection K times, each time blind to one fold of
+ * PEOPLE, and score each fold's cutoffs on the people that selection never saw.
+ * The mean of those is what the procedure is worth on people it has not met —
+ * and the gap between it and the in-sample number is the optimism, stated rather
+ * than left for the reader to suspect.
+ *
+ * ⚠ The folds are POOLED, not averaged. A mean of per-fold AUCs is a different
+ * and much noisier quantity when the folds are thin: five folds over thirty-odd
+ * people leave six people each, most produce too few cross-hour pairs to score
+ * at all, and the one or two that survive can land on 1.0000 by having drawn an
+ * easy six. Averaging those reports a number that moves with the fold split
+ * rather than with the recogniser — and it will happily print a held-out result
+ * BETTER than the in-sample one, which is a tell that the estimator is broken,
+ * not a discovery. So every held-out pair from every fold goes into one
+ * distribution and one AUC comes out, each pair having been scored by cutoffs
+ * chosen without it. Per-fold numbers are kept for inspection only.
+ * @param {Types.LoadedRun} run
+ * @param {string} stratumKey
+ * @param {Record<string, number>} base
+ * @param {number} total
+ * @param {number} k
+ * @returns {Types.HeldOutGate}
+ */
+export function heldOutGate(run, stratumKey, base, total, k) {
+  const folds = personFolds(run, k)
+  /** @type {Types.HeldOutFold[]} */
+  const results = []
+  /** @type {number[]} */
+  const pooledSame = []
+  /** @type {number[]} */
+  const pooledDiff = []
+  let pooledCorrect = 0
+  let pooledEvaluated = 0
+
+  folds.forEach((testIds, i) => {
+    const inTest = (/** @type {Types.Session1FaceRecord} */ face) => testIds.has(face.id)
+    const inTrain = (/** @type {Types.Session1FaceRecord} */ face) => !testIds.has(face.id)
+
+    const trained = selectGate(run, stratumKey, base, total, inTrain)
+
+    /** @type {Set<number>} */
+    const passing = new Set()
+    for (const face of run.faces) {
+      if (applyGate(face.signals, trained.joint.cutoffs).pass) passing.add(face.id)
+    }
+    // `include` is the gate alone — prototypes come from everybody, so the
+    // candidate pool is the same size it is in-sample. Only the pairs and the
+    // queries are narrowed to the held-out people.
+    const scored = scoreWithGate(run, stratumKey, (f) => passing.has(f.id), {
+      pairsFrom: inTest,
+      queryFaceIds: new Set([...testIds].filter((id) => passing.has(id))),
+    })
+
+    pooledSame.push(...scored.same)
+    pooledDiff.push(...scored.diff)
+    pooledCorrect += scored.correct
+    pooledEvaluated += scored.evaluated
+
+    results.push({
+      fold: i,
+      cutoffs: trained.joint.cutoffs,
+      adopted: trained.joint.adopted,
+      auc: scored.auc,
+      fprAt95Tpr: scored.fprAt95Tpr,
+      rank1: scored.rank1,
+      evaluated: scored.evaluated,
+      samePairs: scored.samePairs,
+      diffPairs: scored.diffPairs,
+    })
+  })
+
+  const pooled = separation(pooledSame, pooledDiff)
+  const measurable = pooledSame.length >= MIN_STRATUM_PAIRS && pooledDiff.length >= MIN_STRATUM_PAIRS
+
+  return {
+    folds: results,
+    requestedFolds: k,
+    contributingFolds: results.filter((r) => r.samePairs > 0 || r.diffPairs > 0).length,
+    samePairs: pooledSame.length,
+    diffPairs: pooledDiff.length,
+    evaluated: pooledEvaluated,
+    auc: measurable ? pooled.auc : NaN,
+    fprAt95Tpr: measurable ? pooled.fprAt95Tpr : NaN,
+    rank1: pooledEvaluated > 0 ? pooledCorrect / pooledEvaluated : NaN,
+  }
+}
+
+/**
+ * @param {Types.LoadedRun} run
+ * @param {string} stratumKey
+ * @param {{ folds?: number }} [options] `folds: 0` skips the held-out pass entirely
+ */
+export function reportD(run, stratumKey, options = {}) {
+  const gateDefaults = allDefaults().gate
+  /** @type {Record<string, number>} */
+  const base = { minScore: 0, ...gateDefaults }
+  // The denominator is LABELLED faces, because that is what `kept` counts — a
+  // gate's effect on the unlabelled majority is real but unmeasurable here, and
+  // mixing the two denominators makes a ratio that means nothing.
+  const total = buildView(run, { requireLabel: true }).labels.length
+
+  const everyone = selectGate(run, stratumKey, base, total, () => true)
+  const ungatedScore = scoreWithGate(run, stratumKey, () => true)
+  const { keys, joint, baseline: baselineScore } = everyone
+
+  const heldOut = options.folds === 0 ? null : heldOutGate(run, stratumKey, base, total, options.folds ?? HELD_OUT_FOLDS)
 
   /** @type {Map<string, number>} */
   const counts = new Map()
@@ -724,9 +948,11 @@ export function reportD(run, stratumKey) {
 
   return {
     baseline: { value: NaN, kept: baselineScore.kept, total, auc: baselineScore.auc, rank1: baselineScore.rank1 },
+    baselineFprAt95Tpr: baselineScore.fprAt95Tpr,
     ungated: { value: NaN, kept: ungatedScore.kept, total, auc: ungatedScore.auc, rank1: ungatedScore.rank1 },
     keys,
     joint,
+    heldOut,
     breakdown,
     defaults: base,
   }
@@ -996,19 +1222,91 @@ export function residualSummary(faces, maxResidual) {
 // ---------------------------------------------------------------------------
 
 /**
+ * Which of report D's configurations the verdict should be read off, in order of
+ * how much they can be trusted.
+ *
+ * 1. **The held-out estimate.** What the selection procedure achieves on people
+ *    it did not see. The only one of the three that is both gated and unbiased.
+ * 2. **The default gate.** Biased by nothing, because its nine cutoffs were set
+ *    from published constants before these labels existed — but they are somebody
+ *    else's numbers, so it understates a gate tuned to this input.
+ * 3. **Ungated.** The last resort, and the wrong population: it describes a
+ *    product that skips the stage whose entire job is removing the faces that
+ *    cannot be described well.
+ *
+ * The in-sample joint result is deliberately NOT on this list at any priority.
+ * It is the score of a search winner on its own search set, and there is no
+ * configuration of this function under which it should be the verdict.
+ *
+ * `keptFraction` is the SHIPPED gate's, in every branch — the held-out folds each
+ * chose their own cutoffs, but the gate that would actually ship is the one
+ * selected on everything, so that is the one whose keep rate a reader needs.
+ * @param {ReturnType<typeof reportD>} d
+ * @returns {{ auc: number, fprAt95Tpr: number, rank1: number, keptFraction: number, label: string }}
+ */
+export function verdictBasis(d) {
+  const total = d.joint.result.total
+  if (d.heldOut && Number.isFinite(d.heldOut.auc)) {
+    return {
+      auc: d.heldOut.auc,
+      fprAt95Tpr: d.heldOut.fprAt95Tpr,
+      rank1: d.heldOut.rank1,
+      keptFraction: total > 0 ? d.joint.result.kept / total : NaN,
+      label: `held-out gate estimate (${d.heldOut.contributingFolds}-fold, pooled over people the selection never saw)`,
+    }
+  }
+  if (Number.isFinite(d.baseline.auc)) {
+    return {
+      auc: d.baseline.auc,
+      fprAt95Tpr: d.baselineFprAt95Tpr,
+      rank1: d.baseline.rank1,
+      keptFraction: total > 0 ? d.baseline.kept / total : NaN,
+      label: "default gate, whose cutoffs predate these labels and so cannot be overfitted to them",
+    }
+  }
+  return {
+    auc: d.ungated.auc,
+    fprAt95Tpr: NaN,
+    rank1: d.ungated.rank1,
+    keptFraction: 1,
+    label: "NO GATE AT ALL — the wrong population, reported only because nothing better could be measured",
+  }
+}
+
+/**
  * SESSION-1 §4 wrote three predictions down in advance so the result would be
  * informative either way. This picks the one the numbers support, rather than
  * leaving the reader to infer it from a table.
+ *
+ * ⚠ THE BUG THIS SIGNATURE EXISTS TO PREVENT. An earlier version took the
+ * UNGATED pool-A AUC, because that is report A's headline and report A is
+ * labelled "THIS IS THE DECISION". But the product does not describe every
+ * detection — the gate runs first, that is its entire purpose, and report D in
+ * the same run measures what the gate is worth. Judging the feature on the
+ * population it never sees understated the result by a whole verdict band, and
+ * printed "grouping is the wrong product shape" directly beneath a table showing
+ * the gate lifting AUC well past the threshold for the band above.
+ *
+ * So the caller must say which configuration these numbers came from, and
+ * `basis` is required rather than defaulted — a default would let the same
+ * mistake back in silently. `keptFraction` and `ungatedAuc` are carried so the
+ * verdict can state the gate's contribution in the same breath: a reader who
+ * takes a gated AUC to be true of every photograph has been misled just as
+ * badly, in the other direction.
  * @param {object} input
  * @param {number} input.auc
  * @param {number} input.fprAt95Tpr
  * @param {number} input.rank1
+ * @param {string} input.basis which configuration `auc`/`rank1` were measured under
+ * @param {number} input.ungatedAuc the same AUC with every check wide open
+ * @param {number} input.keptFraction share of labelled faces the basis gate keeps
+ * @param {boolean} input.weldFreeCutoffExists whether report B found a cutoff that welded nobody
  * @param {number} input.recoverablePeople
  * @param {number} input.people
  * @returns {{ headline: string, description: string, detail: string[] }}
  */
 export function verdict(input) {
-  const { auc, fprAt95Tpr, rank1, recoverablePeople, people } = input
+  const { auc, fprAt95Tpr, rank1, basis, ungatedAuc, keptFraction, weldFreeCutoffExists, recoverablePeople, people } = input
   const share = people > 0 ? recoverablePeople / people : NaN
 
   /** @type {string[]} */
@@ -1021,7 +1319,22 @@ export function verdict(input) {
     description = "Label more faces, or label people who appear in more than one part of the day."
   } else if (auc >= 0.98 && fprAt95Tpr <= 0.02) {
     headline = "CLEAN SEPARATION — a single global cutoff works across everybody"
-    description = "The feature can honestly be described as tagging people, and unsupervised grouping is a reasonable product shape."
+    description = weldFreeCutoffExists
+      ? "The feature can honestly be described as tagging people, and unsupervised grouping is a reasonable product shape."
+      : "The feature can honestly be described as tagging people — on the faces the gate keeps."
+    // The separation number and the grouping sweep are measured on DIFFERENT
+    // populations: separation on gated pool A, report B's sweep on every face
+    // there is. So they can disagree without either being wrong, and the
+    // disagreement is informative rather than an error to reconcile away. What
+    // it must not do is let the verdict assert a product shape that the sweep
+    // in the same report found no safe operating point for.
+    if (!weldFreeCutoffExists) {
+      detail.push(
+        "But report B found NO cutoff that welds nobody, because it sweeps every face while this number " +
+          "is measured on the gated ones. Unsupervised grouping therefore has no safe operating point on the " +
+          "full set; prototypes (SESSION-1 §5 Q2) need no global cutoff and do not inherit the problem.",
+      )
+    }
   } else if (auc >= 0.9) {
     headline = "REAL SIGNAL, IMPERFECT CUTOFF — no one threshold is right for everybody"
     description =
@@ -1048,6 +1361,15 @@ export function verdict(input) {
     detail.push(
       `${recoverablePeople} of ${people} labelled people are recovered reliably — the feature is about those people, and the interface should say so.`,
     )
+  }
+  // Always last, and never omitted: the sentence that stops the headline from
+  // being read as a property of every photograph rather than of the ones the
+  // gate keeps. Shipping the numbers without shipping the gate would deliver the
+  // ungated result and the surprise that goes with it.
+  if (Number.isFinite(auc)) {
+    const gap = Number.isFinite(ungatedAuc) ? ` Ungated it is ${ungatedAuc.toFixed(4)}` : ""
+    const kept = Number.isFinite(keptFraction) ? `, over the ${(keptFraction * 100).toFixed(0)}% of labelled faces that gate keeps` : ""
+    detail.push(`Measured under the ${basis}${kept}.${gap} — the gate is not optional, it is doing this much of the work.`)
   }
   return { headline, description, detail }
 }
@@ -1131,6 +1453,7 @@ function gateNote(joint, key) {
  * never run; see `jointGate`.
  * @param {object} input
  * @param {Types.SweepPoint | null} input.best
+ * @param {boolean} input.weldFree whether `best` welded nobody, or is merely the least bad
  * @param {ReturnType<typeof reportD>} input.d
  * @param {ReturnType<typeof resolutionSummary> | null} input.resolution
  * @param {{ auc: number, rank1: number, mirrorAuc: number, mirrorRank1: number } | null} input.mirror
@@ -1145,7 +1468,9 @@ export function recommendations(input) {
     out.push({
       path: "group.cutoff",
       value: String(input.best.cutoff),
-      note: "best pair-F1 among the cutoffs that welded nobody, with cannot-link on",
+      note: input.weldFree
+        ? "best pair-F1 among the cutoffs that welded nobody, with cannot-link on"
+        : `best pair-F1 with cannot-link on — NO cutoff welded nobody, this one welds ${input.best.quality.weldedGroups}`,
     })
   }
 
@@ -1192,7 +1517,7 @@ export function recommendations(input) {
 
 /**
  * @param {Types.LoadedRun} run
- * @param {{ oracle?: readonly Types.OracleRecord[] | null }} [options]
+ * @param {{ oracle?: readonly Types.OracleRecord[] | null, folds?: number }} [options]
  */
 export function analyse(run, options = {}) {
   const defaults = allDefaults()
@@ -1218,10 +1543,11 @@ export function analyse(run, options = {}) {
     labels: everything.labels,
     photoIds: everything.photoIds,
   })
-  const best = bestSweepPoint(points)
+  const bestPick = bestSweepPoint(points)
+  const best = bestPick ? bestPick.point : null
 
   const c = leaveOneOutRank1(labelled.set, labelled.labels)
-  const d = reportD(run, headline.key)
+  const d = reportD(run, headline.key, { folds: options.folds })
 
   /** @type {{ auc: number, rank1: number, mirrorAuc: number, mirrorRank1: number } | null} */
   let mirror = null
@@ -1246,10 +1572,15 @@ export function analyse(run, options = {}) {
   const residual = residualSummary(run.faces, defaults.gate.maxResidual)
 
   const recoverable = c.perPerson.filter((p) => p.rank1 >= 0.8).length
+  const basis = verdictBasis(d)
   const conclusion = verdict({
-    auc: headline.report.auc,
-    fprAt95Tpr: headline.report.fprAt95Tpr,
-    rank1: c.rank1,
+    auc: basis.auc,
+    fprAt95Tpr: basis.fprAt95Tpr,
+    rank1: basis.rank1,
+    basis: basis.label,
+    ungatedAuc: d.ungated.auc,
+    keptFraction: basis.keptFraction,
+    weldFreeCutoffExists: bestPick ? bestPick.weldFree : false,
     recoverablePeople: recoverable,
     people: c.perPerson.length,
   })
@@ -1266,12 +1597,28 @@ export function analyse(run, options = {}) {
     },
     a,
     headline,
-    b: { cutoffs, points, best, representative: representativeSweep(points, best) },
+    b: {
+      cutoffs,
+      points,
+      best,
+      // False means no swept cutoff avoided welding two people together, so
+      // `best` is the least-bad of a bad set rather than the safe choice the
+      // recommendation is normally phrased as. The print path MUST branch on it.
+      weldFree: bestPick ? bestPick.weldFree : false,
+      representative: representativeSweep(points, best),
+    },
     c,
     d,
     e: { timing: run.timing, resolution, oracle, mirror, residual },
     verdict: conclusion,
-    recommended: recommendations({ best, d, resolution, mirror, timing: run.timing }),
+    recommended: recommendations({
+      best,
+      weldFree: bestPick ? bestPick.weldFree : false,
+      d,
+      resolution,
+      mirror,
+      timing: run.timing,
+    }),
   }
 }
 
@@ -1404,10 +1751,21 @@ export function printSummary(analysis, log = console.log, options = {}) {
   log(RULE)
   log(" REPORT B — GROUPING, swept")
   log(RULE)
-  if (b.best) {
+  if (b.best && b.weldFree) {
     log(` RECOMMENDED CUTOFF ${num(b.best.cutoff)} — best pair-F1 among the points that welded nobody,`)
     log(` with cannot-link on: ${b.best.quality.groups} groups, purity ${num(b.best.quality.purity)}, ` + `completeness ${num(b.best.quality.completeness)}, pair-F1 ${num(b.best.quality.pairF1)}.`)
     log(" Over-splitting is the cheap failure; welding two people is the expensive one.")
+  } else if (b.best) {
+    const fewest = b.points.filter((p) => p.cannotLink).reduce((m, p) => Math.min(m, p.quality.weldedGroups), Infinity)
+    log(` !! NO SWEPT CUTOFF WELDED NOBODY. The best of ${b.points.filter((p) => p.cannotLink).length} cannot-link points still`)
+    log(` !! welds ${fewest} group${fewest === 1 ? "" : "s"} at its most cautious, so the weld-free recommendation this`)
+    log(" !! report prefers does not exist on this input. That is a finding about the")
+    log(" !! product shape, not a detail of the sweep: unsupervised grouping has no safe")
+    log(" !! operating point here, and label-a-few-and-classify (SESSION-1 §5 Q2) does not")
+    log(" !! need one, because a per-person prototype needs no global cutoff at all.")
+    log("")
+    log(` LEAST-BAD CUTOFF ${num(b.best.cutoff)} — highest pair-F1 with cannot-link on, welding ${b.best.quality.weldedGroups}:`)
+    log(` ${b.best.quality.groups} groups, purity ${num(b.best.quality.purity)}, ` + `completeness ${num(b.best.quality.completeness)}, pair-F1 ${num(b.best.quality.pairF1)}.`)
   } else {
     log(" No cutoff could be recommended — no swept point produced a grouping to score.")
   }
@@ -1465,9 +1823,42 @@ export function printSummary(analysis, log = console.log, options = {}) {
   }
   configRow("no gate at all", d.ungated)
   configRow("default gate", d.baseline)
-  configRow("RECOMMENDED gate", j.result, true)
+  configRow("RECOMMENDED gate (in-sample)", j.result, true)
   configRow("every isolated winner, together", j.naive)
   log("")
+  if (d.heldOut) {
+    const h = d.heldOut
+    log(" ⚠ THE ROW ABOVE IS THE SCORE OF A SEARCH WINNER ON ITS OWN SEARCH SET.")
+    log(` Nine cutoffs were chosen by maximising AUC + rank-1 over these same labelled`)
+    log(" faces, so some of that margin is luck and none of the numbers say how much.")
+    log(` The same selection, re-run ${h.folds.length} times with one fold of PEOPLE hidden each time`)
+    log(" and scored only on the people it never saw:")
+    if (Number.isFinite(h.auc)) {
+      log(
+        "  " +
+          pad("HELD-OUT estimate", 34) +
+          padLeft(`${h.evaluated}/${j.result.total}`, 11) +
+          padLeft(num(h.auc, 4), 9) +
+          padLeft(pct(h.rank1), 9),
+      )
+      log(`  Pooled over ${h.contributingFolds} folds: ${h.samePairs} same-person and ${h.diffPairs} different-person held-out pairs,`)
+      log(`  ${h.evaluated} held-out faces queried. Pooled rather than averaged per fold — six people per`)
+      log("  fold is too few to score, and a mean over the one or two that survive tracks")
+      log("  the fold split rather than the recogniser.")
+      log(
+        `  optimism: AUC ${signed(j.result.auc - h.auc, 4)}, rank-1 ${ppDelta(j.result.rank1 - h.rank1)} — ` +
+          "that much of the in-sample result was selection.",
+      )
+      log(" QUOTE THE HELD-OUT ROW. Prototypes come from everybody in both rows, so the")
+      log(" candidate pool is the same size and the two rank-1 figures are comparable.")
+    } else {
+      log(`  Pooled over every fold there are ${h.samePairs} same- and ${h.diffPairs} different-person held-out pairs,`)
+      log(`  short of the ${MIN_STRATUM_PAIRS} each this stratum needs. The held-out estimate is UNMEASURABLE,`)
+      log("  so the in-sample row above is the only one there is — treat it as an upper")
+      log("  bound, not a result, and label more people before quoting it anywhere.")
+    }
+    log("")
+  }
   if (j.adopted.length === 0) {
     log(" >> RECOMMENDING THE DEFAULTS UNCHANGED. Each of the candidate cutoffs below")
     log(" >> earns its ΔAUC with the other eight checks WIDE OPEN. Applied on top of")
@@ -1626,6 +2017,10 @@ export function printSummary(analysis, log = console.log, options = {}) {
     `   keeps ${d.joint.result.kept}/${d.joint.result.total} labelled   AUC ${num(d.joint.result.auc, 4)}   rank-1 ${pct(d.joint.result.rank1)}` +
       `   (defaults: ${d.baseline.kept}/${d.baseline.total}, ${num(d.baseline.auc, 4)}, ${pct(d.baseline.rank1)})`,
   )
+  if (d.heldOut && Number.isFinite(d.heldOut.auc)) {
+    log(`   ...but those two numbers are in-sample. HELD OUT: AUC ${num(d.heldOut.auc, 4)}, rank-1 ${pct(d.heldOut.rank1)}.`)
+    log("   Quote the held-out pair anywhere the result is described.")
+  }
   if (d.joint.adopted.length === 0) {
     log("   They are the defaults, unchanged, because nothing beat them jointly.")
   }
@@ -1911,17 +2306,27 @@ export function renderHtml(analysis) {
   // --- Report B. ---
   out.push("<h2>B — Grouping, swept across cutoffs</h2>")
   if (b.best) {
+    const weldedFig = b.weldFree
+      ? ""
+      : `<div class="fig"><b>${b.best.quality.weldedGroups}</b><span>welded groups</span></div>`
     out.push(
-      '<div class="headline"><h3>Recommended cutoff</h3>' +
+      `<div class="headline"><h3>${b.weldFree ? "Recommended cutoff" : "Least-bad cutoff"}</h3>` +
         '<div class="figures">' +
         `<div class="fig"><b>${num(b.best.cutoff)}</b><span>cosine distance, cannot-link on</span></div>` +
         `<div class="fig"><b>${b.best.quality.groups}</b><span>groups</span></div>` +
         `<div class="fig"><b>${num(b.best.quality.purity)}</b><span>purity</span></div>` +
         `<div class="fig"><b>${num(b.best.quality.completeness)}</b><span>completeness</span></div>` +
         `<div class="fig"><b>${num(b.best.quality.pairF1)}</b><span>pair F1</span></div>` +
+        weldedFig +
         "</div>" +
-        '<p class="why">Best pair-F1 among the points that welded nobody. Over-splitting is the cheap ' +
-        "failure — merging is two clicks — and welding two people together is the expensive one.</p></div>",
+        (b.weldFree
+          ? '<p class="why">Best pair-F1 among the points that welded nobody. Over-splitting is the cheap ' +
+            "failure — merging is two clicks — and welding two people together is the expensive one.</p></div>"
+          : '<p class="why"><b>No swept cutoff welded nobody</b>, so the weld-free recommendation this report ' +
+            "prefers does not exist on this input — every point on the curve fuses at least two people. This is " +
+            "the highest pair-F1 among the cannot-link points, which is a different and weaker claim. It argues " +
+            "for label-a-few-and-classify over unsupervised grouping: a per-person prototype needs no global " +
+            "cutoff, so it cannot have this failure.</p></div>"),
     )
   } else {
     out.push('<p class="empty">no swept point produced a grouping to score</p>')
@@ -1962,12 +2367,40 @@ export function renderHtml(analysis) {
       [
         ["no gate", `${d.ungated.kept}/${d.ungated.total}`, num(d.ungated.auc, 4), pct(d.ungated.rank1)],
         ["default gate", `${d.baseline.kept}/${d.baseline.total}`, num(d.baseline.auc, 4), pct(d.baseline.rank1)],
-        ["recommended gate", `${j.result.kept}/${j.result.total}`, num(j.result.auc, 4), pct(j.result.rank1)],
+        ["recommended gate (in-sample)", `${j.result.kept}/${j.result.total}`, num(j.result.auc, 4), pct(j.result.rank1)],
         ["every isolated winner, together", `${j.naive.kept}/${j.naive.total}`, num(j.naive.auc, 4), pct(j.naive.rank1)],
+        ...(d.heldOut && Number.isFinite(d.heldOut.auc)
+          ? [
+              [
+                "held-out estimate — QUOTE THIS ONE",
+                `${d.heldOut.evaluated}/${j.result.total}`,
+                num(d.heldOut.auc, 4),
+                pct(d.heldOut.rank1),
+              ],
+            ]
+          : []),
       ],
-      [2],
+      d.heldOut && Number.isFinite(d.heldOut.auc) ? [4] : [2],
     ),
   )
+  if (d.heldOut) {
+    out.push(
+      Number.isFinite(d.heldOut.auc)
+        ? '<div class="warn"><b>The "in-sample" row is the score of a search winner on its own search set.</b> ' +
+            "Nine cutoffs were chosen by maximising AUC + rank-1 over these same labelled faces, so part of that " +
+            `margin is luck. Re-running the identical selection ${d.heldOut.folds.length} times with one fold of <em>people</em> hidden, and ` +
+            `scoring only the people it never saw, gives AUC ${num(d.heldOut.auc, 4)} and rank-1 ${pct(d.heldOut.rank1)} — an optimism of ` +
+            `${signed(j.result.auc - d.heldOut.auc, 4)} AUC and ${ppDelta(j.result.rank1 - d.heldOut.rank1)}. Pooled over ` +
+            `${d.heldOut.contributingFolds} folds: ${d.heldOut.samePairs} same-person and ${d.heldOut.diffPairs} different-person held-out pairs, ` +
+            `${d.heldOut.evaluated} held-out faces queried. Pooled rather than averaged per fold, because a handful of people per fold ` +
+            "produces per-fold AUCs that track the split rather than the recogniser. Prototypes come from everybody in both rows, so the " +
+            "candidate pool is the same size and the two rank-1 figures are comparable.</div>"
+        : '<div class="warn"><b>The held-out estimate is unmeasurable on this labelled set.</b> ' +
+            `Pooled over every fold there are ${d.heldOut.samePairs} same- and ${d.heldOut.diffPairs} different-person held-out pairs, short of ` +
+            `the ${MIN_STRATUM_PAIRS} each this stratum needs. The in-sample row is the only one there is — and it is an upper bound, ` +
+            "not a result.</div>",
+    )
+  }
   out.push(
     '<div class="warn"><b>The last row is not a recommendation — it is the trap.</b> ' +
       "Each cutoff below is swept with the other eight checks wide open, which is the right way to measure " +

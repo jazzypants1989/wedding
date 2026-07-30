@@ -27,7 +27,7 @@ import { fileURLToPath } from "node:url"
 import { after, test } from "node:test"
 
 import { distanceMatrix, groupFaces } from "../../public/vision/group.js"
-import { groupingQuality } from "../../public/vision/metrics.js"
+import { groupingQuality, leaveOneOutRank1 } from "../../public/vision/metrics.js"
 import {
   analyse,
   buildView,
@@ -36,6 +36,7 @@ import {
   jointGate,
   loadRun,
   parseArgs,
+  personFolds,
   pickHeadline,
   printSummary,
   renderHtml,
@@ -44,6 +45,8 @@ import {
   resolutionCost,
   separationStrata,
   sweepGrouping,
+  verdict,
+  verdictBasis,
 } from "../../scripts/vision/session1-report.js"
 
 // ---------------------------------------------------------------------------
@@ -570,7 +573,23 @@ test("bestSweepPoint prefers over-splitting to welding two people together", () 
   })
   const best = bestSweepPoint([point(0.3, 0.7, 0), point(0.5, 0.95, 1)])
   assert.ok(best)
-  assert.equal(best.cutoff, 0.3, "the higher F1 welded two people; that is the expensive failure")
+  assert.equal(best.point.cutoff, 0.3, "the higher F1 welded two people; that is the expensive failure")
+  assert.equal(best.weldFree, true)
+})
+
+test("bestSweepPoint says so when NO point welded nobody, instead of implying one did", () => {
+  /** @param {number} cutoff @param {number} f1 @param {number} welded */
+  const point = (cutoff, f1, welded) => ({
+    cutoff,
+    cannotLink: true,
+    quality: /** @type {V.GroupingReport} */ (/** @type {unknown} */ ({ pairF1: f1, weldedGroups: welded })),
+  })
+  // Every point welds somebody, which is a real outcome and not a degenerate
+  // input: it means no cutoff separates these people safely at all.
+  const best = bestSweepPoint([point(0.3, 0.7, 6), point(0.5, 0.95, 2)])
+  assert.ok(best)
+  assert.equal(best.weldFree, false, "the caller must not print the weld-free sentence over this")
+  assert.equal(best.point.cutoff, 0.5, "with no weld-free option the fallback is plain best pair-F1")
 })
 
 // ---------------------------------------------------------------------------
@@ -1026,4 +1045,187 @@ test("parseArgs takes the path as an argument and nothing else by default", () =
   assert.throws(() => parseArgs(["d", "--nope"]))
   assert.throws(() => parseArgs(["a", "b"]))
   assert.equal(parseArgs([]).dir, null, "nothing searches for a run directory")
+})
+
+// ---------------------------------------------------------------------------
+// The held-out gate estimate
+// ---------------------------------------------------------------------------
+
+test("personFolds never splits one person across two folds", () => {
+  const loaded = run()
+  const folds = personFolds(loaded, 5)
+  const view = buildView(loaded, { requireLabel: true })
+
+  /** @type {Map<string, Set<number>>} */
+  const foldsPerPerson = new Map()
+  view.labels.forEach((label, row) => {
+    if (label === null) return
+    const faceId = view.faceIds[row]
+    const which = folds.findIndex((f) => f.has(faceId))
+    assert.notEqual(which, -1, `face ${faceId} landed in no fold`)
+    const seen = foldsPerPerson.get(label) ?? new Set()
+    seen.add(which)
+    foldsPerPerson.set(label, seen)
+  })
+
+  for (const [label, seen] of foldsPerPerson) {
+    // This is the whole correctness argument for splitting by person: a
+    // same-person pair straddling the split is the training set leaking into
+    // the test set through the back door, and it would look like a good result.
+    assert.equal(seen.size, 1, `${label} appears in ${seen.size} folds`)
+  }
+})
+
+test("personFolds covers every labelled face exactly once", () => {
+  const loaded = run()
+  const folds = personFolds(loaded, 5)
+  const view = buildView(loaded, { requireLabel: true })
+  const union = new Set(folds.flatMap((f) => [...f]))
+  assert.equal(union.size, view.faceIds.length)
+  let total = 0
+  for (const f of folds) total += f.size
+  assert.equal(total, union.size, "a face in two folds would be scored twice")
+})
+
+test("a query mask restricts who is ASKED without shrinking the candidate pool", () => {
+  // Three people, two faces each, well separated. Masking to one person must not
+  // turn a 3-way problem into a 1-way one — that would report a much easier
+  // problem under the same name, which is exactly how a held-out number ends up
+  // flattering.
+  const set = {
+    dim: 2,
+    data: Float32Array.from([1, 0, 0.999, 0.045, -1, 0, -0.999, 0.045, 0, 1, 0.045, 0.999]),
+  }
+  const labels = ["a", "a", "b", "b", "c", "c"]
+
+  const all = leaveOneOutRank1(set, labels)
+  assert.equal(all.evaluated, 6)
+
+  const masked = leaveOneOutRank1(set, labels, { queryMask: [true, true, false, false, false, false] })
+  assert.equal(masked.evaluated, 2, "only person a is asked")
+  assert.deepEqual(
+    masked.perPerson.map((p) => p.label),
+    ["a"],
+  )
+  // b and c are absent from the results but must still have been available to be
+  // chosen wrongly; with the pool shrunk to just `a` every answer is right by
+  // default and rank-1 is trivially 1.
+  const aOnly = leaveOneOutRank1({ dim: 2, data: set.data.slice(0, 4) }, ["a", "a"])
+  assert.ok(Number.isNaN(aOnly.rank1) || aOnly.rank1 === 1, "sanity: a one-person pool cannot be got wrong")
+})
+
+// ---------------------------------------------------------------------------
+// Which configuration the verdict is read off
+// ---------------------------------------------------------------------------
+
+/** @param {Record<string, unknown>} [over] */
+function verdictBasisInput(over = {}) {
+  return /** @type {any} */ ({
+    baseline: { value: NaN, kept: 50, total: 100, auc: 0.9, rank1: 0.93 },
+    baselineFprAt95Tpr: 0.4,
+    ungated: { value: NaN, kept: 100, total: 100, auc: 0.8, rank1: 0.87 },
+    joint: { result: { value: NaN, kept: 40, total: 100, auc: 0.99, rank1: 0.99 } },
+    heldOut: {
+      folds: [],
+      requestedFolds: 5,
+      contributingFolds: 4,
+      samePairs: 40,
+      diffPairs: 40,
+      evaluated: 38,
+      auc: 0.95,
+      fprAt95Tpr: 0.1,
+      rank1: 0.96,
+    },
+    ...over,
+  })
+}
+
+test("verdictBasis prefers the held-out estimate over every in-sample number", () => {
+  const basis = verdictBasis(verdictBasisInput())
+  assert.equal(basis.auc, 0.95, "not 0.99 — that one scored a search winner on its own search set")
+  assert.equal(basis.rank1, 0.96)
+  assert.ok(basis.label.includes("held-out"))
+  // The keep rate is the SHIPPED gate's, not a fold's: the folds each chose
+  // their own cutoffs, but the gate that would actually run is the full one.
+  assert.equal(basis.keptFraction, 0.4)
+})
+
+test("verdictBasis falls back to the default gate, never to the joint result", () => {
+  const basis = verdictBasis(verdictBasisInput({ heldOut: null }))
+  assert.equal(basis.auc, 0.9, "the default gate's cutoffs predate the labels, so they cannot be overfitted to them")
+  assert.equal(basis.keptFraction, 0.5)
+  assert.ok(!basis.label.includes("held-out"))
+})
+
+test("verdictBasis reaches the ungated number only when nothing else is measurable", () => {
+  const basis = verdictBasis(
+    verdictBasisInput({
+      heldOut: null,
+      baseline: { value: NaN, kept: 0, total: 100, auc: NaN, rank1: NaN },
+    }),
+  )
+  assert.equal(basis.auc, 0.8)
+  assert.ok(basis.label.includes("NO GATE AT ALL"), "the reader has to be told this is the wrong population")
+})
+
+test("the verdict states which population it measured, so a gated AUC is not read as universal", () => {
+  const v = verdict({
+    auc: 0.95,
+    fprAt95Tpr: 0.1,
+    rank1: 0.96,
+    basis: "held-out gate estimate",
+    ungatedAuc: 0.8,
+    keptFraction: 0.44,
+    weldFreeCutoffExists: true,
+    recoverablePeople: 8,
+    people: 10,
+  })
+  const said = v.detail.join(" ")
+  assert.ok(said.includes("held-out gate estimate"))
+  assert.ok(said.includes("44%"), "the keep rate is the difference between this number and a lie")
+  assert.ok(said.includes("0.8000"), "the ungated contrast has to be in the same breath")
+})
+
+test("the verdict band is read off the gated number, not the ungated one", () => {
+  // The regression this whole change exists for: 0.804 ungated lands in WEAK
+  // SIGNAL, 0.903 gated lands a whole band higher, and the run that produced
+  // both printed the lower verdict over a table showing the higher number.
+  const gated = verdict({
+    auc: 0.9031,
+    fprAt95Tpr: 0.3,
+    rank1: 0.937,
+    basis: "default gate",
+    ungatedAuc: 0.804,
+    keptFraction: 0.74,
+    weldFreeCutoffExists: true,
+    recoverablePeople: 25,
+    people: 31,
+  })
+  assert.ok(gated.headline.startsWith("REAL SIGNAL"), gated.headline)
+  assert.ok(!gated.headline.includes("WEAK"))
+})
+
+test("the verdict never claims a grouping product shape the sweep found no safe cutoff for", () => {
+  const base = {
+    auc: 0.999,
+    fprAt95Tpr: 0.0,
+    rank1: 0.99,
+    basis: "held-out gate estimate",
+    ungatedAuc: 0.8,
+    keptFraction: 0.44,
+    recoverablePeople: 25,
+    people: 31,
+  }
+  const clean = verdict({ ...base, weldFreeCutoffExists: true })
+  assert.ok(clean.headline.startsWith("CLEAN SEPARATION"))
+  assert.ok(clean.description.includes("unsupervised grouping is a reasonable product shape"))
+
+  // Same separation, but report B could not find a cutoff that welded nobody.
+  // Separation is measured on gated pool A and the sweep runs over every face,
+  // so both can be right — what must not happen is the verdict asserting the
+  // product shape anyway, three lines above a table contradicting it.
+  const welds = verdict({ ...base, weldFreeCutoffExists: false })
+  assert.ok(welds.headline.startsWith("CLEAN SEPARATION"), "the separation claim itself still stands")
+  assert.ok(!welds.description.includes("unsupervised grouping is a reasonable product shape"))
+  assert.ok(welds.detail.some((d) => d.includes("NO cutoff that welds nobody")))
 })
