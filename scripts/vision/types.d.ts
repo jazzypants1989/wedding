@@ -8,7 +8,13 @@
  * usable in both venues.
  */
 import type { ImageBackend, RgbImage } from "../lib/types.js"
-import type { Detection, GateSignals } from "../../public/vision/types.js"
+import type {
+  DescriptorSet,
+  Detection,
+  GateSignals,
+  GroupingReport,
+  SeparationReport,
+} from "../../public/vision/types.js"
 
 // --- Pixel source (scripts/vision/pixels-cli.js) ---
 
@@ -236,8 +242,20 @@ export interface Session1Timing {
   stages: Record<string, { ms: number; n: number }>
   /** Backend version line, engine info, node version. */
   environment: Record<string, string>
-  /** The tunables the run actually used, so a report can be read months later. */
-  config: Record<string, unknown>
+  /**
+   * The tunables the run actually used, so a report can be read months later.
+   *
+   * Open-ended, because the batch writes whatever it was configured with and a
+   * closed shape would make adding a knob a two-file change. The three named
+   * below are the ones a CONSUMER reads back rather than displays: the report
+   * prices a resolution change against the edge the run actually used, and
+   * quoting the current default instead would price the wrong trade.
+   */
+  config: {
+    detectEdge?: number
+    sourceEdge?: number
+    nearDuplicateBits?: number
+  } & Record<string, unknown>
 }
 
 /**
@@ -262,6 +280,42 @@ export interface Session1LabelData {
    * labeller's to choose.
    */
   order: number[]
+}
+
+/**
+ * `tmp/session1/contact-data.js`, assigned to `window.SESSION1_CONTACT`. Feeds
+ * the contact sheet — the eyeball pass SESSION-1 §2 puts BEFORE labelling.
+ *
+ * It exists to catch one bug cheaply: a mirrored or rotated crop looks entirely
+ * plausible on its own and quietly degrades every match afterwards. Sorting by
+ * `residual` descending puts the most likely mirrors first, so the check is a
+ * glance at the top of a sorted list rather than a scroll through everything.
+ */
+export interface Session1ContactData {
+  version: number
+  faces: Array<{
+    id: number
+    crop: string
+    photoId: number
+    score: number
+    /** The mirror detector. Reflection is excluded from the transform family. */
+    residual: number
+    eyeRatio: number
+    eyeAngle: number
+    sharpness: number
+    boxPx: number
+    /**
+     * Distance from the box to the nearest image edge; negative when it runs
+     * off. Carried so the sheet can evaluate ALL of the gate's checks — without
+     * it, a face rejected only for clipping the frame renders as a keep, which
+     * is the one failure a check-the-rejects pass cannot afford.
+     */
+    borderPx: number
+    alignScale: number
+    outsideFraction: number
+  }>
+  /** The gate cutoffs in force, so the sheet can show what WOULD be rejected. */
+  cutoffs: Record<string, number>
 }
 
 /** `tmp/session1/labels.json`, written by label.html, read by the report. */
@@ -327,3 +381,208 @@ export interface OracleRecord {
 }
 
 export function loadRun(dir: string): LoadedRun
+
+/**
+ * A subset of the run's faces, packed into the shape every metrics function
+ * takes, with the per-face context the strata need beside it.
+ *
+ * It exists because `pairDistances` deliberately knows nothing about
+ * photographs, duplicate frames or clocks — it takes descriptors and a
+ * `keep(i, j)` predicate, and that predicate needs somewhere to look up what
+ * row `i` was. Every array below is parallel and indexed BY ROW, which is the
+ * index the predicate receives; face ids are data, not positions.
+ */
+export interface FaceView {
+  set: DescriptorSet
+  /** Opaque person key, or null for unlabelled and for not-a-face. */
+  labels: Array<string | null>
+  faceIds: number[]
+  photoIds: number[]
+  /** EXIF capture time, epoch ms. Null drops the row out of every time stratum. */
+  times: Array<number | null>
+  /** Duplicate-frame equivalence class id, by union-find over the photo links. */
+  frames: number[]
+  records: Session1FaceRecord[]
+  /** True when labels.json carried no pool map and everything was read as pool A. */
+  poolAssumed: boolean
+}
+
+/** Which faces `buildView` packs, and which descriptor it takes from each. */
+export interface ViewOptions {
+  /**
+   * Report A's headline is pool A only: pool B was labelled with the model's own
+   * grouping as an assist, so its coverage is conditioned on what the model
+   * already found. Fine for volume in reports B and C, disqualifying in A.
+   */
+  pool?: "A" | "B" | null
+  /** Prefer `mirrorDescriptor` where the run recorded one. */
+  mirror?: boolean
+  requireLabel?: boolean
+  include?: (face: Session1FaceRecord) => boolean
+}
+
+/**
+ * One stratum of report A, as a `keep(i, j)` predicate over FaceView rows.
+ *
+ * Everything that makes report A honest lives in these predicates. Two frames
+ * from one burst produce two near-identical descriptors, so a same-person pair
+ * drawn from them measures the shutter rather than the recogniser — which is
+ * where every flattering number this project could accidentally produce comes
+ * from. `honest` marks the one stratum that may be quoted.
+ */
+export interface StratumSpec {
+  key: string
+  title: string
+  note: string
+  honest: boolean
+  /** Null means "every pair", which is the unfiltered row shown for contrast. */
+  keep: ((i: number, j: number) => boolean) | null
+}
+
+/** A StratumSpec with its separation measured. */
+export interface StratumReport {
+  key: string
+  title: string
+  note: string
+  honest: boolean
+  report: SeparationReport
+}
+
+/**
+ * One point of report B's cutoff sweep.
+ *
+ * ⚠ Each point must be computed on its OWN copy of the distance matrix.
+ * `groupFaces` runs Lance-Williams in place on `options.matrix`, so a sweep that
+ * reuses one matrix computes every point after the first on data the previous
+ * point rewrote. It runs, it terminates, and the curve is plausible garbage.
+ */
+export interface SweepPoint {
+  cutoff: number
+  cannotLink: boolean
+  quality: GroupingReport
+}
+
+/**
+ * One point of report D's per-axis sweep: what a single gate cutoff keeps, and
+ * what the two headline numbers do at it.
+ *
+ * Both numbers are carried because either alone can be gamed by a gate — one
+ * that lifts AUC while destroying rank-1 has thrown away the people the feature
+ * is for. `value` is NaN on the rows that are whole configurations rather than
+ * points on one axis (no gate, the default gate, the joint result).
+ */
+export interface GateSweepPoint {
+  value: number
+  kept: number
+  /** Labelled faces, always. Mixing denominators makes a ratio that means nothing. */
+  total: number
+  auc: number
+  rank1: number
+}
+
+/**
+ * One gate cutoff, swept with every OTHER check held wide open.
+ *
+ * Wide open is the only way to measure one cutoff's own contribution — sweeping
+ * it inside the full default gate measures the interaction instead. The cost of
+ * that choice is that each axis is a measurement of a different configuration,
+ * which is what `JointGate` exists to answer for.
+ */
+export interface GateSweepKey {
+  key: string
+  /** The recorded signal this cutoff thresholds. */
+  signal: string
+  direction: "min" | "max"
+  defaultValue: number
+  /** `points[0]` is always the wide-open end, and the baseline for the deltas. */
+  points: GateSweepPoint[]
+}
+
+/**
+ * One line of report D's summary: what a check bought ON ITS OWN, which is all
+ * an isolated sweep can tell you. `candidate` is null when nothing on the axis
+ * beat leaving it wide open; it can also equal `defaultValue`, which means the
+ * sweep's winner is the shipped value and there is no change to recommend.
+ */
+export interface GateAxisVerdict {
+  key: string
+  defaultValue: number
+  candidate: number | null
+  /** The best point's cutoff, worth adopting or not. */
+  bestValue: number
+  /** Against the wide-open end of this axis, not against the default gate. */
+  deltaAuc: number
+  deltaRank1: number
+  kept: number
+  total: number
+  /** AUC + rank-1 improvement over wide open; the greedy pass's ordering. */
+  gain: number
+  verdict: "worth it" | "no measurable benefit"
+}
+
+/**
+ * The recommendation, MEASURED.
+ *
+ * ⚠ This type exists because of a bug that is very easy to have. Nine cutoffs
+ * swept one at a time are nine measurements of nine DIFFERENT configurations,
+ * and printing the winner of each as a block to paste into the defaults table
+ * recommends a tenth that nobody ran — whose intersection can keep a small
+ * fraction of what any one of them keeps alone, and can be strictly worse than
+ * changing nothing.
+ *
+ * So `naive` is that set actually applied, and `result` is what a greedy pass
+ * starting FROM THE SHIPPED DEFAULTS settled on. Starting there is what makes
+ * "never worse than doing nothing" a property of the algorithm rather than a
+ * check bolted on afterwards: the fallback is reached by adopting nothing.
+ */
+export interface JointGate {
+  /** What is recommended. Every gate.* value in the report comes from here. */
+  cutoffs: Record<string, number>
+  /** What `cutoffs` keeps and scores, applied as one gate. */
+  result: GateSweepPoint
+  /** Every isolated winner taken together — the set that was never evaluated. */
+  naiveCutoffs: Record<string, number>
+  /** What THAT set keeps and scores. Reported so the trap is visible, not hidden. */
+  naive: GateSweepPoint
+  adopted: string[]
+  /** Helped alone and earned nothing on top of the rest. A finding, not silence. */
+  rejected: string[]
+  /** Fewest labelled faces a candidate may keep and still be a measurement. */
+  floor: number
+  verdicts: GateAxisVerdict[]
+}
+
+/**
+ * One line of the paste block at the end of the report.
+ *
+ * `note` is a comment for the reader of the terminal, NOT for the file: a tuned
+ * constant may live in public/vision/defaults.js, and no note of what was
+ * measured to arrive at it may live anywhere in this repository. Copy the
+ * number, leave the note.
+ */
+export interface Recommendation {
+  /** Dotted path into public/vision/defaults.js. */
+  path: string
+  value: string
+  note: string
+}
+
+/**
+ * Parsed argv. The path is always an argument (SPEC §15 r1) — `dir` is null
+ * when none was given and nothing goes looking for one.
+ */
+export interface ReportArgs {
+  dir: string | null
+  oracle: string | null
+  html: boolean
+  out: string | null
+  /**
+   * Restore the full per-cutoff sweeps under reports B and D. Off by default
+   * because sixty rows of sweep is not a finding; the verdict tables above them
+   * are. The HTML carries both regardless — it has a disclosure and a page to
+   * hide them in, and a terminal has neither.
+   */
+  verbose: boolean
+}
+
+export function parseArgs(argv: readonly string[]): ReportArgs

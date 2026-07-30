@@ -28,9 +28,17 @@
  *  data, runs, terminates, and is wrong. `sweepGrouping` copies per step and the
  *  unit test asserts the sweep equals a per-cutoff rebuild.
  *
+ *  **Never print a recommendation the report has not evaluated.** Report D sweeps
+ *  each gate cutoff with the other eight WIDE OPEN, which is the only way to
+ *  measure one cutoff's own contribution — and makes each sweep a measurement of
+ *  a different configuration. Nine winners taken together are a tenth
+ *  configuration, and their intersection can keep a small fraction of what any of
+ *  them keeps alone. `jointGate` applies the set, measures it, and backs off to
+ *  the defaults when the set does not beat them.
+ *
  *  Usage:
  *    node scripts/vision/session1-report.js tmp/session1 [--oracle tmp/oracle.jsonl]
- *      [--html | --no-html] [--out <file>]
+ *      [--html | --no-html] [--out <file>] [--verbose]
  *
  *  Everything it reads and everything it writes is under `tmp/`. No number it
  *  prints may be copied into any file in this repository — CLAUDE.md's fourth
@@ -71,84 +79,11 @@ const MIN_STRATUM_PAIRS = 10
 /** Label written by the labeller for "this detection is not a face". */
 const NOT_A_FACE = "x"
 
-// ---------------------------------------------------------------------------
-// Types this file needs and the shared declarations do not carry. Kept local
-// (a @typedef, not an edit to types.d.ts) because three other agents are coding
-// against that contract right now.
-// ---------------------------------------------------------------------------
-
-/**
- * @typedef {object} FaceView
- * A subset of the run's faces, packed into the shape every metrics function
- * takes, with the per-face context the strata need alongside it. All arrays are
- * parallel and indexed by ROW, which is what `keep(i, j)` receives.
- * @property {V.DescriptorSet} set
- * @property {Array<string | null>} labels Opaque person key, or null for unlabelled / not-a-face.
- * @property {number[]} faceIds
- * @property {number[]} photoIds
- * @property {Array<number | null>} times EXIF capture time, epoch ms.
- * @property {number[]} frames Duplicate-frame equivalence class id.
- * @property {Types.Session1FaceRecord[]} records
- * @property {boolean} poolAssumed True when labels.json carried no pool map.
- */
-
-/**
- * @typedef {object} ViewOptions
- * @property {"A" | "B" | null} [pool]
- * @property {boolean} [mirror] Prefer mirrorDescriptor where present.
- * @property {boolean} [requireLabel]
- * @property {(face: Types.Session1FaceRecord) => boolean} [include]
- */
-
-/**
- * @typedef {object} StratumSpec
- * @property {string} key
- * @property {string} title
- * @property {string} note
- * @property {boolean} honest
- * @property {((i: number, j: number) => boolean) | null} keep
- */
-
-/**
- * @typedef {object} StratumReport
- * @property {string} key
- * @property {string} title
- * @property {string} note
- * @property {boolean} honest
- * @property {V.SeparationReport} report
- */
-
-/**
- * @typedef {object} SweepPoint
- * @property {number} cutoff
- * @property {boolean} cannotLink
- * @property {V.GroupingReport} quality
- */
-
-/**
- * @typedef {object} GateSweepPoint
- * @property {number} value
- * @property {number} kept
- * @property {number} total
- * @property {number} auc
- * @property {number} rank1
- */
-
-/**
- * @typedef {object} GateSweepKey
- * @property {string} key
- * @property {string} signal
- * @property {"min" | "max"} direction
- * @property {number} defaultValue
- * @property {GateSweepPoint[]} points
- */
-
-/**
- * @typedef {object} Recommendation
- * @property {string} path Dotted path into public/vision/defaults.js.
- * @property {string} value
- * @property {string} note
- */
+// Every shape this file produces is declared in scripts/vision/types.d.ts under
+// "The report". Those declarations carry WHY each exists — the strata's honesty,
+// the matrix-mutation hazard, the joint-gate trap — because that is the part a
+// field list cannot say and the part a reader has to know before changing any of
+// them. Nothing is redeclared here.
 
 // ---------------------------------------------------------------------------
 // Loading
@@ -289,8 +224,8 @@ function descriptorOf(face, mirror) {
  * Pack a subset of the run's faces into a DescriptorSet plus the parallel
  * context arrays the strata index into.
  * @param {Types.LoadedRun} run
- * @param {ViewOptions} [options]
- * @returns {FaceView}
+ * @param {Types.ViewOptions} [options]
+ * @returns {Types.FaceView}
  */
 export function buildView(run, options = {}) {
   const mirror = options.mirror === true
@@ -371,8 +306,8 @@ export function buildView(run, options = {}) {
  * same-minute stratum with what is effectively one photograph counted twice —
  * and the whole point of splitting by time is to see how much of the same-minute
  * result is burst rather than recogniser.
- * @param {FaceView} view
- * @returns {StratumSpec[]}
+ * @param {Types.FaceView} view
+ * @returns {Types.StratumSpec[]}
  */
 export function separationStrata(view) {
   /**
@@ -440,12 +375,12 @@ export function separationStrata(view) {
 }
 
 /**
- * @param {FaceView} view
+ * @param {Types.FaceView} view
  * @param {{ bins?: number }} [options]
- * @returns {{ strata: StratumReport[], honestKey: string, usedKey: string, facesWithoutTime: number, poolAssumed: boolean, faces: number, people: number }}
+ * @returns {{ strata: Types.StratumReport[], honestKey: string, usedKey: string, facesWithoutTime: number, poolAssumed: boolean, faces: number, people: number }}
  */
 export function reportA(view, options = {}) {
-  /** @type {StratumReport[]} */
+  /** @type {Types.StratumReport[]} */
   const strata = separationStrata(view).map((spec) => {
     const { same, diff } = pairDistances(view.set, {
       labels: view.labels,
@@ -479,8 +414,8 @@ export function reportA(view, options = {}) {
  * The stratum the summary leads with. `crossHour` unless it is too thin to be a
  * measurement, in which case `dedup` — and the caller says so, loudly, rather
  * than presenting a burst-contaminated number as the headline.
- * @param {StratumReport[]} strata
- * @returns {StratumReport}
+ * @param {Types.StratumReport[]} strata
+ * @returns {Types.StratumReport}
  */
 export function pickHeadline(strata) {
   const byKey = new Map(strata.map((s) => [s.key, s]))
@@ -548,12 +483,12 @@ export function sweepCutoffs(same, diff) {
  * @param {ReadonlyArray<string | null>} options.labels
  * @param {readonly number[]} options.photoIds
  * @param {readonly boolean[]} [options.cannotLink]
- * @returns {SweepPoint[]}
+ * @returns {Types.SweepPoint[]}
  */
 export function sweepGrouping(set, options) {
   const base = distanceMatrix(set)
   const modes = options.cannotLink ?? [true, false]
-  /** @type {SweepPoint[]} */
+  /** @type {Types.SweepPoint[]} */
   const out = []
   for (const cannotLink of modes) {
     for (const cutoff of options.cutoffs) {
@@ -575,14 +510,44 @@ export function sweepGrouping(set, options) {
  * clicks) and welding is the expensive one (unpicking two people is not), so the
  * choice is the best pair-F1 among the points that welded nobody — not the best
  * pair-F1.
- * @param {SweepPoint[]} points
- * @returns {SweepPoint | null}
+ * @param {Types.SweepPoint[]} points
+ * @returns {Types.SweepPoint | null}
  */
 export function bestSweepPoint(points) {
   const clean = points.filter((p) => p.cannotLink && p.quality.weldedGroups === 0)
   const pool = clean.length > 0 ? clean : points.filter((p) => p.cannotLink)
   if (pool.length === 0) return null
   return pool.reduce((best, p) => (p.quality.pairF1 > best.quality.pairF1 ? p : best))
+}
+
+/**
+ * Twenty-two rows is a sweep, not a finding. These five or six are the ones a
+ * reader would have to pick out by hand anyway: the tightest and loosest ends of
+ * the cannot-link-on curve so the shape is visible, the SHIPPED cutoff so the
+ * recommendation has something to be better than, the recommended point, and the
+ * same cutoff with cannot-link off so the constraint's contribution is on the
+ * page. Full sweep stays available behind --verbose.
+ * @param {Types.SweepPoint[]} points
+ * @param {Types.SweepPoint | null} best
+ * @returns {Types.SweepPoint[]}
+ */
+export function representativeSweep(points, best) {
+  const on = points.filter((p) => p.cannotLink)
+  const shipped = allDefaults().group.cutoff
+  /** @type {Set<Types.SweepPoint>} */
+  const picked = new Set()
+  if (on.length > 0) {
+    picked.add(on[0])
+    picked.add(on[on.length - 1])
+    const atShipped = on.find((p) => p.cutoff === shipped)
+    if (atShipped) picked.add(atShipped)
+  }
+  if (best) {
+    picked.add(best)
+    const paired = points.find((p) => !p.cannotLink && p.cutoff === best.cutoff)
+    if (paired) picked.add(paired)
+  }
+  return points.filter((p) => picked.has(p))
 }
 
 // ---------------------------------------------------------------------------
@@ -613,6 +578,27 @@ const GATE_MAX_QUANTILES = [1, 0.98, 0.95, 0.9, 0.8, 0.7]
 
 /** A gate cutoff must move a headline number by at least this to be worth it. */
 const GATE_WORTH_IT = 0.002
+
+/**
+ * A joint gate keeping less than this share of the labelled faces is not a
+ * measurement any more — AUC over a handful of pairs is noise, and a
+ * recommendation derived from noise is worse than the defaults it replaces.
+ * Applied as a floor against the DEFAULT gate's own keep count too, so a run
+ * whose defaults are already aggressive can never be told to go further.
+ */
+const GATE_JOINT_MIN_KEPT_FRACTION = 0.25
+
+/**
+ * The two numbers a cutoff has to justify itself against, summed. Both matter:
+ * a gate that lifts AUC while destroying rank-1 has thrown away the people the
+ * feature is for. A non-finite half scores zero rather than propagating NaN,
+ * which would make every comparison below silently false.
+ * @param {{ auc: number, rank1: number }} point
+ * @returns {number}
+ */
+function gateScore(point) {
+  return (Number.isFinite(point.auc) ? point.auc : 0) + (Number.isFinite(point.rank1) ? point.rank1 : 0)
+}
 
 /**
  * Cutoffs never filter here — they are re-derived from the run's own
@@ -670,7 +656,7 @@ function scoreWithGate(run, stratumKey, include) {
 /**
  * @param {Types.LoadedRun} run
  * @param {string} stratumKey
- * @returns {{ baseline: GateSweepPoint, ungated: GateSweepPoint, keys: GateSweepKey[], breakdown: Array<{ reason: string, n: number }>, defaults: Record<string, number> }}
+ * @returns {{ baseline: Types.GateSweepPoint, ungated: Types.GateSweepPoint, keys: Types.GateSweepKey[], joint: Types.JointGate, breakdown: Array<{ reason: string, n: number }>, defaults: Record<string, number> }}
  */
 export function reportD(run, stratumKey) {
   const gateDefaults = allDefaults().gate
@@ -694,11 +680,11 @@ export function reportD(run, stratumKey) {
   const baselineScore = withCutoffs(base)
   const ungatedScore = scoreWithGate(run, stratumKey, () => true)
 
-  /** @type {GateSweepKey[]} */
+  /** @type {Types.GateSweepKey[]} */
   const keys = []
   for (const axis of GATE_AXES) {
     const defaultValue = base[axis.key] ?? 0
-    /** @type {GateSweepPoint[]} */
+    /** @type {Types.GateSweepPoint[]} */
     const points = []
     for (const value of gateCandidates(run.faces, axis, defaultValue)) {
       // One axis at a time, every other check wide open. Sweeping one cutoff
@@ -722,6 +708,8 @@ export function reportD(run, stratumKey) {
     keys.push({ key: axis.key, signal: String(axis.signal), direction: axis.direction, defaultValue, points })
   }
 
+  const joint = jointGate({ keys, base, total, baseline: baselineScore, withCutoffs })
+
   /** @type {Map<string, number>} */
   const counts = new Map()
   for (const face of run.faces) {
@@ -738,8 +726,112 @@ export function reportD(run, stratumKey) {
     baseline: { value: NaN, kept: baselineScore.kept, total, auc: baselineScore.auc, rank1: baselineScore.rank1 },
     ungated: { value: NaN, kept: ungatedScore.kept, total, auc: ungatedScore.auc, rank1: ungatedScore.rank1 },
     keys,
+    joint,
     breakdown,
     defaults: base,
+  }
+}
+
+/**
+ * ⚠ THE OTHER BUG THIS FILE EXISTS TO NOT HAVE.
+ *
+ * The sweeps above are correct: to measure ONE cutoff's contribution you hold
+ * the other eight wide open, otherwise you are measuring the interaction. But
+ * that makes each sweep a measurement of a DIFFERENT configuration, and taking
+ * the winner from each and printing them as a block to paste into the defaults
+ * table recommends a gate nobody evaluated. Nine cutoffs that each keep 70-80%
+ * of the labelled faces on their own can intersect down to a fraction of that,
+ * and a report which prints the nine keep-counts and not the intersection says
+ * nothing about it either way.
+ *
+ * So: apply the whole set, measure it, and then walk the candidates in order of
+ * isolated gain adopting each only if it improves the JOINT result and leaves
+ * enough labelled faces for that result to mean anything. Starting the walk from
+ * the shipped defaults is what guarantees the recommendation is never worse than
+ * doing nothing — the fallback is reached by adopting nothing, not by a special
+ * case.
+ *
+ * The principle, which is the general one: never print a recommendation the
+ * report has not evaluated.
+ * @param {object} input
+ * @param {Types.GateSweepKey[]} input.keys
+ * @param {Record<string, number>} input.base
+ * @param {number} input.total
+ * @param {{ auc: number, rank1: number, kept: number }} input.baseline
+ * @param {(cutoffs: Record<string, number>) => { auc: number, rank1: number, kept: number }} input.withCutoffs
+ * @returns {Types.JointGate}
+ */
+export function jointGate(input) {
+  const { keys, base, total, baseline, withCutoffs } = input
+
+  /** @type {Types.GateAxisVerdict[]} */
+  const verdicts = []
+  for (const axis of keys) {
+    const open = axis.points[0]
+    if (!open) continue
+    const best = axis.points.reduce((a, b) => (gateScore(b) > gateScore(a) ? b : a))
+    const gain = gateScore(best) - gateScore(open)
+    const worthIt = gain > GATE_WORTH_IT && best.value !== open.value
+    verdicts.push({
+      key: axis.key,
+      defaultValue: axis.defaultValue,
+      candidate: worthIt ? best.value : null,
+      bestValue: best.value,
+      deltaAuc: best.auc - open.auc,
+      deltaRank1: best.rank1 - open.rank1,
+      kept: best.kept,
+      total,
+      gain,
+      verdict: worthIt ? "worth it" : "no measurable benefit",
+    })
+  }
+
+  // The set the old code printed: every isolated winner, defaults elsewhere.
+  /** @type {Record<string, number>} */
+  const naiveCutoffs = { ...base }
+  for (const v of verdicts) if (v.candidate !== null) naiveCutoffs[v.key] = v.candidate
+  const naiveScore = withCutoffs(naiveCutoffs)
+
+  // Never stricter than the defaults already are: if the shipped gate keeps less
+  // than a quarter of the labelled set, that is the floor, not a quarter.
+  const floor = Math.min(baseline.kept, Math.ceil(total * GATE_JOINT_MIN_KEPT_FRACTION))
+
+  /** @type {Record<string, number>} */
+  const cutoffs = { ...base }
+  let current = baseline
+  /** @type {string[]} */
+  const adopted = []
+  /** @type {string[]} */
+  const rejected = []
+  // A candidate equal to the default is not a change and must not be reported as
+  // one — the sweep found it because it beats the axis's WIDE-OPEN end, which is
+  // the shipped gate agreeing with itself.
+  const ordered = verdicts
+    .filter((v) => v.candidate !== null && v.candidate !== v.defaultValue)
+    .sort((a, b) => b.gain - a.gain)
+  for (const v of ordered) {
+    const candidate = /** @type {number} */ (v.candidate)
+    const trial = { ...cutoffs, [v.key]: candidate }
+    const scored = withCutoffs(trial)
+    const meaningful = scored.kept >= floor && Number.isFinite(scored.auc) && Number.isFinite(scored.rank1)
+    if (meaningful && gateScore(scored) > gateScore(current) + GATE_WORTH_IT) {
+      cutoffs[v.key] = candidate
+      current = scored
+      adopted.push(v.key)
+    } else {
+      rejected.push(v.key)
+    }
+  }
+
+  return {
+    cutoffs,
+    result: { value: NaN, kept: current.kept, total, auc: current.auc, rank1: current.rank1 },
+    naiveCutoffs,
+    naive: { value: NaN, kept: naiveScore.kept, total, auc: naiveScore.auc, rank1: naiveScore.rank1 },
+    adopted,
+    rejected,
+    floor,
+    verdicts,
   }
 }
 
@@ -961,15 +1053,92 @@ export function verdict(input) {
 }
 
 /**
+ * What raising the detector's long edge costs, from the run's own stage timings.
+ * Detector cost scales with PIXEL COUNT, so the edge ratio is squared, and
+ * report E already knows what share of the run detect was — which turns "the
+ * cheap resolution loses faces" from a free win into a trade with a price on it.
+ *
+ * Returns null when there is no timing to price it from; the caller then says
+ * the cost is unmeasured rather than implying there is none.
+ * @param {Types.Session1Timing | null} timing
+ * @param {number} fromEdge
+ * @param {number} toEdge
+ * @returns {{ pixelRatio: number, detectShare: number, runRatio: number } | null}
+ */
+export function resolutionCost(timing, fromEdge, toEdge) {
+  if (!timing || !(fromEdge > 0) || !(toEdge > 0)) return null
+  const detect = timing.stages.detect
+  if (!detect || !(detect.ms > 0)) return null
+  const totalMs = Object.values(timing.stages).reduce((sum, s) => sum + s.ms, 0)
+  if (!(totalMs > 0)) return null
+  const pixelRatio = (toEdge / fromEdge) ** 2
+  return {
+    pixelRatio,
+    detectShare: detect.ms / totalMs,
+    runRatio: (totalMs + detect.ms * (pixelRatio - 1)) / totalMs,
+  }
+}
+
+/**
+ * The detect edge the run ACTUALLY used, not the current default — a run made
+ * before someone edited defaults.js must still be priced against what it did.
+ * `Session1Timing.config` declares `detectEdge?: number`, so the only thing left
+ * to establish is that a run wrote one; `resolutionCost` rejects a
+ * non-positive edge on its own.
+ * @param {Types.Session1Timing | null} timing
+ * @returns {number}
+ */
+function configuredDetectEdge(timing) {
+  return timing?.config.detectEdge ?? allDefaults().detect.longEdge
+}
+
+/**
+ * Why one gate cutoff ended up where it did. Four outcomes, and the difference
+ * between the middle two is the whole point of the joint pass: "helped alone,
+ * earned nothing together" is a finding, and reporting it as "no benefit" would
+ * hide it. Two renderings of the same four, so the summary column and the
+ * paste-block comment can never drift apart.
+ * @param {Types.JointGate} joint
+ * @param {string} key
+ * @returns {string}
+ */
+function gateVerdictLabel(joint, key) {
+  if (joint.adopted.includes(key)) return "worth it, adopted"
+  if (joint.rejected.includes(key)) return "worth it alone, not jointly"
+  const found = joint.verdicts.find((v) => v.key === key)
+  if (found && found.candidate !== null) return "already the default"
+  return "no measurable benefit"
+}
+
+/**
+ * The same four outcomes, as the note that goes beside the value to paste.
+ * @param {Types.JointGate} joint
+ * @param {string} key
+ * @returns {string}
+ */
+function gateNote(joint, key) {
+  if (joint.adopted.includes(key)) return "improved the gate with the other eight checks in force"
+  if (joint.rejected.includes(key)) return "unchanged — helped alone, earned nothing on top of the rest"
+  const found = joint.verdicts.find((v) => v.key === key)
+  if (found && found.candidate !== null) return "unchanged — the sweep's own best IS the default"
+  return "unchanged — no measured benefit on this input"
+}
+
+/**
+ * ⚠ Every gate value here comes from `d.joint.cutoffs` — the set the joint
+ * evaluation actually measured — and never from the nine independent sweeps
+ * directly. Taking the winner of each sweep produces a configuration that was
+ * never run; see `jointGate`.
  * @param {object} input
- * @param {SweepPoint | null} input.best
+ * @param {Types.SweepPoint | null} input.best
  * @param {ReturnType<typeof reportD>} input.d
  * @param {ReturnType<typeof resolutionSummary> | null} input.resolution
  * @param {{ auc: number, rank1: number, mirrorAuc: number, mirrorRank1: number } | null} input.mirror
- * @returns {Recommendation[]}
+ * @param {Types.Session1Timing | null} [input.timing]
+ * @returns {Types.Recommendation[]}
  */
 export function recommendations(input) {
-  /** @type {Recommendation[]} */
+  /** @type {Types.Recommendation[]} */
   const out = []
 
   if (input.best) {
@@ -980,24 +1149,10 @@ export function recommendations(input) {
     })
   }
 
+  const joint = input.d.joint
   for (const axis of input.d.keys) {
-    const scored = axis.points
-      .map((p) => ({ p, score: (Number.isFinite(p.auc) ? p.auc : 0) + (Number.isFinite(p.rank1) ? p.rank1 : 0) }))
-      .sort((a, b) => b.score - a.score)
-    const open = axis.points[0]
-    const bestPoint = scored.length > 0 ? scored[0].p : null
-    if (!bestPoint || !open) continue
-    const openScore = (Number.isFinite(open.auc) ? open.auc : 0) + (Number.isFinite(open.rank1) ? open.rank1 : 0)
-    const gain = scored[0].score - openScore
-    if (gain > GATE_WORTH_IT && bestPoint.value !== open.value) {
-      out.push({
-        path: `gate.${axis.key}`,
-        value: String(bestPoint.value),
-        note: `keeps ${bestPoint.kept}/${bestPoint.total} labelled faces`,
-      })
-    } else {
-      out.push({ path: `gate.${axis.key}`, value: String(axis.defaultValue), note: "unchanged — no measured benefit on this input" })
-    }
+    const value = joint.cutoffs[axis.key] ?? axis.defaultValue
+    out.push({ path: `gate.${axis.key}`, value: String(value), note: gateNote(joint, axis.key) })
   }
 
   if (input.mirror) {
@@ -1010,14 +1165,22 @@ export function recommendations(input) {
   }
 
   if (input.resolution && Number.isFinite(input.resolution.recall)) {
-    out.push({
-      path: "detect.longEdge",
-      value: input.resolution.recall >= 0.95 ? "1280" : "2000",
-      note:
-        input.resolution.recall >= 0.95
-          ? "the cheap resolution recovers what the expensive one finds"
-          : "the cheap resolution loses faces the expensive one finds",
-    })
+    const cheapIsEnough = input.resolution.recall >= 0.95
+    const from = configuredDetectEdge(input.timing ?? null)
+    const to = allDefaults().detect.sourceEdge
+    const cost = cheapIsEnough ? null : resolutionCost(input.timing ?? null, from, to)
+    /** @type {string} */
+    let note
+    if (cheapIsEnough) {
+      note = "the cheap resolution recovers what the expensive one finds — and costs less"
+    } else if (cost) {
+      note =
+        `finds faces the cheap edge misses, at ${num(cost.pixelRatio, 1)}x the detect pixels ` +
+        `(detect = ${pct(cost.detectShare)} of stage time, so ~${num(cost.runRatio, 2)}x the run)`
+    } else {
+      note = "the cheap resolution loses faces the expensive one finds; cost unpriced (no timing.json)"
+    }
+    out.push({ path: "detect.longEdge", value: cheapIsEnough ? String(from) : String(to), note })
   }
 
   return out
@@ -1103,12 +1266,12 @@ export function analyse(run, options = {}) {
     },
     a,
     headline,
-    b: { cutoffs, points, best },
+    b: { cutoffs, points, best, representative: representativeSweep(points, best) },
     c,
     d,
     e: { timing: run.timing, resolution, oracle, mirror, residual },
     verdict: conclusion,
-    recommended: recommendations({ best, d, resolution, mirror }),
+    recommended: recommendations({ best, d, resolution, mirror, timing: run.timing }),
   }
 }
 
@@ -1128,6 +1291,21 @@ function pct(value) {
   return Number.isFinite(value) ? `${(value * 100).toFixed(1)}%` : "n/a"
 }
 
+/** A difference, always signed, so a "+" is never mistaken for a level.
+ * @param {number} value @param {number} [digits] @returns {string} */
+function signed(value, digits = 3) {
+  if (!Number.isFinite(value)) return "n/a"
+  return (value < 0 ? "" : "+") + value.toFixed(digits)
+}
+
+/** A difference between two rates, in percentage POINTS — not a percentage of a
+ * percentage, which is how a +1pp move gets reported as +1%.
+ * @param {number} value @returns {string} */
+function ppDelta(value) {
+  if (!Number.isFinite(value)) return "n/a"
+  return (value < 0 ? "" : "+") + (value * 100).toFixed(1) + "pp"
+}
+
 /** @param {string} text @param {number} width @returns {string} */
 function pad(text, width) {
   return text.length >= width ? text : text + " ".repeat(width - text.length)
@@ -1144,9 +1322,11 @@ const THIN = "-".repeat(78)
 /**
  * @param {ReturnType<typeof analyse>} analysis
  * @param {(line: string) => void} [log]
+ * @param {{ verbose?: boolean }} [options]
  */
-export function printSummary(analysis, log = console.log) {
+export function printSummary(analysis, log = console.log, options = {}) {
   const { a, headline, b, c, d, e } = analysis
+  const verbose = options.verbose === true
 
   log(RULE)
   log(" SESSION 1 — does this work")
@@ -1224,55 +1404,133 @@ export function printSummary(analysis, log = console.log) {
   log(RULE)
   log(" REPORT B — GROUPING, swept")
   log(RULE)
-  log(
-    "  " +
-      pad("cutoff", 9) +
-      pad("cannot-link", 13) +
-      padLeft("groups", 8) +
-      padLeft("purity", 8) +
-      padLeft("complete", 10) +
-      padLeft("pairF1", 8) +
-      padLeft("welded", 8),
-  )
-  for (const p of b.points) {
+  if (b.best) {
+    log(` RECOMMENDED CUTOFF ${num(b.best.cutoff)} — best pair-F1 among the points that welded nobody,`)
+    log(` with cannot-link on: ${b.best.quality.groups} groups, purity ${num(b.best.quality.purity)}, ` + `completeness ${num(b.best.quality.completeness)}, pair-F1 ${num(b.best.quality.pairF1)}.`)
+    log(" Over-splitting is the cheap failure; welding two people is the expensive one.")
+  } else {
+    log(" No cutoff could be recommended — no swept point produced a grouping to score.")
+  }
+  log("")
+  /** @param {Types.SweepPoint[]} rows */
+  const sweepTable = (rows) => {
     log(
       "  " +
-        pad(num(p.cutoff), 9) +
-        pad(p.cannotLink ? "on" : "off", 13) +
-        padLeft(String(p.quality.groups), 8) +
-        padLeft(num(p.quality.purity), 8) +
-        padLeft(num(p.quality.completeness), 10) +
-        padLeft(num(p.quality.pairF1), 8) +
-        padLeft(String(p.quality.weldedGroups), 8),
+        pad("cutoff", 9) +
+        pad("cannot-link", 13) +
+        padLeft("groups", 8) +
+        padLeft("purity", 8) +
+        padLeft("complete", 10) +
+        padLeft("pairF1", 8) +
+        padLeft("welded", 8),
     )
+    for (const p of rows) {
+      log(
+        (p === b.best ? " >" : "  ") +
+          pad(num(p.cutoff), 9) +
+          pad(p.cannotLink ? "on" : "off", 13) +
+          padLeft(String(p.quality.groups), 8) +
+          padLeft(num(p.quality.purity), 8) +
+          padLeft(num(p.quality.completeness), 10) +
+          padLeft(num(p.quality.pairF1), 8) +
+          padLeft(String(p.quality.weldedGroups), 8),
+      )
+    }
   }
-  if (b.best) {
-    log("")
-    log(` Recommended cutoff ${num(b.best.cutoff)} — best pair-F1 among the points that welded nobody.`)
-    log(" Over-splitting is the cheap failure; welding two people is the expensive one.")
+  if (verbose) {
+    log(` All ${b.points.length} swept points:`)
+    sweepTable(b.points)
+  } else {
+    log(" The ends of the curve, the shipped cutoff and the recommendation:")
+    sweepTable(b.representative)
+    log(` (${b.points.length} points were swept in all — --verbose prints every one)`)
   }
 
   log("")
   log(RULE)
   log(" REPORT D — IS THE GATE EARNING ITS PLACE")
   log(RULE)
-  log(` no gate at all      keeps ${d.ungated.kept}/${d.ungated.total} labelled   AUC ${num(d.ungated.auc, 4)}  rank-1 ${pct(d.ungated.rank1)}`)
-  log(` default gate        keeps ${d.baseline.kept}/${d.baseline.total} labelled   AUC ${num(d.baseline.auc, 4)}  rank-1 ${pct(d.baseline.rank1)}`)
+  const j = d.joint
+  log(" Four whole configurations, each one actually applied and measured:")
+  log("  " + pad("configuration", 34) + padLeft("kept", 11) + padLeft("AUC", 9) + padLeft("rank-1", 9))
+  /** @param {string} label @param {Types.GateSweepPoint} p @param {boolean} [mark] */
+  const configRow = (label, p, mark) => {
+    log(
+      (mark ? " >" : "  ") +
+        pad(label, 34) +
+        padLeft(`${p.kept}/${p.total}`, 11) +
+        padLeft(num(p.auc, 4), 9) +
+        padLeft(pct(p.rank1), 9),
+    )
+  }
+  configRow("no gate at all", d.ungated)
+  configRow("default gate", d.baseline)
+  configRow("RECOMMENDED gate", j.result, true)
+  configRow("every isolated winner, together", j.naive)
   log("")
-  log(" One cutoff at a time, every other check wide open:")
-  for (const axis of d.keys) {
-    log(` ${THIN}`)
-    log(` ${axis.key} (${axis.direction} on ${axis.signal}), default ${num(axis.defaultValue, 5)}`)
-    log("  " + pad("cutoff", 12) + padLeft("kept", 10) + padLeft("AUC", 9) + padLeft("rank-1", 9))
-    for (const p of axis.points) {
-      log(
-        "  " +
-          pad(num(p.value, 5), 12) +
-          padLeft(`${p.kept}`, 10) +
-          padLeft(num(p.auc, 4), 9) +
-          padLeft(pct(p.rank1), 9),
-      )
+  if (j.adopted.length === 0) {
+    log(" >> RECOMMENDING THE DEFAULTS UNCHANGED. Each of the candidate cutoffs below")
+    log(" >> earns its ΔAUC with the other eight checks WIDE OPEN. Applied on top of")
+    log(" >> the rest of the gate, none of them improved the joint result, or none")
+    log(` >> left the ${j.floor}-face floor below which the measurement stops meaning anything.`)
+  } else {
+    log(` >> RECOMMENDING ${j.adopted.length} CHANGE${j.adopted.length === 1 ? "" : "S"} to the defaults: ${j.adopted.join(", ")}.`)
+    if (j.rejected.length > 0) {
+      log(` >> Not adopted, though each helps in isolation: ${j.rejected.join(", ")}.`)
+      log(" >> They earned nothing once the other checks were in force.")
     }
+  }
+  log("")
+  log(" The last row is why. Nine cutoffs measured one at a time are nine different")
+  log(" configurations; their intersection is a tenth that nobody measured. It is")
+  log(` ${j.naive.kept}/${j.naive.total} labelled faces here, against ${d.baseline.kept} for the defaults.`)
+
+  log("")
+  log(" Per check, swept ALONE with every other check wide open — so ΔAUC and Δrank-1")
+  log(" below are what that cutoff is worth on its own, and nothing more:")
+  log(
+    "  " +
+      pad("check", 16) +
+      padLeft("best cutoff", 13) +
+      padLeft("ΔAUC", 9) +
+      padLeft("Δrank-1", 10) +
+      padLeft("keeps", 8) +
+      "  verdict",
+  )
+  for (const v of j.verdicts) {
+    const note = gateVerdictLabel(j, v.key)
+    log(
+      "  " +
+        pad(v.key, 16) +
+        padLeft(v.candidate === null ? "—" : num(v.candidate, 5), 13) +
+        padLeft(signed(v.deltaAuc), 9) +
+        padLeft(ppDelta(v.deltaRank1), 10) +
+        padLeft(pct(v.total > 0 ? v.kept / v.total : NaN), 8) +
+        "  " +
+        note,
+    )
+  }
+
+  if (verbose) {
+    log("")
+    log(" One cutoff at a time, every other check wide open:")
+    for (const axis of d.keys) {
+      log(` ${THIN}`)
+      log(` ${axis.key} (${axis.direction} on ${axis.signal}), default ${num(axis.defaultValue, 5)}`)
+      log("  " + pad("cutoff", 12) + padLeft("kept", 10) + padLeft("AUC", 9) + padLeft("rank-1", 9))
+      for (const p of axis.points) {
+        log(
+          "  " +
+            pad(num(p.value, 5), 12) +
+            padLeft(`${p.kept}`, 10) +
+            padLeft(num(p.auc, 4), 9) +
+            padLeft(pct(p.rank1), 9),
+        )
+      }
+    }
+  } else {
+    log("")
+    log(" (--verbose prints the full per-cutoff sweep behind every row above)")
   }
   log("")
   log(" Rejections at the default cutoffs, attributed to the first failing check:")
@@ -1361,6 +1619,15 @@ export function printSummary(analysis, log = console.log) {
   log(" Cutoffs to write into public/vision/defaults.js:")
   for (const r of analysis.recommended) {
     log("   " + pad(r.path, 24) + pad(r.value, 12) + `# ${r.note}`)
+  }
+  log("")
+  log(" The nine gate values above were applied TOGETHER and measured together:")
+  log(
+    `   keeps ${d.joint.result.kept}/${d.joint.result.total} labelled   AUC ${num(d.joint.result.auc, 4)}   rank-1 ${pct(d.joint.result.rank1)}` +
+      `   (defaults: ${d.baseline.kept}/${d.baseline.total}, ${num(d.baseline.auc, 4)}, ${pct(d.baseline.rank1)})`,
+  )
+  if (d.joint.adopted.length === 0) {
+    log("   They are the defaults, unchanged, because nothing beat them jointly.")
   }
   log("")
   log(" Copy the NUMBERS ONLY. CLAUDE.md's fourth photograph rule: no note of what")
@@ -1539,8 +1806,15 @@ svg .tick { fill:var(--dim); font-size:10px; }
 .bars .bar { flex:1; background:var(--same); opacity:.75; min-height:1px; }
 .barscale { display:flex; justify-content:space-between; font-size:.72rem; color:var(--dim); }
 .empty { color:var(--dim); font-style:italic; }
+details { margin:.75rem 0 1.25rem; border:1px solid var(--line); border-radius:6px; padding:.4rem .75rem; }
+details[open] { padding-bottom:.75rem; }
+summary { cursor:pointer; color:var(--dim); font-size:.85rem; padding:.25rem 0; }
+details h3:first-of-type { margin-top:.75rem; }
 code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.82rem; }
-pre { background:color-mix(in srgb, var(--ink) 6%, transparent); padding:.75rem 1rem; border-radius:6px; overflow-x:auto; }
+/* pre-wrap, not overflow: the longest line in the paste block is the one that
+   prices a recommendation, and a horizontal scrollbar hides exactly that. */
+pre { background:color-mix(in srgb, var(--ink) 6%, transparent); padding:.75rem 1rem; border-radius:6px;
+      white-space:pre-wrap; overflow-wrap:anywhere; }
 `
 
 /**
@@ -1636,15 +1910,27 @@ export function renderHtml(analysis) {
 
   // --- Report B. ---
   out.push("<h2>B — Grouping, swept across cutoffs</h2>")
-  out.push(
-    '<p class="sub">Every point is computed on its own copy of the distance matrix. ' +
-      "<code>groupFaces</code> rewrites the matrix in place (Lance-Williams), so a sweep that reuses one " +
-      "matrix runs, terminates and is silently wrong.</p>",
-  )
-  out.push(
+  if (b.best) {
+    out.push(
+      '<div class="headline"><h3>Recommended cutoff</h3>' +
+        '<div class="figures">' +
+        `<div class="fig"><b>${num(b.best.cutoff)}</b><span>cosine distance, cannot-link on</span></div>` +
+        `<div class="fig"><b>${b.best.quality.groups}</b><span>groups</span></div>` +
+        `<div class="fig"><b>${num(b.best.quality.purity)}</b><span>purity</span></div>` +
+        `<div class="fig"><b>${num(b.best.quality.completeness)}</b><span>completeness</span></div>` +
+        `<div class="fig"><b>${num(b.best.quality.pairF1)}</b><span>pair F1</span></div>` +
+        "</div>" +
+        '<p class="why">Best pair-F1 among the points that welded nobody. Over-splitting is the cheap ' +
+        "failure — merging is two clicks — and welding two people together is the expensive one.</p></div>",
+    )
+  } else {
+    out.push('<p class="empty">no swept point produced a grouping to score</p>')
+  }
+  /** @param {Types.SweepPoint[]} rows @returns {string} */
+  const sweepTable = (rows) =>
     table(
       ["cutoff", "cannot-link", "groups", "purity", "completeness", "pair F1", "welded"],
-      b.points.map((p) => [
+      rows.map((p) => [
         num(p.cutoff),
         p.cannotLink ? "on" : "off",
         String(p.quality.groups),
@@ -1653,22 +1939,80 @@ export function renderHtml(analysis) {
         num(p.quality.pairF1),
         String(p.quality.weldedGroups),
       ]),
-      b.best ? [b.points.indexOf(b.best)] : [],
-    ),
+      b.best ? [rows.indexOf(b.best)] : [],
+    )
+  out.push("<h3>The ends of the curve, the shipped cutoff and the recommendation</h3>")
+  out.push(sweepTable(b.representative))
+  out.push(`<details><summary>All ${b.points.length} swept points</summary>`)
+  out.push(
+    '<p class="sub">Every point is computed on its own copy of the distance matrix. ' +
+      "<code>groupFaces</code> rewrites the matrix in place (Lance-Williams), so a sweep that reuses one " +
+      "matrix runs, terminates and is silently wrong.</p>",
   )
+  out.push(sweepTable(b.points))
+  out.push("</details>")
 
   // --- Report D. ---
+  const j = d.joint
   out.push("<h2>D — Is the gate earning its place</h2>")
+  out.push("<h3>Four whole configurations, each one applied and measured</h3>")
   out.push(
     table(
-      ["setting", "labelled faces kept", "AUC", "rank-1"],
+      ["configuration", "labelled faces kept", "AUC", "rank-1"],
       [
-        ["no gate", `${d.ungated.kept}`, num(d.ungated.auc, 4), pct(d.ungated.rank1)],
-        ["default gate", `${d.baseline.kept}`, num(d.baseline.auc, 4), pct(d.baseline.rank1)],
+        ["no gate", `${d.ungated.kept}/${d.ungated.total}`, num(d.ungated.auc, 4), pct(d.ungated.rank1)],
+        ["default gate", `${d.baseline.kept}/${d.baseline.total}`, num(d.baseline.auc, 4), pct(d.baseline.rank1)],
+        ["recommended gate", `${j.result.kept}/${j.result.total}`, num(j.result.auc, 4), pct(j.result.rank1)],
+        ["every isolated winner, together", `${j.naive.kept}/${j.naive.total}`, num(j.naive.auc, 4), pct(j.naive.rank1)],
       ],
+      [2],
     ),
   )
-  out.push('<p class="sub">One cutoff at a time, every other check wide open — sweeping a cutoff inside the full gate measures the interaction, not the cutoff.</p>')
+  out.push(
+    '<div class="warn"><b>The last row is not a recommendation — it is the trap.</b> ' +
+      "Each cutoff below is swept with the other eight checks wide open, which is the right way to measure " +
+      "one cutoff's own contribution and makes each sweep a measurement of a different configuration. " +
+      `Taking the winner of each and applying them together gives a tenth configuration nobody measured: ` +
+      `<b>${j.naive.kept} of ${j.naive.total}</b> labelled faces here, against ${d.baseline.kept} for the shipped defaults. ` +
+      "The recommended row is the one that was evaluated jointly.</div>",
+  )
+  if (j.adopted.length === 0) {
+    out.push(
+      '<div class="verdict"><b>Recommending the defaults, unchanged.</b> Every candidate below earns its ' +
+        "ΔAUC with the other eight checks wide open. On top of the rest of the gate, none of them improved " +
+        `the joint result, or none left the ${j.floor}-face floor below which the measurement stops meaning anything.</div>`,
+    )
+  } else {
+    out.push(
+      `<div class="verdict"><b>Recommending ${j.adopted.length} change${j.adopted.length === 1 ? "" : "s"}:</b> ` +
+        `<code>${esc(j.adopted.join(", "))}</code>. ` +
+        (j.rejected.length > 0
+          ? `Not adopted, though each helps in isolation: <code>${esc(j.rejected.join(", "))}</code> — they earned nothing once the other checks were in force.`
+          : "") +
+        "</div>",
+    )
+  }
+  out.push("<h3>Per check, swept alone</h3>")
+  out.push(
+    '<p class="sub">Every other check wide open, so &Delta;AUC and &Delta;rank-1 are what that cutoff is ' +
+      "worth on its own and nothing more. &ldquo;Adopted&rdquo; means it also improved the gate with the " +
+      "other eight in force.</p>",
+  )
+  out.push(
+    table(
+      ["check", "best cutoff", "ΔAUC", "Δrank-1", "keeps", "verdict"],
+      j.verdicts.map((v) => [
+        v.key,
+        v.candidate === null ? "—" : num(v.candidate, 5),
+        signed(v.deltaAuc),
+        ppDelta(v.deltaRank1),
+        pct(v.total > 0 ? v.kept / v.total : NaN),
+        gateVerdictLabel(j, v.key),
+      ]),
+      j.verdicts.map((v, i) => (j.adopted.includes(v.key) ? i : -1)).filter((i) => i >= 0),
+    ),
+  )
+  out.push("<details><summary>The full sweep behind every row above</summary>")
   for (const axis of d.keys) {
     out.push(`<h3>${esc(axis.key)} — ${esc(axis.direction)} on ${esc(axis.signal)}</h3>`)
     out.push(
@@ -1678,6 +2022,7 @@ export function renderHtml(analysis) {
       ),
     )
   }
+  out.push("</details>")
   out.push("<h3>Rejections at the default cutoffs</h3>")
   out.push(
     table(
@@ -1786,6 +2131,14 @@ export function renderHtml(analysis) {
       "</pre>",
   )
   out.push(
+    `<p>The nine <code>gate.*</code> values above were applied <b>together</b> and measured together: they keep ` +
+      `<b>${j.result.kept} of ${j.result.total}</b> labelled faces at AUC ${num(j.result.auc, 4)} and rank-1 ` +
+      `${pct(j.result.rank1)}, against ${d.baseline.kept}/${d.baseline.total}, ${num(d.baseline.auc, 4)} and ` +
+      `${pct(d.baseline.rank1)} for the shipped defaults.` +
+      (j.adopted.length === 0 ? " They are the defaults, unchanged, because nothing beat them jointly." : "") +
+      "</p>",
+  )
+  out.push(
     '<div class="warn"><b>Copy the numbers only.</b> No note of what was measured to arrive at them may live ' +
       "anywhere in this repository — and that includes statistics, which are facts about identifiable people. " +
       "This file is scratch; delete it with the rest of <code>tmp/</code>.</div>",
@@ -1800,21 +2153,23 @@ export function renderHtml(analysis) {
 // ---------------------------------------------------------------------------
 
 const USAGE =
-  "usage: node scripts/vision/session1-report.js <run-dir> [--oracle <file.jsonl>] [--html | --no-html] [--out <file>]"
+  "usage: node scripts/vision/session1-report.js <run-dir> [--oracle <file.jsonl>] [--html | --no-html] [--out <file>] [--verbose]"
 
-/**
- * @param {readonly string[]} argv
- * @returns {{ dir: string | null, oracle: string | null, html: boolean, out: string | null }}
- */
+/** @type {Types.parseArgs} */
 export function parseArgs(argv) {
-  /** @type {{ dir: string | null, oracle: string | null, html: boolean, out: string | null }} */
-  const args = { dir: null, oracle: null, html: true, out: null }
+  /** @type {Types.ReportArgs} */
+  const args = { dir: null, oracle: null, html: true, out: null, verbose: false }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === "--html") {
       args.html = true
     } else if (arg === "--no-html") {
       args.html = false
+    } else if (arg === "--verbose" || arg === "-v") {
+      // Reports B and D lead with a verdict; this restores the full sweeps under
+      // it. The HTML always carries both — it has a <details> and a page to hide
+      // them in, and a terminal has neither.
+      args.verbose = true
     } else if (arg === "--oracle") {
       args.oracle = argv[++i] ?? null
     } else if (arg.startsWith("--oracle=")) {
@@ -1891,7 +2246,7 @@ export function main(argv) {
   }
 
   const analysis = analyse(run, { oracle })
-  printSummary(analysis)
+  printSummary(analysis, console.log, { verbose: args.verbose })
 
   if (args.html) {
     const target = args.out ?? path.join(args.dir, "report.html")

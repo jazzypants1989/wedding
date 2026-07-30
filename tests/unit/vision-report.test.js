@@ -33,11 +33,15 @@ import {
   buildView,
   bestSweepPoint,
   frameRoots,
+  jointGate,
   loadRun,
   parseArgs,
   pickHeadline,
+  printSummary,
   renderHtml,
   reportA,
+  representativeSweep,
+  resolutionCost,
   separationStrata,
   sweepGrouping,
 } from "../../scripts/vision/session1-report.js"
@@ -222,7 +226,7 @@ function run() {
  * Every (i, j) a stratum keeps, among labelled rows. Written out rather than
  * counted, because a count that happens to match while the membership is wrong
  * is exactly the failure mode this file exists to catch.
- * @param {ReturnType<typeof buildView>} view
+ * @param {Types.FaceView} view
  * @param {string} key
  * @returns {Array<[number, number]>}
  */
@@ -455,7 +459,7 @@ test("pickHeadline refuses a different-hour stratum too thin to be a measurement
 
 const CUTOFFS = [0.05, 0.2, 0.35, 0.6, 0.9]
 
-/** @returns {ReturnType<typeof buildView>} */
+/** @returns {Types.FaceView} */
 function everythingView() {
   return buildView(run())
 }
@@ -475,7 +479,7 @@ test("the cutoff sweep equals rebuilding the matrix from scratch for every cutof
   const view = everythingView()
   const swept = sweepGrouping(view.set, { cutoffs: CUTOFFS, labels: view.labels, photoIds: view.photoIds })
 
-  /** @type {Array<{ cutoff: number, cannotLink: boolean, quality: V.GroupingReport }>} */
+  /** @type {Types.SweepPoint[]} */
   const fresh = []
   for (const cannotLink of [true, false]) {
     for (const cutoff of CUTOFFS) {
@@ -625,6 +629,356 @@ test("report D attributes every detection to exactly one primary reason", () => 
   assert.ok(analysis.d.breakdown.some((r) => r.reason === "boxPx" && r.n === 1))
 })
 
+// ---------------------------------------------------------------------------
+// The joint gate — the recommendation nobody evaluated
+//
+// Report D sweeps each gate cutoff with the other eight WIDE OPEN, which is the
+// only honest way to measure one cutoff's own contribution — and which makes
+// each of the nine sweeps a measurement of a DIFFERENT configuration. Taking the
+// winner of each and printing them together recommends a tenth configuration
+// that was never run, and whose intersection can be a small fraction of what any
+// one of them keeps.
+// ---------------------------------------------------------------------------
+
+/**
+ * Every signal comfortably inside its default cutoff, so the DEFAULT gate keeps
+ * the whole fixture and any improvement below is genuinely the sweep's doing.
+ * @type {V.GateSignals}
+ */
+const TRAP_SAFE = {
+  score: 0.95,
+  boxPx: 220,
+  borderPx: 120,
+  eyeRatio: 0.4,
+  eyeAngle: 0.01,
+  alignScale: 0.6,
+  residual: 0.8,
+  outsideFraction: 0,
+  sharpness: 0.05,
+}
+
+/**
+ * One weak value per gate axis — still inside the shipped default, so nothing
+ * here is rejected until a swept cutoff tightens past it. Each axis therefore
+ * has its own private group of faces to drop, and no axis can drop another's.
+ * @type {Array<Partial<V.GateSignals>>}
+ */
+const TRAP_WEAK = [
+  { score: 0.62 },
+  { boxPx: 44 },
+  { borderPx: 1 },
+  { eyeRatio: 0.21 },
+  { eyeRatio: 0.61 },
+  { residual: 11.5 },
+  { alignScale: 1.55 },
+  { outsideFraction: 0.019 },
+  { sharpness: 0.0042 },
+]
+
+/**
+ * Six faces per person, well separated, plus nine groups of eight faces that are
+ * labelled p1 and sit inside p2's cluster. Every group is a genuine improvement
+ * to drop and each is dropped by exactly one axis, so all nine sweeps report a
+ * gain while keeping 76 of 84 — and all nine applied together keep 12.
+ *
+ * Each face is its own photograph, two hours apart, so every pair lands in the
+ * different-hour stratum and the headline is the honest one.
+ * @returns {string}
+ */
+function writeTrapRun() {
+  const dir = path.join(WORK, "gate-trap")
+  fs.mkdirSync(dir, { recursive: true })
+
+  /** @type {Types.Session1PhotoRecord[]} */
+  const photos = []
+  /** @type {Types.Session1FaceRecord[]} */
+  const faces = []
+  /** @type {Record<string, string>} */
+  const labels = {}
+  /** @type {Record<string, "A" | "B">} */
+  const pool = {}
+
+  /** @param {number} angle @param {string} label @param {V.GateSignals} signals */
+  const add = (angle, label, signals) => {
+    const id = faces.length
+    photos.push(photo({ id, capturedAtMs: T + id * 2 * HOUR }))
+    faces.push({
+      id,
+      photoId: id,
+      crop: `crops/${id}.png`,
+      score: signals.score,
+      box: { x: 100, y: 100, w: 120, h: 120 },
+      landmarks: [130, 140, 172, 140, 151, 165, 134, 186, 168, 186],
+      signals,
+      descriptor: onCircle(angle),
+    })
+    labels[String(id)] = label
+    pool[String(id)] = "A"
+  }
+
+  for (let k = 0; k < 6; k++) {
+    add(0.0 + k * 0.001, "p1", { ...TRAP_SAFE })
+    add(2.0 + k * 0.001, "p2", { ...TRAP_SAFE })
+  }
+  for (const weak of TRAP_WEAK) {
+    for (let k = 0; k < 8; k++) add(2.0 + k * 0.001, "p1", { ...TRAP_SAFE, ...weak })
+  }
+
+  /** @param {string} file @param {unknown[]} rows */
+  const jsonl = (file, rows) =>
+    fs.writeFileSync(path.join(dir, file), rows.map((r) => JSON.stringify(r)).join("\n") + "\n")
+  jsonl("photos.jsonl", photos)
+  jsonl("faces.jsonl", faces)
+  fs.writeFileSync(path.join(dir, "labels.json"), JSON.stringify({ version: 1, labels, pool }))
+  return dir
+}
+
+const TRAP_DIR = writeTrapRun()
+const TRAP = analyse(loadRun(TRAP_DIR))
+
+/** The two numbers a cutoff has to justify itself against, as reportD scores them.
+ * @param {{ auc: number, rank1: number }} p @returns {number} */
+const score = (p) => (Number.isFinite(p.auc) ? p.auc : 0) + (Number.isFinite(p.rank1) ? p.rank1 : 0)
+
+test("the fixture really is a trap: nine cutoffs that keep 90% each and 14% together", () => {
+  const j = TRAP.d.joint
+  assert.equal(j.verdicts.length, 9)
+  for (const v of j.verdicts) {
+    assert.notEqual(v.candidate, null, `${v.key} should look worth it in isolation`)
+    assert.ok(v.kept / v.total > 0.85, `${v.key} keeps ${v.kept}/${v.total} on its own`)
+  }
+  const thinnest = Math.min(...j.verdicts.map((v) => v.kept))
+  // If this ever stops holding, the assertions below have gone vacuous: the bug
+  // only exists where the intersection is much smaller than the parts.
+  assert.ok(
+    j.naive.kept * 3 < thinnest,
+    `the nine together keep ${j.naive.kept}, the thinnest one alone keeps ${thinnest}`,
+  )
+})
+
+test("report D reports what the recommended cutoffs keep JOINTLY, not the sum of nine sweeps", () => {
+  const j = TRAP.d.joint
+  // The measured intersection is present as a number, and it is the naive set's
+  // own keep count — not any single sweep's.
+  assert.ok(Number.isFinite(j.naive.kept))
+  assert.ok(!j.verdicts.some((v) => v.kept === j.naive.kept))
+  // And what is actually recommended was itself evaluated as one gate.
+  assert.ok(Number.isFinite(j.result.kept))
+  assert.ok(Number.isFinite(j.result.auc))
+  assert.ok(Number.isFinite(j.result.rank1))
+})
+
+test("the recommendation is never worse than the defaults, and never below the floor", () => {
+  const j = TRAP.d.joint
+  assert.ok(
+    score(j.result) >= score(TRAP.d.baseline),
+    `recommended ${score(j.result)} vs defaults ${score(TRAP.d.baseline)}`,
+  )
+  assert.ok(j.result.kept >= j.floor, `${j.result.kept} kept, floor ${j.floor}`)
+  // The naive set is what would have been printed before: better on paper,
+  // measured over a set too thin for the measurement to mean anything.
+  assert.ok(j.naive.kept < j.floor, "the trap's naive set is below the floor, which is why it is not recommended")
+})
+
+test("a cutoff that helps alone and not jointly is adopted by neither silence nor default", () => {
+  const j = TRAP.d.joint
+  assert.ok(j.adopted.length > 0, "some candidates do survive")
+  assert.ok(j.rejected.length > 0, "and the floor stops the rest")
+  assert.equal(
+    j.adopted.length + j.rejected.length,
+    j.verdicts.filter((v) => v.candidate !== null && v.candidate !== v.defaultValue).length,
+    "every candidate is accounted for as adopted or rejected",
+  )
+  for (const key of j.rejected) {
+    assert.equal(j.cutoffs[key], TRAP.d.defaults[key], `${key} must fall back to the shipped default`)
+  }
+})
+
+test("every gate.* recommendation is a value from the set that was measured", () => {
+  const j = TRAP.d.joint
+  const gate = TRAP.recommended.filter((r) => r.path.startsWith("gate."))
+  assert.equal(gate.length, 9)
+  for (const r of gate) {
+    const key = r.path.slice("gate.".length)
+    assert.equal(r.value, String(j.cutoffs[key]), `${r.path} must come from joint.cutoffs`)
+  }
+})
+
+test("the printed summary carries the joint keep count and the copy-the-numbers-only rule", () => {
+  /** @type {string[]} */
+  const lines = []
+  printSummary(TRAP, (line) => lines.push(line))
+  const text = lines.join("\n")
+  assert.ok(text.includes(`${TRAP.d.joint.result.kept}/${TRAP.d.joint.result.total}`), "the joint result is printed")
+  assert.ok(text.includes(`${TRAP.d.joint.naive.kept}/${TRAP.d.joint.naive.total}`), "so is the naive intersection")
+  assert.ok(text.includes("Copy the NUMBERS ONLY"), "the fourth photograph rule is unchanged")
+})
+
+test("the default terminal report leads with a verdict and hides the sixty sweep rows", () => {
+  /** @type {string[]} */
+  const brief = []
+  printSummary(TRAP, (line) => brief.push(line))
+  /** @type {string[]} */
+  const full = []
+  printSummary(TRAP, (line) => full.push(line), { verbose: true })
+  assert.ok(full.length > brief.length + 40, `${brief.length} lines brief, ${full.length} verbose`)
+  const briefText = brief.join("\n")
+  assert.ok(briefText.includes("best cutoff"), "the per-check verdict table leads")
+  assert.ok(briefText.includes("--verbose"), "and says where the detail went")
+  // The verdict summary comes before any per-axis heading, in both modes.
+  const summaryAt = brief.findIndex((l) => l.includes("best cutoff"))
+  const detailAt = full.findIndex((l) => l.includes("(min on score)"))
+  assert.ok(summaryAt >= 0)
+  assert.equal(
+    brief.findIndex((l) => l.includes("(min on score)")),
+    -1,
+    "no per-axis sweep table without --verbose",
+  )
+  assert.ok(detailAt > full.findIndex((l) => l.includes("best cutoff")), "detail below the summary in verbose too")
+})
+
+/**
+ * One swept axis, stubbed. `points[0]` is always the wide-open end, which is
+ * what the isolated gain is measured against.
+ * @param {string} key
+ * @param {number} defaultValue
+ * @param {Types.GateSweepPoint[]} points
+ * @returns {Types.GateSweepKey}
+ */
+const axisStub = (key, defaultValue, points) => ({
+  key,
+  signal: "score",
+  direction: "min",
+  defaultValue,
+  points,
+})
+
+test("jointGate backs all the way off when nothing survives on top of the rest", () => {
+  const keys = [
+    axisStub("alpha", 1, [
+      { value: 1, kept: 100, total: 100, auc: 0.8, rank1: 0.8 },
+      { value: 5, kept: 80, total: 100, auc: 0.9, rank1: 0.9 },
+    ]),
+    axisStub("beta", 2, [
+      { value: 2, kept: 100, total: 100, auc: 0.8, rank1: 0.8 },
+      { value: 9, kept: 80, total: 100, auc: 0.9, rank1: 0.9 },
+    ]),
+  ]
+  const joint = jointGate({
+    keys,
+    base: { alpha: 1, beta: 2 },
+    total: 100,
+    baseline: { auc: 0.8, rank1: 0.8, kept: 100 },
+    // Whatever is applied jointly is a disaster. The greedy pass has to notice.
+    withCutoffs: (cutoffs) =>
+      cutoffs.alpha === 1 && cutoffs.beta === 2
+        ? { auc: 0.8, rank1: 0.8, kept: 100 }
+        : { auc: 0.4, rank1: 0.4, kept: 6 },
+  })
+  assert.deepEqual(joint.cutoffs, { alpha: 1, beta: 2 }, "the recommendation is the defaults, unchanged")
+  assert.deepEqual(joint.adopted, [])
+  assert.deepEqual(joint.rejected, ["alpha", "beta"])
+  assert.equal(joint.naive.kept, 6, "and the set that was never evaluated is reported anyway")
+  assert.equal(joint.result.kept, 100)
+})
+
+test("jointGate adopts the subset that survives, in order of isolated gain", () => {
+  const keys = [
+    // beta has the larger isolated gain, so the greedy pass tries it first.
+    axisStub("alpha", 1, [
+      { value: 1, kept: 100, total: 100, auc: 0.8, rank1: 0.8 },
+      { value: 5, kept: 90, total: 100, auc: 0.82, rank1: 0.81 },
+    ]),
+    axisStub("beta", 2, [
+      { value: 2, kept: 100, total: 100, auc: 0.8, rank1: 0.8 },
+      { value: 9, kept: 85, total: 100, auc: 0.9, rank1: 0.9 },
+    ]),
+  ]
+  const joint = jointGate({
+    keys,
+    base: { alpha: 1, beta: 2 },
+    total: 100,
+    baseline: { auc: 0.8, rank1: 0.8, kept: 100 },
+    withCutoffs: (cutoffs) => {
+      if (cutoffs.beta === 9 && cutoffs.alpha === 5) return { auc: 0.5, rank1: 0.5, kept: 40 }
+      if (cutoffs.beta === 9) return { auc: 0.9, rank1: 0.9, kept: 85 }
+      if (cutoffs.alpha === 5) return { auc: 0.82, rank1: 0.81, kept: 90 }
+      return { auc: 0.8, rank1: 0.8, kept: 100 }
+    },
+  })
+  assert.deepEqual(joint.adopted, ["beta"], "the larger isolated gain is tried first and kept")
+  assert.deepEqual(joint.rejected, ["alpha"], "the second one made the joint result worse")
+  assert.equal(joint.cutoffs.beta, 9)
+  assert.equal(joint.cutoffs.alpha, 1)
+  assert.equal(joint.result.kept, 85, "and the reported result is the one that was measured")
+})
+
+test("jointGate does not report a cutoff equal to the default as a change", () => {
+  // The sweep's own winner IS the shipped value: it beats the axis's wide-open
+  // end, which is the default gate agreeing with itself, not a finding.
+  const keys = [
+    axisStub("alpha", 5, [
+      { value: 0, kept: 100, total: 100, auc: 0.8, rank1: 0.8 },
+      { value: 5, kept: 80, total: 100, auc: 0.9, rank1: 0.9 },
+    ]),
+  ]
+  const joint = jointGate({
+    keys,
+    base: { alpha: 5 },
+    total: 100,
+    baseline: { auc: 0.9, rank1: 0.9, kept: 80 },
+    withCutoffs: () => ({ auc: 0.9, rank1: 0.9, kept: 80 }),
+  })
+  assert.deepEqual(joint.adopted, [])
+  assert.deepEqual(joint.rejected, [])
+  assert.equal(joint.cutoffs.alpha, 5)
+})
+
+// ---------------------------------------------------------------------------
+// The other two condensations
+// ---------------------------------------------------------------------------
+
+test("representativeSweep keeps the ends, the shipped cutoff and the recommendation", () => {
+  const analysis = analyse(run())
+  const rows = analysis.b.representative
+  assert.ok(rows.length > 0)
+  assert.ok(rows.length < analysis.b.points.length, "it is a condensation, not the whole sweep")
+  if (analysis.b.best) assert.ok(rows.includes(analysis.b.best), "the recommendation is always on the page")
+  const on = analysis.b.points.filter((p) => p.cannotLink)
+  assert.ok(rows.includes(on[0]) && rows.includes(on[on.length - 1]), "both ends of the curve")
+  // Order is the sweep's, not the picking order — otherwise the table reads as a
+  // ranking it is not.
+  assert.deepEqual(rows, analysis.b.points.filter((p) => rows.includes(p)))
+})
+
+test("representativeSweep degrades to nothing rather than throwing on an empty sweep", () => {
+  assert.deepEqual(representativeSweep([], null), [])
+})
+
+test("raising the detector edge is priced from the run's own timings, not asserted to be free", () => {
+  // Detector cost scales with PIXEL COUNT, so the edge ratio is squared: 2000
+  // over 1280 is 2.44x the detect stage, and report E already knows what share
+  // of the run detect was.
+  const cost = resolutionCost(TIMING, 1280, 2000)
+  assert.ok(cost)
+  assert.ok(Math.abs(cost.pixelRatio - (2000 / 1280) ** 2) < 1e-9)
+  assert.ok(Math.abs(cost.detectShare - 150 / 414) < 1e-9)
+  assert.ok(cost.runRatio > 1, "a bigger detect edge is never free")
+  assert.ok(Math.abs(cost.runRatio - (414 + 150 * ((2000 / 1280) ** 2 - 1)) / 414) < 1e-9)
+  assert.equal(resolutionCost(null, 1280, 2000), null, "no timing means no price, not a free win")
+})
+
+test("the resolution recommendation states the cost beside the benefit", () => {
+  const analysis = analyse(run())
+  const rec = analysis.recommended.find((r) => r.path === "detect.longEdge")
+  assert.ok(rec)
+  // The fixture's resolution rows miss a face at the detect edge, so the report
+  // wants the expensive resolution — which is exactly when the price matters.
+  assert.equal(rec.value, "2000")
+  assert.ok(rec.note.includes("x the detect"), `no pixel cost in: ${rec.note}`)
+  assert.ok(rec.note.includes("x the run"), `no run cost in: ${rec.note}`)
+})
+
 test("renderHtml is self-contained: no network references at all", () => {
   const html = renderHtml(analyse(run()))
   assert.ok(html.startsWith("<!doctype html>"))
@@ -636,12 +990,39 @@ test("renderHtml is self-contained: no network references at all", () => {
   assert.ok(html.includes("Do not quote the same-minute stratum"))
 })
 
+test("the HTML report shows the joint gate beside both baselines, and hides the sixty rows", () => {
+  const html = renderHtml(TRAP)
+  const j = TRAP.d.joint
+  /** @param {string} needle @returns {number} */
+  const at = (needle) => {
+    const i = html.indexOf(needle)
+    assert.ok(i >= 0, `report.html is missing: ${needle}`)
+    return i
+  }
+  at("recommended gate") // the measured recommendation is a row of its own
+  at("every isolated winner, together") // so is the set that was never measured
+  assert.ok(html.includes(`${j.result.kept}/${j.result.total}`))
+  assert.ok(html.includes(`${j.naive.kept}/${j.naive.total}`))
+  // Summary first, detail behind a disclosure — no restyling, just an ordering.
+  assert.ok(at("Per check, swept alone") < at("The full sweep behind every row above"), "D's verdict table leads")
+  assert.ok(at("The ends of the curve") < at(`All ${TRAP.b.points.length} swept points`), "B's short table leads")
+  assert.ok(html.includes("Copy the numbers only"), "the fourth photograph rule is unchanged")
+})
+
 test("parseArgs takes the path as an argument and nothing else by default", () => {
-  assert.deepEqual(parseArgs(["tmp/session1"]), { dir: "tmp/session1", oracle: null, html: true, out: null })
+  assert.deepEqual(parseArgs(["tmp/session1"]), {
+    dir: "tmp/session1",
+    oracle: null,
+    html: true,
+    out: null,
+    verbose: false,
+  })
   assert.equal(parseArgs(["d", "--oracle", "o.jsonl"]).oracle, "o.jsonl")
   assert.equal(parseArgs(["d", "--oracle=o.jsonl"]).oracle, "o.jsonl")
   assert.equal(parseArgs(["d", "--no-html"]).html, false)
   assert.equal(parseArgs(["d", "--out=x.html"]).out, "x.html")
+  assert.equal(parseArgs(["d", "--verbose"]).verbose, true)
+  assert.equal(parseArgs(["d", "-v"]).verbose, true)
   assert.throws(() => parseArgs(["d", "--nope"]))
   assert.throws(() => parseArgs(["a", "b"]))
   assert.equal(parseArgs([]).dir, null, "nothing searches for a run directory")
