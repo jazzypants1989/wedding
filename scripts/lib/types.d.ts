@@ -72,6 +72,11 @@ export interface ImageBackendSpec {
   canHeic: boolean
   /** Whether the backend bakes EXIF orientation into its output itself. */
   autoOrients: boolean
+  /**
+   * Whether the backend can emit decoded pixels (as PPM) for the face
+   * pipeline. False for sips, which only writes named formats to files.
+   */
+  canRawPixels: boolean
 }
 
 /** A backend confirmed present, with everything needed to invoke it. */
@@ -151,6 +156,36 @@ export interface RunBinaryOptions {
   file?: string
 }
 
+export interface RunBinaryRawOptions extends RunBinaryOptions {
+  /** Byte ceiling on stdout. Defaults to the module's raw-path cap. */
+  maxBytes?: number
+}
+
+/** How to collect a pixel command's output. */
+export interface PixelCommandPlan {
+  commands: BackendCommand[]
+  /**
+   * "stdout" — the last command streams PPM to stdout (ImageMagick).
+   * "file"   — it wrote ppmPath instead, and the caller reads that (vips).
+   */
+  readFrom: "stdout" | "file"
+}
+
+export interface PixelCommandOptions {
+  sourcePath: string
+  /** Longest output edge in pixels. Never upscales. */
+  maxEdge: number
+  /** Scratch PPM path, used only by backends that cannot write to stdout. */
+  ppmPath: string
+}
+
+/** Decoded, orientation-applied, tightly packed RGB. The pixel-source contract. */
+export interface RgbImage {
+  width: number
+  height: number
+  rgb: Uint8Array
+}
+
 /** Parse a run of decimal digits. Null for empty, non-digit or absurdly long. */
 export function parseUint(str: string): number | null
 
@@ -172,6 +207,25 @@ export function runBinary(
   args: string[],
   options?: RunBinaryOptions,
 ): Promise<{ stdout: string; stderr: string }>
+
+/**
+ * As runBinary, but collects stdout as a Buffer. Separate because runBinary
+ * decodes stdout as text and caps it at a size no decoded frame fits under.
+ */
+export function runBinaryRaw(
+  bin: string,
+  args: string[],
+  options?: RunBinaryRawOptions,
+): Promise<{ stdout: Buffer; stderr: string }>
+
+/**
+ * Argv for decoding one image to 8-bit binary PPM at maxEdge, orientation
+ * applied. Null when the backend has no pixel path (sips).
+ */
+export function buildPixelCommand(
+  backend: ImageBackend,
+  options: PixelCommandOptions,
+): PixelCommandPlan | null
 
 /**
  * First installed image backend in preference order, or null. Honours

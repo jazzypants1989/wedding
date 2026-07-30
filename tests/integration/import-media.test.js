@@ -43,6 +43,7 @@ const FAKE_BACKENDS = {
     canWebp: true,
     canHeic: true,
     autoOrients: true,
+    canRawPixels: true,
     version: "vips-8.17.0 (test stub)",
     headerBin: "vipsheader",
     childEnv: {},

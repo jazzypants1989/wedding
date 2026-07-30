@@ -27,7 +27,7 @@
  */
 /** @import * as Types from './types.js' */
 
-import { execFile } from "node:child_process"
+import { execFile, spawn } from "node:child_process"
 import { promisify } from "node:util"
 
 import { MediaImportError } from "./media-errors.js"
@@ -39,6 +39,13 @@ const DEFAULT_TIMEOUT_MS = 120_000
 /** Version/dimension probes should be instant; a slow one means trouble. */
 const PROBE_TIMEOUT_MS = 10_000
 const MAX_OUTPUT_BYTES = 8 * 1024 * 1024
+/**
+ * Cap for the raw-pixel path, which is a different order of magnitude from the
+ * text one above: a 4000px square PPM body is 48MB. This is a dev-machine-only
+ * path (the face pipeline), so a transient buffer this size is affordable in a
+ * way it would never be on the request path.
+ */
+const MAX_RAW_BYTES = 64 * 1024 * 1024
 
 /**
  * Image backends in preference order. `vips` first: it shrinks on load, so it
@@ -46,10 +53,16 @@ const MAX_OUTPUT_BYTES = 8 * 1024 * 1024
  * @type {Types.ImageBackendSpec[]}
  */
 const IMAGE_BACKENDS = [
-  { name: "vips", bin: "vips", versionArgs: ["--version"], canWebp: true, canHeic: true, autoOrients: true },
-  { name: "magick", bin: "magick", versionArgs: ["-version"], canWebp: true, canHeic: true, autoOrients: true },
-  { name: "convert", bin: "convert", versionArgs: ["-version"], canWebp: true, canHeic: true, autoOrients: true },
-  { name: "sips", bin: "sips", versionArgs: ["--version"], canWebp: false, canHeic: true, autoOrients: false },
+  // prettier-ignore
+  { name: "vips", bin: "vips", versionArgs: ["--version"], canWebp: true, canHeic: true, autoOrients: true, canRawPixels: true },
+  // prettier-ignore
+  { name: "magick", bin: "magick", versionArgs: ["-version"], canWebp: true, canHeic: true, autoOrients: true, canRawPixels: true },
+  // prettier-ignore
+  { name: "convert", bin: "convert", versionArgs: ["-version"], canWebp: true, canHeic: true, autoOrients: true, canRawPixels: true },
+  // sips writes named formats to files only — it has no raw/PPM target at all,
+  // so it cannot feed the pixel path. Everything else still works on it.
+  // prettier-ignore
+  { name: "sips", bin: "sips", versionArgs: ["--version"], canWebp: false, canHeic: true, autoOrients: false, canRawPixels: false },
 ]
 
 /** @type {Types.VideoBackendSpec[]} */
@@ -170,6 +183,161 @@ export async function runBinary(bin, args, options = {}) {
       detail: args.join(" "),
     })
   }
+}
+
+/** @type {Types.runBinaryRaw} */
+export function runBinaryRaw(bin, args, options = {}) {
+  // runBinary cannot carry pixels: execFile decodes stdout as utf8 and this
+  // module's wrapper does String(stdout), which mangles any byte above 0x7f,
+  // and MAX_OUTPUT_BYTES is far below one decoded frame. So this is a separate
+  // spawn-based path rather than a flag on the existing one — same argv-array
+  // rule, same error taxonomy, different plumbing.
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  const maxBytes = options.maxBytes ?? MAX_RAW_BYTES
+  return new Promise((resolve, reject) => {
+    /** @param {Types.MediaImportErrorCode} code @param {string} message */
+    const fail = (code, message) =>
+      reject(new MediaImportError(code, message, { file: options.file, detail: args.join(" ") }))
+
+    let child
+    try {
+      child = spawn(bin, args, {
+        env: { ...process.env, ...(options.env ?? {}) },
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "pipe"],
+      })
+    } catch {
+      fail("BACKEND_MISSING", `${bin} is not installed or not on PATH.`)
+      return
+    }
+
+    /** @type {Buffer[]} */
+    const chunks = []
+    let total = 0
+    let stderr = ""
+    let settled = false
+    /** @type {NodeJS.Timeout | null} */
+    let timer = null
+
+    const cleanup = () => {
+      if (timer) clearTimeout(timer)
+      timer = null
+    }
+    /** @param {() => void} report */
+    const settle = (report) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      report()
+    }
+
+    timer = setTimeout(() => {
+      child.kill("SIGKILL")
+      settle(() =>
+        fail("BACKEND_TIMEOUT", `${bin} did not finish within ${Math.round(timeoutMs / 1000)}s.`),
+      )
+    }, timeoutMs)
+
+    child.stdout.on("data", (chunk) => {
+      total += chunk.length
+      if (total > maxBytes) {
+        child.kill("SIGKILL")
+        settle(() =>
+          fail("BACKEND_FAILED", `${bin} produced more than ${maxBytes} bytes of output.`),
+        )
+        return
+      }
+      chunks.push(chunk)
+    })
+    // Bounded, because a backend that fails on every file of a large batch
+    // should not accumulate its complaints in memory.
+    child.stderr.on("data", (chunk) => {
+      if (stderr.length < 4096) stderr += String(chunk)
+    })
+
+    child.on("error", (err) => {
+      const code = /** @type {NodeJS.ErrnoException} */ (err).code
+      settle(() =>
+        code === "ENOENT"
+          ? fail("BACKEND_MISSING", `${bin} is not installed or not on PATH.`)
+          : fail("BACKEND_FAILED", `${bin} failed: ${String(err.message).slice(0, 500)}`),
+      )
+    })
+
+    child.on("close", (code) => {
+      settle(() => {
+        if (code !== 0) {
+          fail("BACKEND_FAILED", `${bin} failed: ${stderr.trim().slice(0, 500)}`)
+          return
+        }
+        resolve({ stdout: Buffer.concat(chunks), stderr: stderr.trim() })
+      })
+    })
+  })
+}
+
+/** @type {Types.buildPixelCommand} */
+export function buildPixelCommand(backend, options) {
+  const { sourcePath, maxEdge, ppmPath } = options
+
+  if (backend.name === "vips") {
+    // vips shrinks on load, which is the whole reason to prefer it here — a
+    // 24MP JPEG never gets fully decoded. Its stdout target syntax is
+    // per-format and awkward, so it writes a scratch PPM and we read it back.
+    // `--size down` never upscales, matching the magick `>` suffix below.
+    return {
+      readFrom: "file",
+      commands: [
+        {
+          bin: backend.bin,
+          args: [
+            "thumbnail",
+            sourcePath,
+            ppmPath,
+            String(maxEdge),
+            "--height",
+            String(maxEdge),
+            "--size",
+            "down",
+          ],
+        },
+      ],
+    }
+  }
+
+  if (backend.name === "magick" || backend.name === "convert") {
+    // `jpeg:size` is a decode hint, not a resize: libjpeg picks the smallest
+    // DCT scale at or above it, so the full frame is never expanded. 2x the
+    // target leaves headroom for the resample to work from.
+    //
+    // `-depth 8` is NOT optional. A Q16 build writes maxval 65535 PPM without
+    // it (verified on ImageMagick 7.1.2 Q16-HDRI), which is silently twice the
+    // bytes at twice the width per sample. The PPM header records what actually
+    // happened, so pixels-cli.js checks rather than assumes -- but asking for
+    // the right thing first is free.
+    return {
+      readFrom: "stdout",
+      commands: [
+        {
+          bin: backend.bin,
+          args: [
+            "-define",
+            `jpeg:size=${maxEdge * 2}x${maxEdge * 2}`,
+            sourcePath,
+            "-auto-orient",
+            "-resize",
+            `${maxEdge}x${maxEdge}>`,
+            "-depth",
+            "8",
+            "ppm:-",
+          ],
+        },
+      ],
+    }
+  }
+
+  // sips. Nothing to build; the caller must fall back or refuse.
+  return null
 }
 
 /**
