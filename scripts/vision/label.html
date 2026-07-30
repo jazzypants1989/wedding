@@ -1,0 +1,1406 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Session 1 — face labelling</title>
+    <!--
+      TEMPLATE. scripts/vision/session1.js copies this file into tmp/session1/,
+      next to label-data.js and crops/. It is opened over file:// — no server, no
+      network, no fonts, no analytics. fetch() does not work over file://, which
+      is why the data arrives as a script tag rather than a request.
+
+      Labels are opaque person keys (p1, p2, …), never guest names. The
+      measurement only needs "same person or not", and a list of real names
+      attached to faces has no business being written into tmp/.
+
+      Scaffolding: this code is thrown away. Its interaction design is not.
+    -->
+    <style>
+      :root {
+        --bg: #0f1115;
+        --panel: #161a21;
+        --panel-2: #1d222b;
+        --line: #2a313d;
+        --ink: #e6e9ef;
+        --dim: #8b94a5;
+        --accent: #7cc4ff;
+        --ok: #5ddc8f;
+        --warn: #ffcc66;
+        --bad: #ff7a7a;
+        --poolA: #7cc4ff;
+        --poolB: #c9a2ff;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        background: var(--bg);
+        color: var(--ink);
+        font:
+          13px/1.45 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Consolas,
+          monospace;
+        display: flex;
+        flex-direction: column;
+      }
+      button {
+        font: inherit;
+        color: var(--ink);
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 4px 9px;
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: var(--accent);
+      }
+      button.primary {
+        background: #1f3a52;
+        border-color: var(--accent);
+      }
+      kbd {
+        display: inline-block;
+        min-width: 1.5em;
+        text-align: center;
+        padding: 1px 4px;
+        border: 1px solid var(--line);
+        border-bottom-width: 2px;
+        border-radius: 3px;
+        background: #10141a;
+        color: var(--accent);
+      }
+
+      /* ---- header ---- */
+      header {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        flex-wrap: wrap;
+        padding: 8px 12px;
+        background: var(--panel);
+        border-bottom: 1px solid var(--line);
+      }
+      .title {
+        font-weight: 700;
+        letter-spacing: 0.03em;
+      }
+      .tabs {
+        display: flex;
+        gap: 6px;
+      }
+      .tab {
+        padding: 4px 10px;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        cursor: pointer;
+        background: var(--panel-2);
+        white-space: nowrap;
+      }
+      .tab.on[data-pool="A"] {
+        border-color: var(--poolA);
+        background: #16293a;
+      }
+      .tab.on[data-pool="B"] {
+        border-color: var(--poolB);
+        background: #2a2140;
+      }
+      .tab small {
+        color: var(--dim);
+      }
+      .stats {
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
+        margin-left: auto;
+        align-items: center;
+      }
+      .stat b {
+        color: var(--accent);
+        font-size: 15px;
+      }
+      .stat span {
+        color: var(--dim);
+      }
+      .saved {
+        color: var(--dim);
+        min-width: 11ch;
+      }
+      .saved.flash {
+        color: var(--ok);
+      }
+
+      /* ---- banners ---- */
+      .banner {
+        padding: 9px 12px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .banner.resume {
+        background: #2a2410;
+        border-bottom-color: var(--warn);
+      }
+      .banner.stop {
+        background: #10291d;
+        border-bottom-color: var(--ok);
+        color: var(--ok);
+      }
+      .banner.warn {
+        background: #2b1616;
+        border-bottom-color: var(--bad);
+        color: #ffbdbd;
+      }
+
+      /* ---- exemplars ---- */
+      .exemplars {
+        display: flex;
+        gap: 6px;
+        overflow-x: auto;
+        padding: 8px 12px;
+        background: var(--panel);
+        border-bottom: 1px solid var(--line);
+        align-items: flex-start;
+        min-height: 92px;
+      }
+      .ex {
+        position: relative;
+        width: 68px;
+        flex: 0 0 auto;
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        overflow: hidden;
+        cursor: pointer;
+        background: var(--panel-2);
+        text-align: center;
+      }
+      .ex:hover {
+        border-color: var(--accent);
+      }
+      .ex img {
+        display: block;
+        width: 68px;
+        height: 68px;
+        object-fit: cover;
+      }
+      .ex .noimg {
+        width: 68px;
+        height: 68px;
+        background: #232a35;
+      }
+      .ex .cap {
+        font-size: 11px;
+        padding: 1px 2px;
+        color: var(--dim);
+      }
+      .ex .cap b {
+        color: var(--ink);
+      }
+      .ex.three .cap b {
+        color: var(--ok);
+      }
+      .ex .hot {
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        background: #000b;
+        color: var(--accent);
+        border-radius: 3px;
+        padding: 0 4px;
+        font-size: 11px;
+      }
+      .ex.newperson {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        height: 90px;
+        color: var(--ok);
+        border-style: dashed;
+      }
+      .ex.notface {
+        color: var(--bad);
+      }
+      .exhint {
+        color: var(--dim);
+        align-self: center;
+        padding: 0 6px;
+      }
+
+      /* ---- stage ---- */
+      .stage {
+        display: flex;
+        gap: 14px;
+        padding: 10px 12px;
+        background: var(--panel-2);
+        border-bottom: 1px solid var(--line);
+        align-items: flex-start;
+        min-height: 150px;
+      }
+      .stage .meta {
+        min-width: 200px;
+      }
+      .stage .meta h2 {
+        margin: 0 0 4px;
+        font-size: 14px;
+      }
+      .stage .meta p {
+        margin: 2px 0;
+        color: var(--dim);
+      }
+      .members {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .m {
+        position: relative;
+        border: 2px solid transparent;
+        border-radius: 6px;
+        padding: 2px;
+        cursor: pointer;
+      }
+      .m img,
+      .m .noimg {
+        display: block;
+        width: 118px;
+        height: 118px;
+        object-fit: cover;
+        border-radius: 4px;
+        background: #232a35;
+      }
+      .m.solo img,
+      .m.solo .noimg {
+        width: 190px;
+        height: 190px;
+      }
+      .m.cur {
+        border-color: var(--accent);
+      }
+      .m.out img,
+      .m.out .noimg {
+        opacity: 0.25;
+      }
+      .m.out::after {
+        content: "excluded";
+        position: absolute;
+        left: 2px;
+        right: 2px;
+        bottom: 4px;
+        text-align: center;
+        background: #000c;
+        color: var(--bad);
+        font-size: 11px;
+      }
+      .m .tag {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        background: #000c;
+        border-radius: 3px;
+        padding: 0 4px;
+        font-size: 11px;
+        color: var(--ok);
+      }
+      .m .tag.x {
+        color: var(--bad);
+      }
+
+      /* ---- grid ---- */
+      .gridwrap {
+        flex: 1;
+        overflow-y: auto;
+        padding: 10px 12px 24px;
+      }
+      .grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .unit {
+        display: flex;
+        gap: 3px;
+        padding: 3px;
+        border: 1px solid transparent;
+        border-radius: 5px;
+      }
+      .unit.grouped {
+        border-color: #3d3155;
+        background: #1a1626;
+      }
+      .unit.cur {
+        border-color: var(--accent);
+        background: #16293a;
+      }
+      .cell {
+        position: relative;
+        width: 58px;
+        height: 58px;
+        cursor: pointer;
+        border-radius: 4px;
+        overflow: hidden;
+      }
+      .cell img,
+      .cell .noimg {
+        display: block;
+        width: 58px;
+        height: 58px;
+        object-fit: cover;
+        background: #232a35;
+      }
+      .cell .lab {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: #000d;
+        color: var(--ok);
+        font-size: 10px;
+        text-align: center;
+      }
+      .cell .lab.x {
+        color: var(--bad);
+      }
+      .cell.done img {
+        opacity: 0.55;
+      }
+
+      /* ---- footer / keymap ---- */
+      footer {
+        background: var(--panel);
+        border-top: 1px solid var(--line);
+        padding: 7px 12px;
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+        color: var(--dim);
+      }
+      footer b {
+        color: var(--ink);
+        font-weight: 400;
+      }
+
+      /* ---- save panel ---- */
+      dialog {
+        background: var(--panel);
+        color: var(--ink);
+        border: 1px solid var(--accent);
+        border-radius: 8px;
+        max-width: 760px;
+        width: 92vw;
+        font: inherit;
+      }
+      dialog::backdrop {
+        background: #000a;
+      }
+      dialog h2 {
+        margin: 0 0 6px;
+        font-size: 15px;
+      }
+      dialog p {
+        color: var(--dim);
+        margin: 6px 0;
+      }
+      dialog code {
+        color: var(--warn);
+      }
+      textarea {
+        width: 100%;
+        height: 220px;
+        background: #0b0e13;
+        color: var(--ink);
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        font: inherit;
+        padding: 8px;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+        margin-top: 8px;
+      }
+      #missing {
+        padding: 24px;
+        max-width: 780px;
+      }
+      #missing h1 {
+        font-size: 18px;
+      }
+      #missing pre {
+        background: #0b0e13;
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        padding: 10px;
+        overflow-x: auto;
+        color: var(--warn);
+      }
+      .hide {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Shown only when label-data.js is absent or malformed. -->
+    <section id="missing" class="hide">
+      <h1 id="missing-title">label-data.js was not loaded</h1>
+      <p id="missing-detail"></p>
+      <p>
+        This page is a template. It must be opened from the run's output
+        directory, alongside the files that run produced:
+      </p>
+      <pre>
+tmp/session1/
+  label.html        &lt;- this file (copied here by session1.js)
+  label-data.js     &lt;- window.SESSION1_DATA = { version, faces, order }
+  crops/000000.png  &lt;- one PNG per detected face</pre
+      >
+      <p>Produce them with:</p>
+      <pre>node scripts/vision/session1.js "$PHOTOS" --out tmp/session1</pre>
+      <p>then <code>open tmp/session1/label.html</code>.</p>
+    </section>
+
+    <header id="app-header" class="hide">
+      <span class="title">SESSION 1 · LABEL</span>
+      <div class="tabs">
+        <div class="tab" data-pool="A" id="tabA"></div>
+        <div class="tab" data-pool="B" id="tabB"></div>
+      </div>
+      <div class="stats">
+        <span class="stat"><b id="s-labelled">0</b> <span>labelled</span></span>
+        <span class="stat"><b id="s-people">0</b> <span>people</span></span>
+        <span class="stat"><b id="s-three">0</b> <span>with 3+</span></span>
+        <span class="saved" id="saved">—</span>
+        <button id="btn-save" class="primary">Save labels.json</button>
+      </div>
+    </header>
+
+    <div id="resume" class="banner resume hide"></div>
+    <div id="mismatch" class="banner warn hide"></div>
+    <div id="stopbar" class="banner stop hide"></div>
+
+    <div class="exemplars hide" id="exemplars"></div>
+
+    <div class="stage hide" id="stage">
+      <div class="meta" id="stage-meta"></div>
+      <div class="members" id="stage-members"></div>
+    </div>
+
+    <div class="gridwrap hide" id="gridwrap"><div class="grid" id="grid"></div></div>
+
+    <footer id="footer" class="hide">
+      <span><b><kbd>1</kbd>…<kbd>9</kbd><kbd>0</kbd></b> assign to person</span>
+      <span><b><kbd>,</kbd><kbd>.</kbd></b> shift hotkeys</span>
+      <span><b><kbd>n</kbd></b> new person</span>
+      <span><b><kbd>x</kbd></b> not a face</span>
+      <span><b><kbd>s</kbd>/<kbd>?</kbd></b> skip</span>
+      <span><b><kbd>u</kbd></b> undo</span>
+      <span><b><kbd>j</kbd><kbd>k</kbd>/<kbd>↓</kbd><kbd>↑</kbd></b> next/prev</span>
+      <span><b><kbd>↵</kbd></b> next unlabelled</span>
+      <span><b><kbd>Tab</kbd></b> switch pool</span>
+      <span id="foot-b"
+        ><b><kbd>←</kbd><kbd>→</kbd></b> member · <b><kbd>space</kbd></b> exclude ·
+        <b><kbd>o</kbd></b> only this · <b><kbd>a</kbd></b> all back</span
+      >
+      <span><b>shift-click</b> a crop = make it that person's exemplar</span>
+    </footer>
+
+    <dialog id="savedlg">
+      <h2>labels.json</h2>
+      <p>
+        This file belongs at <code>tmp/session1/labels.json</code> — beside this
+        page. A browser download lands in <code>~/Downloads</code>, so move it:
+      </p>
+      <pre style="margin: 0"><code>mv ~/Downloads/labels.json tmp/session1/labels.json</code></pre>
+      <div class="row">
+        <button id="dlg-pick" class="primary hide">Save directly to a folder…</button>
+        <button id="dlg-download" class="primary">Download labels.json</button>
+        <button id="dlg-copy">Copy JSON</button>
+        <span id="dlg-note" style="color: var(--dim)"></span>
+      </div>
+      <div class="row"><textarea id="dlg-json" spellcheck="false" readonly></textarea></div>
+      <div class="row"><button id="dlg-close">Close</button></div>
+    </dialog>
+
+    <script src="label-data.js"></script>
+    <script>
+      "use strict"
+      ;(function () {
+        // ---------- data ----------
+        var DATA = window.SESSION1_DATA
+        var $ = function (id) {
+          return document.getElementById(id)
+        }
+
+        function bail(title, detail) {
+          $("missing").classList.remove("hide")
+          $("missing-title").textContent = title
+          $("missing-detail").textContent = detail
+        }
+
+        if (!DATA) {
+          bail(
+            "label-data.js was not loaded",
+            "window.SESSION1_DATA is undefined. Either the file is missing from this directory, or the browser refused to load it.",
+          )
+          return
+        }
+        if (!Array.isArray(DATA.faces) || !Array.isArray(DATA.order) || DATA.faces.length === 0) {
+          bail(
+            "label-data.js is malformed",
+            "SESSION1_DATA must be { version, faces: [...], order: [...] } with at least one face. Got faces=" +
+              typeof DATA.faces +
+              ", order=" +
+              typeof DATA.order +
+              ".",
+          )
+          return
+        }
+
+        var faceById = new Map()
+        for (var i = 0; i < DATA.faces.length; i++) faceById.set(DATA.faces[i].id, DATA.faces[i])
+
+        // Presentation order is fixed and not the labeller's to change. Faces the
+        // batch forgot to list are appended rather than dropped.
+        var ORDER = []
+        var seen = new Set()
+        for (var oi = 0; oi < DATA.order.length; oi++) {
+          var oid = DATA.order[oi]
+          if (faceById.has(oid) && !seen.has(oid)) {
+            seen.add(oid)
+            ORDER.push(oid)
+          }
+        }
+        var strays = 0
+        for (var fi = 0; fi < DATA.faces.length; fi++) {
+          if (!seen.has(DATA.faces[fi].id)) {
+            ORDER.push(DATA.faces[fi].id)
+            strays++
+          }
+        }
+
+        // ---------- units ----------
+        // Pool A: one crop at a time — the headline separation number comes from
+        // here, so it is never bulk-assigned. Pool B: a whole detector group is
+        // one unit, assignable in one keystroke.
+        function buildUnits(pool) {
+          var units = []
+          var byGroup = new Map()
+          for (var k = 0; k < ORDER.length; k++) {
+            var f = faceById.get(ORDER[k])
+            if (f.pool !== pool) continue
+            var g = f.group
+            if (pool === "B" && g !== null && g !== undefined) {
+              if (byGroup.has(g)) {
+                units[byGroup.get(g)].members.push(f.id)
+                continue
+              }
+              byGroup.set(g, units.length)
+              units.push({ group: g, members: [f.id] })
+            } else {
+              units.push({ group: null, members: [f.id] })
+            }
+          }
+          return units
+        }
+        var UNITS = { A: buildUnits("A"), B: buildUnits("B") }
+        var POOL_TOTAL = { A: 0, B: 0 }
+        for (var pi = 0; pi < DATA.faces.length; pi++) {
+          if (DATA.faces[pi].pool === "B") POOL_TOTAL.B++
+          else POOL_TOTAL.A++
+        }
+
+        // ---------- persisted state ----------
+        // file:// has a null origin shared by every local page, hence the namespace
+        // and the dataset fingerprint.
+        var FINGERPRINT =
+          "v" +
+          (DATA.version || 0) +
+          "-n" +
+          DATA.faces.length +
+          "-o" +
+          ORDER.length +
+          "-" +
+          (ORDER[0] || 0) +
+          "-" +
+          (ORDER[ORDER.length - 1] || 0)
+        var STORE_KEY = "wedding.session1.label.v1"
+
+        var state = {
+          labels: {}, // faceId(string) -> "p1" | "x"
+          exemplars: {}, // person key -> faceId
+          pool: "A",
+          cursor: { A: 0, B: 0 },
+          hotkeyBase: 0,
+        }
+        var excluded = new Set() // face ids held out of the current group assignment
+        var memberCursor = 0
+        var history = []
+
+        function save() {
+          try {
+            localStorage.setItem(
+              STORE_KEY,
+              JSON.stringify({
+                fingerprint: FINGERPRINT,
+                savedAt: Date.now(),
+                labels: state.labels,
+                exemplars: state.exemplars,
+                pool: state.pool,
+                cursor: state.cursor,
+              }),
+            )
+            flashSaved()
+          } catch (err) {
+            $("saved").textContent = "SAVE FAILED"
+            $("saved").classList.remove("flash")
+          }
+        }
+        var flashTimer = null
+        function flashSaved() {
+          var el = $("saved")
+          var d = new Date()
+          var hh = String(d.getHours()).padStart(2, "0")
+          var mm = String(d.getMinutes()).padStart(2, "0")
+          var ss = String(d.getSeconds()).padStart(2, "0")
+          el.textContent = "saved " + hh + ":" + mm + ":" + ss
+          el.classList.add("flash")
+          if (flashTimer) clearTimeout(flashTimer)
+          flashTimer = setTimeout(function () {
+            el.classList.remove("flash")
+          }, 900)
+        }
+
+        function loadStored() {
+          var raw = null
+          try {
+            raw = localStorage.getItem(STORE_KEY)
+          } catch (err) {
+            return null
+          }
+          if (!raw) return null
+          try {
+            return JSON.parse(raw)
+          } catch (err) {
+            return null
+          }
+        }
+
+        // ---------- derived ----------
+        function personKeys() {
+          var counts = new Map()
+          for (var id in state.labels) {
+            var v = state.labels[id]
+            if (v === "x") continue
+            counts.set(v, (counts.get(v) || 0) + 1)
+          }
+          var keys = Array.from(counts.keys())
+          keys.sort(function (a, b) {
+            return Number(a.slice(1)) - Number(b.slice(1))
+          })
+          return { keys: keys, counts: counts }
+        }
+        function nextPersonKey() {
+          var used = new Set()
+          for (var id in state.labels) {
+            var v = state.labels[id]
+            if (v !== "x") used.add(Number(v.slice(1)))
+          }
+          var n = 1
+          while (used.has(n)) n++
+          return "p" + n
+        }
+        function exemplarFor(key) {
+          var pinned = state.exemplars[key]
+          if (pinned !== undefined && state.labels[String(pinned)] === key) return pinned
+          for (var k = 0; k < ORDER.length; k++) {
+            if (state.labels[String(ORDER[k])] === key) return ORDER[k]
+          }
+          return null
+        }
+        function notFaceCount() {
+          var n = 0
+          for (var id in state.labels) if (state.labels[id] === "x") n++
+          return n
+        }
+        function poolLabelled(pool) {
+          var n = 0
+          for (var id in state.labels) {
+            var f = faceById.get(Number(id))
+            if (f && f.pool === pool) n++
+          }
+          return n
+        }
+
+        function units() {
+          return UNITS[state.pool]
+        }
+        function curUnit() {
+          return units()[state.cursor[state.pool]] || null
+        }
+        function unlabelledOf(u) {
+          return u.members.filter(function (id) {
+            return state.labels[String(id)] === undefined
+          })
+        }
+        /** The members in play: the unlabelled ones, or all of them when
+         *  revisiting a finished unit to correct it. */
+        function memberRing(u) {
+          var base = unlabelledOf(u)
+          return base.length > 0 ? base : u.members.slice()
+        }
+        /** What a keystroke acts on: the members in play, minus anything excluded. */
+        function targets(u) {
+          return memberRing(u).filter(function (id) {
+            return !excluded.has(id)
+          })
+        }
+
+        // ---------- actions ----------
+        function assign(value) {
+          var u = curUnit()
+          if (!u) return
+          var ids = targets(u)
+          if (ids.length === 0) return
+          var entry = { pool: state.pool, cursor: state.cursor[state.pool], prev: [], newKey: null }
+          if (value === "@new") {
+            value = nextPersonKey()
+            entry.newKey = value
+          }
+          for (var i2 = 0; i2 < ids.length; i2++) {
+            entry.prev.push({ id: ids[i2], value: state.labels[String(ids[i2])] })
+            state.labels[String(ids[i2])] = value
+          }
+          if (value !== "x" && state.exemplars[value] === undefined) state.exemplars[value] = ids[0]
+          history.push(entry)
+          if (history.length > 400) history.shift()
+          excluded.clear()
+          memberCursor = 0
+          if (entry.newKey) {
+            var pk = personKeys().keys
+            var idx = pk.indexOf(entry.newKey)
+            if (idx >= 0 && (idx < state.hotkeyBase || idx >= state.hotkeyBase + 10)) {
+              state.hotkeyBase = Math.floor(idx / 10) * 10
+            }
+          }
+          if (unlabelledOf(u).length === 0) step(1)
+          save()
+          render()
+        }
+
+        function undo() {
+          var e = history.pop()
+          if (!e) return
+          state.pool = e.pool
+          state.cursor[e.pool] = e.cursor
+          for (var i3 = 0; i3 < e.prev.length; i3++) {
+            var p = e.prev[i3]
+            if (p.value === undefined) delete state.labels[String(p.id)]
+            else state.labels[String(p.id)] = p.value
+          }
+          if (e.newKey) delete state.exemplars[e.newKey]
+          excluded.clear()
+          memberCursor = 0
+          save()
+          render()
+        }
+
+        function step(delta) {
+          var list = units()
+          var n = state.cursor[state.pool] + delta
+          if (n < 0) n = 0
+          if (n > list.length - 1) n = list.length - 1
+          state.cursor[state.pool] = n
+          excluded.clear()
+          memberCursor = 0
+        }
+        function jumpNextUnlabelled() {
+          var list = units()
+          for (var i4 = state.cursor[state.pool] + 1; i4 < list.length; i4++) {
+            if (unlabelledOf(list[i4]).length > 0) {
+              state.cursor[state.pool] = i4
+              excluded.clear()
+              memberCursor = 0
+              return
+            }
+          }
+          for (var i5 = 0; i5 < list.length; i5++) {
+            if (unlabelledOf(list[i5]).length > 0) {
+              state.cursor[state.pool] = i5
+              excluded.clear()
+              memberCursor = 0
+              return
+            }
+          }
+        }
+        function switchPool() {
+          state.pool = state.pool === "A" ? "B" : "A"
+          excluded.clear()
+          memberCursor = 0
+          buildGrid()
+          save()
+          render()
+        }
+
+        // ---------- rendering ----------
+        function cropImg(faceId, cls) {
+          var f = faceById.get(faceId)
+          var img = document.createElement("img")
+          img.loading = "lazy"
+          img.alt = "face " + faceId
+          img.src = f && f.crop ? f.crop : ""
+          img.addEventListener("error", function () {
+            var ph = document.createElement("div")
+            ph.className = "noimg"
+            ph.title = "missing " + (f ? f.crop : faceId)
+            if (img.parentNode) img.parentNode.replaceChild(ph, img)
+          })
+          if (cls) img.className = cls
+          return img
+        }
+
+        var SLOTS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
+
+        function renderExemplars() {
+          var box = $("exemplars")
+          box.textContent = ""
+          var pk = personKeys()
+
+          var addTile = function (key, count, faceId, slotIdx) {
+            var el = document.createElement("div")
+            el.className = "ex" + (count >= 3 ? " three" : "")
+            if (faceId !== null && faceId !== undefined) el.appendChild(cropImg(faceId))
+            else {
+              var ph = document.createElement("div")
+              ph.className = "noimg"
+              el.appendChild(ph)
+            }
+            var cap = document.createElement("div")
+            cap.className = "cap"
+            var b = document.createElement("b")
+            b.textContent = key
+            cap.appendChild(b)
+            cap.appendChild(document.createTextNode(" ×" + count))
+            el.appendChild(cap)
+            if (slotIdx >= 0) {
+              var hot = document.createElement("span")
+              hot.className = "hot"
+              hot.textContent = SLOTS[slotIdx]
+              el.appendChild(hot)
+            }
+            el.title = "assign current to " + key
+            el.addEventListener("click", function () {
+              assign(key)
+            })
+            box.appendChild(el)
+          }
+
+          for (var i6 = 0; i6 < pk.keys.length; i6++) {
+            var key = pk.keys[i6]
+            var slot = i6 >= state.hotkeyBase && i6 < state.hotkeyBase + 10 ? i6 - state.hotkeyBase : -1
+            addTile(key, pk.counts.get(key), exemplarFor(key), slot)
+          }
+
+          var nw = document.createElement("div")
+          nw.className = "ex newperson"
+          nw.textContent = "n · new person"
+          nw.addEventListener("click", function () {
+            assign("@new")
+          })
+          box.appendChild(nw)
+
+          var nf = document.createElement("div")
+          nf.className = "ex newperson notface"
+          nf.textContent = "x · not a face (" + notFaceCount() + ")"
+          nf.addEventListener("click", function () {
+            assign("x")
+          })
+          box.appendChild(nf)
+
+          if (pk.keys.length > 10) {
+            var hint = document.createElement("div")
+            hint.className = "exhint"
+            hint.textContent =
+              "hotkeys " +
+              (state.hotkeyBase + 1) +
+              "–" +
+              Math.min(state.hotkeyBase + 10, pk.keys.length) +
+              " of " +
+              pk.keys.length +
+              "  ( , / . )"
+            box.appendChild(hint)
+          }
+        }
+
+        function renderStage() {
+          var meta = $("stage-meta")
+          var mem = $("stage-members")
+          meta.textContent = ""
+          mem.textContent = ""
+          var list = units()
+          var u = curUnit()
+          if (!u) {
+            meta.textContent = "Pool " + state.pool + " is empty."
+            return
+          }
+          var h = document.createElement("h2")
+          h.textContent =
+            "Pool " +
+            state.pool +
+            " · " +
+            (state.cursor[state.pool] + 1) +
+            " / " +
+            list.length +
+            (u.group !== null ? "  · group " + u.group + " (" + u.members.length + " faces)" : "")
+          h.style.color = state.pool === "A" ? "var(--poolA)" : "var(--poolB)"
+          meta.appendChild(h)
+          var lines = []
+          if (state.pool === "A") {
+            lines.push("uniform sample — the headline separation number")
+            lines.push("comes from pool A only. One crop at a time.")
+          } else if (u.group !== null) {
+            lines.push("group-assisted bulk labelling.")
+            lines.push("One keystroke assigns every included member.")
+            lines.push("space = exclude the highlighted one, o = only it.")
+          } else {
+            lines.push("pool B, ungrouped singleton.")
+          }
+          var remaining = unlabelledOf(u).length
+          lines.push(
+            remaining === 0
+              ? "unit complete — a keystroke here overwrites it"
+              : remaining + " of " + u.members.length + " still unlabelled",
+          )
+          lines.push("photo " + (faceById.get(u.members[0]) || {}).photoId)
+          for (var li = 0; li < lines.length; li++) {
+            var p = document.createElement("p")
+            p.textContent = lines[li]
+            meta.appendChild(p)
+          }
+
+          var solo = u.members.length === 1
+          var active = memberRing(u)
+          for (var mi = 0; mi < u.members.length; mi++) {
+            ;(function (id) {
+              var cell = document.createElement("div")
+              var cls = "m" + (solo ? " solo" : "")
+              if (excluded.has(id)) cls += " out"
+              if (!solo && active.indexOf(id) === memberCursor % active.length) cls += " cur"
+              cell.className = cls
+              cell.appendChild(cropImg(id))
+              var lab = state.labels[String(id)]
+              if (lab !== undefined) {
+                var t = document.createElement("span")
+                t.className = "tag" + (lab === "x" ? " x" : "")
+                t.textContent = lab
+                cell.appendChild(t)
+              }
+              cell.addEventListener("click", function (ev) {
+                if (ev.shiftKey) {
+                  pinExemplar(id)
+                  return
+                }
+                if (solo) return
+                if (excluded.has(id)) excluded.delete(id)
+                else excluded.add(id)
+                render()
+              })
+              mem.appendChild(cell)
+            })(u.members[mi])
+          }
+        }
+
+        function pinExemplar(faceId) {
+          var lab = state.labels[String(faceId)]
+          if (lab === undefined || lab === "x") return
+          state.exemplars[lab] = faceId
+          save()
+          render()
+        }
+
+        var unitEls = []
+        var cellEls = new Map()
+        function buildGrid() {
+          var grid = $("grid")
+          grid.textContent = ""
+          unitEls = []
+          cellEls = new Map()
+          var list = units()
+          for (var ui = 0; ui < list.length; ui++) {
+            ;(function (u, index) {
+              var block = document.createElement("div")
+              block.className = "unit" + (u.group !== null ? " grouped" : "")
+              block.title = u.group !== null ? "group " + u.group : "face " + u.members[0]
+              for (var mi2 = 0; mi2 < u.members.length; mi2++) {
+                ;(function (id) {
+                  var cell = document.createElement("div")
+                  cell.className = "cell"
+                  cell.appendChild(cropImg(id))
+                  var lab = document.createElement("span")
+                  lab.className = "lab hide"
+                  cell.appendChild(lab)
+                  cell.addEventListener("click", function (ev) {
+                    if (ev.shiftKey) {
+                      pinExemplar(id)
+                      return
+                    }
+                    state.cursor[state.pool] = index
+                    excluded.clear()
+                    memberCursor = 0
+                    render()
+                  })
+                  cellEls.set(id, { cell: cell, lab: lab })
+                  block.appendChild(cell)
+                })(u.members[mi2])
+              }
+              unitEls.push(block)
+              grid.appendChild(block)
+            })(list[ui], ui)
+          }
+        }
+
+        function refreshGrid() {
+          var list = units()
+          for (var ui2 = 0; ui2 < list.length; ui2++) {
+            var block = unitEls[ui2]
+            if (!block) continue
+            var on = ui2 === state.cursor[state.pool]
+            if (on) block.classList.add("cur")
+            else block.classList.remove("cur")
+            var u = list[ui2]
+            for (var mi3 = 0; mi3 < u.members.length; mi3++) {
+              var refs = cellEls.get(u.members[mi3])
+              if (!refs) continue
+              var lab = state.labels[String(u.members[mi3])]
+              if (lab === undefined) {
+                refs.lab.classList.add("hide")
+                refs.cell.classList.remove("done")
+              } else {
+                refs.lab.classList.remove("hide")
+                refs.lab.textContent = lab
+                refs.lab.className = "lab" + (lab === "x" ? " x" : "")
+                refs.cell.classList.add("done")
+              }
+            }
+          }
+          var cur = unitEls[state.cursor[state.pool]]
+          if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: "nearest" })
+        }
+
+        // SESSION-1 §3: stop at whichever comes first — enough people with 3+
+        // faces each, 250 labelled crops, or boredom.
+        var GOAL_CROPS = 250
+        var GOAL_PEOPLE_3PLUS = 8
+
+        function renderHeader() {
+          var pk = personKeys()
+          var labelled = Object.keys(state.labels).length
+          var three = 0
+          pk.counts.forEach(function (c) {
+            if (c >= 3) three++
+          })
+          $("s-labelled").textContent = labelled + " / " + GOAL_CROPS
+          $("s-people").textContent = String(pk.keys.length)
+          $("s-three").textContent = three + " / " + GOAL_PEOPLE_3PLUS
+          $("tabA").className = "tab" + (state.pool === "A" ? " on" : "")
+          $("tabB").className = "tab" + (state.pool === "B" ? " on" : "")
+          $("tabA").textContent = ""
+          $("tabB").textContent = ""
+          $("tabA").appendChild(document.createTextNode("POOL A "))
+          $("tabB").appendChild(document.createTextNode("POOL B "))
+          var sa = document.createElement("small")
+          sa.textContent = poolLabelled("A") + "/" + POOL_TOTAL.A + " · one at a time"
+          $("tabA").appendChild(sa)
+          var sb = document.createElement("small")
+          sb.textContent = poolLabelled("B") + "/" + POOL_TOTAL.B + " · " + UNITS.B.length + " groups"
+          $("tabB").appendChild(sb)
+
+          var stop = $("stopbar")
+          if (labelled >= GOAL_CROPS || three >= GOAL_PEOPLE_3PLUS) {
+            stop.classList.remove("hide")
+            stop.textContent =
+              "Good enough to stop: " +
+              labelled +
+              " crops labelled, " +
+              three +
+              " people with 3+ faces. Save labels.json now — more only makes the measurement less noisy, and boredom is a legitimate stopping condition."
+          } else {
+            stop.classList.add("hide")
+          }
+          $("foot-b").style.display = state.pool === "B" ? "" : "none"
+        }
+
+        function render() {
+          renderHeader()
+          renderExemplars()
+          renderStage()
+          refreshGrid()
+        }
+
+        // ---------- keys ----------
+        function onKey(ev) {
+          var t = ev.target
+          if (t && (t.tagName === "TEXTAREA" || t.tagName === "INPUT")) return
+          if ($("savedlg").open && ev.key !== "Escape") return
+          if (ev.metaKey || ev.ctrlKey || ev.altKey) return
+          var k = ev.key
+          var slot = SLOTS.indexOf(k)
+          if (slot >= 0) {
+            var keys = personKeys().keys
+            var person = keys[state.hotkeyBase + slot]
+            if (person) {
+              ev.preventDefault()
+              assign(person)
+            }
+            return
+          }
+          if (k === "n") {
+            ev.preventDefault()
+            assign("@new")
+          } else if (k === "x") {
+            ev.preventDefault()
+            assign("x")
+          } else if (k === "s" || k === "?") {
+            ev.preventDefault()
+            step(1)
+            render()
+          } else if (k === "u") {
+            ev.preventDefault()
+            undo()
+          } else if (k === "j" || k === "ArrowDown") {
+            ev.preventDefault()
+            step(1)
+            render()
+          } else if (k === "k" || k === "ArrowUp") {
+            ev.preventDefault()
+            step(-1)
+            render()
+          } else if (k === "Enter") {
+            ev.preventDefault()
+            jumpNextUnlabelled()
+            render()
+          } else if (k === "Tab") {
+            ev.preventDefault()
+            switchPool()
+          } else if (k === ",") {
+            ev.preventDefault()
+            state.hotkeyBase = Math.max(0, state.hotkeyBase - 10)
+            render()
+          } else if (k === ".") {
+            ev.preventDefault()
+            var n2 = personKeys().keys.length
+            if (state.hotkeyBase + 10 < n2) state.hotkeyBase += 10
+            render()
+          } else if (k === "ArrowLeft" || k === "h" || k === "ArrowRight" || k === "l") {
+            ev.preventDefault()
+            var u2 = curUnit()
+            if (!u2) return
+            var act = memberRing(u2)
+            if (act.length < 2) return
+            var d = k === "ArrowLeft" || k === "h" ? -1 : 1
+            memberCursor = (memberCursor + d + act.length) % act.length
+            render()
+          } else if (k === " ") {
+            ev.preventDefault()
+            var u3 = curUnit()
+            if (!u3) return
+            var act3 = memberRing(u3)
+            var id3 = act3[memberCursor % act3.length]
+            if (id3 === undefined) return
+            if (excluded.has(id3)) excluded.delete(id3)
+            else excluded.add(id3)
+            render()
+          } else if (k === "o") {
+            ev.preventDefault()
+            var u4 = curUnit()
+            if (!u4) return
+            var act4 = memberRing(u4)
+            var keep = act4[memberCursor % act4.length]
+            excluded.clear()
+            for (var q = 0; q < act4.length; q++) if (act4[q] !== keep) excluded.add(act4[q])
+            render()
+          } else if (k === "a") {
+            ev.preventDefault()
+            excluded.clear()
+            render()
+          }
+        }
+
+        // ---------- export ----------
+        function buildLabelFile() {
+          var pool = {}
+          for (var i7 = 0; i7 < DATA.faces.length; i7++) {
+            pool[String(DATA.faces[i7].id)] = DATA.faces[i7].pool
+          }
+          // Session1LabelFile.version is required. JSON.stringify would silently
+          // drop the key if the batch omitted it from label-data.js.
+          return {
+            version: typeof DATA.version === "number" ? DATA.version : 1,
+            labels: state.labels,
+            pool: pool,
+          }
+        }
+        function openSave() {
+          var json = JSON.stringify(buildLabelFile(), null, 2)
+          $("dlg-json").value = json
+          $("dlg-note").textContent = ""
+          $("savedlg").showModal()
+        }
+        function download() {
+          var blob = new Blob([$("dlg-json").value], { type: "application/json" })
+          var url = URL.createObjectURL(blob)
+          var a = document.createElement("a")
+          a.href = url
+          a.download = "labels.json"
+          document.body.appendChild(a)
+          a.click()
+          document.body.removeChild(a)
+          setTimeout(function () {
+            URL.revokeObjectURL(url)
+          }, 2000)
+          $("dlg-note").textContent = "downloaded — now move it next to this page"
+        }
+        function copyJson() {
+          var ta = $("dlg-json")
+          var done = function () {
+            $("dlg-note").textContent = "copied"
+          }
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(ta.value).then(done, function () {
+              legacyCopy(ta, done)
+            })
+          } else legacyCopy(ta, done)
+        }
+        function legacyCopy(ta, done) {
+          ta.removeAttribute("readonly")
+          ta.select()
+          try {
+            document.execCommand("copy")
+            done()
+          } catch (err) {
+            $("dlg-note").textContent = "copy failed — select the text manually"
+          }
+          ta.setAttribute("readonly", "readonly")
+        }
+        async function pickAndSave() {
+          try {
+            var handle = await window.showSaveFilePicker({
+              suggestedName: "labels.json",
+              types: [{ description: "JSON", accept: { "application/json": [".json"] } }],
+            })
+            var w = await handle.createWritable()
+            await w.write($("dlg-json").value)
+            await w.close()
+            $("dlg-note").textContent = "written"
+          } catch (err) {
+            $("dlg-note").textContent = "picker unavailable or cancelled — use Download"
+          }
+        }
+
+        // ---------- boot ----------
+        function show() {
+          $("app-header").classList.remove("hide")
+          $("exemplars").classList.remove("hide")
+          $("stage").classList.remove("hide")
+          $("gridwrap").classList.remove("hide")
+          $("footer").classList.remove("hide")
+        }
+
+        var stored = loadStored()
+        function start() {
+          show()
+          buildGrid()
+          render()
+          document.addEventListener("keydown", onKey)
+          $("btn-save").addEventListener("click", openSave)
+          $("dlg-close").addEventListener("click", function () {
+            $("savedlg").close()
+          })
+          $("dlg-download").addEventListener("click", download)
+          $("dlg-copy").addEventListener("click", copyJson)
+          if (typeof window.showSaveFilePicker === "function") {
+            $("dlg-pick").classList.remove("hide")
+            $("dlg-pick").addEventListener("click", pickAndSave)
+          }
+          $("tabA").addEventListener("click", function () {
+            if (state.pool !== "A") switchPool()
+          })
+          $("tabB").addEventListener("click", function () {
+            if (state.pool !== "B") switchPool()
+          })
+          if (strays > 0) {
+            var mm = $("mismatch")
+            mm.classList.remove("hide")
+            mm.textContent =
+              strays +
+              " face(s) were missing from SESSION1_DATA.order and have been appended at the end. The shuffled order is a measurement control — tell whoever ran session1.js."
+          }
+        }
+
+        if (stored && stored.labels && Object.keys(stored.labels).length > 0) {
+          var bar = $("resume")
+          bar.classList.remove("hide")
+          var same = stored.fingerprint === FINGERPRINT
+          var msg = document.createElement("span")
+          var when = new Date(stored.savedAt || Date.now())
+          msg.textContent =
+            (same ? "Saved work found: " : "Saved work found, but from a DIFFERENT dataset: ") +
+            Object.keys(stored.labels).length +
+            " labels, last saved " +
+            when.toLocaleString() +
+            "."
+          bar.appendChild(msg)
+          var resumeBtn = document.createElement("button")
+          resumeBtn.className = "primary"
+          resumeBtn.textContent = "Resume"
+          resumeBtn.addEventListener("click", function () {
+            state.labels = stored.labels || {}
+            state.exemplars = stored.exemplars || {}
+            if (stored.pool === "A" || stored.pool === "B") state.pool = stored.pool
+            if (stored.cursor) {
+              state.cursor.A = Math.min(stored.cursor.A || 0, Math.max(0, UNITS.A.length - 1))
+              state.cursor.B = Math.min(stored.cursor.B || 0, Math.max(0, UNITS.B.length - 1))
+            }
+            bar.classList.add("hide")
+            start()
+            save()
+          })
+          bar.appendChild(resumeBtn)
+          var freshBtn = document.createElement("button")
+          freshBtn.textContent = "Start over (discards them)"
+          freshBtn.addEventListener("click", function () {
+            if (!window.confirm("Discard " + Object.keys(stored.labels).length + " saved labels?")) return
+            try {
+              localStorage.removeItem(STORE_KEY)
+            } catch (err) {
+              /* nothing to do */
+            }
+            bar.classList.add("hide")
+            start()
+          })
+          bar.appendChild(freshBtn)
+          var exportOld = document.createElement("button")
+          exportOld.textContent = "Export them first"
+          exportOld.addEventListener("click", function () {
+            state.labels = stored.labels || {}
+            openSave()
+          })
+          bar.appendChild(exportOld)
+          if (!same) bar.classList.add("warn")
+        } else {
+          start()
+        }
+      })()
+    </script>
+  </body>
+</html>

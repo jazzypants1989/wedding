@@ -1,14 +1,19 @@
-/** @file Unit tests for scripts/lib/image-backend.js.
+/** @file Unit tests for scripts/lib/image-backend.js, plus the PPM parser on the
+ *  other side of its raw-pixel seam (scripts/vision/pixels-cli.js) — an argv
+ *  that asks for 8-bit samples and a header check that verifies it got them are
+ *  one guarantee, and splitting them across two files would let one drift.
  *
- *  The parsers and argv builders are tested against canned strings so they run
- *  on any machine, installed backends or not. The few tests that need a real
- *  binary probe for one first and skip when it is absent. */
+ *  The parsers and argv builders are tested against canned strings and
+ *  hand-built buffers so they run on any machine, installed backends or not.
+ *  The few tests that need a real binary probe for one first and skip when it
+ *  is absent. No image file is read and no binary is invoked. */
 
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 
 import {
   buildDimensionCommand,
+  buildPixelCommand,
   buildPosterCommand,
   buildResizeCommands,
   describeBackends,
@@ -22,6 +27,7 @@ import {
   sipsProp,
 } from "../../scripts/lib/image-backend.js"
 import { MediaImportError } from "../../scripts/lib/media-errors.js"
+import { parsePpm } from "../../scripts/vision/pixels-cli.js"
 
 /** @param {Partial<import('../../scripts/lib/types.js').ImageBackend>} [over] */
 function backend(over = {}) {
@@ -32,6 +38,7 @@ function backend(over = {}) {
     canWebp: true,
     canHeic: true,
     autoOrients: true,
+    canRawPixels: true,
     version: "vips-8.17.0",
     headerBin: "vipsheader",
     childEnv: {},
@@ -280,6 +287,343 @@ describe("buildResizeCommands", () => {
       orientation: 1,
     })
     assert.ok(cmds[0].args.includes(nasty), "no quoting, no escaping — execFile handles it")
+  })
+})
+
+describe("buildPixelCommand", () => {
+  const common = {
+    sourcePath: "/work/src.jpg",
+    maxEdge: 2000,
+    ppmPath: "/work/out.ppm",
+  }
+
+  /**
+   * @param {import('../../scripts/lib/types.js').ImageBackend} be
+   * @param {Partial<import('../../scripts/lib/types.js').PixelCommandOptions>} [over]
+   * @returns {import('../../scripts/lib/types.js').PixelCommandPlan}
+   */
+  function plan(be, over = {}) {
+    const built = buildPixelCommand(be, { ...common, ...over })
+    if (!built) throw new Error(`${be.name} returned no pixel plan`)
+    return built
+  }
+
+  it("has vips write a scratch PPM, because its stdout target syntax is per-format", () => {
+    const built = plan(backend())
+    assert.equal(built.readFrom, "file")
+    assert.equal(built.commands.length, 1)
+    assert.deepEqual(built.commands[0], {
+      bin: "vips",
+      args: [
+        "thumbnail",
+        "/work/src.jpg",
+        "/work/out.ppm",
+        "2000",
+        "--height",
+        "2000",
+        "--size",
+        "down",
+      ],
+    })
+  })
+
+  it("keeps vips' --size down, which is what makes it shrink-only", () => {
+    // Same guarantee as magick's `>` suffix below: upscaling would move small
+    // faces out of the band the detector was trained on without adding
+    // information. Both backends have to agree or the two paths disagree.
+    const args = plan(backend()).commands[0].args
+    const at = args.indexOf("--size")
+    assert.notEqual(at, -1, "vips passes --size")
+    assert.equal(args[at + 1], "down")
+  })
+
+  it("streams magick's PPM from stdout, decode hint before the source", () => {
+    const be = backend({ name: "magick", bin: "magick" })
+    const built = plan(be)
+    assert.equal(built.readFrom, "stdout")
+    assert.equal(built.commands.length, 1)
+    assert.deepEqual(built.commands[0], {
+      bin: "magick",
+      args: [
+        "-define",
+        "jpeg:size=4000x4000",
+        "/work/src.jpg",
+        "-auto-orient",
+        "-resize",
+        "2000x2000>",
+        "-depth",
+        "8",
+        "ppm:-",
+      ],
+    })
+    const args = built.commands[0].args
+    assert.ok(
+      args.indexOf("-define") < args.indexOf("/work/src.jpg"),
+      "a decode hint only helps if it precedes the file it is a hint for",
+    )
+    assert.ok(args.includes("2000x2000>"), "the > suffix means shrink-only")
+  })
+
+  it("asks magick for -depth 8 — a Q16 build otherwise writes 16-bit samples", () => {
+    // NOT optional and NOT tidy-away-able. Verified on ImageMagick 7.1.2
+    // Q16-HDRI: `ppm:-` emits maxval 65535 without it, i.e. two big-endian
+    // bytes per sample. parsePpm catches that (see below) but only because the
+    // format has a header; the fix belongs here, at the ask.
+    for (const name of /** @type {const} */ (["magick", "convert"])) {
+      const args = plan(backend({ name, bin: name })).commands[0].args
+      const at = args.indexOf("-depth")
+      assert.notEqual(at, -1, `${name} passes -depth`)
+      assert.equal(args[at + 1], "8", `${name} asks for 8 bits per sample`)
+      assert.ok(at < args.indexOf("ppm:-"), "and asks before the output target")
+    }
+  })
+
+  it("auto-orients on magick, so the pixels arrive upright", () => {
+    const args = plan(backend({ name: "convert", bin: "convert" })).commands[0].args
+    assert.ok(args.includes("-auto-orient"))
+  })
+
+  it("scales the jpeg decode hint with the requested edge", () => {
+    const be = backend({ name: "magick", bin: "magick" })
+    const args = plan(be, { maxEdge: 640 }).commands[0].args
+    assert.ok(
+      args.includes("jpeg:size=1280x1280"),
+      "2x the target leaves headroom for the resample to work from",
+    )
+    assert.ok(args.includes("640x640>"))
+  })
+
+  it("uses the binary it was handed rather than assuming `magick` is on PATH", () => {
+    const be = backend({ name: "convert", bin: "/opt/homebrew/bin/convert" })
+    assert.equal(plan(be).commands[0].bin, "/opt/homebrew/bin/convert")
+    assert.equal(plan(backend({ bin: "/opt/homebrew/bin/vips" })).commands[0].bin, "/opt/homebrew/bin/vips")
+  })
+
+  it("returns null for sips, which has no pixel path at all", () => {
+    // The caller must fall back to another backend or refuse the run; it must
+    // not get a command that quietly produces something that is not a PPM.
+    const be = backend({
+      name: "sips",
+      bin: "sips",
+      canWebp: false,
+      autoOrients: false,
+      canRawPixels: false,
+    })
+    assert.equal(buildPixelCommand(be, common), null)
+  })
+
+  it("never emits a shell string — every command is an argv array", () => {
+    for (const name of /** @type {const} */ (["vips", "magick", "convert"])) {
+      const built = plan(backend({ name, bin: name }))
+      for (const cmd of built.commands) {
+        assert.ok(Array.isArray(cmd.args), `${name} args is an array`)
+        for (const arg of cmd.args) assert.equal(typeof arg, "string", `${name} arg is a string`)
+        assert.ok(
+          !cmd.args.some((a) => a.includes(" ") && a !== common.sourcePath),
+          `${name} never packs two arguments into one element`,
+        )
+      }
+    }
+  })
+
+  it("passes a filename with shell metacharacters through as exactly one element", () => {
+    // Filenames come from a user's photo directory: spaces, quotes, $, ; and
+    // newlines are all legal. execFile takes an argv array, so the right answer
+    // is no quoting and no escaping at all.
+    const nasty = "/photos/a b; rm -rf $HOME/IMG'1\".jpg\nnext"
+    for (const name of /** @type {const} */ (["vips", "magick", "convert"])) {
+      const args = plan(backend({ name, bin: name }), { sourcePath: nasty }).commands[0].args
+      const hits = args.filter((a) => a === nasty)
+      assert.equal(hits.length, 1, `${name} passes the path once, verbatim`)
+      assert.equal(
+        args.filter((a) => a.includes("rm -rf")).length,
+        1,
+        `${name} did not split the path on whitespace`,
+      )
+      assert.ok(!args.some((a) => a.includes("\\$")), `${name} added no escaping`)
+      assert.ok(!args.some((a) => a.includes("'/photos") || a.includes('"/photos')), `${name} added no quoting`)
+    }
+  })
+})
+
+describe("parsePpm", () => {
+  const HEADER = "P6\n4 2\n255\n"
+  /** 4x2 RGB: distinct byte values so a wrong offset shows up immediately. */
+  const body24 = () => Buffer.from(Array.from({ length: 24 }, (_, i) => i * 10))
+
+  /** @param {string} header @param {Buffer} [body] @returns {Buffer} */
+  function ppm(header, body = Buffer.alloc(0)) {
+    return Buffer.concat([Buffer.from(header, "latin1"), body])
+  }
+
+  /**
+   * @param {Buffer} buf
+   * @param {(err: MediaImportError) => void} check
+   */
+  function rejects(buf, check) {
+    assert.throws(
+      () => parsePpm(buf, { file: "/photos/IMG_0001.jpg" }),
+      (/** @type {MediaImportError} */ err) => {
+        assert.ok(err instanceof MediaImportError, "throws the importer's error type")
+        assert.equal(err.code, "BACKEND_FAILED", "a malformed buffer means the backend misbehaved")
+        assert.equal(err.file, "/photos/IMG_0001.jpg", "carries the file from the context argument")
+        check(err)
+        return true
+      },
+    )
+  }
+
+  it("parses a minimal P6 file", () => {
+    const image = parsePpm(ppm(HEADER, body24()))
+    assert.equal(image.width, 4)
+    assert.equal(image.height, 2)
+    assert.equal(image.rgb.length, 24, "w*h*3")
+    assert.equal(image.rgb.length, image.width * image.height * 3)
+    assert.equal(image.rgb[0], 0)
+    assert.equal(image.rgb[23], 230)
+  })
+
+  it("returns a view into the caller's buffer, not a copy", () => {
+    // The doc comment promises a view, and a 2000px frame is ~12MB — copying
+    // it per photograph is the difference between one allocation and a run's
+    // worth of them.
+    const buf = ppm(HEADER, body24())
+    const image = parsePpm(buf)
+    assert.equal(image.rgb.buffer, buf.buffer, "same ArrayBuffer")
+    assert.equal(
+      image.rgb.byteOffset,
+      buf.byteOffset + HEADER.length,
+      "offset accounts for Buffer.concat's pooled byteOffset, not just the header",
+    )
+    buf[buf.length - 1] = 42
+    assert.equal(image.rgb[23], 42, "a copy would not have seen that write")
+  })
+
+  it("skips a # comment line before the dimensions", () => {
+    // vips writes `#vips2ppm - <timestamp>` into every file it produces, so
+    // this is load-bearing on one of the two backends, not spec completeness.
+    const image = parsePpm(ppm("P6\n#vips2ppm - Wed Jul 29 12:00:00 2026\n4 2\n255\n", body24()))
+    assert.equal(image.width, 4)
+    assert.equal(image.height, 2)
+    assert.equal(image.rgb[0], 0)
+    assert.equal(image.rgb[23], 230)
+  })
+
+  it("skips a comment sitting between two header tokens", () => {
+    const image = parsePpm(ppm("P6\n4 #width was 4\n2\n#and again\n255\n", body24()))
+    assert.equal(image.width, 4)
+    assert.equal(image.height, 2)
+    assert.equal(image.rgb.length, 24)
+  })
+
+  it("skips a comment butted straight against the magic number", () => {
+    const image = parsePpm(ppm("P6#no whitespace before me\n4 2\n255\n", body24()))
+    assert.equal(image.width, 4)
+    assert.equal(image.height, 2)
+  })
+
+  it("rejects maxval 65535 and names the bit depth", () => {
+    // The Q16 trap: two big-endian bytes per sample. Read as 8-bit that data is
+    // not "slightly wrong", it is unrecognisable — and a headerless format
+    // would have nothing to catch it with.
+    rejects(ppm("P6\n4 2\n65535\n", Buffer.alloc(48)), (err) => {
+      assert.ok(err.message.includes("65535"), "says what it saw")
+      assert.ok(err.message.includes("16-bit"), "names the bit depth")
+    })
+  })
+
+  it("rejects any maxval that is not 255", () => {
+    for (const maxval of ["1", "15", "254", "256", "65535"]) {
+      rejects(ppm(`P6\n4 2\n${maxval}\n`, Buffer.alloc(48)), (err) => {
+        assert.ok(err.message.includes("maxval"))
+      })
+    }
+  })
+
+  it("rejects P3, the ASCII variant, rather than mis-parsing it", () => {
+    // No backend here emits P3 and decoding it needs a whole second parser, so
+    // it is a refusal, not a TODO.
+    rejects(ppm("P3\n4 2\n255\n0 0 0 1 1 1\n"), (err) => {
+      assert.ok(err.message.includes("P6"), "names what it wanted")
+      assert.ok(err.message.includes("P3"), "and what it got")
+    })
+  })
+
+  it("rejects a magic number that is not a PPM at all", () => {
+    rejects(Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]), (err) => {
+      assert.ok(err.message.includes("P6"))
+    })
+    rejects(Buffer.alloc(0), (err) => {
+      assert.ok(err.message.includes("P6"))
+    })
+  })
+
+  it("rejects a truncated body with both byte counts in the message", () => {
+    rejects(ppm(HEADER, Buffer.alloc(10)), (err) => {
+      assert.ok(err.message.includes("10 body bytes"), "says what arrived")
+      assert.ok(err.message.includes("24"), "says what was needed")
+      assert.ok(err.message.includes("4x2"), "and for what dimensions")
+    })
+  })
+
+  it("rejects a header with no whitespace after maxval", () => {
+    // Not pedantry: without the separator there is no way to know whether the
+    // next byte is more maxval or the first sample. Two ways to arrive here,
+    // because a token ends only at whitespace or at `#`:
+    //   - first body byte is `#`, which ends the token but is not a separator
+    rejects(ppm("P6\n4 2\n255", Buffer.alloc(24, 0x23)), (err) => {
+      assert.ok(err.message.includes("no whitespace after maxval"))
+    })
+    //   - anything else, which the maxval token swallows and then cannot parse
+    rejects(ppm("P6\n4 2\n255", Buffer.alloc(24)), (err) => {
+      assert.ok(err.message.includes("maxval"), "still refuses, by a different route")
+    })
+  })
+
+  it("eats exactly one whitespace byte, so a body starting with 0x20 survives", () => {
+    // The separator is a single character by spec, not a run, because the first
+    // body byte may itself be a whitespace value — 0x20 is a perfectly ordinary
+    // dark grey.
+    const body = Buffer.alloc(24, 0x20)
+    const image = parsePpm(ppm(HEADER, body))
+    assert.equal(image.rgb.length, 24)
+    for (let i = 0; i < 24; i++) assert.equal(image.rgb[i], 0x20, `sample ${i} not eaten`)
+  })
+
+  it("stops at the header ceiling instead of scanning a whole frame for a token", () => {
+    // A header this long is a lie about the magic number. Walking 48MB of pixel
+    // data looking for a number is how a corrupt file becomes a hang.
+    const filler = Buffer.alloc(4096, 0x20) // whitespace: a scanner with no ceiling would sail past
+    const late = Buffer.concat([ppm("P6\n"), filler, ppm("4 2\n255\n", body24())])
+    rejects(late, (err) => {
+      assert.ok(err.message.includes("header ended"), "gives up rather than finding the late header")
+    })
+
+    const garbage = Buffer.concat([ppm("P6\n"), Buffer.alloc(65536, 0x41)])
+    rejects(garbage, (err) => {
+      assert.ok(err.message.length > 0)
+    })
+  })
+
+  it("rejects nonsense dimensions rather than returning a zero-length frame", () => {
+    rejects(ppm("P6\n0 0\n255\n", Buffer.alloc(24)), (err) => {
+      assert.ok(err.message.includes("dimensions"))
+    })
+    rejects(ppm("P6\nwide 2\n255\n", Buffer.alloc(24)), (err) => {
+      assert.ok(err.message.includes("dimensions"))
+    })
+  })
+
+  it("throws even with no context argument, leaving file undefined", () => {
+    assert.throws(
+      () => parsePpm(ppm("P3\n1 1\n255\n")),
+      (/** @type {MediaImportError} */ err) => {
+        assert.ok(err instanceof MediaImportError)
+        assert.equal(err.code, "BACKEND_FAILED")
+        assert.equal(err.file, undefined)
+        return true
+      },
+    )
   })
 })
 

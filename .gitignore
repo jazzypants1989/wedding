@@ -7,8 +7,18 @@
 # carry IPs, so the whole tree stays out of git.
 data/
 
-# Scratch space for exploratory work (never part of the app).
+# Scratch space for exploratory work (never part of the app). Also where any
+# throwaway tooling lives — a stock inference runtime used as a build-time oracle,
+# derived face crops and descriptors — none of which may be imported by the repo.
 tmp/
+
+# Trained model weights: fetched and hash-verified by scripts/vision/fetch-weights.js,
+# never committed. This repository is public, and committing weights would make us
+# their distributor — a different permission from using them, and the one place
+# "it's non-commercial" stops being a sufficient answer. Listed before the
+# directory exists so it cannot be added by accident.
+# See docs/post-wedding/VISION-MODELS.md.
+public/vision/weights/
 
 # Node
 node_modules/
