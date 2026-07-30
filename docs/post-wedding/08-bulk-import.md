@@ -44,7 +44,14 @@ npm run import:media -- ~/Photos/Wedding
 | `--verbose` | off | Per-file detail, including backend stderr. |
 
 Exit codes: **0** clean, **1** some files failed, **2** aborted (bad arguments,
-no image backend, destination full, interrupted).
+no image backend, destination full), **130** interrupted by SIGINT/SIGTERM.
+
+130 is split out from 2 because a wrapper that retries on failure should retry a
+`DESTINATION_FULL` stop and *not* retry a Ctrl-C the operator typed deliberately.
+Either way the cleanup is the same, and it is the part that matters: sessions
+created but not finalized are `discard()`ed, so no row is left in `uploading`
+holding its declared bytes against the disk guard, and the manifest is flushed so
+the next run resumes instead of re-importing (§9).
 
 Progress goes to stderr one line per file; the summary goes to stdout. So
 `npm run import:media -- ~/Photos/Wedding > summary.txt` keeps the progress on

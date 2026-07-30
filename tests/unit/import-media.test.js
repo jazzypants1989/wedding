@@ -607,6 +607,128 @@ describe("runImport", () => {
     assert.equal(report.unattempted.length, 2)
   })
 
+  // SIGINT is emitted on `process` directly rather than sent as a real signal:
+  // process.emit() invokes the listener synchronously, so there is no timing
+  // window and nothing to make the suite flaky. What is under test is the
+  // handler's contract, not the kernel's signal delivery.
+  it("finishes the files in flight on SIGINT, leaves the rest, and exits 130", async () => {
+    const dir = scratch("run-sigint")
+    // Distinct dimensions per file: the manifest is keyed by content hash, so
+    // four byte-identical fixtures would collapse to one record and the resume
+    // assertions below would be measuring dedup rather than the interrupt.
+    const names = ["a.jpg", "b.jpg", "c.jpg", "d.jpg"]
+    names.forEach((name, i) => {
+      write(dir, name, makeJpegWithMetadata({ width: 100 + i, height: 100 }))
+    })
+    let finalizes = 0
+    const sink = stubSink({
+      /** @param {number} id */
+      async finalize(id) {
+        finalizes++
+        if (finalizes === 1) process.emit("SIGINT")
+        return { id, status: "approved" }
+      },
+    })
+
+    const report = await runImport(
+      runArgs(dir, { concurrency: 1 }),
+      runDeps({ createSink: () => sink }),
+    )
+
+    assert.equal(report.exitCode, 130, "killed by a signal, not a destination failure")
+    assert.equal(report.imported.length, 1, "the file in flight still completed")
+    assert.deepEqual(report.unattempted, ["b.jpg", "c.jpg", "d.jpg"])
+    assert.equal(report.failed.length, 0, "an interrupt is not a per-file failure")
+    // Nothing may be left half-created: every session opened was also finalized.
+    assert.deepEqual(sink.calls.discarded, [])
+    assert.equal(finalizes, sink.calls.created.length)
+  })
+
+  it("records the interrupted run's imports in the manifest so a re-run resumes", async () => {
+    const dir = scratch("run-sigint-manifest")
+    const names = ["a.jpg", "b.jpg", "c.jpg"]
+    names.forEach((name, i) => {
+      write(dir, name, makeJpegWithMetadata({ width: 100 + i, height: 100 }))
+    })
+    const cliArgs = runArgs(dir, { concurrency: 1 })
+    let finalizes = 0
+    const first = await runImport(
+      cliArgs,
+      runDeps({
+        createSink: () =>
+          stubSink({
+            /** @param {number} id */
+            async finalize(id) {
+              finalizes++
+              if (finalizes === 1) process.emit("SIGINT")
+              return { id, status: "approved" }
+            },
+          }),
+      }),
+    )
+    assert.equal(first.exitCode, 130)
+    assert.deepEqual(first.imported.map((i) => i.file), ["a.jpg"])
+
+    // The resume imports exactly what the interrupt missed.
+    const second = await runImport(cliArgs, runDeps({ createSink: () => stubSink() }))
+    assert.equal(second.exitCode, 0)
+    assert.deepEqual(second.imported.map((i) => i.file), ["b.jpg", "c.jpg"])
+    assert.deepEqual(
+      second.skipped.map((s) => s.code),
+      ["ALREADY_IMPORTED"],
+    )
+  })
+
+  it("a fatal destination failure still exits 2, not 130", async () => {
+    // Guards the split: only a signal earns 130.
+    const dir = scratch("run-fatal-not-130")
+    write(dir, "a.jpg", makeJpegWithMetadata({ width: 100, height: 100 }))
+    write(dir, "b.jpg", makeJpegWithMetadata({ width: 100, height: 100 }))
+    const sink = stubSink({
+      async createSession() {
+        throw new MediaImportError("DESTINATION_FULL", "Storage is full")
+      },
+    })
+    const report = await runImport(
+      runArgs(dir, { concurrency: 1 }),
+      runDeps({ createSink: () => sink }),
+    )
+    assert.equal(report.exitCode, 2)
+  })
+
+  it("keeps a finalized row when the post-finalize bookkeeping throws", async () => {
+    // saveManifest() writes wherever --manifest= points, and §3 suggests putting
+    // it beside the photos on an external drive — read-only or full media is a
+    // real failure mode. By then the row has been created AND approved, and the
+    // report has already counted it as imported. Discarding it would delete a
+    // good import over failed bookkeeping and make the report a lie.
+    //
+    // The throw is injected through `now`, which runImport calls once for
+    // startedAt and then again to stamp the manifest entry — immediately after
+    // finalize, in the same try block as saveManifest. That reaches the branch
+    // deterministically, with no dependency on how a given filesystem fails.
+    const dir = scratch("run-bookkeeping-throws")
+    write(dir, "a.jpg", makeJpegWithMetadata({ width: 100, height: 100 }))
+    const sink = stubSink()
+    let calls = 0
+
+    const report = await runImport(
+      runArgs(dir, { concurrency: 1 }),
+      runDeps({
+        createSink: () => sink,
+        now: () => {
+          calls++
+          if (calls === 2) throw new Error("ENOSPC: no space left on device")
+          return "2026-07-29T12:00:00.000Z"
+        },
+      }),
+    )
+
+    assert.deepEqual(sink.calls.finalized, sink.calls.created, "the row was finalized")
+    assert.deepEqual(sink.calls.discarded, [], "and must not be discarded afterwards")
+    assert.equal(report.failed.length, 1, "the run still reports the bookkeeping failure")
+  })
+
   it("writes nothing at all on a dry run", async () => {
     const dir = scratch("run-dry")
     write(dir, "one.jpg", makeJpegWithMetadata({}))

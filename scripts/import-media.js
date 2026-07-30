@@ -86,8 +86,13 @@ const BOOLEAN_FLAGS = [
 
 const VALUE_FLAGS = ["url", "concurrency", "manifest", "report", ...Object.keys(ENUM_FLAGS)]
 
-/** Exit codes, as documented in docs/post-wedding/08-bulk-import.md. */
-const EXIT = { CLEAN: 0, SOME_FAILED: 1, ABORTED: 2 }
+/** Exit codes, as documented in docs/post-wedding/08-bulk-import.md.
+ *
+ *  INTERRUPTED is separate from ABORTED because the two mean different things to
+ *  whoever is reading the code: 130 is the conventional "killed by SIGINT", and a
+ *  wrapper script re-running on failure wants to retry a `DESTINATION_FULL` stop
+ *  but not a Ctrl-C the operator typed on purpose. */
+const EXIT = { CLEAN: 0, SOME_FAILED: 1, ABORTED: 2, INTERRUPTED: 130 }
 
 /** @param {number} bytes @returns {string} */
 function formatBytes(bytes) {
@@ -595,6 +600,8 @@ export async function runImport(args, deps = {}) {
     /** @type {Set<number>} */
     const openSessions = new Set()
     let aborted = false
+    /** Whether the abort came from a signal rather than a fatal sink failure. */
+    let interrupted = false
     let nextIndex = 0
     let done = 0
 
@@ -607,6 +614,10 @@ export async function runImport(args, deps = {}) {
     const FATAL_CODES = new Set(["DESTINATION_FULL", "AUTH_LOST"])
 
     const onSignal = () => {
+      // A fatal sink failure may already have set `aborted`; the signal still
+      // wins the exit code, because the operator's Ctrl-C is the more specific
+      // statement about why the run stopped.
+      interrupted = true
       if (aborted) return
       aborted = true
       note("\n! Interrupted — finishing the files in flight, then cleaning up.")
@@ -658,6 +669,13 @@ export async function runImport(args, deps = {}) {
           caption: item.caption,
         })
         openSessions.delete(session.id)
+        // Past this line the row exists and is approved, so the catch below must
+        // not discard it. Everything that follows can still throw —
+        // saveManifest() writes to whatever --manifest= names, which the docs
+        // encourage putting beside the photos on an external drive — and
+        // destroying a good import because its bookkeeping failed would be a far
+        // worse outcome than an unrecorded row the next run re-imports.
+        sessionId = null
 
         report.imported.push({
           file: item.file.relative,
@@ -777,7 +795,7 @@ export async function runImport(args, deps = {}) {
       )
     }
 
-    if (aborted) return finish(EXIT.ABORTED)
+    if (aborted) return finish(interrupted ? EXIT.INTERRUPTED : EXIT.ABORTED)
     return finish(report.failed.length > 0 ? EXIT.SOME_FAILED : EXIT.CLEAN)
   } finally {
     await sink.close().catch(() => {})
