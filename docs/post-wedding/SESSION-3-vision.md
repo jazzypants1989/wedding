@@ -3,8 +3,12 @@
 **Date:** 2026-07-30
 **Status:** decision + build record. Supersedes [`SESSION-2-vision.md`](./SESSION-2-vision.md) §7
 (the what-to-do-next ordering) and corrects one claim in its §1 and one proposal in its §8.
-**Reads with:** [`SPEC-vision-lab.md`](./SPEC-vision-lab.md) §15 (unchanged, one carve-out) ·
-[`VISION-MODELS.md`](./VISION-MODELS.md) (AuraFace now parsed; new candidate rows)
+**Reads with:** [`SPEC-vision-lab.md`](./SPEC-vision-lab.md) §15 (since amended — the
+one carve-out is now three) · [`VISION-MODELS.md`](./VISION-MODELS.md) (AuraFace now
+parsed; new candidate rows; the detector's channel order added later)
+**Followed by:** [`SESSION-4-vision.md`](./SESSION-4-vision.md) — a run was destroyed
+and rebuilt from the label file alone. Nothing here is superseded; §5's `datasetId`
+refusal is what made that possible.
 
 Two independent reviews of the session-2 state ran in parallel, disagreed
 productively, and were merged. Then most of the merged plan was built. As

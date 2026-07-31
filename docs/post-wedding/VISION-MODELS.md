@@ -377,6 +377,30 @@ not `/127.5`: `1/127.5 = 0.00784…`, a different number. Confirmed by
 **Channel order is RGB.** Same call passes `swapRB=true`; OpenCV decodes BGR, so
 the network receives RGB.
 
+⚠ **The detector's channel order is the opposite, and this file did not say so
+until 2026-07-31.** `FaceDetectorYNImpl::detect` calls
+`dnn::blobFromImage(input_image)` with every optional argument defaulted —
+`swapRB=false` — on a Mat OpenCV decoded as BGR. **So the reference detector
+receives BGR while the reference recogniser receives RGB**, from the same
+library, in the same pipeline. Documenting one and not the other is how a
+wrapper ends up feeding the detector whichever order its own pixel source
+happens to use.
+
+This is not cosmetic. A trained detector fed the opposite channel order still
+produces plausible boxes — different ones, in number and in position — and
+reports no error. Two consequences for anything built here:
+
+1. **A wrapper must state which order it feeds**, and that statement must reach
+   `timing.json` through the engine's `info()`. Two runs made under different
+   orders are not comparable and nothing else in the artifacts distinguishes
+   them.
+2. **Which order is right for our input is an open question**, not a settled
+   one — more detections is not better detection. `scripts/vision/oracle-macos.swift`
+   is the instrument: run both orders against an independent detector on the
+   same frames. Until that is done, the pipeline's order is a choice inherited
+   from whoever wrote the wrapper, not a decision. See
+   [`SESSION-4-vision.md`](./SESSION-4-vision.md) §3.
+
 **The alignment template**, from `getSimilarityTransformMatrix` in
 `modules/objdetect/src/face_recognize.cpp`:
 
@@ -676,3 +700,7 @@ Run after any upstream change, before trusting anything above:
    attach, since the fold depends on it.
 9. **Re-derive multiply-adds, not just parameters.** The cost table above is the
    number that predicts runtime; the parameter count is the number that misleads.
+10. **Re-check BOTH channel orders in the reference source** — the detector's
+    and the recogniser's, which differ. Then check what the engine actually
+    feeds each of them, and that both appear in `engine.info()`. This is a
+    silent-failure axis and it went undocumented through two sessions.

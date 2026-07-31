@@ -846,17 +846,36 @@ not advice.
    them, and don't put them, crops of them, or descriptions of them into anything
    that leaves the machine. Aggregate numbers answer every design question in this
    document; individual frames answer none of them.
-3. **Derived data is scratch — with exactly one exception.** Crops, descriptors,
+3. **Derived data is scratch — with three exceptions.** Crops, descriptors,
    landmark geometry, distance distributions, reports, contact sheets — all under
    `tmp/`, which `.gitignore` covers, and all deletable at any time. It
-   regenerates in minutes. The exception is **`labels.json`** (and its
-   `identities.json` sidecar): it records human judgement, made one face at a
-   time, and does not regenerate. It stays out of the repo and out of git — it is
-   names attached to faces and this repository is public — but it is the one
-   derived artifact worth copying somewhere durable.
-   `scripts/vision/labels-backup.js <run-dir> --to <path>` does that, to a
-   destination that is always the owner's explicit argument, and verifies the
-   copy byte-for-byte.
+   regenerates in minutes. Three things do not, and all three were learned by
+   losing them ([`SESSION-4-vision.md`](./SESSION-4-vision.md)):
+
+   - **`labels.json`** (and its `identities.json` sidecar): it records human
+     judgement, made one face at a time, and does not regenerate. It stays out
+     of the repo and out of git — it is names attached to faces and this
+     repository is public — but it is worth copying somewhere durable.
+   - **`timing.json`**: the run's own record of how it was made — detection
+     resolutions, the scan flags, the pool size, the image backend, and the
+     engine's identification. Everything else in a run regenerates *only if you
+     still know the configuration*, and this is the only place that is written
+     down. Losing it turns a one-command re-run into a parameter search.
+   - **`tmp/rig/engine.mjs`**: scaffolding, and deliberately unreferenced by any
+     module in the repository (§2.1) — which also means nothing in the repository
+     can rebuild it. Keep a copy with the labels.
+
+   `scripts/vision/labels-backup.js <run-dir> --to <path>` copies the first two,
+   to a destination that is always the owner's explicit argument, and verifies
+   each copy byte-for-byte. The engine is not in a run directory; copy it by
+   hand.
+
+   The corollary, which is a constraint on the engine rather than on the
+   operator: **`info()` must report every free parameter the wrapper has**, not
+   just its model filenames — channel orders, decode variants, anything a
+   reimplementation could choose differently. A knob absent from `info()` is a
+   knob absent from `timing.json`, and therefore a knob someone will have to
+   search for.
 4. **No document in this repo records measurements taken from real photographs.**
    Not scene descriptions, and not statistics either — counts, pose and sharpness
    distributions, per-folder breakdowns and face-size percentiles are all facts
