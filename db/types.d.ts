@@ -1071,3 +1071,90 @@ export function createRecoveryToken(
  * or null if the token is unknown, already used, or expired.
  */
 export function consumeRecoveryToken(tokenHash: string): number | null
+
+/** @file media-faces.js - Types for face pipeline database operations
+ *  (docs/post-wedding/SPEC-vision-lab.md §10) */
+
+import type { MediaFace, FaceIdentity, FaceSource, FaceIdentityProvenance } from "../types.js"
+
+/** Pixel-space bounding box in the source image. */
+export interface FaceBBox {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/** Exactly gateSignals()'s output shape (public/vision/gate.js). Every field
+ *  optional/nullable — a caller may only have some signals, or none yet. */
+export interface FaceGateSignals {
+  score?: number | null
+  boxPx?: number | null
+  borderPx?: number | null
+  eyeRatio?: number | null
+  eyeAngle?: number | null
+  alignScale?: number | null
+  residual?: number | null
+  outsideFraction?: number | null
+  sharpness?: number | null
+}
+
+export interface InsertFaceInput {
+  mediaId: number
+  bbox: FaceBBox
+  /** 10 numbers (5 x,y landmark pairs), or null. */
+  landmarks: number[] | null
+  /** Nullable/omittable — a row may carry no graded signals yet. */
+  signals?: FaceGateSignals | null
+  /** Nullable — detection-only rows (no recognition run, or nothing
+   *  recognisable) are valid. */
+  descriptor?: Buffer | Uint8Array | null
+  modelVersion: string
+  source: FaceSource
+}
+
+/** Insert a face row and return the full row. Subject to the schema's §10
+ *  precedence triggers: a 'cli' insert retires live 'upload' rows for the same
+ *  media_id; an 'upload' insert arriving after a live 'cli' row is born
+ *  already soft-deleted. */
+export function insertFace(input: InsertFaceInput): MediaFace
+
+export function getFaceById(id: number): MediaFace | undefined
+
+/** Live (non-deleted) faces for one media row, id ascending. */
+export function facesForMedia(mediaId: number): MediaFace[]
+
+/** Point a face at a confirmed/propagated identity (or clear it with null).
+ *  Returns true if a row changed. */
+export function setFaceIdentity(id: number, identityId: number | null): boolean
+
+/** Soft-delete a face row. Returns true if a row changed. */
+export function softDeleteFace(id: number): boolean
+
+export interface CreateIdentityInput {
+  guestId: number
+  confirmedBy?: string | null
+  confirmedAt?: string | null
+  /** Defaults to 'confirmed'. Propagated identities are second-class — see
+   *  schema.js's add_media_faces migration comment. */
+  provenance?: FaceIdentityProvenance
+}
+
+/** Insert a face_identities row and return the full row. */
+export function createIdentity(input: CreateIdentityInput): FaceIdentity
+
+export function getIdentityById(id: number): FaceIdentity | undefined
+
+/** Live identities linked to one guest, id ascending (usually 0 or 1, but not
+ *  constrained to it). */
+export function identitiesForGuest(guestId: number): FaceIdentity[]
+
+/** Soft-delete an identity row (its media_faces.face_identity_id references
+ *  are NOT cleared by this — only a hard delete/cascade does that; callers
+ *  that want faces detached should also call setFaceIdentity(id, null)).
+ *  Returns true if a row changed. */
+export function softDeleteIdentity(id: number): boolean
+
+/** Which of the given media ids have at least one live (non-deleted) face
+ *  row. Empty input returns an empty set. */
+export function mediaWithFaces(mediaIds: number[]): Set<number>

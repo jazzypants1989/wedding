@@ -956,4 +956,195 @@ export function runMigrations(db) {
     }
     record.run("relax_comment_account_null")
   }
+
+  // Face pipeline (design doc: docs/post-wedding/SPEC-vision-lab.md §10):
+  // media_faces (one row per detected face, CLI or upload-time source) and
+  // face_identities (a confirmed link from a face-recognition group to a
+  // roster guest). Two new columns ride along on `media`: source_sha256 (the
+  // content hash the bulk importer already computes — see
+  // scripts/lib/import-manifest.js — as the durable key a batch run can
+  // reconcile against when it doesn't yet know a row's media_id) and
+  // captured_at (EXIF capture time; core/image-meta.js readExifSummary and
+  // scripts/lib/media-variants.js:265 already compute/thread this value but
+  // nothing writes it yet — that importer wiring is a separate task).
+  //
+  // Design decisions recorded here because they're easy to get backwards:
+  //
+  // - face_identities.guest_id is NOT NULL. An identity IS the confirmed link
+  //   to a roster guest — that's what "confirmed" means in this schema. A
+  //   face-recognition *group* that hasn't been assigned to anyone yet is a
+  //   grouping-stage concept (§7/§9) with no row here at all; nothing needs an
+  //   identities row to exist before a human names it.
+  // - provenance distinguishes a human-confirmed link ('confirmed') from one
+  //   propagated automatically from a confirmed identity onto other faces the
+  //   grouper judged similar ('propagated', §9's assignment-consistency loop).
+  //   Propagated identities are second-class: never treat one as ground truth
+  //   for anything downstream, and NEVER let a 'propagated' identity's faces
+  //   seed a recognition prototype — that is exactly the feedback loop (an
+  //   unreviewed guess reinforcing itself) the confirmed/propagated split
+  //   exists to block.
+  // - The CLI pass is authoritative over upload-time detection (§10, §11): a
+  //   newer/better-thresholded CLI run must never coexist with stale
+  //   upload-time boxes for the same photo. Two AFTER INSERT triggers cover
+  //   both arrival orders (upload-then-cli and cli-then-upload) — see below.
+  if (!applied.get("add_media_faces")) {
+    const haveMediaCols = new Set(
+      /** @type {Array<{ name: string }>} */ (
+        db.prepare("PRAGMA table_info(media)").all()
+      ).map((c) => c.name),
+    )
+    if (!haveMediaCols.has("source_sha256")) {
+      db.exec(`ALTER TABLE media ADD COLUMN source_sha256 TEXT`)
+    }
+    if (!haveMediaCols.has("captured_at")) {
+      db.exec(`ALTER TABLE media ADD COLUMN captured_at TEXT`)
+    }
+
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_media_source_sha256 ON media(source_sha256);
+
+      -- One confirmed (or auto-propagated) link from a face-recognition group
+      -- to a roster guest. guest_id is NOT NULL: an identity IS the confirmed
+      -- link, not a placeholder that precedes one (see comment above).
+      CREATE TABLE IF NOT EXISTS face_identities (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        guest_id INTEGER NOT NULL,
+        confirmed_by TEXT,
+        confirmed_at TEXT,
+        provenance TEXT NOT NULL DEFAULT 'confirmed',   -- confirmed|propagated
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        deleted_at TEXT DEFAULT NULL,
+        FOREIGN KEY (guest_id) REFERENCES guests(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_face_identities_guest
+        ON face_identities(guest_id) WHERE deleted_at IS NULL;
+
+      -- One detected face. bbox/landmarks/gate signals are hints until a human
+      -- (or the CLI's own high-confidence pass) says otherwise; descriptor is
+      -- nullable because detection-only rows exist (a box with nothing
+      -- recognisable, or recognition simply not run yet). The nine signal_
+      -- columns are exactly gateSignals()'s output shape (public/vision/gate.js)
+      -- so a row can be re-graded against new cutoffs without re-running
+      -- detection.
+      CREATE TABLE IF NOT EXISTS media_faces (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        media_id INTEGER NOT NULL,
+        bbox_x REAL NOT NULL,
+        bbox_y REAL NOT NULL,
+        bbox_w REAL NOT NULL,
+        bbox_h REAL NOT NULL,
+        landmarks TEXT,                        -- JSON array of 10 numbers (5 x,y pairs), nullable
+        signal_score REAL,
+        signal_boxPx REAL,
+        signal_borderPx REAL,
+        signal_eyeRatio REAL,
+        signal_eyeAngle REAL,
+        signal_alignScale REAL,
+        signal_residual REAL,
+        signal_outsideFraction REAL,
+        signal_sharpness REAL,
+        descriptor BLOB,                       -- nullable: detection-only rows exist
+        model_version TEXT NOT NULL,
+        source TEXT NOT NULL,                  -- cli|upload (§10 precedence below)
+        face_identity_id INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        deleted_at TEXT DEFAULT NULL,
+        FOREIGN KEY (media_id) REFERENCES media(id) ON DELETE CASCADE,
+        FOREIGN KEY (face_identity_id) REFERENCES face_identities(id) ON DELETE SET NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_media_faces_media
+        ON media_faces(media_id) WHERE deleted_at IS NULL;
+      CREATE INDEX IF NOT EXISTS idx_media_faces_identity
+        ON media_faces(face_identity_id) WHERE deleted_at IS NULL;
+    `)
+
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS check_media_faces_source_insert
+      BEFORE INSERT ON media_faces
+      FOR EACH ROW
+      WHEN NEW.source NOT IN ('cli', 'upload')
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid face source. Must be: cli or upload');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS check_media_faces_source_update
+      BEFORE UPDATE ON media_faces
+      FOR EACH ROW
+      WHEN NEW.source NOT IN ('cli', 'upload')
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid face source. Must be: cli or upload');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS check_face_identities_provenance_insert
+      BEFORE INSERT ON face_identities
+      FOR EACH ROW
+      WHEN NEW.provenance NOT IN ('confirmed', 'propagated')
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid identity provenance. Must be: confirmed or propagated');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS check_face_identities_provenance_update
+      BEFORE UPDATE ON face_identities
+      FOR EACH ROW
+      WHEN NEW.provenance NOT IN ('confirmed', 'propagated')
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid identity provenance. Must be: confirmed or propagated');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS auto_updated_at_media_faces
+      AFTER UPDATE ON media_faces
+      FOR EACH ROW
+      WHEN NEW.updated_at = OLD.updated_at
+      BEGIN
+        UPDATE media_faces SET updated_at = datetime('now') WHERE id = NEW.id;
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS auto_updated_at_face_identities
+      AFTER UPDATE ON face_identities
+      FOR EACH ROW
+      WHEN NEW.updated_at = OLD.updated_at
+      BEGIN
+        UPDATE face_identities SET updated_at = datetime('now') WHERE id = NEW.id;
+      END;
+
+      -- §10 precedence rule, direction 1: a CLI row lands after upload-time
+      -- hints already exist for this photo — the CLI is authoritative, so
+      -- retire (soft-delete) every live upload-sourced row for the same
+      -- media_id. Scoped to source='upload' so multiple CLI re-runs (a
+      -- reprocessed photo) never touch each other's rows.
+      CREATE TRIGGER IF NOT EXISTS media_faces_cli_supersedes_upload
+      AFTER INSERT ON media_faces
+      FOR EACH ROW
+      WHEN NEW.source = 'cli' AND NEW.deleted_at IS NULL
+      BEGIN
+        UPDATE media_faces
+        SET deleted_at = datetime('now')
+        WHERE media_id = NEW.media_id
+          AND source = 'upload'
+          AND deleted_at IS NULL;
+      END;
+
+      -- §10 precedence rule, direction 2: an upload-time hint arrives for a
+      -- photo the CLI has already processed (e.g. a late opportunistic
+      -- detection race, or a re-upload of an already-imported photo) — it is
+      -- born superseded rather than sitting alongside the authoritative CLI
+      -- rows until the next CLI pass happens to clean it up.
+      CREATE TRIGGER IF NOT EXISTS media_faces_upload_superseded_by_cli
+      AFTER INSERT ON media_faces
+      FOR EACH ROW
+      WHEN NEW.source = 'upload' AND NEW.deleted_at IS NULL
+        AND EXISTS (
+          SELECT 1 FROM media_faces
+          WHERE media_id = NEW.media_id AND source = 'cli' AND deleted_at IS NULL
+        )
+      BEGIN
+        UPDATE media_faces SET deleted_at = datetime('now') WHERE id = NEW.id;
+      END;
+    `)
+    record.run("add_media_faces")
+  }
 }

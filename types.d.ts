@@ -393,6 +393,13 @@ export interface Media {
   duration_seconds: number | null
   needs_display: 0 | 1
   sort_order: number
+  /** Content-hash of the original bytes (bulk importer's manifest key) — the
+   *  durable identifier a batch face-pipeline run reconciles against when it
+   *  doesn't yet know a row's media_id. Null until the importer writes it. */
+  source_sha256: string | null
+  /** EXIF capture time, when the source image carried one. Null until the
+   *  importer wiring lands (core/image-meta.js already reads it). */
+  captured_at: string | null
   created_at: string
   updated_at: string
   reviewed_at: string | null
@@ -646,6 +653,74 @@ export interface BlocklistEntry {
   phone: string | null
   reason: string | null
   created_at: string
+}
+
+// --- Face pipeline (design: docs/post-wedding/SPEC-vision-lab.md §10) ---
+
+/** Where a media_faces row's box/landmarks came from. The CLI pass is
+ *  authoritative over upload-time detection (schema.js's precedence
+ *  triggers enforce this at the DB layer). */
+export type FaceSource = "cli" | "upload"
+
+/** Whether a face_identities row was set by a human or auto-propagated from
+ *  one. Propagated identities are second-class: never a recognition
+ *  prototype seed, never treated as ground truth. */
+export type FaceIdentityProvenance = "confirmed" | "propagated"
+
+/**
+ * One detected face (docs/post-wedding/SPEC-vision-lab.md §10). bbox/landmarks
+ * are pixel coordinates in the source image; the nine `signal_*` columns are
+ * exactly gateSignals()'s output shape (public/vision/gate.js), stored
+ * unthresholded so cutoffs can be re-swept without re-running detection.
+ * `descriptor` is nullable — detection-only rows (no recognition run, or
+ * nothing recognisable) are valid. `source` is trigger-enforced ('cli' wins
+ * over 'upload' for the same media_id — see schema.js).
+ */
+export interface MediaFace {
+  id: number
+  media_id: number
+  bbox_x: number
+  bbox_y: number
+  bbox_w: number
+  bbox_h: number
+  /** JSON-encoded array of 10 numbers (5 x,y landmark pairs), or null. */
+  landmarks: string | null
+  signal_score: number | null
+  signal_boxPx: number | null
+  signal_borderPx: number | null
+  signal_eyeRatio: number | null
+  signal_eyeAngle: number | null
+  signal_alignScale: number | null
+  signal_residual: number | null
+  signal_outsideFraction: number | null
+  signal_sharpness: number | null
+  // Uint8Array, not Buffer: this file is included by public/tsconfig.json,
+  // which has no node types on purpose — and node:sqlite returns Uint8Array
+  // for BLOB columns anyway. A Buffer here would be both a leak and a lie.
+  descriptor: Uint8Array | null
+  model_version: string
+  source: FaceSource
+  face_identity_id: number | null
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+}
+
+/**
+ * A confirmed (or auto-propagated) link from a face-recognition group to a
+ * roster guest. `guest_id` is NOT NULL by design: an identity row IS the
+ * confirmed link, not a placeholder that can exist before one (see schema.js
+ * comment for the full reasoning).
+ */
+export interface FaceIdentity {
+  id: number
+  guest_id: number
+  confirmed_by: string | null
+  confirmed_at: string | null
+  provenance: FaceIdentityProvenance
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
 }
 
 export interface Communication {
