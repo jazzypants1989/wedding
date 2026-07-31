@@ -3,9 +3,14 @@
  *  SPEC-vision-lab.md §4 rests on one property — that public/vision/ is pure
  *  numeric JS with no node:* and no DOM — because that is what lets the same
  *  code serve the CLI, a Web Worker and these tests without forking the
- *  pipeline. `npm run typecheck` catches a node: import (public/tsconfig.json
- *  declares no node types), but nothing catches a DOM reference, and nothing at
- *  all catches it if the tsconfig is ever changed. So it is asserted here too.
+ *  pipeline. `npm run typecheck` catches a node: import ONLY because
+ *  public/tsconfig.json sets `"types": []` — without that key, TypeScript
+ *  auto-includes every @types/* package in an ancestor node_modules, including
+ *  @types/node, and the "no node types" claim is silently false. (It WAS false,
+ *  from the config's creation until 2026-07-30; this grep was the only real
+ *  guard the whole time.) Nothing catches a DOM reference either way, and
+ *  nothing at all catches any of it if the tsconfig is ever changed. So it is
+ *  asserted here too.
  *
  *  Also checks that the defaults table stays the shape effect-controls.js can
  *  build a UI from, which is what makes the tier-5 vision bench nearly free —

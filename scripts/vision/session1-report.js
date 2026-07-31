@@ -67,6 +67,8 @@ import {
   separation,
 } from "../../public/vision/metrics.js"
 
+import { computeDatasetId } from "./dataset-id.js"
+
 const MINUTE_MS = 60_000
 const HOUR_MS = 3_600_000
 
@@ -75,6 +77,17 @@ const BOX_MATCH_IOU = 0.5
 
 /** A stratum with fewer pairs than this on either side is not a measurement. */
 const MIN_STRATUM_PAIRS = 10
+
+/**
+ * The floor below which `verdictBasis` refuses to hand `verdict()` a number at
+ * all. Separate from — and deliberately much higher than — `MIN_STRATUM_PAIRS`,
+ * which only decides whether a stratum is worth PRINTING. A stratum can be
+ * worth printing as a direction while being far too thin to carry an English
+ * conclusion: an AUC over a handful of same-person pairs moves by whole verdict
+ * bands when one pair flips. Reference default, deliberately round. Raising it
+ * makes the report more honest and more often silent; it never makes it wrong.
+ */
+const MIN_VERDICT_PAIRS = 30
 
 /** Label written by the labeller for "this detection is not a face". */
 const NOT_A_FACE = "x"
@@ -141,10 +154,42 @@ export function loadRun(dir) {
     console.warn(`warning: skipped ${skipped} unparseable JSONL line(s) — was the batch interrupted?`)
   }
 
+  const faceRecords = /** @type {Types.Session1FaceRecord[]} */ (faces.records)
+  const labels = /** @type {Types.Session1LabelFile | null} */ (readJson(path.join(dir, "labels.json")))
+
+  // The join below is by bare numeric face id, and ids are sequential counters
+  // over a content-dependent directory scan — one added, removed or renamed
+  // file shifts every id after it. datasetId exists precisely so a labels.json
+  // can be refused against a run it was not made from; a mismatched join would
+  // attach old names to new faces and every number downstream would be about a
+  // population that never existed. Refusal, not a warning, matching
+  // carryAssignments' stance in relabel-data.js.
+  if (labels !== null && faceRecords.length > 0) {
+    const recorded = labels.datasetId
+    if (typeof recorded === "string" && recorded.length > 0) {
+      const actual = computeDatasetId(faceRecords)
+      if (recorded !== actual) {
+        throw new Error(
+          `labels.json was made from a different run: its datasetId is ${recorded}, ` +
+            `but this run's faces.jsonl hashes to ${actual}. Face ids are not stable across ` +
+            `runs, so joining these files would silently attach labels to the wrong faces. ` +
+            `Re-run relabel-data.js and re-check the labelling, or point the report at the ` +
+            `run directory the labels came from.`,
+        )
+      }
+    } else {
+      console.warn(
+        "warning: labels.json carries no datasetId, so it cannot be verified against this " +
+          "run's faces.jsonl. If the batch was ever re-run since labelling, every join below " +
+          "may be wrong. Regenerate label-data.js with relabel-data.js to stamp it.",
+      )
+    }
+  }
+
   return {
     photos: /** @type {Types.Session1PhotoRecord[]} */ (photos.records),
-    faces: /** @type {Types.Session1FaceRecord[]} */ (faces.records),
-    labels: /** @type {Types.Session1LabelFile | null} */ (readJson(path.join(dir, "labels.json"))),
+    faces: faceRecords,
+    labels,
     timing: /** @type {Types.Session1Timing | null} */ (readJson(path.join(dir, "timing.json"))),
     resolution: /** @type {Types.Session1ResolutionRecord[]} */ (resolution.records),
   }
@@ -954,9 +999,25 @@ export function reportD(run, stratumKey, options = {}) {
     .sort((a, b) => order.indexOf(a.reason) - order.indexOf(b.reason))
 
   return {
-    baseline: { value: NaN, kept: baselineScore.kept, total, auc: baselineScore.auc, rank1: baselineScore.rank1 },
+    baseline: {
+      value: NaN,
+      kept: baselineScore.kept,
+      total,
+      auc: baselineScore.auc,
+      rank1: baselineScore.rank1,
+      samePairs: baselineScore.samePairs,
+      diffPairs: baselineScore.diffPairs,
+    },
     baselineFprAt95Tpr: baselineScore.fprAt95Tpr,
-    ungated: { value: NaN, kept: ungatedScore.kept, total, auc: ungatedScore.auc, rank1: ungatedScore.rank1 },
+    ungated: {
+      value: NaN,
+      kept: ungatedScore.kept,
+      total,
+      auc: ungatedScore.auc,
+      rank1: ungatedScore.rank1,
+      samePairs: ungatedScore.samePairs,
+      diffPairs: ungatedScore.diffPairs,
+    },
     keys,
     joint,
     heldOut,
@@ -1155,7 +1216,11 @@ export function oracleSummary(run, oracle, iouMatch = BOX_MATCH_IOU) {
     if (exact.length === 1) return exact[0]
     if (exact.length > 1) return null
     if (candidates.length === 1) return candidates[0]
-    return null
+    // The basename collides with several oracle rows but none of their paths
+    // matches this photograph's — that is a photo the oracle never saw, not an
+    // ambiguity between rows. Reporting it as ambiguous hides an oracle run
+    // that covered a different directory tree.
+    return undefined
   }
 
   /** @type {Map<number, Types.Session1FaceRecord[]>} */
@@ -1352,7 +1417,15 @@ export function residualSummary(faces, maxResidual) {
  */
 export function verdictBasis(d) {
   const total = d.joint.result.total
-  if (d.heldOut && Number.isFinite(d.heldOut.auc)) {
+  // ⚠ Every branch here must clear MIN_VERDICT_PAIRS on BOTH pair counts, not
+  // just be finite. `separation()` returns a finite AUC from a single pair on
+  // each side, so "finite" alone let a confident headline print from almost no
+  // evidence whenever the held-out estimate came back unmeasurable — the exact
+  // failure SESSION-2 §2a documents. A basis that cannot clear the floor falls
+  // through; if none can, the verdict is UNDECIDED, which is the truth.
+  /** @param {number} same @param {number} diff @returns {boolean} */
+  const powered = (same, diff) => same >= MIN_VERDICT_PAIRS && diff >= MIN_VERDICT_PAIRS
+  if (d.heldOut && Number.isFinite(d.heldOut.auc) && powered(d.heldOut.samePairs, d.heldOut.diffPairs)) {
     return {
       auc: d.heldOut.auc,
       fprAt95Tpr: d.heldOut.fprAt95Tpr,
@@ -1361,7 +1434,7 @@ export function verdictBasis(d) {
       label: `held-out gate estimate (${d.heldOut.contributingFolds}-fold, pooled over people the selection never saw)`,
     }
   }
-  if (Number.isFinite(d.baseline.auc)) {
+  if (Number.isFinite(d.baseline.auc) && powered(d.baseline.samePairs, d.baseline.diffPairs)) {
     return {
       auc: d.baseline.auc,
       fprAt95Tpr: d.baselineFprAt95Tpr,
@@ -1370,12 +1443,24 @@ export function verdictBasis(d) {
       label: "default gate, whose cutoffs predate these labels and so cannot be overfitted to them",
     }
   }
+  if (Number.isFinite(d.ungated.auc) && powered(d.ungated.samePairs, d.ungated.diffPairs)) {
+    return {
+      auc: d.ungated.auc,
+      fprAt95Tpr: NaN,
+      rank1: d.ungated.rank1,
+      keptFraction: 1,
+      label: "NO GATE AT ALL — the wrong population, reported only because nothing better could be measured",
+    }
+  }
   return {
-    auc: d.ungated.auc,
+    auc: NaN,
     fprAt95Tpr: NaN,
-    rank1: d.ungated.rank1,
-    keptFraction: 1,
-    label: "NO GATE AT ALL — the wrong population, reported only because nothing better could be measured",
+    rank1: NaN,
+    keptFraction: NaN,
+    label:
+      `UNDER-POWERED — no configuration reached ${MIN_VERDICT_PAIRS} same-person and ` +
+      `${MIN_VERDICT_PAIRS} different-person pairs, so no verdict is offered. Label more ` +
+      `people, prioritising whoever recurs most.`,
   }
 }
 
@@ -1769,28 +1854,40 @@ export function analyse(run, options = {}) {
   // tagged in it if ANY surviving face carries them, so what the gate actually
   // costs is person-in-a-frame appearances — keyed on the duplicate-frame root so
   // a retouched copy of one shot is not counted as a second chance.
-  const coverage = gateBases.map(({ label, cutoffs }) => {
-    /** @type {Set<string>} */
-    const present = new Set()
-    /** @type {Set<string>} */
-    const kept = new Set()
-    let faces = 0
-    labelled.labels.forEach((personLabel, row) => {
-      if (personLabel === null) return
-      const key = personLabel + "@" + labelled.frames[row]
-      present.add(key)
-      if (cutoffs !== null && !applyGate(labelled.records[row].signals, cutoffs).pass) return
-      faces++
-      kept.add(key)
+  //
+  // ⚠ AND SPLIT BY POOL, for the same reason rank-1 is (report C above): pool B's
+  // labels exist disproportionately where the model's own grouping was tidy,
+  // which is also where the gate signals are easy. A blended coverage table
+  // therefore overstates how much of the real population a gate keeps. Pool A is
+  // the number to quote; the blend is printed for volume, explicitly caveated.
+  /** @param {Types.FaceView} view */
+  const coverageRows = (view) =>
+    gateBases.map(({ label, cutoffs }) => {
+      /** @type {Set<string>} */
+      const present = new Set()
+      /** @type {Set<string>} */
+      const kept = new Set()
+      let faces = 0
+      view.labels.forEach((personLabel, row) => {
+        if (personLabel === null) return
+        const key = personLabel + "@" + view.frames[row]
+        present.add(key)
+        if (cutoffs !== null && !applyGate(view.records[row].signals, cutoffs).pass) return
+        faces++
+        kept.add(key)
+      })
+      return {
+        label,
+        faces,
+        totalFaces: view.labels.length,
+        appearancesKept: kept.size,
+        appearances: present.size,
+      }
     })
-    return {
-      label,
-      faces,
-      totalFaces: labelled.labels.length,
-      appearancesKept: kept.size,
-      appearances: present.size,
-    }
-  })
+  const coverage = {
+    poolA: coverageRows(poolA),
+    blended: coverageRows(labelled),
+  }
 
   /** @type {{ auc: number, rank1: number, mirrorAuc: number, mirrorRank1: number } | null} */
   let mirror = null
@@ -2229,14 +2326,24 @@ export function printSummary(analysis, log = console.log, options = {}) {
   log(" person and scores near-perfect while tagging almost nothing. Only a floor")
   log(" restrains it, and a floor is not a price. This is the price.")
   log("")
-  log("  " + pad("configuration", 32) + padLeft("faces", 11) + padLeft("appearances", 14) + padLeft("kept", 8))
-  for (const row of analysis.coverage) {
-    const share = row.appearances > 0 ? row.appearancesKept / row.appearances : NaN
-    log(
-      "  " + pad(row.label, 32) + padLeft(`${row.faces}/${row.totalFaces}`, 11) +
-        padLeft(`${row.appearancesKept}/${row.appearances}`, 14) + padLeft(pct(share), 8),
-    )
+  /** @param {typeof analysis.coverage.poolA} rows */
+  const printCoverage = (rows) => {
+    log("  " + pad("configuration", 32) + padLeft("faces", 11) + padLeft("appearances", 14) + padLeft("kept", 8))
+    for (const row of rows) {
+      const share = row.appearances > 0 ? row.appearancesKept / row.appearances : NaN
+      log(
+        "  " + pad(row.label, 32) + padLeft(`${row.faces}/${row.totalFaces}`, 11) +
+          padLeft(`${row.appearancesKept}/${row.appearances}`, 14) + padLeft(pct(share), 8),
+      )
+    }
   }
+  log(" Pool A only — the uniform sample. THIS is the table to quote:")
+  printCoverage(analysis.coverage.poolA)
+  log("")
+  log(" Pools A+B blended — more volume, but pool B's labels sit where the model's")
+  log(" own grouping was tidy, which is also where the gate is easy. Overstates the")
+  log(" keep rate for the same reason report C's blended rank-1 does. Context only:")
+  printCoverage(analysis.coverage.blended)
   log(" An APPEARANCE is one labelled person in one distinct frame (duplicate frames")
   log(" collapsed). A person is tagged in a photograph if ANY surviving face carries")
   log(" them, so this — not the face count — is what the gate costs the product.")

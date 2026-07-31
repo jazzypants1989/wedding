@@ -8,6 +8,7 @@
     "strict": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
+    "types": [],
     "lib": ["esnext", "DOM", "DOM.Iterable"]
   }
 }

@@ -26,8 +26,11 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { after, test } from "node:test"
 
+import { allDefaults } from "../../public/vision/defaults.js"
+import { applyGate } from "../../public/vision/gate.js"
 import { distanceMatrix, groupFaces } from "../../public/vision/group.js"
 import { groupingQuality, leaveOneOutRank1 } from "../../public/vision/metrics.js"
+import { computeDatasetId } from "../../scripts/vision/dataset-id.js"
 import {
   analyse,
   buildView,
@@ -1123,9 +1126,9 @@ test("a query mask restricts who is ASKED without shrinking the candidate pool",
 /** @param {Record<string, unknown>} [over] */
 function verdictBasisInput(over = {}) {
   return /** @type {any} */ ({
-    baseline: { value: NaN, kept: 50, total: 100, auc: 0.9, rank1: 0.93 },
+    baseline: { value: NaN, kept: 50, total: 100, auc: 0.9, rank1: 0.93, samePairs: 60, diffPairs: 400 },
     baselineFprAt95Tpr: 0.4,
-    ungated: { value: NaN, kept: 100, total: 100, auc: 0.8, rank1: 0.87 },
+    ungated: { value: NaN, kept: 100, total: 100, auc: 0.8, rank1: 0.87, samePairs: 90, diffPairs: 900 },
     joint: { result: { value: NaN, kept: 40, total: 100, auc: 0.99, rank1: 0.99 } },
     heldOut: {
       folds: [],
@@ -1163,11 +1166,60 @@ test("verdictBasis reaches the ungated number only when nothing else is measurab
   const basis = verdictBasis(
     verdictBasisInput({
       heldOut: null,
-      baseline: { value: NaN, kept: 0, total: 100, auc: NaN, rank1: NaN },
+      baseline: { value: NaN, kept: 0, total: 100, auc: NaN, rank1: NaN, samePairs: 0, diffPairs: 0 },
     }),
   )
   assert.equal(basis.auc, 0.8)
   assert.ok(basis.label.includes("NO GATE AT ALL"), "the reader has to be told this is the wrong population")
+})
+
+// SESSION-2 §2a's outstanding P1, now behavior: a finite AUC over a handful of
+// pairs is a direction, not a measurement, and `separation()` happily returns
+// one from a single pair per side. verdictBasis must refuse to hand such a
+// number to verdict(), whose UNDECIDED branch is the honest outcome.
+test("verdictBasis refuses a confident basis when every configuration is under-powered", () => {
+  const basis = verdictBasis(
+    verdictBasisInput({
+      heldOut: null,
+      baseline: { value: NaN, kept: 50, total: 100, auc: 0.99, rank1: 1, samePairs: 2, diffPairs: 400 },
+      ungated: { value: NaN, kept: 100, total: 100, auc: 0.97, rank1: 1, samePairs: 3, diffPairs: 900 },
+    }),
+  )
+  assert.ok(Number.isNaN(basis.auc), "a near-perfect AUC over 2 same-pairs must not become a headline")
+  assert.ok(basis.label.includes("UNDER-POWERED"))
+  // And the refusal routes to the existing UNDECIDED headline downstream.
+  const v = verdict({
+    auc: basis.auc,
+    fprAt95Tpr: basis.fprAt95Tpr,
+    rank1: basis.rank1,
+    basis: basis.label,
+    ungatedAuc: 0.97,
+    keptFraction: basis.keptFraction,
+    weldFreeCutoffExists: false,
+    recoverablePeople: 0,
+    people: 0,
+  })
+  assert.ok(v.headline.includes("UNDECIDED"))
+})
+
+test("verdictBasis skips an under-powered held-out estimate but still prefers a powered default gate", () => {
+  const basis = verdictBasis(
+    verdictBasisInput({
+      heldOut: {
+        folds: [],
+        requestedFolds: 5,
+        contributingFolds: 2,
+        samePairs: 11,
+        diffPairs: 500,
+        evaluated: 10,
+        auc: 0.99,
+        fprAt95Tpr: 0.05,
+        rank1: 1,
+      },
+    }),
+  )
+  assert.equal(basis.auc, 0.9, "11 same-pairs clears the print floor but not the verdict floor")
+  assert.ok(basis.label.includes("default gate"))
 })
 
 test("the verdict states which population it measured, so a gated AUC is not read as universal", () => {
@@ -1344,4 +1396,121 @@ test("the oracle joins on the full path, because basenames repeat across folders
   assert.equal(summary.ambiguous, 0)
   assert.equal(summary.ourFaces, 1)
   assert.equal(summary.ourMatched, 1, "a basename join picks the empty first folder and scores zero")
+})
+
+// ---------------------------------------------------------------------------
+// The dataset guard: labels.json must belong to THIS run's faces.jsonl
+// ---------------------------------------------------------------------------
+
+test("loadRun accepts a labels.json whose datasetId matches the run", () => {
+  const dir = writeRun("dataset-match", {
+    labels: { ...LABELS, datasetId: computeDatasetId(FACES) },
+  })
+  const loaded = loadRun(dir)
+  assert.ok(loaded.labels)
+  assert.equal(loaded.faces.length, 9)
+})
+
+test("loadRun refuses a labels.json made from a different run", () => {
+  // Face ids are sequential counters over a content-dependent scan: one
+  // renamed source file shifts every id, and the join below would then attach
+  // old names to new faces without a single warning. The guard exists to turn
+  // that silence into a refusal.
+  const dir = writeRun("dataset-mismatch", {
+    labels: { ...LABELS, datasetId: "0123456789abcdef" },
+  })
+  assert.throws(() => loadRun(dir), /different run/, "a mismatched datasetId is a refusal, not a warning")
+})
+
+test("loadRun warns but proceeds when labels.json predates datasetId", () => {
+  // Older label files carry no datasetId. Refusing them would strand every
+  // labelling made before the field existed; the honest move is a loud warning.
+  const dir = writeRun("dataset-absent", { labels: LABELS })
+  /** @type {string[]} */
+  const warnings = []
+  const original = console.warn
+  console.warn = (msg) => warnings.push(String(msg))
+  try {
+    const loaded = loadRun(dir)
+    assert.ok(loaded.labels, "the labels still load")
+  } finally {
+    console.warn = original
+  }
+  assert.ok(
+    warnings.some((w) => w.includes("datasetId")),
+    "the reader is told the join is unverified",
+  )
+})
+
+// ---------------------------------------------------------------------------
+// Coverage split by pool — the same contamination logic as report C's rank-1
+// ---------------------------------------------------------------------------
+
+test("the coverage table quotes pool A and prints the blend separately", () => {
+  const analysis = analyse(run())
+  const noGateA = analysis.coverage.poolA.find((r) => r.label.includes("no gate"))
+  const noGateBlend = analysis.coverage.blended.find((r) => r.label.includes("no gate"))
+  assert.ok(noGateA && noGateBlend)
+
+  // Worked by hand from the fixture. Pool A's labelled faces are 0-5; photo 1
+  // is a near-duplicate of photo 0, so f0 (p1@0) and f1 (p1@1) collapse to one
+  // appearance. Pool A: p1@0, p1@2, p2@3, p2@0, p1@4 = 5. Pool B adds f6
+  // (p1@3) and f7 (p2@4) = 7. If the blend ever equals pool A here, the split
+  // has silently stopped splitting.
+  assert.equal(noGateA.totalFaces, 6, "pool A has six labelled faces")
+  assert.equal(noGateA.appearances, 5)
+  assert.equal(noGateBlend.totalFaces, 8)
+  assert.equal(noGateBlend.appearances, 7)
+})
+
+// ---------------------------------------------------------------------------
+// The gated grouping sweep runs on the population a shipped gate would keep
+// ---------------------------------------------------------------------------
+
+test("gated sweeps run on gate-passing labelled faces, not on everything", () => {
+  // The stock fixture's labelled faces all pass the default gate, which would
+  // make "right population" and "wrong population" indistinguishable here. So
+  // label face 8 — the tiny, soft one the default gate rejects — and the two
+  // populations finally differ by exactly one face.
+  const dir = writeRun("gated-population", {
+    labels: {
+      ...LABELS,
+      labels: { ...LABELS.labels, 8: "p2" },
+      pool: { ...LABELS.pool, 8: "B" },
+    },
+  })
+  const analysis = analyse(loadRun(dir))
+  const gated = analysis.b.gated
+  assert.ok(gated.length >= 2, "at least the no-gate and shipped-default rows exist")
+
+  const noGate = gated.find((s) => s.label.includes("no gate"))
+  assert.ok(noGate)
+  assert.equal(noGate.faces, 9, "the ungated row sweeps every labelled face")
+
+  // Recompute the shipped-default population the same way analyse() must:
+  // labelled faces whose recorded signals pass the default gate. If the sweep
+  // ever runs on a different population (SESSION-2 §2b), this pin breaks.
+  const shipped = gated.find((s) => s.label.includes("shipped default"))
+  assert.ok(shipped)
+  const cutoffs = { minScore: 0, ...allDefaults().gate }
+  const labelledView = buildView(loadRun(dir), { requireLabel: true })
+  const expected = labelledView.records.filter((f) => applyGate(f.signals, cutoffs).pass).length
+  assert.equal(shipped.faces, expected)
+  assert.ok(shipped.faces < noGate.faces, "face 8 is labelled and fails the default gate")
+})
+
+// ---------------------------------------------------------------------------
+// Report C's pool split: the mask narrows queries, not the candidate pool
+// ---------------------------------------------------------------------------
+
+test("cByPool evaluates pool A and pool B queries separately against the full prototype pool", () => {
+  const analysis = analyse(run())
+  assert.equal(analysis.cByPool.poolA.evaluated, 6, "six pool-A labelled faces are queried")
+  assert.equal(analysis.cByPool.poolB.evaluated, 2, "two pool-B labelled faces are queried")
+  assert.ok(Number.isFinite(analysis.cByPool.poolA.rank1))
+  assert.ok(Number.isFinite(analysis.cByPool.poolB.rank1))
+  // The blend must sit between the two pools — it is made of nothing else.
+  const lo = Math.min(analysis.cByPool.poolA.rank1, analysis.cByPool.poolB.rank1)
+  const hi = Math.max(analysis.cByPool.poolA.rank1, analysis.cByPool.poolB.rank1)
+  assert.ok(analysis.c.rank1 >= lo - 1e-9 && analysis.c.rank1 <= hi + 1e-9)
 })

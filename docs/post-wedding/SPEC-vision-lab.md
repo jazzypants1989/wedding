@@ -846,9 +846,17 @@ not advice.
    them, and don't put them, crops of them, or descriptions of them into anything
    that leaves the machine. Aggregate numbers answer every design question in this
    document; individual frames answer none of them.
-3. **Derived data is scratch.** Crops, descriptors, landmark geometry, labels,
-   distance distributions, reports, contact sheets — all under `tmp/`, which
-   `.gitignore` covers, and all deletable at any time. It regenerates in minutes.
+3. **Derived data is scratch — with exactly one exception.** Crops, descriptors,
+   landmark geometry, distance distributions, reports, contact sheets — all under
+   `tmp/`, which `.gitignore` covers, and all deletable at any time. It
+   regenerates in minutes. The exception is **`labels.json`** (and its
+   `identities.json` sidecar): it records human judgement, made one face at a
+   time, and does not regenerate. It stays out of the repo and out of git — it is
+   names attached to faces and this repository is public — but it is the one
+   derived artifact worth copying somewhere durable.
+   `scripts/vision/labels-backup.js <run-dir> --to <path>` does that, to a
+   destination that is always the owner's explicit argument, and verifies the
+   copy byte-for-byte.
 4. **No document in this repo records measurements taken from real photographs.**
    Not scene descriptions, and not statistics either — counts, pose and sharpness
    distributions, per-folder breakdowns and face-size percentiles are all facts

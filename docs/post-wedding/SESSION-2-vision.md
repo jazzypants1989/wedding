@@ -51,7 +51,10 @@ committed, nothing leaves the machine.
 | `public/vision/defaults.js` | every tunable in one table, reference values only |
 
 All pure numeric JavaScript. No `node:*`, no DOM — enforced by
-`public/tsconfig.json` declaring no node types, so a `node:` import fails
+`public/tsconfig.json` declaring no node types (`"types": []`, added 2026-07-30;
+before that key existed TypeScript silently auto-included `@types/node` from the
+repo root and the real guard was only the source grep in
+`tests/unit/vision-purity.test.js`) plus that grep, so a `node:` import fails
 `npm run typecheck`. None of it cares which engine computes descriptors
 underneath, which is what makes every decision in §4 reversible.
 
