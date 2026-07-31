@@ -426,6 +426,28 @@ Discarding bad crops improves final grouping more than any downstream threshold
 tuning. A gate that rejects a third to a half of all detections is doing its job,
 not losing data.
 
+⚠ **That last sentence is about detections, and the product is not made of
+detections.** Any procedure that picks these cutoffs by maximising separation or
+rank-1 is optimising a quantity that *rises monotonically as faces are thrown
+away*: the degenerate optimum keeps one clean face per person and scores nearly
+perfectly while tagging almost nothing. A floor on how much may be discarded is
+not a price, it is a leash.
+
+So the gate must be scored against **person-in-a-frame appearances** — one
+labelled person in one distinct frame, duplicate frames collapsed. A person is
+tagged in a photograph if *any* surviving face carries them, so appearances are
+what the gate actually costs. A dropped face is not tagged wrongly; it is not
+tagged at all, and the photograph it was in silently loses that person.
+
+⚠ **And prefer a router to a filter.** Every signal in the table above is
+continuous, and collapsing them to one pass/fail decision throws away the
+information that says *how* confident to be. Combining them into a per-face
+confidence and routing on it — auto-accept, ask a human, set aside — keeps the
+accuracy of a tight gate without paying its coverage. That is a strictly more
+general design and it costs nothing extra to compute, because the signals are
+already being recorded unthresholded. A binary gate is the special case where
+two of the three buckets are empty.
+
 ### 6.3 Describe
 
 **MobileNetV1 with PReLU and a flatten head.** (Upstream's README calls it
@@ -521,6 +543,20 @@ being right.
 
 The honest instrument, and the tier-0 exit criterion:
 
+0. **Report every figure against the population it was measured on, and never
+   blend two.** Three requirements, each of which was violated once and each of
+   which turned a real-but-imperfect result into a wrong conclusion:
+   - **Split rank-1 by labelling pool, and quote the uniform one.** Faces
+     labelled a whole detector group per keystroke carry the model's own opinion
+     in their labels, and working through groups labels the tidy ones while the
+     awkward tail is left. Both effects flatter. A blended figure is carried by
+     whichever pool is larger, which is always the contaminated one.
+   - **Run the grouping sweep on the population that would actually be grouped
+     — i.e. after the gate.** Grouping runs downstream of the gate, so a sweep
+     over every detection measures a configuration nothing ships, and any
+     product-shape conclusion drawn from it is about a population that does not
+     exist.
+   - **Price the gate in appearances, not in faces.** See §6.2.
 1. **Hand-label a few hundred crops** with guest identities (session 1 does this).
 2. **Deduplicate by content hash first.** Photo deliveries routinely contain
    retouched and unretouched versions of the same frame, and the same basename in

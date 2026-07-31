@@ -1,6 +1,12 @@
 # Session 1: find out whether this works, in one evening
 
 **Date:** 2026-07-29
+**Status:** ✅ **run.** This document is the plan as written beforehand, kept
+because the predictions in §4 are worth checking against. What the session
+actually found — including three places where the report drew a conclusion its
+own numbers did not support — is in
+[`SESSION-2-vision.md`](./SESSION-2-vision.md), **which supersedes §5 of this
+document.** Read that before acting on anything here.
 **Reads with:** [`SPEC-vision-lab.md`](./SPEC-vision-lab.md) §5 (build order) and
 §15 (working rules) · [`VISION-MODELS.md`](./VISION-MODELS.md) (the models)
 
@@ -98,9 +104,14 @@ and each has a specific failure signature:
 | Are the **rejects** actually bad? | good faces in the reject pile | the gate is too tight; loosen before measuring |
 | Are the **keeps** actually faces? | detections that are not people at all — printed or painted faces are faces to a detector, and recur consistently enough to form tidy groups | expected, harmless, and a good reason the interface shows crops rather than counts |
 
-The mirror check also runs automatically against the Vision oracle's eye
-positions, but look anyway. It is the cheapest bug in the project to catch here
-and the most expensive to catch later.
+The mirror check runs against the Vision oracle's eye positions — but **only if
+you pass `--oracle` to the report**, and the oracle has to have been run first.
+It is not automatic and it does not happen by default. A run without it prints
+the alignment-residual distribution instead, which is a different and weaker
+check: the residual catches a landmark order that disagrees with the *template*,
+and cannot catch a mirroring that is consistent all the way through, because a
+consistent mirror fits the template perfectly. Look at the crops anyway. This is
+the cheapest bug in the project to catch here and the most expensive later.
 
 ---
 

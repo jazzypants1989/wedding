@@ -40,9 +40,11 @@ import {
   pickHeadline,
   printSummary,
   renderHtml,
+  oracleSummary,
   reportA,
   representativeSweep,
   resolutionCost,
+  stageBreakdown,
   separationStrata,
   sweepGrouping,
   verdict,
@@ -1228,4 +1230,118 @@ test("the verdict never claims a grouping product shape the sweep found no safe 
   assert.ok(welds.headline.startsWith("CLEAN SEPARATION"), "the separation claim itself still stands")
   assert.ok(!welds.description.includes("unsupervised grouping is a reasonable product shape"))
   assert.ok(welds.detail.some((d) => d.includes("NO cutoff that welds nobody")))
+})
+
+// ---------------------------------------------------------------------------
+// Three bugs that shipped once each and would come back quietly
+// ---------------------------------------------------------------------------
+
+test("stageBreakdown does not add the total to the parts it is the total of", () => {
+  // `session1.js` writes `total` INSIDE `timing.stages`, next to the stages it is
+  // the sum of. Summing the object therefore double-counts the whole run: every
+  // share the report prints is halved, and so is the priced cost of raising
+  // detector resolution — which turns an expensive change into a cheap-looking
+  // one. That is the wrong direction for a mistake about cost to point.
+  const timing = {
+    photos: 10,
+    faces: 20,
+    stages: {
+      decode: { ms: 700, n: 10 },
+      detect: { ms: 200, n: 10 },
+      describe: { ms: 100, n: 20 },
+      total: { ms: 1000, n: 10 },
+    },
+    environment: {},
+    config: {},
+  }
+  const { parts, wallMs, measuredMs, hasWall } = stageBreakdown(timing)
+
+  assert.equal(wallMs, 1000, "wall clock is the recorded total, not the sum of everything")
+  assert.equal(measuredMs, 1000, "the parts happen to sum to it here")
+  assert.ok(hasWall)
+  assert.ok(!parts.some(([name]) => name === "total"), "`total` is never a row in the stage table")
+  assert.equal(parts.length, 3)
+
+  const decode = parts.find(([name]) => name === "decode")
+  assert.ok(decode)
+  assert.equal(decode[1].ms / wallMs, 0.7, "decode is 70% of the run, not 35%")
+})
+
+test("stageBreakdown falls back to the sum when a run recorded no wall clock", () => {
+  const { wallMs, hasWall } = stageBreakdown({
+    photos: 1,
+    faces: 1,
+    stages: { decode: { ms: 30, n: 1 }, detect: { ms: 70, n: 1 } },
+    environment: {},
+    config: {},
+  })
+  assert.equal(hasWall, false)
+  assert.equal(wallMs, 100, "with no total to divide by, the parts are the best denominator available")
+})
+
+test("the oracle mirror check survives the two sources naming eyes oppositely", () => {
+  // macOS Vision names eyes from the IMAGE's point of view; our landmark order
+  // names them from the SUBJECT's. Same physical eye, opposite word. Comparing
+  // name to name reports ~100% of faces mirrored; "fixing" that by inverting the
+  // comparison reports ~100% again, the other way. Neither is a fact about the
+  // pipeline, and both look like a catastrophe. Hence: ours anchored by ORDER,
+  // theirs by GEOMETRY, and never by either vocabulary.
+  //
+  // An upright face with the subject's right eye at x=100 (image-left) and the
+  // subject's left eye at x=140. Vision therefore calls x=100 its LEFT eye.
+  const upright = {
+    ...face({ id: 0, photoId: 0, angle: 0 }),
+    box: { x: 80, y: 80, w: 80, h: 80 },
+    landmarks: [100, 100, 140, 100, 120, 120, 105, 140, 135, 140],
+  }
+  const frame = { ...photo({ id: 0, capturedAtMs: T }), relative: "album/frame-one", width: 400, height: 400 }
+  /** @type {Types.LoadedRun} */
+  const run = { photos: [frame], faces: [upright], labels: null, timing: null, resolution: [] }
+  /** @type {Types.OracleRecord} */
+  const oracleRow = {
+    path: "/somewhere/album/frame-one",
+    w: 400,
+    h: 400,
+    ms: 1,
+    faces: [{ x: 80, y: 80, w: 80, h: 80, leftEye: [100, 100], rightEye: [140, 100] }],
+  }
+
+  const ok = oracleSummary(run, [oracleRow])
+  assert.equal(ok.eyeChecked, 1)
+  assert.equal(ok.eyeFlipped, 0, "correctly ordered landmarks must NOT be reported as mirrored")
+  assert.ok(ok.eyeOffsetPercentiles.p50 < 0.01, "and the two sources agree on where the eyes are")
+
+  // Now genuinely mirror the landmark order: the subject's right eye recorded on
+  // the wrong side of the face. This is the bug the check exists to catch, and it
+  // is invisible to the alignment residual when the mirroring is consistent.
+  const swapped = { ...upright, landmarks: [140, 100, 100, 100, 120, 120, 135, 140, 105, 140] }
+  const bad = oracleSummary({ ...run, faces: [swapped] }, [oracleRow])
+  assert.equal(bad.eyeChecked, 1)
+  assert.equal(bad.eyeFlipped, 1, "a real mirroring must be caught")
+})
+
+test("the oracle joins on the full path, because basenames repeat across folders", () => {
+  // Deliveries carry the same basename in more than one folder — the run
+  // deduplicates precisely because of it. A basename-keyed join hands one
+  // photograph another photograph's faces, and every disagreement that causes
+  // reads as a fault in our detector.
+  const only = {
+    ...face({ id: 0, photoId: 0, angle: 0 }),
+    box: { x: 10, y: 10, w: 50, h: 50 },
+    landmarks: [20, 25, 45, 25, 32, 38, 24, 50, 42, 50],
+  }
+  const frame = { ...photo({ id: 0, capturedAtMs: T }), relative: "second/shot-0001", width: 200, height: 200 }
+  /** @type {Types.LoadedRun} */
+  const run = { photos: [frame], faces: [only], labels: null, timing: null, resolution: [] }
+  /** @type {Types.OracleRecord[]} */
+  const rows = [
+    { path: "/root/first/shot-0001", w: 200, h: 200, ms: 1, faces: [] },
+    { path: "/root/second/shot-0001", w: 200, h: 200, ms: 1, faces: [{ x: 10, y: 10, w: 50, h: 50 }] },
+  ]
+
+  const summary = oracleSummary(run, rows)
+  assert.equal(summary.photos, 1, "the row from the right folder was chosen")
+  assert.equal(summary.ambiguous, 0)
+  assert.equal(summary.ourFaces, 1)
+  assert.equal(summary.ourMatched, 1, "a basename join picks the empty first folder and scores zero")
 })

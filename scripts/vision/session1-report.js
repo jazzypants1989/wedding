@@ -594,6 +594,13 @@ const GATE_MAX_QUANTILES = [1, 0.98, 0.95, 0.9, 0.8, 0.7]
 const GATE_WORTH_IT = 0.002
 
 /**
+ * The name `session1.js` writes for whole-run wall clock. It lives inside
+ * `timing.stages` alongside the parts it is the total OF, which is why every
+ * consumer has to go through `stageBreakdown` rather than summing the object.
+ */
+const TOTAL_STAGE = "total"
+
+/**
  * Folds for the held-out gate estimate. Five is the usual compromise: enough
  * training people in each pass that the selection behaves like the real one,
  * enough held-out people that a fold's AUC rests on more than a handful of
@@ -1121,11 +1128,34 @@ export function resolutionSummary(records, iouMatch = BOX_MATCH_IOU) {
  * @param {number} [iouMatch]
  */
 export function oracleSummary(run, oracle, iouMatch = BOX_MATCH_IOU) {
-  /** @type {Map<string, Types.OracleRecord>} */
+  // ⚠ Joined on the FULL path, not the basename. Photo deliveries repeat the
+  // same basename across folders — that is why the run deduplicates at all — so
+  // a basename map silently hands one photograph another photograph's faces, and
+  // every disagreement it causes reads as a detector fault. The oracle records
+  // absolute paths and the run records paths relative to its root, so match by
+  // suffix and refuse any suffix that more than one oracle row satisfies.
+  /** @type {Map<string, Types.OracleRecord[]>} */
   const byBase = new Map()
   for (const rec of oracle) {
     if (rec.error) continue
-    byBase.set(path.basename(rec.path), rec)
+    const key = path.basename(rec.path)
+    const list = byBase.get(key)
+    if (list) list.push(rec)
+    else byBase.set(key, [rec])
+  }
+  /**
+   * @param {string} relative
+   * @returns {Types.OracleRecord | null | undefined} null = ambiguous, undefined = absent
+   */
+  const lookup = (relative) => {
+    const candidates = byBase.get(path.basename(relative))
+    if (!candidates) return undefined
+    const suffix = relative.startsWith("/") ? relative : "/" + relative
+    const exact = candidates.filter((r) => r.path === relative || r.path.endsWith(suffix))
+    if (exact.length === 1) return exact[0]
+    if (exact.length > 1) return null
+    if (candidates.length === 1) return candidates[0]
+    return null
   }
 
   /** @type {Map<number, Types.Session1FaceRecord[]>} */
@@ -1143,9 +1173,18 @@ export function oracleSummary(run, oracle, iouMatch = BOX_MATCH_IOU) {
   let ourMatched = 0
   let frameMismatch = 0
   let missing = 0
+  let ambiguous = 0
+  let eyeChecked = 0
+  let eyeFlipped = 0
+  /** @type {number[]} */
+  const eyeOffsets = []
 
   for (const photo of run.photos) {
-    const rec = byBase.get(path.basename(photo.relative))
+    const rec = lookup(photo.relative)
+    if (rec === null) {
+      ambiguous++
+      continue
+    }
     if (!rec) {
       missing++
       continue
@@ -1161,8 +1200,14 @@ export function oracleSummary(run, oracle, iouMatch = BOX_MATCH_IOU) {
       continue
     }
     photos++
-    const ours = (facesByPhoto.get(photo.id) ?? []).map((f) => f.box)
-    const theirs = (rec.faces ?? []).map((f) => ({ x: f.x * sx, y: f.y * sy, w: f.w * sx, h: f.h * sy }))
+    const ourFaceRows = facesByPhoto.get(photo.id) ?? []
+    const ours = ourFaceRows.map((f) => f.box)
+    const scaled = (rec.faces ?? []).map((f) => ({
+      box: { x: f.x * sx, y: f.y * sy, w: f.w * sx, h: f.h * sy },
+      leftEye: f.leftEye ? [f.leftEye[0] * sx, f.leftEye[1] * sy] : null,
+      rightEye: f.rightEye ? [f.rightEye[0] * sx, f.rightEye[1] * sy] : null,
+    }))
+    const theirs = scaled.map((f) => f.box)
     oracleFaces += theirs.length
     ourFaces += ours.length
     for (const t of theirs) {
@@ -1170,16 +1215,70 @@ export function oracleSummary(run, oracle, iouMatch = BOX_MATCH_IOU) {
       for (const o of ours) best = Math.max(best, boxIou(t, o))
       if (best >= iouMatch) oracleMatched++
     }
-    for (const o of ours) {
+    ourFaceRows.forEach((row, i) => {
       let best = 0
-      for (const t of theirs) best = Math.max(best, boxIou(o, t))
+      let bestFace = null
+      for (const t of scaled) {
+        const overlap = boxIou(ours[i], t.box)
+        if (overlap > best) {
+          best = overlap
+          bestFace = t
+        }
+      }
       if (best >= iouMatch) ourMatched++
-    }
+      if (best < iouMatch || !bestFace || !bestFace.leftEye || !bestFace.rightEye) return
+
+      // ⚠ THE MIRROR CHECK, against a measurement that is genuinely independent
+      // of ours. The alignment residual catches a landmark order that disagrees
+      // with the TEMPLATE; it cannot catch a mirroring that is consistent all the
+      // way through, because a consistent mirror fits perfectly. Only a second
+      // detector's eyes can see that, which is why SESSION-1 promised this check.
+      //
+      // ⚠ NEVER COMPARE THE TWO SOURCES BY THEIR EYE NAMES. Vision names eyes
+      // from the IMAGE's point of view; our landmark order names them from the
+      // SUBJECT's. The same physical eye therefore carries the opposite word.
+      //
+      // This is worth stating at length because getting it wrong is silent and
+      // symmetrical, and it was gotten wrong in BOTH directions while this check
+      // was being written: matching name-to-name reports ~97% of faces mirrored,
+      // and "correcting" that by inverting the comparison reports ~97% again.
+      // Neither is a fact about the pipeline. Both are the naming clash.
+      //
+      // So neither source's vocabulary is trusted. Ours is anchored by ORDER
+      // (landmark columns 4-5 are the subject's right eye, per the detector's own
+      // decode comment) and theirs by GEOMETRY (whichever point is further left in
+      // the frame). For an upright face the subject's right eye IS the image-left
+      // one, so the correct pairing is ours-subject-right to theirs-image-left.
+      // Then score both pairings by distance and let the closer one win, which
+      // also keeps a rolled head from being counted as a mirror.
+      const oursRight = [row.landmarks[0], row.landmarks[1]]
+      const oursLeft = [row.landmarks[2], row.landmarks[3]]
+      const theirsImageLeft = bestFace.leftEye[0] <= bestFace.rightEye[0] ? bestFace.leftEye : bestFace.rightEye
+      const theirsImageRight = bestFace.leftEye[0] <= bestFace.rightEye[0] ? bestFace.rightEye : bestFace.leftEye
+
+      /** @param {number[]} a @param {number[]} b */
+      const gap = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1])
+      const asExpected = gap(oursRight, theirsImageLeft) + gap(oursLeft, theirsImageRight)
+      const asMirrored = gap(oursRight, theirsImageRight) + gap(oursLeft, theirsImageLeft)
+      eyeChecked++
+      if (asMirrored < asExpected) eyeFlipped++
+
+      // How far apart the two detectors put the eyes, under whichever pairing fits
+      // better — as a fraction of the subject's own eye separation, so a big face
+      // and a small one contribute comparably. Alignment error matters more for
+      // this recogniser than most: its head flattens a 7x7 grid instead of pooling
+      // it, so it has no translation invariance at the end.
+      const sep = gap(oursLeft, oursRight)
+      if (!(sep > 0)) return
+      eyeOffsets.push(Math.min(asExpected, asMirrored) / 2 / sep)
+    })
   }
 
+  const sortedOffsets = eyeOffsets.slice().sort((a, b) => a - b)
   return {
     photos,
     missing,
+    ambiguous,
     frameMismatch,
     oracleFaces,
     oracleMatched,
@@ -1187,6 +1286,13 @@ export function oracleSummary(run, oracle, iouMatch = BOX_MATCH_IOU) {
     ourMatched,
     recall: oracleFaces > 0 ? oracleMatched / oracleFaces : NaN,
     agreement: ourFaces > 0 ? ourMatched / ourFaces : NaN,
+    eyeChecked,
+    eyeFlipped,
+    eyeOffsetPercentiles: {
+      p50: percentile(sortedOffsets, 0.5),
+      p90: percentile(sortedOffsets, 0.9),
+      p99: percentile(sortedOffsets, 0.99),
+    },
   }
 }
 
@@ -1375,6 +1481,38 @@ export function verdict(input) {
 }
 
 /**
+ * ⚠ `timing.stages` contains a `total` entry alongside the parts it is the total
+ * OF. Summing every stage therefore adds the whole to its own pieces and roughly
+ * doubles the denominator, which halves every share the report prints and halves
+ * the priced cost of raising the detector's resolution — an error that makes an
+ * expensive change look affordable.
+ *
+ * So: wall-clock is `total` when the run recorded one, and only the sum of the
+ * parts otherwise. `parts` is what a per-stage table iterates; `wallMs` is what
+ * shares divide by. The two are deliberately separate values.
+ * @param {Types.Session1Timing} timing
+ * @returns {{ parts: Array<[string, { ms: number, n: number }]>, wallMs: number, measuredMs: number, hasWall: boolean }}
+ */
+export function stageBreakdown(timing) {
+  /** @type {Array<[string, { ms: number, n: number }]>} */
+  const parts = []
+  let measuredMs = 0
+  let wallMs = 0
+  let hasWall = false
+  for (const [name, s] of Object.entries(timing.stages)) {
+    if (name === TOTAL_STAGE) {
+      wallMs = s.ms
+      hasWall = s.ms > 0
+      continue
+    }
+    parts.push([name, s])
+    measuredMs += s.ms
+  }
+  if (!hasWall) wallMs = measuredMs
+  return { parts, wallMs, measuredMs, hasWall }
+}
+
+/**
  * What raising the detector's long edge costs, from the run's own stage timings.
  * Detector cost scales with PIXEL COUNT, so the edge ratio is squared, and
  * report E already knows what share of the run detect was — which turns "the
@@ -1391,7 +1529,7 @@ export function resolutionCost(timing, fromEdge, toEdge) {
   if (!timing || !(fromEdge > 0) || !(toEdge > 0)) return null
   const detect = timing.stages.detect
   if (!detect || !(detect.ms > 0)) return null
-  const totalMs = Object.values(timing.stages).reduce((sum, s) => sum + s.ms, 0)
+  const totalMs = stageBreakdown(timing).wallMs
   if (!(totalMs > 0)) return null
   const pixelRatio = (toEdge / fromEdge) ** 2
   return {
@@ -1516,6 +1654,25 @@ export function recommendations(input) {
 // ---------------------------------------------------------------------------
 
 /**
+ * The gate configurations report B's sweep and the coverage table are both run
+ * against. Built per-run rather than at module scope because the recommended
+ * set is a property of the run.
+ * @param {Types.JointGate} joint
+ * @param {Record<string, number>} defaults
+ * @returns {Array<{ label: string, cutoffs: Record<string, number> | null }>}
+ */
+function gatedSweepBases(joint, defaults) {
+  const bases = [
+    { label: "every labelled face (no gate)", cutoffs: null },
+    { label: "shipped default gate", cutoffs: defaults },
+  ]
+  if (joint && joint.adopted.length > 0) {
+    bases.push({ label: "recommended gate", cutoffs: joint.cutoffs })
+  }
+  return bases
+}
+
+/**
  * @param {Types.LoadedRun} run
  * @param {{ oracle?: readonly Types.OracleRecord[] | null, folds?: number }} [options]
  */
@@ -1547,7 +1704,93 @@ export function analyse(run, options = {}) {
   const best = bestPick ? bestPick.point : null
 
   const c = leaveOneOutRank1(labelled.set, labelled.labels)
+
+  // ⚠ REPORT C SPLIT BY POOL, and pool A is the number to quote.
+  //
+  // Pool A is a uniform sample, labelled one crop at a time. Pool B is labelled a
+  // whole detector group per keystroke — which is what makes labelling fast and
+  // also what makes its labels partly a function of the model's own opinion. Two
+  // mechanisms push the same way: a label agrees with the grouping by
+  // construction, and working through groups means the tidy ones get labelled
+  // while the awkward tail does not. Reporting one blended figure lets pool B's
+  // volume carry the headline. Both are printed; only pool A is honest.
+  //
+  // The mask narrows the QUERIES only. Prototypes still come from everybody, so
+  // the candidate pool is the same size and the two figures are comparable —
+  // picking the right person out of six is not picking them out of thirty.
+  const poolAIds = new Set(poolA.faceIds)
+  const poolBIds = new Set(buildView(run, { pool: "B", requireLabel: true }).faceIds)
+  const cByPool = {
+    poolA: leaveOneOutRank1(labelled.set, labelled.labels, {
+      queryMask: labelled.faceIds.map((id) => poolAIds.has(id)),
+    }),
+    poolB: leaveOneOutRank1(labelled.set, labelled.labels, {
+      queryMask: labelled.faceIds.map((id) => poolBIds.has(id)),
+    }),
+  }
+
   const d = reportD(run, headline.key, { folds: options.folds })
+
+  // ⚠ THE POPULATION BUG THIS EXISTS TO NOT HAVE.
+  //
+  // The sweep above runs over every labelled face, including the ones the gate is
+  // there to discard — a population no shipped configuration ever groups. Judging
+  // the product shape from it asks how grouping behaves on input it will never
+  // see, and the answer is predictably grim. Grouping runs AFTER the gate, so the
+  // sweep that decides whether grouping is viable has to run after it too.
+  //
+  // Both are reported: the difference between them is the gate's contribution to
+  // grouping, which is otherwise invisible.
+  const gateBases = gatedSweepBases(d.joint, { minScore: 0, ...defaults.gate })
+  const gatedSweeps = gateBases.map(({ label, cutoffs }) => {
+    /** @type {Set<number>} */
+    const passing = new Set()
+    for (const face of run.faces) {
+      if (cutoffs === null || applyGate(face.signals, cutoffs).pass) passing.add(face.id)
+    }
+    const view = buildView(run, { requireLabel: true, include: (f) => passing.has(f.id) })
+    if (view.labels.length === 0) return null
+    return {
+      label,
+      faces: view.labels.length,
+      total: labelled.labels.length,
+      points: sweepGrouping(view.set, { cutoffs: sweepCutoffs(dedupPairs.same, dedupPairs.diff), labels: view.labels, photoIds: view.photoIds }),
+    }
+  }).filter((s) => s !== null)
+
+  // ⚠ THE PRODUCT NUMBER THE GATE IS OTHERWISE SCORED WITHOUT.
+  //
+  // Every gate cutoff is chosen by maximising separation and rank-1, and both go
+  // UP when faces are discarded — the degenerate optimum keeps one clear face per
+  // person and scores near-perfect while tagging almost nothing. Only a floor on
+  // how much may be thrown away restrains it, and a floor is not a price.
+  //
+  // The honest unit is not the face. A person who appears in a photograph is
+  // tagged in it if ANY surviving face carries them, so what the gate actually
+  // costs is person-in-a-frame appearances — keyed on the duplicate-frame root so
+  // a retouched copy of one shot is not counted as a second chance.
+  const coverage = gateBases.map(({ label, cutoffs }) => {
+    /** @type {Set<string>} */
+    const present = new Set()
+    /** @type {Set<string>} */
+    const kept = new Set()
+    let faces = 0
+    labelled.labels.forEach((personLabel, row) => {
+      if (personLabel === null) return
+      const key = personLabel + "@" + labelled.frames[row]
+      present.add(key)
+      if (cutoffs !== null && !applyGate(labelled.records[row].signals, cutoffs).pass) return
+      faces++
+      kept.add(key)
+    })
+    return {
+      label,
+      faces,
+      totalFaces: labelled.labels.length,
+      appearancesKept: kept.size,
+      appearances: present.size,
+    }
+  })
 
   /** @type {{ auc: number, rank1: number, mirrorAuc: number, mirrorRank1: number } | null} */
   let mirror = null
@@ -1572,6 +1815,8 @@ export function analyse(run, options = {}) {
   const residual = residualSummary(run.faces, defaults.gate.maxResidual)
 
   const recoverable = c.perPerson.filter((p) => p.rank1 >= 0.8).length
+  const shipped = gatedSweeps.length > 0 ? gatedSweeps[gatedSweeps.length - 1] : null
+  const shippedSweep = shipped ? bestSweepPoint(shipped.points) : null
   const basis = verdictBasis(d)
   const conclusion = verdict({
     auc: basis.auc,
@@ -1580,7 +1825,10 @@ export function analyse(run, options = {}) {
     basis: basis.label,
     ungatedAuc: d.ungated.auc,
     keptFraction: basis.keptFraction,
-    weldFreeCutoffExists: bestPick ? bestPick.weldFree : false,
+    // Judged on the population a shipped pipeline would actually group — the
+    // last, most selective gate configuration — not on every face there is.
+    // Grouping runs after the gate, so the verdict about grouping must too.
+    weldFreeCutoffExists: shippedSweep ? shippedSweep.weldFree : bestPick ? bestPick.weldFree : false,
     recoverablePeople: recoverable,
     people: c.perPerson.length,
   })
@@ -1606,8 +1854,15 @@ export function analyse(run, options = {}) {
       // recommendation is normally phrased as. The print path MUST branch on it.
       weldFree: bestPick ? bestPick.weldFree : false,
       representative: representativeSweep(points, best),
+      // The same sweep re-run over each gate configuration. The last entry is
+      // the population a shipped pipeline actually groups; the first is the one
+      // the sweep used to be judged on.
+      gated: gatedSweeps,
+      gatedBest: gatedSweeps.map((s) => ({ label: s.label, faces: s.faces, total: s.total, pick: bestSweepPoint(s.points) })),
     },
     c,
+    cByPool,
+    coverage,
     d,
     e: { timing: run.timing, resolution, oracle, mirror, residual },
     verdict: conclusion,
@@ -1738,7 +1993,21 @@ export function printSummary(analysis, log = console.log, options = {}) {
   log(RULE)
   log(" REPORT C — PROTOTYPE RANK-1. THIS DECIDES SESSION-1 §5 Q2.")
   log(RULE)
-  log(` rank-1            ${pct(c.rank1)}  (${c.correct}/${c.evaluated} faces, held out of their own prototype)`)
+  const cp = analysis.cByPool
+  log(` POOL A rank-1     ${pct(cp.poolA.rank1)}  (${cp.poolA.correct}/${cp.poolA.evaluated})  <- QUOTE THIS ONE`)
+  log(" Pool A is the uniform sample, labelled one crop at a time. It is the only")
+  log(" figure here that is not partly a measurement of the model marking its own work.")
+  log(` pool B rank-1     ${pct(cp.poolB.rank1)}  (${cp.poolB.correct}/${cp.poolB.evaluated})`)
+  log(` blended           ${pct(c.rank1)}  (${c.correct}/${c.evaluated})  <- dominated by pool B's volume`)
+  if (Number.isFinite(cp.poolA.rank1) && Number.isFinite(cp.poolB.rank1) && cp.poolB.rank1 - cp.poolA.rank1 > 0.02) {
+    log("")
+    log(" ! POOL B SCORES HIGHER THAN POOL A, which is the signature of the labelling")
+    log(" ! route rather than of the recogniser. Pool B is assigned a whole detector")
+    log(" ! group per keystroke, so its labels agree with the grouping by construction,")
+    log(" ! and working through groups labels the tidy ones while the awkward tail is")
+    log(" ! left. Both effects inflate pool B. The blended figure is not the result.")
+  }
+  log("")
   log(` margin p05/p25/p50/p75  ${num(c.marginPercentiles.p05)} / ${num(c.marginPercentiles.p25)} / ${num(c.marginPercentiles.p50)} / ${num(c.marginPercentiles.p75)}`)
   log(` ${c.singletonPeople} people have a single face and could not be evaluated at all`)
   log("")
@@ -1751,21 +2020,51 @@ export function printSummary(analysis, log = console.log, options = {}) {
   log(RULE)
   log(" REPORT B — GROUPING, swept")
   log(RULE)
+  if (b.gatedBest && b.gatedBest.length > 1) {
+    log(" GROUPING RUNS AFTER THE GATE, so the sweep is reported after it too. The first")
+    log(" row is every labelled face — a population no shipped configuration ever groups,")
+    log(" and the one this report used to draw its product-shape conclusion from.")
+    log("")
+    log(
+      "  " + pad("population", 32) + padLeft("faces", 7) + padLeft("cutoff", 9) +
+        padLeft("groups", 8) + padLeft("purity", 8) + padLeft("complete", 10) + padLeft("welded", 8),
+    )
+    for (const g of b.gatedBest) {
+      const p = g.pick ? g.pick.point : null
+      log(
+        "  " + pad(g.label, 32) + padLeft(`${g.faces}/${g.total}`, 7) +
+          padLeft(p ? num(p.cutoff) : "n/a", 9) + padLeft(p ? String(p.quality.groups) : "n/a", 8) +
+          padLeft(p ? num(p.quality.purity) : "n/a", 8) + padLeft(p ? num(p.quality.completeness) : "n/a", 10) +
+          padLeft(p ? String(p.quality.weldedGroups) : "n/a", 8),
+      )
+    }
+    log(" Each row is that population's own best swept point. Welds are not comparable")
+    log(" across rows — fewer faces means fewer chances to weld — but purity and")
+    log(" completeness are, and they move together or the gate is not earning its place.")
+    log("")
+  }
   if (b.best && b.weldFree) {
     log(` RECOMMENDED CUTOFF ${num(b.best.cutoff)} — best pair-F1 among the points that welded nobody,`)
     log(` with cannot-link on: ${b.best.quality.groups} groups, purity ${num(b.best.quality.purity)}, ` + `completeness ${num(b.best.quality.completeness)}, pair-F1 ${num(b.best.quality.pairF1)}.`)
     log(" Over-splitting is the cheap failure; welding two people is the expensive one.")
   } else if (b.best) {
     const fewest = b.points.filter((p) => p.cannotLink).reduce((m, p) => Math.min(m, p.quality.weldedGroups), Infinity)
-    log(` !! NO SWEPT CUTOFF WELDED NOBODY. The best of ${b.points.filter((p) => p.cannotLink).length} cannot-link points still`)
-    log(` !! welds ${fewest} group${fewest === 1 ? "" : "s"} at its most cautious, so the weld-free recommendation this`)
-    log(" !! report prefers does not exist on this input. That is a finding about the")
-    log(" !! product shape, not a detail of the sweep: unsupervised grouping has no safe")
-    log(" !! operating point here, and label-a-few-and-classify (SESSION-1 §5 Q2) does not")
-    log(" !! need one, because a per-person prototype needs no global cutoff at all.")
+    log(` NO SWEPT CUTOFF WELDED NOBODY ON EVERY LABELLED FACE. The best of`)
+    log(` ${b.points.filter((p) => p.cannotLink).length} cannot-link points still welds ${fewest} group${fewest === 1 ? "" : "s"} at its most cautious.`)
     log("")
-    log(` LEAST-BAD CUTOFF ${num(b.best.cutoff)} — highest pair-F1 with cannot-link on, welding ${b.best.quality.weldedGroups}:`)
-    log(` ${b.best.quality.groups} groups, purity ${num(b.best.quality.purity)}, ` + `completeness ${num(b.best.quality.completeness)}, pair-F1 ${num(b.best.quality.pairF1)}.`)
+    log(" ⚠ THAT SENTENCE IS ABOUT A POPULATION NOTHING GROUPS. An earlier revision of")
+    log(" this report read it as a finding about the product shape — 'unsupervised")
+    log(" grouping has no safe operating point' — and recommended prototypes on the")
+    log(" strength of it. The sweep it was reading runs over every labelled face,")
+    log(" including all the ones the gate exists to discard. Grouping runs after the")
+    log(" gate. Read the population table above instead: the weld count there is what")
+    log(" a shipped configuration would actually produce, and it is the number that")
+    log(" decides SESSION-1 §5 Q2. Prototypes may still be the better shape — they need")
+    log(" no global cutoff and degrade more gracefully — but this is not the evidence.")
+    log("")
+    log(` LEAST-BAD CUTOFF ${num(b.best.cutoff)} on the ungated set — highest pair-F1 with`)
+    log(` cannot-link on, welding ${b.best.quality.weldedGroups}: ${b.best.quality.groups} groups, purity ${num(b.best.quality.purity)}, `)
+    log(` completeness ${num(b.best.quality.completeness)}, pair-F1 ${num(b.best.quality.pairF1)}.`)
   } else {
     log(" No cutoff could be recommended — no swept point produced a grouping to score.")
   }
@@ -1924,6 +2223,26 @@ export function printSummary(analysis, log = console.log, options = {}) {
     log(" (--verbose prints the full per-cutoff sweep behind every row above)")
   }
   log("")
+  log(" WHAT THE GATE COSTS — and the reason this table is not optional:")
+  log(" every cutoff above was chosen by maximising separation and rank-1, and BOTH")
+  log(" rise when faces are discarded. The degenerate optimum keeps one clear face per")
+  log(" person and scores near-perfect while tagging almost nothing. Only a floor")
+  log(" restrains it, and a floor is not a price. This is the price.")
+  log("")
+  log("  " + pad("configuration", 32) + padLeft("faces", 11) + padLeft("appearances", 14) + padLeft("kept", 8))
+  for (const row of analysis.coverage) {
+    const share = row.appearances > 0 ? row.appearancesKept / row.appearances : NaN
+    log(
+      "  " + pad(row.label, 32) + padLeft(`${row.faces}/${row.totalFaces}`, 11) +
+        padLeft(`${row.appearancesKept}/${row.appearances}`, 14) + padLeft(pct(share), 8),
+    )
+  }
+  log(" An APPEARANCE is one labelled person in one distinct frame (duplicate frames")
+  log(" collapsed). A person is tagged in a photograph if ANY surviving face carries")
+  log(" them, so this — not the face count — is what the gate costs the product.")
+  log(" Faces the gate drops are not tagged wrongly. They are not tagged at all.")
+
+  log("")
   log(" Rejections at the default cutoffs, attributed to the first failing check:")
   for (const row of d.breakdown) {
     log("  " + pad(row.reason, 16) + padLeft(String(row.n), 7))
@@ -1934,18 +2253,21 @@ export function printSummary(analysis, log = console.log, options = {}) {
   log(" REPORT E — COST")
   log(RULE)
   if (e.timing) {
-    const stages = Object.entries(e.timing.stages)
-    const totalMs = stages.reduce((sum, [, s]) => sum + s.ms, 0)
-    log(` ${e.timing.photos} photographs, ${e.timing.faces} faces, ${num(totalMs / 1000, 1)}s of measured stage time`)
+    const { parts, wallMs, hasWall } = stageBreakdown(e.timing)
+    log(
+      ` ${e.timing.photos} photographs, ${e.timing.faces} faces, ${num(wallMs / 1000, 1)}s ` +
+        `${hasWall ? "wall clock" : "of summed stage time (no wall-clock total recorded)"}`,
+    )
+    log(" Shares are of wall clock. Stages overlap and need not sum to it.")
     log("  " + pad("stage", 14) + padLeft("calls", 9) + padLeft("total ms", 11) + padLeft("ms/call", 10) + padLeft("share", 8))
-    for (const [name, s] of stages.sort((x, y) => y[1].ms - x[1].ms)) {
+    for (const [name, s] of parts.sort((x, y) => y[1].ms - x[1].ms)) {
       log(
         "  " +
           pad(name, 14) +
           padLeft(String(s.n), 9) +
           padLeft(num(s.ms, 0), 11) +
           padLeft(num(s.n > 0 ? s.ms / s.n : NaN, 2), 10) +
-          padLeft(pct(totalMs > 0 ? s.ms / totalMs : NaN), 8),
+          padLeft(pct(wallMs > 0 ? s.ms / wallMs : NaN), 8),
       )
     }
     const env = Object.entries(e.timing.environment ?? {})
@@ -1974,8 +2296,44 @@ export function printSummary(analysis, log = console.log, options = {}) {
       log(`   ! ${o.frameMismatch} photographs skipped: oracle frame does not match ours (the orientation bug)`)
     }
     if (o.missing > 0) log(`   ! ${o.missing} photographs absent from the oracle file`)
+    if (o.ambiguous > 0) {
+      log(`   ! ${o.ambiguous} photographs skipped: more than one oracle row could be theirs`)
+      log("     (repeated basenames across folders — joining on the basename would have")
+      log("      silently handed one photograph another photograph's faces)")
+    }
+    log("")
+    log(`   THE MIRROR CHECK — independent, over ${o.eyeChecked} matched faces.`)
+    log("   The alignment residual catches a landmark order that disagrees with the")
+    log("   TEMPLATE. It cannot catch a mirroring that is consistent all the way")
+    log("   through, because a consistent mirror fits perfectly. Only a second")
+    log("   detector's eyes can see that. This is that check.")
+    const flippedShare = o.eyeChecked > 0 ? o.eyeFlipped / o.eyeChecked : NaN
+    log(`   our subject-right eye on the opposite side to theirs: ${o.eyeFlipped}/${o.eyeChecked} (${pct(flippedShare)})`)
+    if (!Number.isFinite(flippedShare)) {
+      log("   -> not enough matched faces with eye positions to decide")
+    } else if (flippedShare > 0.5) {
+      log("   -> !! LANDMARK ORDER IS MIRRORED. Every crop is a mirror image of what")
+      log("      the recogniser was trained on, every match is quietly degraded, and")
+      log("      no downstream tuning recovers it. Fix the order before anything else.")
+    } else if (flippedShare > 0.1) {
+      log("   -> suspicious. A consistent swap reads near 100% and heavy roll reads a")
+      log("      few percent; this is neither. Inspect the disagreeing faces.")
+    } else {
+      log("   -> landmark order is CORRECT. Not inferred from the residual — confirmed")
+      log("      against a detector that shares no code with ours.")
+    }
+    log("   eye disagreement, as a fraction of the subject's own eye separation:")
+    log(
+      `     p50 ${num(o.eyeOffsetPercentiles.p50)}  p90 ${num(o.eyeOffsetPercentiles.p90)}  p99 ${num(o.eyeOffsetPercentiles.p99)}`,
+    )
+    log("   Neither detector is ground truth, so this bounds ALIGNMENT HEADROOM rather")
+    log("   than blaming either. It matters more for this recogniser than for most:")
+    log("   its head flattens a 7x7 grid instead of pooling it, so a crop off by a few")
+    log("   pixels shifts every one of 50,176 inputs to the final layer.")
   } else {
-    log(" No oracle file given (--oracle) — detector recall is unverified against an independent detector")
+    log(" No oracle file given (--oracle) — detection recall is unverified against an")
+    log(" independent detector, AND the mirror check has not run. The residual check")
+    log(" below is NOT a substitute: it cannot see a consistent mirroring.")
   }
 
   log("")
@@ -2467,19 +2825,18 @@ export function renderHtml(analysis) {
   // --- Report E. ---
   out.push("<h2>E — Cost</h2>")
   if (e.timing) {
-    const stages = Object.entries(e.timing.stages)
-    const totalMs = stages.reduce((sum, [, s]) => sum + s.ms, 0)
+    const { parts, wallMs } = stageBreakdown(e.timing)
     out.push(
       table(
-        ["stage", "calls", "total ms", "ms/call", "share"],
-        stages
+        ["stage", "calls", "total ms", "ms/call", "share of wall clock"],
+        parts
           .sort((x, y) => y[1].ms - x[1].ms)
           .map(([name, s]) => [
             name,
             String(s.n),
             num(s.ms, 0),
             num(s.n > 0 ? s.ms / s.n : NaN, 2),
-            pct(totalMs > 0 ? s.ms / totalMs : NaN),
+            pct(wallMs > 0 ? s.ms / wallMs : NaN),
           ]),
       ),
     )
