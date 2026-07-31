@@ -1078,6 +1078,23 @@ export interface Recommendation {
   path: string
   value: string
   note: string
+  /**
+   * True when writing this value re-numbers every face id and therefore
+   * ORPHANS every existing label (SESSION-4 §3). Anything upstream of
+   * `faces.jsonl` — detector input, resolution, thresholds — is in this class;
+   * gate, grouping and assignment cutoffs are not. The report prints these in
+   * a separate block, because the two kinds used to appear in one list and the
+   * only expensive mistake was indistinguishable from the eight safe ones.
+   */
+  orphansLabels?: boolean
+  /**
+   * Set when the cutoff is measurably good but is a proxy for something other
+   * than face quality (SESSION-2 §9 r6): distance-from-frame-edge measures
+   * whether someone was the SUBJECT of the photograph, and an alignment-scale
+   * cap is a minimum face size in disguise. Both improve every metric by
+   * discarding the people the feature is meant to find.
+   */
+  caution?: string
 }
 
 /**

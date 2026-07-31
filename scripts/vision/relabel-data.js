@@ -708,6 +708,25 @@ export async function runRelabel(args, deps = {}) {
   const target = path.join(args.dir, "label-data.js")
   writeLabelData(target, data)
 
+  // The page is a template that travels with its data, and `session1.js` only
+  // copies it at batch time — so a run directory keeps whichever copy of
+  // label.html existed when it was detected, indefinitely. Every later fix to
+  // the labeller was therefore invisible to exactly the runs that had labelling
+  // left to do. Refreshed here because this command already exists to bring an
+  // old run's inputs up to the current schema, and the page is one of them.
+  //
+  // Safe to overwrite: label.html holds no state. Labels live in localStorage
+  // (keyed by datasetId) and in labels.json, neither of which the page file
+  // touches. A missing template is a warning, not a failure — the data file is
+  // the real output.
+  const pageTarget = path.join(args.dir, "label.html")
+  try {
+    fs.copyFileSync(path.join(import.meta.dirname, "label.html"), pageTarget)
+    log(`Refreshed ${pageTarget}`)
+  } catch {
+    log(`! label.html template not found — ${pageTarget} left as it was.`)
+  }
+
   const poolA = data.faces.filter((face) => face.pool === "A").length
   const poolB = data.faces.length - poolA
 

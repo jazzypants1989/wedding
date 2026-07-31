@@ -1256,11 +1256,14 @@ export function oracleSummary(run, oracle, iouMatch = BOX_MATCH_IOU) {
     const exact = candidates.filter((r) => r.path === relative || r.path.endsWith(suffix))
     if (exact.length === 1) return exact[0]
     if (exact.length > 1) return null
-    if (candidates.length === 1) return candidates[0]
-    // The basename collides with several oracle rows but none of their paths
-    // matches this photograph's — that is a photo the oracle never saw, not an
-    // ambiguity between rows. Reporting it as ambiguous hides an oracle run
-    // that covered a different directory tree.
+    // ⚠ There used to be a `candidates.length === 1` fallback here: one oracle
+    // row shares this basename, so take it even though its path does not match.
+    // That is the exact mis-join the comment above forbids, reintroduced as a
+    // convenience — a run over `2026/reception/IMG_0042.jpg` would silently
+    // adopt the oracle's faces for `2019/holiday/IMG_0042.jpg` and every
+    // resulting disagreement would read as a detector fault. A photograph whose
+    // path the oracle does not corroborate is a photograph the oracle did not
+    // see. Report it absent and let the missing count say so.
     return undefined
   }
 
@@ -1715,7 +1718,23 @@ export function verdict(input) {
   if (!Number.isFinite(auc)) {
     headline = "UNDECIDED — not enough independent pairs to measure separation"
     description = "Label more faces, or label people who appear in more than one part of the day."
-  } else if (Number.isFinite(lo) && Number.isFinite(hi) && verdictBand(lo) !== verdictBand(hi)) {
+  } else if (!Number.isFinite(lo) || !Number.isFinite(hi)) {
+    // ⚠ The safeguard below used to vanish exactly when it was most needed.
+    // `bootstrapAuc` REFUSES — NaN throughout, zero resamples — when there are
+    // fewer than three distinct people on either side, which is the thinnest,
+    // least trustworthy state the report can be in. A missing interval then
+    // failed the `Number.isFinite` test in the next branch and fell straight
+    // through to whichever confident band the point estimate happened to land
+    // in, so the report was least hedged precisely where it had least evidence.
+    // An absent interval is not a licence to assert a band; it is the reason
+    // not to.
+    headline = "UNDECIDED — there is no interval, so the point estimate is a direction only"
+    description =
+      "The person-level bootstrap refused: fewer than 3 distinct people on one side of the pair lists, " +
+      "which is too few independent units for a resample to vary over. Label more people — the number " +
+      "is not wrong, it is unsupported."
+    detail.push(`The point estimate is ${auc.toFixed(3)}. Quote it as a direction, never as a measurement, and never as a band.`)
+  } else if (verdictBand(lo) !== verdictBand(hi)) {
     // A point estimate lands in exactly one band by construction; a small
     // labelled set does not entitle it to. The person-level interval says how
     // far the number would move if the PEOPLE had been drawn again, and when
@@ -1912,7 +1931,7 @@ export function recommendations(input) {
   if (input.best) {
     out.push({
       path: "group.cutoff",
-      value: String(input.best.cutoff),
+      value: roundCutoff(input.best.cutoff),
       note: input.weldFree
         ? "best pair-F1 among the cutoffs that welded nobody, with cannot-link on"
         : `best pair-F1 with cannot-link on — NO cutoff welded nobody, this one welds ${input.best.quality.weldedGroups}`,
@@ -1922,7 +1941,11 @@ export function recommendations(input) {
   const joint = input.d.joint
   for (const axis of input.d.keys) {
     const value = joint.cutoffs[axis.key] ?? axis.defaultValue
-    out.push({ path: `gate.${axis.key}`, value: String(value), note: gateNote(joint, axis.key) })
+    /** @type {Types.Recommendation} */
+    const rec = { path: `gate.${axis.key}`, value: roundCutoff(value), note: gateNote(joint, axis.key) }
+    const caution = GATE_PROXY_CAUTIONS[axis.key]
+    if (caution) rec.caution = caution
+    out.push(rec)
   }
 
   if (input.mirror) {
@@ -1950,10 +1973,50 @@ export function recommendations(input) {
     } else {
       note = "the cheap resolution loses faces the expensive one finds; cost unpriced (no timing.json)"
     }
-    out.push({ path: "detect.longEdge", value: cheapIsEnough ? String(from) : String(to), note })
+    out.push({
+      path: "detect.longEdge",
+      value: cheapIsEnough ? String(from) : String(to),
+      note,
+      // ⚠ The one entry in this list that is not a cutoff. Detection resolution
+      // is UPSTREAM of faces.jsonl: change it and every face id shifts, which
+      // orphans every label joined to the old numbering. It used to print in
+      // the same block as eight gate cutoffs that are all safe to edit, which
+      // made the single expensive change look like the cheap ones.
+      orphansLabels: true,
+    })
   }
 
   return out
+}
+
+/**
+ * Cutoffs are written into `defaults.js` by hand, and SPEC §15 r4 says round
+ * hard: a value carried to five significant figures is a claim about a
+ * distribution measured from real photographs, which is a fact about
+ * identifiable people and may not live in this repository. Three decimals also
+ * happens to be all the precision a threshold fitted on a few hundred faces
+ * actually has — the extra digits were sampling noise wearing a lab coat.
+ * @param {number} value
+ * @returns {string}
+ */
+export function roundCutoff(value) {
+  if (!Number.isFinite(value)) return String(value)
+  if (Number.isInteger(value)) return String(value)
+  return String(Number(value.toFixed(3)))
+}
+
+/**
+ * Gate axes that improve every headline number by discarding the faces the
+ * product exists to find (SESSION-2 §9 r6, restated in SESSION-4 §5). They are
+ * not excluded from the recommendation — they really did measure better — but
+ * they never print without the reason to distrust them.
+ * @type {Record<string, string>}
+ */
+const GATE_PROXY_CAUTIONS = {
+  minBorderPx:
+    "measures whether someone was the SUBJECT of the photograph, not whether their face is usable — " +
+    "it discards the guests standing at the edge of the group shot",
+  maxAlignScale: "a minimum face size in disguise — it discards the same distant faces twice",
 }
 
 // ---------------------------------------------------------------------------
@@ -2757,13 +2820,37 @@ export function printSummary(analysis, log = console.log, options = {}) {
       log(` people (${t.extraPeople} more than the ${t.peopleNow} now, ≈${t.extraFaces} more labelled faces`)
       log(` at the current per-person rate). Fitted from width·√people across subsamples — an estimate,`)
       log(` not a promise, and it shrinks fastest if the new people RECUR across the day.`)
+      log("")
+      log(" ⚠ READ THAT AS A SAMPLING NUMBER, WHICH IS NOT THE QUESTION THIS PROJECT HAS.")
+      log(" It prices 'how many more PEOPLE would narrow the interval', then converts to")
+      log(" faces at the MEAN faces-per-person. Labelling draws faces, not people, and the")
+      log(" per-person distribution is heavy-tailed, so most faces drawn belong to someone")
+      log(" already labelled and the real cost of reaching that many people is materially")
+      log(" higher than the converted figure. More to the point (DECISIONS-vision.md §3):")
+      log(" this is a CLOSED event with a finite, known cast. Labelling is a census to")
+      log(" finish, not a sample to extend, and the honest target is the one below.")
+      log(` CENSUS REMAINING: ${analysis.counts.faces - analysis.counts.labelled} unlabelled faces of ${analysis.counts.faces}.`)
+      log(" When that reaches zero, every quality question is exact arithmetic and the")
+      log(" interval, the band and this target all stop being needed at once.")
     }
   }
 
   log("")
   log(" Cutoffs to write into public/vision/defaults.js:")
   for (const r of analysis.recommended) {
+    if (r.orphansLabels) continue
     log("   " + pad(r.path, 24) + pad(r.value, 12) + `# ${r.note}`)
+    if (r.caution) log("   " + pad("", 24) + pad("", 12) + `# ⚠ ${r.caution}`)
+  }
+  const orphaning = analysis.recommended.filter((r) => r.orphansLabels)
+  if (orphaning.length > 0) {
+    log("")
+    log(" ⚠ NOT a cutoff — these RE-DETECT and orphan every existing label:")
+    for (const r of orphaning) {
+      log("   " + pad(r.path, 24) + pad(r.value, 12) + `# ${r.note}`)
+    }
+    log("   Writing one of these renumbers every face id, so labels.json no longer")
+    log("   joins to anything. It is a decision to re-detect and re-label, not a knob.")
   }
   log("")
   log(" The nine gate values above were applied TOGETHER and measured together:")
@@ -3342,15 +3429,42 @@ export function renderHtml(analysis) {
           `the current per-person rate). Fitted from width·√people across subsamples — an estimate, not a promise, ` +
           `and it shrinks fastest if the new people <b>recur</b> across the day.</p>`,
       )
+      out.push(
+        '<div class="warn"><b>⚠ That is a sampling number, and this project does not have a sampling ' +
+          "question.</b> It prices how many more <i>people</i> would narrow the interval, then converts to faces " +
+          "at the <i>mean</i> faces-per-person. But labelling draws faces, not people, and the per-person " +
+          "distribution is heavy-tailed — most faces drawn belong to someone already labelled — so the real cost " +
+          "of reaching that many people is materially higher than the converted figure. More fundamentally " +
+          "(<code>DECISIONS-vision.md</code> §3): this is a <b>closed event with a finite, known cast</b>. " +
+          "Labelling is a census to finish, not a sample to extend. The honest target is the census remainder: " +
+          `<b>${analysis.counts.faces - analysis.counts.labelled} unlabelled faces of ${analysis.counts.faces}</b>. ` +
+          "When it reaches zero the interval, the band and this target all stop being needed at once.</div>",
+      )
     }
   }
 
   out.push("<h3>Cutoffs to write into public/vision/defaults.js</h3>")
+  const safeRecs = analysis.recommended.filter((r) => !r.orphansLabels)
+  const orphaningRecs = analysis.recommended.filter((r) => r.orphansLabels)
   out.push(
     "<pre>" +
-      esc(analysis.recommended.map((r) => `${r.path.padEnd(24)}${r.value.padEnd(12)}// ${r.note}`).join("\n")) +
+      esc(
+        safeRecs
+          .map((r) => `${r.path.padEnd(24)}${r.value.padEnd(12)}// ${r.note}` + (r.caution ? `\n${"".padEnd(36)}// ⚠ ${r.caution}` : ""))
+          .join("\n"),
+      ) +
       "</pre>",
   )
+  if (orphaningRecs.length > 0) {
+    out.push(
+      '<div class="warn"><b>⚠ The block below is NOT a cutoff, and writing it orphans every label.</b> ' +
+        "Detection resolution is upstream of <code>faces.jsonl</code>: change it and every face id shifts, so " +
+        "<code>labels.json</code> stops joining to anything (SESSION-4 §3). This is a decision to re-detect and " +
+        "re-label, not a knob to tune.<pre>" +
+        esc(orphaningRecs.map((r) => `${r.path.padEnd(24)}${r.value.padEnd(12)}// ${r.note}`).join("\n")) +
+        "</pre></div>",
+    )
+  }
   out.push(
     `<p>The nine <code>gate.*</code> values above were applied <b>together</b> and measured together: they keep ` +
       `<b>${j.result.kept} of ${j.result.total}</b> labelled faces at AUC ${num(j.result.auc, 4)} and rank-1 ` +

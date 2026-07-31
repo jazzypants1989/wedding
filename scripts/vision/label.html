@@ -862,6 +862,7 @@ tmp/session1/
         <span class="stat big" id="stat-peoplea"><b id="s-peoplea">0</b> <span>people in them</span></span>
         <span class="stat mini" id="s-mini"></span>
         <span class="saved" id="saved">—</span>
+        <button id="btn-load">Load labels.json…</button>
         <button id="btn-save" class="primary">Save labels.json</button>
       </div>
     </header>
@@ -996,6 +997,52 @@ tmp/session1/
       </div>
       <div class="row"><textarea id="dlg-json" spellcheck="false" readonly></textarea></div>
       <div class="row"><button id="dlg-close">Close</button></div>
+    </dialog>
+
+    <!--
+      The way back in. Until this existed, labels only ever flowed OUT of this
+      page: they lived in one browser's localStorage, an export rebuilt the file
+      with a fresh random person-key permutation, and nothing could read one
+      back. So a labels.json rescued from a backup, carried to another machine,
+      or re-keyed by a future migration could not be returned to the labeller
+      that produced it — and exporting from an empty browser over a good file
+      destroyed it outright. Labelling is the one artifact in this project that
+      does not regenerate; a one-way door in front of it was the largest
+      unguarded risk on the page.
+    -->
+    <dialog id="loaddlg">
+      <h2>Load labels.json</h2>
+      <p>
+        Reads a <code>labels.json</code> back into this browser — after a reinstall, on a
+        second machine, or from the backup <code>labels-backup.js</code> made.
+      </p>
+      <p id="load-rules">
+        <b>Labels already in this browser always win.</b> The file only fills in faces that
+        have no label here, so loading can add judgements but can never overwrite or erase
+        one. The file's person numbering is shuffled on every export and means nothing on
+        its own, so each person in it is given a fresh local key — the grouping is
+        preserved, the numbers are not.
+      </p>
+      <div class="row">
+        <label
+          >labels.json <input type="file" id="load-file" accept="application/json,.json"
+        /></label>
+      </div>
+      <div class="row">
+        <label
+          >identities.json (optional) <input type="file" id="load-ident" accept="application/json,.json"
+        /></label>
+      </div>
+      <p style="color: var(--dim)">
+        The names in <code>identities.json</code> are re-attached to the people they were
+        written for — the two files join on the same shuffled keys, so they must come from
+        the same export.
+      </p>
+      <div class="row">
+        <button id="load-go" class="primary">Load</button>
+        <span id="load-note"></span>
+      </div>
+      <div class="row"><button id="load-close">Close</button></div>
     </dialog>
 
     <script src="label-data.js"></script>
@@ -1451,6 +1498,161 @@ tmp/session1/
           while (used.has(n)) n++
           return "p" + n
         }
+        // ---------- import ----------
+        /** Merge a previously exported labels.json back into this browser.
+         *
+         *  Three rules, and the first two are what make it safe to run against a
+         *  browser that already holds work:
+         *
+         *  1. **Local labels always win.** A face already labelled here keeps its
+         *     label; the file only fills in blanks. So loading can add human
+         *     judgement and can never destroy any — which means running it twice,
+         *     or against the wrong-but-compatible file, costs nothing but a
+         *     report.
+         *  2. **Person keys are re-allocated, never trusted.** `buildExport`
+         *     permutes the keys on every export precisely because `p1` carries a
+         *     fact about the evening rather than about a person, so two files'
+         *     keys have no relationship at all. What the file actually records is
+         *     the PARTITION — which faces share a person — and that is what is
+         *     restored, under fresh local keys that cannot collide with existing
+         *     ones.
+         *  3. **`datasetId` must agree.** Labels join by face id, and face ids are
+         *     positions in one detection set, so a file from a different set is
+         *     not partially valid — it is wrong for every face. Refused outright
+         *     rather than merged and regretted.
+         *
+         *  @param {any} file parsed labels.json
+         *  @param {any} identities parsed identities.json, or null
+         *  @returns {{ ok: boolean, message: string }}
+         */
+        function importLabels(file, identities) {
+          if (!file || typeof file !== "object" || !file.labels || typeof file.labels !== "object") {
+            return { ok: false, message: "Not a labels.json — no `labels` map in it." }
+          }
+          if (DATASET_ID !== null && typeof file.datasetId === "string" && file.datasetId !== DATASET_ID) {
+            return {
+              ok: false,
+              message:
+                "Refused: that file was made from a DIFFERENT detection set (" +
+                file.datasetId.slice(0, 8) +
+                "… vs " +
+                DATASET_ID.slice(0, 8) +
+                "…). Face ids are positions in one detection set, so none of its labels would land on the right face.",
+            }
+          }
+          var unversioned = typeof file.datasetId !== "string"
+
+          // Every face id this page knows about, so a file listing faces that do
+          // not exist here is reported rather than silently half-applied.
+          var known = new Set()
+          for (var ki = 0; ki < DATA.faces.length; ki++) known.add(String(DATA.faces[ki].id))
+
+          var remap = {} // file person key -> local person key
+          var added = 0
+          var keptLocal = 0
+          var unknownFace = 0
+          var people = 0
+
+          for (var fid in file.labels) {
+            var val = file.labels[fid]
+            if (typeof val !== "string" || val === "") continue
+            if (!known.has(fid)) {
+              unknownFace++
+              continue
+            }
+            if (state.labels[fid] !== undefined) {
+              keptLocal++
+              continue
+            }
+            if (val === "x") {
+              state.labels[fid] = "x"
+              added++
+              continue
+            }
+            if (!remap[val]) {
+              // Allocated one at a time and written into state.labels
+              // immediately, because nextPersonKey() derives the free number
+              // from state.labels itself — batching the allocation would hand
+              // out the same key twice.
+              remap[val] = nextPersonKey()
+              state.labels[fid] = remap[val]
+              people++
+            } else {
+              state.labels[fid] = remap[val]
+            }
+            added++
+          }
+
+          // Skips and carve-outs are the labeller's own record too: a skip says
+          // "I looked and could not tell", which is evidence, not an absence.
+          if (Array.isArray(file.skipped)) {
+            for (var si = 0; si < file.skipped.length; si++) {
+              if (known.has(String(file.skipped[si]))) state.skipped.add(Number(file.skipped[si]))
+            }
+          }
+          if (file.excluded && typeof file.excluded === "object") {
+            for (var gk in file.excluded) {
+              var arr = file.excluded[gk]
+              if (!Array.isArray(arr)) continue
+              var into = state.excluded[gk] || []
+              for (var ei = 0; ei < arr.length; ei++) {
+                if (into.indexOf(arr[ei]) < 0) into.push(arr[ei])
+              }
+              state.excluded[gk] = into
+            }
+          }
+
+          var named = 0
+          if (identities && identities.identities && typeof identities.identities === "object") {
+            for (var pk in identities.identities) {
+              var local = remap[pk]
+              if (!local) continue
+              var entry = identities.identities[pk]
+              if (!entry || typeof entry.name !== "string" || entry.name === "") continue
+              names[local] = entry.name
+              if (typeof entry.guestId === "number") nameIds[local] = entry.guestId
+              named++
+            }
+            saveNames()
+          }
+
+          save()
+          render()
+
+          var parts = [added + " label(s) loaded across " + people + " person/people"]
+          if (named > 0) parts.push(named + " name(s) restored")
+          if (keptLocal > 0) parts.push(keptLocal + " kept from this browser (local always wins)")
+          if (unknownFace > 0) parts.push("⚠ " + unknownFace + " face id(s) not in this run — ignored")
+          if (unversioned) parts.push("⚠ the file carries no datasetId, so nothing verified it belongs to this run")
+          return { ok: true, message: parts.join(" · ") }
+        }
+
+        /** @param {File | null | undefined} f @returns {Promise<any>} */
+        function readJsonFile(f) {
+          if (!f) return Promise.resolve(null)
+          return f.text().then(function (t) {
+            return JSON.parse(t)
+          })
+        }
+
+        function runImport() {
+          var note = $("load-note")
+          note.textContent = "reading…"
+          var labelsFile = $("load-file").files[0]
+          if (!labelsFile) {
+            note.textContent = "Choose a labels.json first."
+            return
+          }
+          Promise.all([readJsonFile(labelsFile), readJsonFile($("load-ident").files[0])])
+            .then(function (both) {
+              var result = importLabels(both[0], both[1])
+              note.textContent = (result.ok ? "✓ " : "✗ ") + result.message
+            })
+            .catch(function (err) {
+              note.textContent = "✗ could not read that file — " + (err && err.message ? err.message : "unparseable JSON")
+            })
+        }
+
         function exemplarFor(key) {
           var pinned = state.exemplars[key]
           if (pinned !== undefined && state.labels[String(pinned)] === key) return pinned
@@ -3422,6 +3624,14 @@ tmp/session1/
           $("rail-filter").addEventListener("keydown", onFilterKey)
           $("dlg-close").addEventListener("click", function () {
             $("savedlg").close()
+          })
+          $("btn-load").addEventListener("click", function () {
+            $("load-note").textContent = ""
+            $("loaddlg").showModal()
+          })
+          $("load-go").addEventListener("click", runImport)
+          $("load-close").addEventListener("click", function () {
+            $("loaddlg").close()
           })
           $("dlg-download").addEventListener("click", download)
           $("dlg-copy").addEventListener("click", copyJson)

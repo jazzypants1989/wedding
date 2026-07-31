@@ -46,8 +46,10 @@ import {
   renderHtml,
   oracleSummary,
   reportA,
+  recommendations,
   representativeSweep,
   resolutionCost,
+  roundCutoff,
   stageBreakdown,
   separationStrata,
   sweepGrouping,
@@ -1279,6 +1281,11 @@ test("the verdict band is read off the gated number, not the ungated one", () =>
     weldFreeCutoffExists: true,
     recoverablePeople: 25,
     people: 31,
+    // Inside one band: a verdict is entitled to name a band only when the
+    // interval it was measured with stays in that band. Without this the
+    // headline is UNDECIDED regardless of where the point estimate landed.
+    lo: 0.91,
+    hi: 0.95,
   })
   assert.ok(gated.headline.startsWith("REAL SIGNAL"), gated.headline)
   assert.ok(!gated.headline.includes("WEAK"))
@@ -1294,6 +1301,8 @@ test("the verdict never claims a grouping product shape the sweep found no safe 
     keptFraction: 0.44,
     recoverablePeople: 25,
     people: 31,
+    lo: 0.99,
+    hi: 1.0,
   }
   const clean = verdict({ ...base, weldFreeCutoffExists: true })
   assert.ok(clean.headline.startsWith("CLEAN SEPARATION"))
@@ -1691,4 +1700,116 @@ test("labellingTarget estimates people, refuses when there is nothing to estimat
 
   assert.equal(labellingTarget({ auc: 0.93, sameTagged: same, diffTagged: diff }, { lo: NaN, hi: NaN }, 3), null)
   assert.equal(labellingTarget({ auc: 0.93, sameTagged: same.slice(0, 4), diffTagged: [] }, { lo: 0.8, hi: 0.9 }, 3), null)
+})
+
+// ---------------------------------------------------------------------------
+// Three defects found by re-auditing the report against its own artifacts.
+// Each shipped, each looked like a detail, each changed what someone would do.
+// ---------------------------------------------------------------------------
+
+test("a verdict with no interval behind it is UNDECIDED, not whichever band the point fell in", () => {
+  // The safeguard vanished exactly where it mattered most. `bootstrapAuc`
+  // refuses below 3 people a side — NaN throughout — and the old branch was
+  // guarded by `Number.isFinite(lo) && ...`, so a refusal fell straight
+  // through to a confident headline. The report was least hedged precisely
+  // when it had the least evidence.
+  const base = {
+    auc: 0.9031,
+    fprAt95Tpr: 0.3,
+    rank1: 0.937,
+    basis: "default gate",
+    ungatedAuc: 0.804,
+    keptFraction: 0.74,
+    weldFreeCutoffExists: true,
+    recoverablePeople: 25,
+    people: 31,
+  }
+
+  for (const absent of [{}, { lo: NaN, hi: NaN }, { lo: 0.9, hi: NaN }, { lo: NaN, hi: 0.95 }]) {
+    const v = verdict({ ...base, ...absent })
+    assert.ok(v.headline.startsWith("UNDECIDED"), `no interval must not yield "${v.headline}"`)
+    assert.ok(!v.headline.includes("REAL SIGNAL"))
+    assert.ok(v.detail.some((d) => d.includes("direction")), "and it must say what the number may still be used as")
+  }
+
+  // With an interval that stays inside one band, the band is earned.
+  const earned = verdict({ ...base, lo: 0.91, hi: 0.95 })
+  assert.ok(earned.headline.startsWith("REAL SIGNAL"), earned.headline)
+})
+
+test("recommended cutoffs round hard, and the one that orphans labels is not filed with the ones that don't", () => {
+  // Two defects in one printed block. Five-significant-figure cutoffs are a
+  // claim about a distribution measured from real photographs (SPEC §15 r4),
+  // and `detect.longEdge` is not a cutoff at all — it re-detects, which
+  // renumbers every face and orphans every label. It used to print in the same
+  // list as eight gate values that are all safe to edit.
+  assert.equal(roundCutoff(0.784883829), "0.785")
+  assert.equal(roundCutoff(140.5721), "140.572")
+  assert.equal(roundCutoff(40), "40", "an integer cutoff is left alone")
+  assert.equal(roundCutoff(0.62), "0.62", "already-short values do not grow trailing zeros")
+
+  const recs = recommendations({
+    best: /** @type {any} */ ({ cutoff: 0.70812345, quality: { weldedGroups: 15 } }),
+    weldFree: false,
+    d: /** @type {any} */ ({
+      joint: {
+        cutoffs: { minScore: 0.784883829, minBorderPx: 140.5721, maxAlignScale: 0.938217, minBoxPx: 40 },
+        adopted: ["minScore", "minBorderPx", "maxAlignScale"],
+        rejected: ["minBoxPx"],
+        verdicts: [],
+      },
+      keys: [
+        { key: "minScore", defaultValue: 0.6 },
+        { key: "minBorderPx", defaultValue: 0 },
+        { key: "maxAlignScale", defaultValue: 1.6 },
+        { key: "minBoxPx", defaultValue: 40 },
+      ],
+    }),
+    resolution: /** @type {any} */ ({ recall: 0.82 }),
+    mirror: null,
+    timing: null,
+  })
+
+  const byPath = new Map(recs.map((r) => [r.path, r]))
+  assert.equal(byPath.get("group.cutoff")?.value, "0.708")
+  assert.equal(byPath.get("gate.minScore")?.value, "0.785")
+  for (const r of recs) {
+    const decimals = r.value.includes(".") ? r.value.split(".")[1].length : 0
+    assert.ok(decimals <= 3, `${r.path} printed ${r.value} — round hard`)
+  }
+
+  // The label-orphaning entry is flagged, and it is the ONLY one flagged.
+  const orphaning = recs.filter((r) => r.orphansLabels)
+  assert.deepEqual(
+    orphaning.map((r) => r.path),
+    ["detect.longEdge"],
+  )
+
+  // The two proxy cutoffs never print without the reason to distrust them.
+  assert.ok(byPath.get("gate.minBorderPx")?.caution?.includes("SUBJECT"))
+  assert.ok(byPath.get("gate.maxAlignScale")?.caution?.includes("minimum face size"))
+  assert.equal(byPath.get("gate.minScore")?.caution, undefined, "only the proxies carry a caution")
+})
+
+test("the oracle join refuses a basename whose path it cannot corroborate", () => {
+  // Photo deliveries repeat basenames across folders. A fallback that took the
+  // single oracle row sharing a basename would hand one photograph another
+  // photograph's faces, and every disagreement would read as a detector fault.
+  const run = /** @type {any} */ ({
+    root: "/runs/wedding",
+    photos: [{ id: 0, relative: "2026/reception/IMG_0042.jpg", width: 100, height: 100 }],
+    faces: [],
+    labels: null,
+    timing: null,
+    resolution: [],
+  })
+  const foreign = [{ path: "/elsewhere/2019/holiday/IMG_0042.jpg", w: 100, h: 100, faces: [] }]
+  const s = oracleSummary(run, /** @type {any} */ (foreign))
+  assert.equal(s.photos, 0, "a path the oracle does not corroborate is a photo it did not see")
+  assert.equal(s.missing, 1)
+  assert.equal(s.ambiguous, 0, "and it is absent, not ambiguous — the distinction is the diagnosis")
+
+  // The same basename under a matching suffix still joins.
+  const real = [{ path: "/runs/wedding/2026/reception/IMG_0042.jpg", w: 100, h: 100, faces: [] }]
+  assert.equal(oracleSummary(run, /** @type {any} */ (real)).photos, 1)
 })
