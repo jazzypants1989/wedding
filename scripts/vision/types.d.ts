@@ -616,6 +616,12 @@ export interface RelabelArgs {
   databasePath: string
   /** Reference context crops where they exist. `--no-context` turns it off. */
   context: boolean
+  /**
+   * `--pool-a N`. Null means "unspecified": with a previous label-data.js,
+   * that is the ordinary carry-over path; with none, derivedAssignments' own
+   * fallback (timing.json's recorded size, or FALLBACK_POOL_A) applies.
+   */
+  poolA: number | null
 }
 
 /**
@@ -655,8 +661,14 @@ export interface RelabelResult {
   data: Session1LabelData
   poolA: number
   poolB: number
-  /** False when there was no previous file and the pools were re-derived. */
-  carried: boolean
+  /**
+   * Which of the three paths produced `data.faces`' pool/group assignments:
+   * carried over unchanged, re-derived (no previous file), or grown (previous
+   * file plus `--pool-a` larger than its existing pool A).
+   */
+  mode: "carried" | "derived" | "grown"
+  /** Face count promoted from pool B to pool A. Zero outside "grown". */
+  promoted: number
   contextCrops: number
   /** Null when no roster was included. */
   rosterSize: number | null
@@ -703,11 +715,58 @@ export function carryAssignments(
  * the batch did, from the seed and pool size timing.json recorded. Correct only
  * if the run's configuration is what timing.json says it is, which is why the
  * caller says so out loud. Carrying is always preferred.
+ *
+ * `poolASizeOverride` is `--pool-a` when the caller gave one; it takes
+ * precedence over timing.json's recorded size, which is otherwise the fallback
+ * ahead of FALLBACK_POOL_A.
  */
 export function derivedAssignments(
   faces: readonly Session1FaceRecord[],
   timing: Session1Timing | null,
+  poolASizeOverride?: number | null,
 ): PoolAssignments
+
+/**
+ * Pools and order for the `--pool-a` GROW path: a previous label-data.js
+ * exists and a strictly larger pool A was asked for.
+ *
+ * `promoted` is every face id that moved from pool B to pool A this run,
+ * ascending. It exists so the caller can warn about a face that already
+ * carries a pool-B label in labels.json — this function never reads that
+ * file, so it cannot count that itself.
+ */
+export interface GrowAssignmentsResult extends PoolAssignments {
+  promoted: number[]
+}
+
+/**
+ * Grow pool A from a previous label-data.js by re-deriving pools at a larger
+ * size and checking the OLD pool A survives as a subset of the new one.
+ *
+ * assignPools does a full Fisher-Yates shuffle of face positions keyed only by
+ * seed and face order, then takes the first `poolASize` of it — so the same
+ * seed over the same faces makes a larger pool A a strict superset of a
+ * smaller one, a longer prefix of the same shuffled sequence. That is what
+ * makes growth safe where a fresh draw is not (SESSION-2-vision.md §7 P0), and
+ * this function does not trust the argument — it verifies the prefix on every
+ * call and throws if it does not hold, which only happens when the recorded
+ * seed does not reproduce the file's existing pools (a different run).
+ *
+ * Pool B's group ids are never re-derived here: groupPoolB renumbers them
+ * whenever pool-B membership changes, and labels.json's `excluded` map is
+ * keyed by group id, so a renumbering would silently attach an exclusion
+ * recorded against one cluster to a different one. Every face left in pool B
+ * keeps the OLD group id it already had.
+ *
+ * Throws if `poolASize` is smaller than the existing pool A (shrinking would
+ * orphan labels already collected) or larger than the face count.
+ */
+export function growAssignments(
+  faces: readonly Session1FaceRecord[],
+  previous: Session1LabelData,
+  timing: Session1Timing | null,
+  poolASize: number,
+): GrowAssignmentsResult
 
 /**
  * Live guests, READ-ONLY, and deliberately not through db/connection.js — that
@@ -762,6 +821,20 @@ export interface OracleRecord {
     points?: number
     leftEye?: [number, number]
     rightEye?: [number, number]
+    /**
+     * The nose ridge's extremum point closest to the mouth, in image pixels.
+     * Optional because it postdates the two eye centroids above — an oracle
+     * file written before oracle-macos.swift emitted it simply lacks the key.
+     */
+    noseTip?: [number, number]
+    /**
+     * The two `outerLips` extreme points, in image pixels, named by GEOMETRY
+     * (smaller/larger pixel x) rather than by either source's vocabulary —
+     * see the mouth-corner comment in oracle-macos.swift and SESSION-2-vision.md
+     * §3 for why. Optional for the same reason `noseTip` is.
+     */
+    mouthImgLeft?: [number, number]
+    mouthImgRight?: [number, number]
   }>
   error?: string
 }
@@ -1022,3 +1095,92 @@ export interface ReportArgs {
 }
 
 export function parseArgs(argv: readonly string[]): ReportArgs
+
+// --- ONNX activation exposure (scripts/vision/inspect-onnx.js additive
+// export; scripts/vision/expose-activations.js) ---
+
+/**
+ * One GraphProto node, reduced to what a tensor-name lookup needs: which op
+ * produced it, its own (often blank) name, and the tensor names it consumes
+ * and produces. Exposed by inspect-onnx.js's `nodeOutputs()` so
+ * expose-activations.js can resolve a requested tensor name back to its
+ * producing op — this is the same walk `inspect()` already does for the
+ * operator histogram, just returned instead of only printed.
+ */
+export interface OnnxNode {
+  opType: string
+  name: string
+  inputs: string[]
+  outputs: string[]
+}
+
+/**
+ * Byte range of ModelProto's GraphProto field (field 7): `tagStart` is where
+ * the field's own tag varint begins, `contentStart`/`contentEnd` bound the
+ * GraphProto bytes. Rewriting the model means replacing `[tagStart,
+ * contentEnd)` with a fresh tag + length varint + (possibly grown) content —
+ * there is exactly one such span, since `graph` is a direct, non-repeated
+ * field of ModelProto.
+ */
+export interface GraphFieldLocation {
+  tagStart: number
+  contentStart: number
+  contentEnd: number
+}
+
+/**
+ * Every name a GraphProto declares as a graph input, a graph output, or an
+ * initializer (a weight) — the three reasons a requested tensor name gets
+ * refused — plus whatever element types its `value_info` entries (field 13)
+ * record, the cheap way to learn an intermediate tensor's dtype without
+ * re-deriving it from the producing op's attributes.
+ */
+export interface GraphNames {
+  inputs: Set<string>
+  outputs: Set<string>
+  initializers: Set<string>
+  /** name -> TensorProto.DataType, from GraphProto.value_info entries. */
+  valueInfoTypes: Map<string, number>
+}
+
+/**
+ * The result of splicing new graph outputs into a model: the patched bytes,
+ * and the tensor names actually appended, in the order they were appended
+ * (requested order, after de-duplication).
+ */
+export interface ExposeResult {
+  buffer: Buffer
+  appended: string[]
+}
+
+export function locateGraphField(buf: Buffer): GraphFieldLocation
+
+export function parseGraphNames(buf: Buffer, graph: { start: number; end: number }): GraphNames
+
+/**
+ * A minimal ValueInfoProto: name + TypeProto{tensor_type{elem_type}}, no
+ * shape — ORT tolerates loose output type info for an already-computed
+ * tensor. Returned unwrapped, with no outer field tag; the caller wraps it as
+ * a GraphProto.output (field 12), or reuses it to build fixture
+ * ValueInfoProtos for graph inputs/outputs in tests.
+ */
+export function buildValueInfo(name: string, elemType: number): Buffer
+
+/** Protobuf varint encoding: 7 bits per byte, continuation bit set on every
+ *  byte but the last. `n` must be a non-negative integer. */
+export function writeVarint(n: number): Buffer
+
+/** A protobuf field tag: `(fieldNum << 3) | wireType`, varint-encoded. */
+export function tag(fieldNum: number, wireType: number): Buffer
+
+/** A length-delimited protobuf field: tag + varint length + `bytes`. */
+export function lengthDelimited(fieldNum: number, bytes: Buffer): Buffer
+
+/**
+ * Appends one graph output per requested tensor name, refusing any name that
+ * is not produced by a node, or that already names a graph output, a graph
+ * input, or an initializer. Append-only: every byte outside the GraphProto
+ * field's span is untouched, and inside it only the output list grows —
+ * nothing already in the file is renumbered or moved.
+ */
+export function exposeActivations(buf: Buffer, tensorNames: readonly string[]): ExposeResult

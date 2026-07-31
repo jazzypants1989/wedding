@@ -21,13 +21,15 @@
  *  Wire format:  https://protobuf.dev/programming-guides/encoding/
  *  Message defs: https://github.com/onnx/onnx/blob/main/onnx/onnx.proto */
 
+/** @import * as Types from './types.js' */
+
 import fs from "node:fs"
 
 /** Protobuf wire types. Only VARINT and LEN carry data we decode. */
-const WIRE_VARINT = 0
-const WIRE_64BIT = 1
-const WIRE_LEN = 2
-const WIRE_32BIT = 5
+export const WIRE_VARINT = 0
+export const WIRE_64BIT = 1
+export const WIRE_LEN = 2
+export const WIRE_32BIT = 5
 
 /** ONNX TensorProto.DataType values, for the ones worth naming. */
 const DATA_TYPES = new Map([
@@ -65,7 +67,7 @@ const SMALL_TENSOR_LIMIT = 8
  * @param {number} pos
  * @returns {[bigint, number]} The decoded value, and the position after it.
  */
-function readVarint(buf, pos) {
+export function readVarint(buf, pos) {
   let result = 0n
   let shift = 0n
   for (;;) {
@@ -86,7 +88,7 @@ function readVarint(buf, pos) {
  * @param {number} end
  * @returns {Generator<Field>}
  */
-function* fields(buf, start, end) {
+export function* fields(buf, start, end) {
   let pos = start
   while (pos < end) {
     let key
@@ -119,8 +121,59 @@ function* fields(buf, start, end) {
  * @param {Span} span
  * @returns {string}
  */
-function text(buf, span) {
+export function text(buf, span) {
   return buf.toString("utf8", span.start, span.end)
+}
+
+/**
+ * Finds the GraphProto field (ModelProto field 7) and returns its content
+ * span — the bytes strictly inside the length-delimited field, not the tag or
+ * length prefix. expose-activations.js needs its own byte range on top of
+ * this (where the tag begins, to rewrite the length prefix), so it does its
+ * own top-level walk rather than extending this one; this export is for
+ * read-side callers like nodeOutputs() below.
+ *
+ * @param {Buffer} buf
+ * @returns {Span}
+ */
+export function findGraphSpan(buf) {
+  for (const f of fields(buf, 0, buf.length)) {
+    if (f.field === 7 && f.span) return f.span
+  }
+  throw new Error("no GraphProto found")
+}
+
+/**
+ * Every node in the graph, in declaration order, reduced to what
+ * expose-activations.js needs to resolve a tensor name back to its producing
+ * op: the op type, the node's own (often blank) name, and the tensor names it
+ * consumes and produces. This is data inspect() below already walks past for
+ * the operator histogram — it just never returned it.
+ *
+ * @param {Buffer} buf
+ * @returns {Types.OnnxNode[]}
+ */
+export function nodeOutputs(buf) {
+  const graph = findGraphSpan(buf)
+  /** @type {Types.OnnxNode[]} */
+  const nodes = []
+  for (const f of fields(buf, graph.start, graph.end)) {
+    if (f.field !== 1 || !f.span) continue // GraphProto.node
+    let opType = "?"
+    let name = ""
+    /** @type {string[]} */
+    const inputs = []
+    /** @type {string[]} */
+    const outputs = []
+    for (const node of fields(buf, f.span.start, f.span.end)) {
+      if (node.field === 1 && node.span) inputs.push(text(buf, node.span)) // NodeProto.input
+      else if (node.field === 2 && node.span) outputs.push(text(buf, node.span)) // NodeProto.output
+      else if (node.field === 3 && node.span) name = text(buf, node.span) // NodeProto.name
+      else if (node.field === 4 && node.span) opType = text(buf, node.span) // NodeProto.op_type
+    }
+    nodes.push({ opType, name, inputs, outputs })
+  }
+  return nodes
 }
 
 /**
@@ -371,19 +424,24 @@ function inspect(path) {
   }
 }
 
-const paths = process.argv.slice(2)
-if (!paths.length) {
-  console.error("usage: node scripts/vision/inspect-onnx.js <file.onnx> [...]")
-  process.exit(1)
-}
-
-let failed = false
-for (const path of paths) {
-  try {
-    inspect(path)
-  } catch (err) {
-    failed = true
-    console.error(`\n${path}: FAILED — ${err instanceof Error ? err.message : String(err)}`)
+// Guarded so expose-activations.js (and the tests) can import nodeOutputs()
+// and friends without running the CLI as a side effect. Direct invocation
+// (`node scripts/vision/inspect-onnx.js <file>`) is unchanged.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const paths = process.argv.slice(2)
+  if (!paths.length) {
+    console.error("usage: node scripts/vision/inspect-onnx.js <file.onnx> [...]")
+    process.exit(1)
   }
+
+  let failed = false
+  for (const path of paths) {
+    try {
+      inspect(path)
+    } catch (err) {
+      failed = true
+      console.error(`\n${path}: FAILED — ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+  process.exit(failed ? 1 : 0)
 }
-process.exit(failed ? 1 : 0)
