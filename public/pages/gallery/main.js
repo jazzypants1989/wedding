@@ -1,5 +1,7 @@
-/** @file Gallery page entry: nav/theme/session bootstrap, section switcher,
- *  ?section / ?item deep links, and lightbox URL sync. */
+/** @file Gallery page entry: nav/theme/session bootstrap, view switcher
+ *  (all / official / guest), ?section / ?item deep links, and lightbox URL
+ *  sync. The default "all" view stacks both grids — official first — and the
+ *  lightbox navigates them as one list. */
 /** @import * as Types from "./types.js" */
 
 import { initMobileNav } from "../../components/mobile-nav.js"
@@ -33,9 +35,57 @@ import { initUpload } from "./upload.js"
 /** Whether the lightbox's current open state came from a pushed history entry. */
 let lightboxPushed = false
 
-/** @param {string | null} value @returns {Types.MediaSection} */
-function normalizeSection(value) {
-  return value === "official" ? "official" : "guest"
+/** The active view. "all" is the default: no ?section param. */
+/** @type {Types.GalleryView} */
+let view = "all"
+
+/** @param {string | null} value @returns {Types.GalleryView} */
+function normalizeView(value) {
+  return value === "official" || value === "guest" ? value : "all"
+}
+
+/** The ?section query suffix for a view ("" for the default "all"). Callers
+ *  append &item=… so the empty case must carry no stray separator.
+ *  @param {Types.GalleryView} v @returns {string} */
+function viewQuery(v) {
+  return v === "all" ? "" : `section=${v}`
+}
+
+// ---- "all"-aware lightbox source ----
+// The lightbox treats its key as opaque; these wrappers make "all" mean
+// official-then-guest as one list, so arrows/slideshow flow across both.
+
+/** @param {Types.GalleryView} v @returns {Types.MediaListItem[]} */
+function viewItems(v) {
+  if (v !== "all") return getSectionItems(v)
+  return [...getSectionItems("official"), ...getSectionItems("guest")]
+}
+
+/** @param {Types.GalleryView} v @returns {boolean} */
+function viewHasMore(v) {
+  if (v !== "all") return hasMore(v)
+  return hasMore("official") || hasMore("guest")
+}
+
+/** @param {Types.GalleryView} v @returns {Promise<number>} */
+async function viewLoadMore(v) {
+  if (v !== "all") return loadMore(v)
+  // Official is a single full page; once it's exhausted the guest keyset
+  // feed is the only thing left to extend.
+  if (hasMore("official")) {
+    const n = await loadMore("official")
+    if (n > 0) return n
+  }
+  return loadMore("guest")
+}
+
+/** @param {Types.GalleryView} v @param {number} id */
+function viewRemoveItem(v, id) {
+  if (v !== "all") return removeItem(v, id)
+  const section = getSectionItems("official").some((i) => i.id === id)
+    ? "official"
+    : "guest"
+  removeItem(section, id)
 }
 
 async function boot() {
@@ -50,11 +100,11 @@ async function boot() {
 
   initGrid({ onOpen: openFromCell })
   initLightbox({
-    getItems: getSectionItems,
-    hasMore,
-    loadMore,
+    getItems: viewItems,
+    hasMore: viewHasMore,
+    loadMore: viewLoadMore,
     onChange: syncUrl,
-    onDelete: removeItem,
+    onDelete: viewRemoveItem,
   })
   initUpload()
   // One delegated listener each for every reaction bar / comment thread (grid
@@ -67,8 +117,7 @@ async function boot() {
   startRelativeTimeTicker()
 
   const params = new URLSearchParams(location.search)
-  const section = normalizeSection(params.get("section"))
-  selectSection(section, false)
+  selectView(normalizeView(params.get("section")), false)
 
   const item = params.get("item")
   if (item) void openItemById(Number(item))
@@ -106,43 +155,46 @@ function findLoadedItem(id) {
   return undefined
 }
 
-// ---- section switcher (tablist) ----
+// ---- view switcher (tablist) ----
+
+/** @type {Types.GalleryView[]} */
+const VIEWS = ["all", "official", "guest"]
 
 function wireSwitcher() {
-  const tabs = [getButtonElement("tab-official"), getButtonElement("tab-guest")]
+  const tabs = VIEWS.map((v) => getButtonElement(`tab-${v}`))
   tabs.forEach((tab, i) => {
     tab.addEventListener("click", () => {
-      selectSection(i === 0 ? "official" : "guest", true)
+      selectView(VIEWS[i], true)
     })
     tab.addEventListener("keydown", (e) => {
       if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return
       e.preventDefault()
-      const next = tabs[i === 0 ? 1 : 0]
-      next.focus()
-      selectSection(next.id === "tab-official" ? "official" : "guest", true)
+      const next = (i + (e.key === "ArrowRight" ? 1 : -1) + VIEWS.length) % VIEWS.length
+      tabs[next].focus()
+      selectView(VIEWS[next], true)
     })
   })
 }
 
 /**
- * @param {Types.MediaSection} section @param {boolean} updateUrl
+ * @param {Types.GalleryView} next @param {boolean} updateUrl
  */
-function selectSection(section, updateUrl) {
-  const isOfficial = section === "official"
-  const officialTab = getButtonElement("tab-official")
-  const guestTab = getButtonElement("tab-guest")
-  officialTab.setAttribute("aria-selected", String(isOfficial))
-  guestTab.setAttribute("aria-selected", String(!isOfficial))
-  // Roving tabindex: only the active tab is in the tab order; arrows (wired in
-  // wireSwitcher) move between them, and Tab exits the tablist (2.5).
-  officialTab.tabIndex = isOfficial ? 0 : -1
-  guestTab.tabIndex = isOfficial ? -1 : 0
-  // Upload CTA belongs to the guest section only.
-  getElement("guest-cta").hidden = isOfficial
-  showSection(section)
+function selectView(next, updateUrl) {
+  view = next
+  for (const v of VIEWS) {
+    const tab = getButtonElement(`tab-${v}`)
+    tab.setAttribute("aria-selected", String(v === view))
+    // Roving tabindex: only the active tab is in the tab order; arrows (wired
+    // in wireSwitcher) move between them, and Tab exits the tablist (2.5).
+    tab.tabIndex = v === view ? 0 : -1
+  }
+  // Upload CTA belongs with the guest grid (present in "all" too).
+  getElement("guest-cta").hidden = view === "official"
+  showSection(view)
   window.dispatchEvent(new CustomEvent("gallery:sectionchange"))
   if (updateUrl && !isLightboxOpen()) {
-    history.replaceState(null, "", `/gallery?section=${section}`)
+    const query = viewQuery(view)
+    history.replaceState(null, "", query ? `/gallery?${query}` : "/gallery")
   }
 }
 
@@ -150,7 +202,9 @@ function selectSection(section, updateUrl) {
 
 /** @param {Types.MediaSection} section @param {number} id */
 function openFromCell(section, id) {
-  openLightbox(section, id)
+  // In the "all" view the lightbox runs the combined list, so arrows flow
+  // from the official set straight into the guest wall.
+  openLightbox(view === "all" ? "all" : section, id)
 }
 
 /**
@@ -161,14 +215,14 @@ function openFromCell(section, id) {
 async function openItemById(id) {
   for (const sec of /** @type {Types.MediaSection[]} */ (["guest", "official"])) {
     if (getSectionItems(sec).some((i) => i.id === id)) {
-      openLightbox(sec, id)
+      openLightbox(view === "all" ? "all" : sec, id)
       return
     }
   }
   try {
     const item = /** @type {Types.MediaListItem} */ (await api(`/api/media/${id}`))
     ensureItemLoaded(item)
-    openLightbox(item.section, item.id)
+    openLightbox(view === "all" ? "all" : item.section, item.id)
   } catch {
     // 404 / not visible — the grid stays, but a shared link deserves a word
     // (and the dead ?item param shouldn't survive into copied URLs).
@@ -179,12 +233,14 @@ async function openItemById(id) {
 
 /**
  * URL sync driven by the lightbox: push on first open (so Back closes it),
- * replace while navigating, and drop ?item on close.
- * @param {Types.MediaSection} section @param {number | null} id
+ * replace while navigating, and drop ?item on close. The default "all" view
+ * carries no ?section param.
+ * @param {Types.GalleryView} v @param {number | null} id
  */
-function syncUrl(section, id) {
+function syncUrl(v, id) {
+  const query = viewQuery(v)
   if (id !== null) {
-    const url = `/gallery?section=${section}&item=${id}`
+    const url = `/gallery?${query ? `${query}&` : ""}item=${id}`
     if (!lightboxPushed) {
       history.pushState(null, "", url)
       lightboxPushed = true
@@ -192,15 +248,14 @@ function syncUrl(section, id) {
       history.replaceState(null, "", url)
     }
   } else {
-    history.replaceState(null, "", `/gallery?section=${section}`)
+    history.replaceState(null, "", query ? `/gallery?${query}` : "/gallery")
     lightboxPushed = false
   }
 }
 
 window.addEventListener("popstate", () => {
   const params = new URLSearchParams(location.search)
-  const section = normalizeSection(params.get("section"))
-  selectSection(section, false)
+  selectView(normalizeView(params.get("section")), false)
   const item = params.get("item")
   if (item) {
     lightboxPushed = true // we're restoring a pushed entry — don't re-push

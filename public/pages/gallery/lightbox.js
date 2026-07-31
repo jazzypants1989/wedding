@@ -35,8 +35,9 @@ const DOUBLE_TAP_MS = 300
 
 /** @type {Types.LightboxSource} */
 let source
-/** @type {Types.MediaSection} */
-let section = "guest"
+/** The source key: a section, or "all" for the combined official+guest list. */
+/** @type {Types.GalleryView} */
+let section = "all"
 let index = -1
 /** The element focused when the lightbox opened, to restore focus on close. */
 let opener = /** @type {HTMLElement | null} */ (null)
@@ -64,7 +65,7 @@ let tilt = null
 /** Start the lightbox tilt (once). No-op under reduced motion. */
 function startTilt() {
   if (tilt || prefersReducedMotion()) return
-  tilt = createTiltDepth({ selector: ".lightbox-media", maxTilt: 5, depth: 8 })
+  tilt = createTiltDepth({ selector: ".lightbox-media", maxTilt: 2, depth: 4 })
   tilt.start()
 }
 
@@ -377,7 +378,9 @@ async function shareOrCopy() {
   const items = source.getItems(section)
   const item = items[index]
   if (!item) return
-  const url = `${location.origin}/gallery?section=${section}&item=${item.id}`
+  // Shared links from the "all" view carry no ?section — the default view.
+  const sectionParam = section === "all" ? "" : `section=${section}&`
+  const url = `${location.origin}/gallery?${sectionParam}item=${item.id}`
   const btn = getElement("lightbox-copy")
   const prev = btn.textContent
   const result = await shareUrl(url)

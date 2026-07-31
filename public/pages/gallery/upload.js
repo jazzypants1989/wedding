@@ -426,9 +426,11 @@ function wireDragDrop(dropZone) {
 function wireFab() {
   const fab = getElement("upload-fab")
   const onScroll = () => {
-    const guestActive =
-      getElement("tab-guest").getAttribute("aria-selected") === "true"
-    fab.hidden = !(guestActive && window.scrollY > 400)
+    // Uploads land in the guest grid, which is on screen everywhere except
+    // the official-only view.
+    const officialOnly =
+      getElement("tab-official").getAttribute("aria-selected") === "true"
+    fab.hidden = !(!officialOnly && window.scrollY > 400)
   }
   window.addEventListener("scroll", onScroll, { passive: true })
   // Re-evaluate when the section switches (custom event from main.js).

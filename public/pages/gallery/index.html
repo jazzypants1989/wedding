@@ -85,10 +85,12 @@
       <h2 class="gallery-title">Gallery</h2>
 
       <div class="gallery-switcher" role="tablist" aria-label="Gallery sections">
+        <button type="button" role="tab" class="gallery-tab" id="tab-all" aria-selected="true"
+          aria-controls="grid-official grid-guest" tabindex="0">All</button>
         <button type="button" role="tab" class="gallery-tab" id="tab-official" aria-selected="false"
           aria-controls="grid-official" tabindex="-1">Official</button>
-        <button type="button" role="tab" class="gallery-tab" id="tab-guest" aria-selected="true"
-          aria-controls="grid-guest" tabindex="0">Guest Photos <span class="gallery-tab-count" id="count-guest"></span></button>
+        <button type="button" role="tab" class="gallery-tab" id="tab-guest" aria-selected="false"
+          aria-controls="grid-guest" tabindex="-1">Guest Photos <span class="gallery-tab-count" id="count-guest"></span></button>
       </div>
 
       <div id="gallery-error" class="alert alert-error" role="alert" hidden></div>
@@ -103,13 +105,14 @@
       <div id="gallery-pending-note" role="status" hidden></div>
       <div id="gallery-nudge" role="status" hidden></div>
 
-      <!-- "Shared by …" contributors strip: monogram chips for the distinct
-           authors of visible guest uploads (guest section only). Populated by
-           grid.js from the first-page contributors aggregate. -->
+      <!-- Two persistent grids: hidden/shown, never re-rendered on switch.
+           In the default "All" view both are visible, official first. The
+           contributors strip belongs to the guest grid, so it sits between
+           them. -->
+      <div id="grid-official" class="gallery-grid-container" role="tabpanel" aria-labelledby="tab-official"></div>
+      <!-- "Shared by …" monogram chips for the distinct authors of visible
+           guest uploads. Populated by grid.js from the first-page aggregate. -->
       <div id="gallery-contributors" class="gallery-contributors" hidden></div>
-
-      <!-- Two persistent grids: hidden/shown, never re-rendered on switch. -->
-      <div id="grid-official" class="gallery-grid-container" role="tabpanel" aria-labelledby="tab-official" hidden></div>
       <div id="grid-guest" class="gallery-grid-container" role="tabpanel" aria-labelledby="tab-guest"></div>
 
       <div class="gallery-loadmore-wrap flex-center">

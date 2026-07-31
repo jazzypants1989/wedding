@@ -1,6 +1,7 @@
 /** @file Gallery grid: batched rendering, keyset paging, content-visibility
  *  virtualization. Two persistent grids (official/guest) that hide/show without
- *  re-rendering. See docs/post-wedding/04-gallery.md §4. */
+ *  re-rendering; the default "all" view shows both stacked, official first.
+ *  See docs/post-wedding/04-gallery.md §4. */
 /** @import * as Types from "./types.js" */
 
 import {
@@ -39,8 +40,21 @@ let callbacks = null
 /** @type {Record<Types.MediaSection, Section>} */
 const sections = /** @type {any} */ ({})
 
-/** @type {Types.MediaSection} */
-let active = "guest"
+/** @type {Types.GalleryView} */
+let active = "all"
+
+/** Whether a section's grid is on screen under the current view.
+ *  @param {Types.MediaSection} section @returns {boolean} */
+function inView(section) {
+  return active === "all" || active === section
+}
+
+/** The section the shared load-more button acts on: guest is the only keyset
+ *  feed (official loads whole in one page), so it owns the button everywhere
+ *  except the official-only view. @returns {Types.MediaSection} */
+function buttonSection() {
+  return active === "official" ? "official" : "guest"
+}
 
 /** @type {IntersectionObserver} */
 let observer
@@ -84,7 +98,7 @@ export function initGrid(cb) {
           /** @type {HTMLElement} */ (record.target).dataset.section
         )
         const s = sections[section]
-        if (section === active && s.autoFetches < MAX_AUTO_BATCHES) {
+        if (inView(section) && s.autoFetches < MAX_AUTO_BATCHES) {
           void loadMore(section).then((n) => {
             if (n > 0) s.autoFetches += 1
           })
@@ -97,9 +111,9 @@ export function initGrid(cb) {
   observer.observe(sections.guest.sentinel)
 
   getButtonElement("gallery-loadmore").addEventListener("click", () => {
-    const s = sections[active]
-    s.autoFetches = 0 // a manual click re-arms auto-loading
-    void loadMore(active)
+    const section = buttonSection()
+    sections[section].autoFetches = 0 // a manual click re-arms auto-loading
+    void loadMore(section)
   })
 }
 
@@ -157,22 +171,24 @@ function renderContributors(data) {
     <span class="gallery-contrib-chips" aria-hidden="true">${chips}${more}</span>
     <span class="gallery-contrib-text">${photoLabel} shared by ${guestLabel}</span>`
   hasContributors = true
-  el.hidden = active !== "guest"
+  el.hidden = !inView("guest")
 }
 
 /** @type {Types.showSection} */
-export function showSection(section) {
-  active = section
-  sections.official.container.hidden = section !== "official"
-  sections.guest.container.hidden = section !== "guest"
-  // The contributors strip belongs to the guest section only.
-  getElement("gallery-contributors").hidden = !(section === "guest" && hasContributors)
-  const s = sections[section]
-  if (s.items.length === 0 && !s.reachedEnd && !s.loading) {
-    void loadMore(section)
-  } else {
-    updateLoadMore(section)
+export function showSection(view) {
+  active = view
+  sections.official.container.hidden = !inView("official")
+  sections.guest.container.hidden = !inView("guest")
+  // The contributors strip belongs to the guest grid only.
+  getElement("gallery-contributors").hidden = !(inView("guest") && hasContributors)
+  for (const section of /** @type {Types.MediaSection[]} */ (["official", "guest"])) {
+    if (!inView(section)) continue
+    const s = sections[section]
+    if (s.items.length === 0 && !s.reachedEnd && !s.loading) {
+      void loadMore(section)
+    }
   }
+  updateLoadMore()
 }
 
 /** @type {Types.loadMore} */
@@ -201,7 +217,7 @@ export async function loadMore(section) {
     if (data.nextCursor === null) s.reachedEnd = true
     if (s.reachedEnd && s.items.length === 0) showEmpty(s)
     updateCount(section)
-    updateLoadMore(section)
+    updateLoadMore()
     return data.items.length
   } catch (err) {
     showError(getErrorMessage(err))
@@ -432,9 +448,8 @@ function updateCount(section) {
   el.textContent = n > 0 ? `(${n})` : ""
 }
 
-/** @param {Types.MediaSection} section */
-function updateLoadMore(section) {
-  const s = sections[section]
+function updateLoadMore() {
+  const s = sections[buttonSection()]
   const btn = getButtonElement("gallery-loadmore")
   setLoadMoreState(btn, "reset")
   // Offer the manual button once auto-loading has paused and there's more.

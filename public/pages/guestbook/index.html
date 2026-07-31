@@ -82,8 +82,12 @@
   <main id="main-content">
     <section class="content-section gb-section">
       <h2 class="gb-title">Guestbook</h2>
+      <span class="gb-flourish" aria-hidden="true"></span>
       <p class="gb-intro">Leave us a note — we read every one 💗</p>
-      <p class="gb-intro"><a href="/memory-book" class="gb-memory-book-link">📖 Print the memory book →</a></p>
+      <p class="gb-intro gb-memory-book">
+        <a href="/memory-book" class="gb-memory-book-link">📖 Print the memory book →</a>
+        <span class="gb-memory-book-sub">Every note on this page, laid out as a keepsake you can print and hold onto.</span>
+      </p>
 
       <div class="card gb-composer">
         <div id="guest-identity" class="guest-identity" hidden></div>
@@ -92,6 +96,7 @@
           <textarea id="gb-message" class="gb-textarea" rows="3" maxlength="2000"
             placeholder="Share a memory, a wish, a bit of advice…"></textarea>
           <div class="gb-composer-actions">
+            <span id="gb-hint" class="composer-hint" aria-hidden="true"></span>
             <span id="gb-counter" class="char-counter" aria-hidden="true">0/2000</span>
             <button type="submit" class="btn btn-primary" id="gb-submit">Sign the guestbook</button>
           </div>

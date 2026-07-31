@@ -383,6 +383,12 @@ export function renderCommentThread(
 /** Wire ONE delegated click + submit listener for every thread under root. */
 export function initCommentThreads(root?: HTMLElement | Document): void
 
+/** Visible label for the post accelerator, e.g. "⌘ + ↵ to post". */
+export function postShortcutLabel(): string
+
+/** The same shortcut as an `aria-keyshortcuts` value ("Meta+Enter"). */
+export function postShortcutAria(): string
+
 /** @file toast.js - Types for the transient cross-surface toast */
 
 export interface ToastOptions {

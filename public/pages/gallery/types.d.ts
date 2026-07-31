@@ -8,6 +8,9 @@ import type {
 
 export type { MediaListItem, MediaSection, MediaContributors }
 
+/** What the switcher shows: one section, or both stacked ("all", the default). */
+export type GalleryView = MediaSection | "all"
+
 /** GET /api/media response. `contributors` rides on the first guest page. */
 export interface GalleryListResponse {
   items: MediaListItem[]
@@ -30,19 +33,20 @@ export interface GridCallbacks {
   onOpen: (section: MediaSection, id: number) => void
 }
 
-/** What the lightbox needs from the grid to navigate + lazy-extend. */
+/** What the lightbox needs from the grid to navigate + lazy-extend. The key is
+ *  a view, not a section: "all" navigates official + guest as one list. */
 export interface LightboxSource {
-  getItems: (section: MediaSection) => MediaListItem[]
-  hasMore: (section: MediaSection) => boolean
-  loadMore: (section: MediaSection) => Promise<number>
+  getItems: (view: GalleryView) => MediaListItem[]
+  hasMore: (view: GalleryView) => boolean
+  loadMore: (view: GalleryView) => Promise<number>
   /** URL sync: called with the current item on open/navigate, null on close. */
-  onChange: (section: MediaSection, id: number | null) => void
+  onChange: (view: GalleryView, id: number | null) => void
   /** Drop a self-deleted item from the grid so the view stays consistent. */
-  onDelete: (section: MediaSection, id: number) => void
+  onDelete: (view: GalleryView, id: number) => void
 }
 
 export function initGrid(callbacks: GridCallbacks): void
-export function showSection(section: MediaSection): void
+export function showSection(view: GalleryView): void
 export function prependItem(item: MediaListItem): void
 export function getSectionItems(section: MediaSection): MediaListItem[]
 export function hasMore(section: MediaSection): boolean
@@ -52,7 +56,7 @@ export function getSectionCount(section: MediaSection): number
 export function removeItem(section: MediaSection, id: number): void
 
 export function initLightbox(source: LightboxSource): void
-export function openLightbox(section: MediaSection, id: number): void
+export function openLightbox(view: GalleryView, id: number): void
 export function openLightboxItem(item: MediaListItem, section: MediaSection): void
 export function isLightboxOpen(): boolean
 export function closeLightbox(): void

@@ -244,8 +244,36 @@
   margin-right: auto; /* counter left, submit stays right */
 }
 
-.comment-composer .char-counter {
-  align-self: flex-end; /* column flex — push the counter to the right edge */
+/* Hint for the ⌘↵ / Ctrl↵ post shortcut. Hidden by default: phone keyboards
+   have no modifier row, so it would be a lie on touch. Revealed only on a real
+   pointer + keyboard, and only while the composer has focus — it teaches the
+   accelerator at the moment it's usable without cluttering the feed. */
+.composer-hint {
+  display: none;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  pointer-events: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .composer-hint {
+    display: inline;
+    margin-right: auto; /* hint left, counter + Post stay right */
+    opacity: 0;
+    transition: opacity var(--duration-fast) ease;
+  }
+
+  .comment-composer:focus-within .composer-hint,
+  .gb-composer:focus-within .composer-hint {
+    opacity: 1;
+  }
+
+  /* The hint has taken the left slot, so the counter tucks in beside the
+     button it constrains. On touch the hint is gone and the rule above
+     doesn't apply, so the counter keeps the far-left position it has today. */
+  .gb-composer-actions .char-counter {
+    margin-right: 0;
+  }
 }
 
 /* Dismissible one-time note, shared by the guestbook pending note, the gallery
@@ -498,19 +526,31 @@
   margin-top: var(--spacing-xs);
 }
 
+/* Styled like a reaction pill so it reads as pressable, not as stray text. */
 .comment-toggle {
-  border: none;
-  background: none;
-  padding: var(--spacing-2xs) 0;
-  color: var(--color-text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  min-height: 44px;
+  padding: 0 var(--spacing-sm);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: var(--color-card-bg);
+  color: var(--color-text);
   font: inherit;
   font-size: var(--text-sm);
+  line-height: 1;
   cursor: pointer;
+  transition: background var(--duration-fast), border-color var(--duration-fast);
 }
 
 .comment-toggle:hover {
+  border-color: var(--color-primary);
   color: var(--color-primary);
-  text-decoration: underline;
+}
+
+.comment-toggle-glyph {
+  font-size: 1.05em;
 }
 
 .comment-body {
@@ -598,8 +638,13 @@
   resize: vertical;
 }
 
-.comment-submit {
-  align-self: flex-end;
+/* Row under the textarea: hint (left), counter + Post (right). Mirrors
+   .gb-composer-actions so the two composers read as the same control. */
+.comment-composer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
 }
 
 .comment-loading,
@@ -794,7 +839,8 @@
   text-align: center;
 }
 
-.gb-empty-flourish {
+.gb-empty-flourish,
+.gb-flourish {
   position: relative;
   display: block;
   width: 140px;
@@ -802,7 +848,8 @@
   margin: 0 auto var(--spacing-sm);
 }
 
-.gb-empty-flourish::before {
+.gb-empty-flourish::before,
+.gb-flourish::before {
   content: "";
   position: absolute;
   top: 50%;
@@ -819,7 +866,8 @@
   );
 }
 
-.gb-empty-flourish::after {
+.gb-empty-flourish::after,
+.gb-flourish::after {
   content: "";
   position: absolute;
   top: 50%;

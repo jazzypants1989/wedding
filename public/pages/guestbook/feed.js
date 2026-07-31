@@ -9,6 +9,7 @@ import {
   getElement,
   getButtonElement,
   getTextAreaElement,
+  getFormElement,
   getErrorMessage,
   setLoadMoreState,
   announceCharsRemaining,
@@ -20,7 +21,11 @@ import { fireConfetti, miniSparkle, setButtonLoading } from "../../components/ce
 import { showNote } from "../../components/notice.js"
 import { upgradeTimes } from "../../components/relative-time.js"
 import { renderReactionBar } from "../../components/reaction-bar.js"
-import { renderCommentThread } from "../../components/comment-thread.js"
+import {
+  renderCommentThread,
+  postShortcutLabel,
+  postShortcutAria,
+} from "../../components/comment-thread.js"
 import { renderMonogram } from "../../components/monogram.js"
 
 const PAGE_SIZE = 20
@@ -482,6 +487,17 @@ export function initFeed() {
   }
   messageEl.addEventListener("input", updateCounter)
   updateCounter()
+
+  // Same accelerator as the comment composer (components/comment-thread.js):
+  // Cmd/Ctrl+Enter signs, bare Enter keeps its paragraph break — entries here
+  // are the long-form ones, so newlines matter more, not less.
+  messageEl.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || !(e.metaKey || e.ctrlKey)) return
+    e.preventDefault()
+    getFormElement("gb-composer-form").requestSubmit()
+  })
+  messageEl.setAttribute("aria-keyshortcuts", postShortcutAria())
+  getElement("gb-hint").textContent = postShortcutLabel()
 
   getElement("gb-empty-cta").addEventListener("click", () => {
     getTextAreaElement("gb-message").focus()

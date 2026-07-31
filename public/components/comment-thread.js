@@ -46,6 +46,7 @@ export function renderCommentThread(targetType, targetId, count = 0) {
       data-target-id="${targetId}" data-expanded="false">
       <button type="button" class="comment-toggle" data-comment-action="toggle"
         aria-expanded="false">
+        <span class="comment-toggle-glyph" aria-hidden="true">💬</span>
         <span class="comment-toggle-label">${countLabel(count)}</span>
       </button>
       <div class="comment-body" data-comment-body hidden></div>
@@ -57,6 +58,52 @@ export function initCommentThreads(root = document.body) {
   root.addEventListener("click", onClick)
   root.addEventListener("submit", onSubmit)
   root.addEventListener("input", onInput)
+  root.addEventListener("keydown", onKeydown)
+}
+
+/** Cmd/Ctrl+Enter posts; bare Enter stays a newline.
+ *
+ * The composer is a multi-row box with a visible Post button, so Enter is
+ * expected to break a line — and a half-finished comment landing in a public
+ * feed under someone's name is a worse mistake here than in a chat app. This
+ * is a desktop accelerator only: phone keyboards have no modifier row, and the
+ * Post button remains the real path everywhere.
+ *
+ * @param {Event} e
+ */
+function onKeydown(e) {
+  // `root` is HTMLElement | Document, so the listener lands on the generic
+  // addEventListener overload and arrives typed as Event — narrow it here.
+  if (!(e instanceof KeyboardEvent)) return
+  if (e.key !== "Enter" || !(e.metaKey || e.ctrlKey)) return
+  const input = e.target
+  if (!(input instanceof HTMLTextAreaElement)) return
+  if (!input.matches("[data-comment-input]")) return
+  const form = input.closest("[data-comment-form]")
+  if (!(form instanceof HTMLFormElement)) return
+  e.preventDefault()
+  // Route through submit so the delegated onSubmit handles gating + posting.
+  form.requestSubmit()
+}
+
+/** Apple keyboards say ⌘; everything else says Ctrl. */
+function isApplePlatform() {
+  const platform = navigator.platform || ""
+  return (
+    platform.includes("Mac") ||
+    platform.includes("iPhone") ||
+    platform.includes("iPad")
+  )
+}
+
+/** @type {Types.postShortcutLabel} */
+export function postShortcutLabel() {
+  return `${isApplePlatform() ? "⌘" : "Ctrl"} + ↵ to post`
+}
+
+/** @type {Types.postShortcutAria} */
+export function postShortcutAria() {
+  return isApplePlatform() ? "Meta+Enter" : "Control+Enter"
 }
 
 /** Live "N/500" counter for the comment textarea (2.6). @param {Event} e */
@@ -117,9 +164,13 @@ function composerMarkup(host) {
         ? html`<p class="comment-host-hint">Replying as ${getCoupleName()} 💍</p>`
         : ""}
       <textarea class="comment-input" data-comment-input rows="2" maxlength="${COMMENT_MAXLENGTH}"
-        placeholder="${host ? "Reply as the hosts…" : "Add a comment…"}" aria-label="Add a comment"></textarea>
-      <span class="char-counter" data-comment-counter aria-hidden="true">0/${COMMENT_MAXLENGTH}</span>
-      <button type="submit" class="btn btn-small comment-submit">Post</button>
+        placeholder="${host ? "Reply as the hosts…" : "Add a comment…"}" aria-label="Add a comment"
+        aria-keyshortcuts="${postShortcutAria()}"></textarea>
+      <div class="comment-composer-actions">
+        <span class="composer-hint" aria-hidden="true">${postShortcutLabel()}</span>
+        <span class="char-counter" data-comment-counter aria-hidden="true">0/${COMMENT_MAXLENGTH}</span>
+        <button type="submit" class="btn btn-primary btn-sm comment-submit">Post</button>
+      </div>
     </form>
     <p class="comment-error" data-comment-error hidden></p>`
 }

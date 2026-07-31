@@ -17,3 +17,61 @@
   color: var(--color-text-muted);
   margin-bottom: var(--spacing-lg);
 }
+
+/* Memory-book pointer: a visible link with a one-line explanation beneath it,
+   so the feature isn't a mystery until clicked. */
+.gb-memory-book {
+  margin-bottom: var(--spacing-lg);
+}
+
+.gb-memory-book-link {
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.gb-memory-book-sub {
+  display: block;
+  margin-top: var(--spacing-2xs);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+/* A little life on the feed: entries lift gently on hover, and each card
+   carries a faint oversized close-quote in its emptiest corner. */
+.gb-entry {
+  position: relative;
+  transition: transform var(--duration-fast) ease-out, box-shadow var(--duration-fast) ease-out;
+}
+
+.gb-entry::after {
+  content: "”";
+  position: absolute;
+  right: var(--spacing-md);
+  bottom: calc(-1 * var(--spacing-sm));
+  font-family: var(--font-display);
+  font-size: 4rem;
+  line-height: 1;
+  color: color-mix(in srgb, var(--color-primary) 22%, transparent);
+  pointer-events: none;
+}
+
+.gb-entry:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+/* The composer glows softly while the guest is writing. */
+.gb-composer:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-faint);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gb-entry {
+    transition: none;
+  }
+
+  .gb-entry:hover {
+    transform: none;
+  }
+}
