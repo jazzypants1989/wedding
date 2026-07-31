@@ -30,6 +30,8 @@
     "tests/unit/vision-group.test.js",
     "tests/unit/vision-metrics.test.js",
     "tests/unit/vision-purity.test.js",
+    "tests/unit/vision-assign.test.js",
+    "tests/unit/vision-confidence.test.js",
     "tests/unit/effect-config-schema.test.js",
     "tests/unit/thank-you-card.test.js",
     "tests/unit/thank-you-compose.test.js",

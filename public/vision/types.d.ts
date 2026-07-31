@@ -334,11 +334,28 @@ export function histogram(
   max: number,
 ): Histogram
 
+/** One same-person pair distance, tagged with the person it belongs to. */
+export interface TaggedSamePair {
+  distance: number
+  person: string
+}
+
+/** One different-person pair distance, tagged with both people. */
+export interface TaggedDiffPair {
+  distance: number
+  personA: string
+  personB: string
+}
+
 /**
  * All labelled pairs, split by whether they are the same person.
  * `keep(i, j)` filters — that is how the report builds its strata (excluding
  * near-duplicate frames, or splitting by capture-time gap) without this function
  * knowing anything about photographs.
+ *
+ * `sameTagged`/`diffTagged` carry the same distances as `same`/`diff`, each
+ * paired with the person id(s) that produced it — what `bootstrapAuc` needs
+ * to resample by person rather than by pair.
  */
 export function pairDistances(
   set: DescriptorSet,
@@ -346,7 +363,7 @@ export function pairDistances(
     labels: ReadonlyArray<string | null>
     keep?: (i: number, j: number) => boolean
   },
-): { same: number[]; diff: number[] }
+): { same: number[]; diff: number[]; sameTagged: TaggedSamePair[]; diffTagged: TaggedDiffPair[] }
 
 export function separation(
   same: readonly number[],
@@ -374,3 +391,153 @@ export function leaveOneOutRank1(
   labels: ReadonlyArray<string | null>,
   options?: { queryMask?: ReadonlyArray<boolean> },
 ): Rank1Report
+
+export interface BootstrapAucResult {
+  /** Point estimate: every person weighted 1 — the same statistic `separation`'s `auc` reports. */
+  auc: number
+  /** 2.5th percentile of the resampled AUCs. NaN if refused or every resample was degenerate. */
+  lo: number
+  /** 97.5th percentile. */
+  hi: number
+  /** Resamples requested. 0 when refused outright (see below). */
+  resamples: number
+  /** Resamples where one side's total cluster weight came out to zero. Counted, never dropped silently. */
+  degenerate: number
+}
+
+/**
+ * Person-level cluster bootstrap over `pairDistances`'s tagged output. Each
+ * resample draws one Poisson(1) multiplicity per distinct person (reweight,
+ * never duplicate — see poisson1 in metrics.js), weights a same-pair by its
+ * person's multiplicity and a diff-pair by the product of both people's, and
+ * computes a weighted Mann-Whitney AUC over the reweighted pool.
+ *
+ * Refuses — returns `{ auc: NaN, lo: NaN, hi: NaN, resamples: 0, degenerate: 0 }`
+ * — when fewer than 3 distinct people appear on either side: too few
+ * independent units for a resample to vary over.
+ */
+export function bootstrapAuc(
+  same: readonly TaggedSamePair[],
+  diff: readonly TaggedDiffPair[],
+  random: () => number,
+  resamples: number,
+): BootstrapAucResult
+
+// --- assign.js ---
+
+/** One person's confirmed faces, collapsed to a centroid. */
+export interface Prototype {
+  label: string
+  vector: Float32Array
+}
+
+/**
+ * Per-person centroid prototypes from confirmed faces only. `assignments[i]`
+ * is the confirmed person for descriptor `i`, or null if unconfirmed —
+ * unconfirmed rows contribute to no prototype.
+ */
+export function buildPrototypes(set: DescriptorSet, assignments: ReadonlyArray<string | null>): Prototype[]
+
+export interface MatchCandidate {
+  label: string
+  distance: number
+}
+
+export interface MatchResult {
+  /** Ascending by distance. */
+  candidates: MatchCandidate[]
+  best: MatchCandidate | null
+  /**
+   * d(second-best) - d(best). Always >= 0 by construction (a tie is 0; this
+   * ranks candidates against each other, it does not know which one is
+   * truth, so it can never be negative). NaN with zero prototypes (nothing to
+   * rank). Infinity with exactly one (no competitor to be unsure about —
+   * `best.distance` must still be checked against a threshold separately;
+   * a lone prototype can be a bad match with nothing around to reveal it).
+   */
+  margin: number
+}
+
+/** Ranks `descriptor` against every prototype by cosine distance. */
+export function matchFace(descriptor: Float32Array, prototypes: readonly Prototype[]): MatchResult
+
+export interface AssignOptions {
+  /** Cost of leaving a face unassigned. A candidate is only taken when it beats this. */
+  abstainCost: number
+  /**
+   * Cosine distance below which two faces in ONE photo are suspected to be
+   * the same face detected twice, or two people who are true look-alikes —
+   * either way, not a case a forced distinct assignment should paper over.
+   */
+  sameFaceSuspicionCutoff: number
+}
+
+export interface FaceAssignment {
+  faceIndex: number
+  /** null = abstained. */
+  label: string | null
+  distance: number | null
+}
+
+export interface PhotoAssignment {
+  assignments: FaceAssignment[]
+  /**
+   * True when two faces in this photo tripped `sameFaceSuspicionCutoff`.
+   * `assignments` is then all-abstain (every `label` null) and `totalCost` is
+   * null — the caller routes the photo to review instead of trusting either
+   * forced assignment.
+   */
+  suspicious: boolean
+  suspiciousPairs: Array<[number, number]>
+  /** Sum of chosen costs (matched distances + abstains). Null when `suspicious`. */
+  totalCost: number | null
+}
+
+/**
+ * Joint per-photo assignment: a cost matrix of faces x prototypes, with one
+ * abstain column per face priced at `options.abstainCost`, minimizing total
+ * cost subject to no prototype being used by more than one face.
+ *
+ * Exact (permutation search) for `faces.length <= 8` — `k!` bounded,
+ * independent of how many prototypes exist, by restricting the search to the
+ * `faces.length` prototypes closest to any face in the photo (the optimum can
+ * never use more than that many). Greedy, most-confident-face-first, above 8.
+ * Never Kuhn-Munkres.
+ */
+export function assignPhoto(
+  faces: readonly Float32Array[],
+  prototypes: readonly Prototype[],
+  options: AssignOptions,
+): PhotoAssignment
+
+// --- confidence.js ---
+
+/**
+ * Percentile rank of every gate.js signal for one face, within the run's own
+ * population, then the MINIMUM of the nine as the crop's confidence — one
+ * bad signal should not be diluted by eight fine ones. See confidence.js for
+ * the per-signal polarity table (three signals are non-monotonic and folded
+ * around their population median before ranking).
+ */
+export function cropConfidence(
+  signals: GateSignals,
+  allSignals: readonly GateSignals[],
+): { confidence: number; signalRanks: Record<keyof GateSignals, number> }
+
+/** One point on a margin -> P(correct) calibration curve. */
+export interface CalibrationKnot {
+  margin: number
+  /** Probability, in [0, 1]. */
+  p: number
+}
+
+/**
+ * Maps a `matchFace` margin to P(correct) via piecewise-linear interpolation
+ * over `calibration`, clamped at both ends. The table itself is built
+ * elsewhere (report-side, from labelled data); this is the pure evaluator.
+ *
+ * Throws if `calibration` is empty, any knot's `p` is outside [0, 1], or the
+ * knots are not sorted strictly increasing by margin. Returns NaN for a NaN
+ * margin (matchFace's zero-prototype case — nothing to look up).
+ */
+export function matchConfidence(margin: number, calibration: readonly CalibrationKnot[]): number

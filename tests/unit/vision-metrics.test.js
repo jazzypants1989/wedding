@@ -13,6 +13,7 @@ import { test } from "node:test"
 import assert from "node:assert"
 
 import {
+  bootstrapAuc,
   groupingQuality,
   histogram,
   leaveOneOutRank1,
@@ -70,6 +71,24 @@ test("pairDistances splits by label and skips unlabelled faces", () => {
   assert.equal(same.length, 4)
   assert.equal(diff.length, 6)
   assert.ok(Math.max(...same) < Math.min(...diff), "same-person pairs are closer")
+})
+
+test("pairDistances tags every pair with the person(s) it belongs to", () => {
+  const { set: s, labels } = twoPeople()
+  const { same, diff, sameTagged, diffTagged } = pairDistances(s, { labels })
+  assert.equal(sameTagged.length, same.length)
+  assert.equal(diffTagged.length, diff.length)
+  assert.ok(sameTagged.every((e) => e.person === "a" || e.person === "b"))
+  assert.ok(diffTagged.every((e) => (e.personA === "a" && e.personB === "b") || (e.personA === "b" && e.personB === "a")))
+  // The distances line up with the untagged arrays position-for-position.
+  assert.deepEqual(
+    sameTagged.map((e) => e.distance),
+    same,
+  )
+  assert.deepEqual(
+    diffTagged.map((e) => e.distance),
+    diff,
+  )
 })
 
 test("the keep filter drops pairs — this is how the strata are built", () => {
@@ -222,4 +241,97 @@ test("leaveOneOutRank1 returns NaN rather than 0 when nothing is evaluable", () 
   const r = leaveOneOutRank1(set([onCircle(0)]), ["a"])
   assert.equal(r.evaluated, 0)
   assert.ok(Number.isNaN(r.rank1))
+})
+
+// --- bootstrapAuc --------------------------------------------------------------
+
+// A small, self-contained deterministic generator (mulberry32) — reproducible
+// given a seed, so a test asserting on resampled statistics never flakes.
+/** @param {number} seed */
+function mulberry32(seed) {
+  let a = seed >>> 0
+  return function random() {
+    a = (a + 0x6d2b79f5) | 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+/**
+ * Same-pairs: one per person, clustered low, except person 0 ("hard"), whose
+ * own same-pair distance is elevated. Diff-pairs: every pair of people,
+ * clustered high, except the 0-1 pair, deliberately lowered below several
+ * same-pair distances. That crossover is the only source of AUC < 1 here, and
+ * its whole contribution rides on persons 0 and 1's bootstrap weights — which
+ * is exactly what should make the resampled AUC move, and move more when
+ * there are fewer people for that one crossover to get diluted among.
+ * @param {number} peopleCount
+ */
+function overlappingScenario(peopleCount) {
+  const people = Array.from({ length: peopleCount }, (_person, i) => `p${i}`)
+  const same = people.map((person, i) => ({
+    distance: i === 0 ? 0.6 : 0.2 + 0.02 * Math.sin(i),
+    person,
+  }))
+  /** @type {Array<{ distance: number, personA: string, personB: string }>} */
+  const diff = []
+  for (let i = 0; i < people.length; i++) {
+    for (let j = i + 1; j < people.length; j++) {
+      const isCrossover = i === 0 && j === 1
+      const distance = isCrossover ? 0.3 : 0.75 + 0.02 * Math.cos(i + j)
+      diff.push({ distance, personA: people[i], personB: people[j] })
+    }
+  }
+  return { same, diff }
+}
+
+test("bootstrapAuc: refuses with fewer than 3 distinct people on either side", () => {
+  const same = [
+    { distance: 0.1, person: "a" },
+    { distance: 0.1, person: "b" },
+  ]
+  const diff = [{ distance: 0.9, personA: "a", personB: "b" }]
+  const r = bootstrapAuc(same, diff, mulberry32(1), 100)
+  assert.ok(Number.isNaN(r.auc))
+  assert.ok(Number.isNaN(r.lo))
+  assert.ok(Number.isNaN(r.hi))
+  assert.equal(r.resamples, 0)
+  assert.equal(r.degenerate, 0)
+})
+
+test("bootstrapAuc: well-separated populations — the interval covers the observed AUC", () => {
+  const { same, diff } = overlappingScenario(10)
+  const r = bootstrapAuc(same, diff, mulberry32(42), 500)
+  assert.ok(r.lo <= r.auc + 1e-9, `lo ${r.lo} should not exceed the point estimate ${r.auc}`)
+  assert.ok(r.hi >= r.auc - 1e-9, `hi ${r.hi} should not be below the point estimate ${r.auc}`)
+  assert.ok(r.lo >= 0 && r.hi <= 1, "AUC bounds stay in [0, 1]")
+  assert.equal(r.resamples, 500)
+})
+
+test("bootstrapAuc: the interval widens with fewer people", () => {
+  const few = overlappingScenario(3)
+  const many = overlappingScenario(10)
+  const rFew = bootstrapAuc(few.same, few.diff, mulberry32(7), 500)
+  const rMany = bootstrapAuc(many.same, many.diff, mulberry32(7), 500)
+  const widthFew = rFew.hi - rFew.lo
+  const widthMany = rMany.hi - rMany.lo
+  assert.ok(widthFew > widthMany, `expected fewer people to widen the interval: ${widthFew} vs ${widthMany}`)
+})
+
+test("bootstrapAuc: degenerate resamples (a side's total cluster weight hits zero) are counted, not dropped", () => {
+  // Exactly 3 people (the minimum that isn't refused), each contributing
+  // exactly one same-pair: the same side's total weight is zero only when all
+  // three simultaneously draw Poisson weight 0, which — over enough
+  // resamples — happens often enough to be certain to show up at least once.
+  const same = [0, 1, 2].map((i) => ({ distance: 0.2, person: `p${i}` }))
+  const diff = [
+    { distance: 0.9, personA: "p0", personB: "p1" },
+    { distance: 0.9, personA: "p1", personB: "p2" },
+    { distance: 0.9, personA: "p0", personB: "p2" },
+  ]
+  const r = bootstrapAuc(same, diff, mulberry32(11), 500)
+  assert.ok(r.degenerate > 0, "expected at least one degenerate resample out of 500")
+  assert.ok(r.degenerate < 500, "expected at least one non-degenerate resample out of 500")
+  assert.equal(r.resamples, 500)
 })

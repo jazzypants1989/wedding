@@ -16,6 +16,12 @@
  *  shape. SESSION-1 §5 Q2 asks "cluster-and-name, or label-a-few-and-classify?"
  *  and points at report B — but B measures clustering, and Q2 is a question
  *  about classification. Without C, Q2 has no number attached to it at all.
+ *
+ *  `bootstrapAuc` answers a fourth question report A's plain `auc` cannot:
+ *  how much would this number move on a different sample of PEOPLE. A pair is
+ *  not an independent observation — every pair a person appears in shares
+ *  whatever made that person's descriptors easy or hard — so the resample
+ *  unit here is the person, not the pair. See the function for the scheme.
  */
 /** @import * as Types from './types.js' */
 
@@ -55,6 +61,10 @@ export function pairDistances(set, options) {
   const same = []
   /** @type {number[]} */
   const diff = []
+  /** @type {Types.TaggedSamePair[]} */
+  const sameTagged = []
+  /** @type {Types.TaggedDiffPair[]} */
+  const diffTagged = []
 
   for (let i = 0; i < n; i++) {
     if (labels[i] === null) continue
@@ -62,11 +72,18 @@ export function pairDistances(set, options) {
       if (labels[j] === null) continue
       if (keep && !keep(i, j)) continue
       const d = cosineDistance(data, data, i * dim, j * dim, dim)
-      if (labels[i] === labels[j]) same.push(d)
-      else diff.push(d)
+      const li = /** @type {string} */ (labels[i])
+      const lj = /** @type {string} */ (labels[j])
+      if (li === lj) {
+        same.push(d)
+        sameTagged.push({ distance: d, person: li })
+      } else {
+        diff.push(d)
+        diffTagged.push({ distance: d, personA: li, personB: lj })
+      }
     }
   }
-  return { same, diff }
+  return { same, diff, sameTagged, diffTagged }
 }
 
 /** @type {Types.separation} */
@@ -338,5 +355,140 @@ export function leaveOneOutRank1(set, labels, options = {}) {
     perPerson: [...perPerson.entries()]
       .map(([label, r]) => ({ label, n: r.n, rank1: r.correct / r.n }))
       .sort((a, b) => b.n - a.n),
+  }
+}
+
+/**
+ * Weighted Mann-Whitney AUC: the same merge-scan `separation` uses (tie
+ * weight split at the midpoint), generalised so every pair carries a weight
+ * instead of counting for exactly one. Weight 0 removes a pair from the
+ * statistic without needing a second code path for "not present."
+ * @param {Array<{ distance: number, weight: number }>} same
+ * @param {Array<{ distance: number, weight: number }>} diff
+ * @returns {{ auc: number, totalSameWeight: number, totalDiffWeight: number }}
+ */
+function weightedAuc(same, diff) {
+  const s = same.slice().sort((a, b) => a.distance - b.distance)
+  const d = diff.slice().sort((a, b) => a.distance - b.distance)
+
+  let totalSameWeight = 0
+  for (const e of s) totalSameWeight += e.weight
+  let totalDiffWeight = 0
+  for (const e of d) totalDiffWeight += e.weight
+
+  if (totalSameWeight === 0 || totalDiffWeight === 0) {
+    return { auc: NaN, totalSameWeight, totalDiffWeight }
+  }
+
+  let u = 0
+  let j = 0
+  let cumDiffWeightBelow = 0
+  for (let i = 0; i < s.length; i++) {
+    while (j < d.length && d[j].distance < s[i].distance) {
+      cumDiffWeightBelow += d[j].weight
+      j++
+    }
+    let tiedWeight = 0
+    let k = j
+    while (k < d.length && d[k].distance === s[i].distance) {
+      tiedWeight += d[k].weight
+      k++
+    }
+    u += s[i].weight * (cumDiffWeightBelow + tiedWeight * 0.5)
+  }
+  const auc = 1 - u / (totalSameWeight * totalDiffWeight)
+  return { auc, totalSameWeight, totalDiffWeight }
+}
+
+/**
+ * Poisson(1) via Knuth's algorithm, from an injected uniform source. This is
+ * the multiplicity a person gets in one bootstrap resample: mean 1 (so the
+ * expected resample looks like the original), integer, unbounded above, and
+ * — the property that makes it an acceptable stand-in for the "true"
+ * multinomial resample of people — cheap to draw one person at a time
+ * without knowing how many people there are in total.
+ * @param {() => number} random
+ * @returns {number}
+ */
+function poisson1(random) {
+  const L = Math.E ** -1
+  let k = 0
+  let p = 1
+  do {
+    k++
+    p *= random()
+  } while (p > L)
+  return k - 1
+}
+
+/** @type {Types.bootstrapAuc} */
+export function bootstrapAuc(same, diff, random, resamples) {
+  /** @type {Set<string>} */
+  const samePeople = new Set()
+  for (const e of same) samePeople.add(e.person)
+  /** @type {Set<string>} */
+  const diffPeople = new Set()
+  for (const e of diff) {
+    diffPeople.add(e.personA)
+    diffPeople.add(e.personB)
+  }
+
+  // A cluster bootstrap over fewer than 3 clusters on either side cannot
+  // produce a meaningful interval — there are too few independent units for
+  // resampling to vary over. Refused outright: NaN throughout, zero
+  // resamples actually run, rather than a confident-looking interval built
+  // on a bootstrap that couldn't do its job.
+  if (samePeople.size < 3 || diffPeople.size < 3) {
+    return { auc: NaN, lo: NaN, hi: NaN, resamples: 0, degenerate: 0 }
+  }
+
+  /** @type {Set<string>} */
+  const allPeople = new Set([...samePeople, ...diffPeople])
+
+  // The point estimate: every person weighted 1, which is exactly the
+  // statistic `separation`'s AUC reports, computed through the same weighted
+  // path the resamples use below.
+  const point = weightedAuc(
+    same.map((e) => ({ distance: e.distance, weight: 1 })),
+    diff.map((e) => ({ distance: e.distance, weight: 1 })),
+  ).auc
+
+  let degenerate = 0
+  /** @type {number[]} */
+  const aucs = []
+  for (let r = 0; r < resamples; r++) {
+    /** @type {Map<string, number>} */
+    const weight = new Map()
+    for (const person of allPeople) weight.set(person, poisson1(random))
+
+    const sameWeighted = same.map((e) => ({
+      distance: e.distance,
+      weight: /** @type {number} */ (weight.get(e.person)),
+    }))
+    const diffWeighted = diff.map((e) => ({
+      distance: e.distance,
+      weight:
+        /** @type {number} */ (weight.get(e.personA)) * /** @type {number} */ (weight.get(e.personB)),
+    }))
+
+    const resampled = weightedAuc(sameWeighted, diffWeighted)
+    // Reweighting, never duplicating, means a resample CAN land with every
+    // relevant person drawn at weight 0 — reported, not silently dropped or
+    // silently retried, because how often that happens is itself a fact
+    // about how thin the labelled data is.
+    if (resampled.totalSameWeight === 0 || resampled.totalDiffWeight === 0) {
+      degenerate++
+      continue
+    }
+    aucs.push(resampled.auc)
+  }
+
+  const sorted = aucs.slice().sort((a, b) => a - b)
+  return {
+    auc: point,
+    lo: sorted.length > 0 ? percentile(sorted, 0.025) : NaN,
+    hi: sorted.length > 0 ? percentile(sorted, 0.975) : NaN,
+    resamples,
+    degenerate,
   }
 }
