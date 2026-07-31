@@ -1,12 +1,23 @@
 # Session 1: find out whether this works, in one evening
 
+> ## ⚠ This is a dated record, not the current state
+>
+> **Written 2026-07-29 and not maintained since.** Every session document in this
+> directory is a snapshot of what was believed on the day it was written; several
+> have since been contradicted by later sessions or by the code itself. Nothing
+> here describes how the project stands today.
+>
+> **For current state, go to [`VISION-STATUS.md`](./VISION-STATUS.md).** For the
+> owner's binding decisions, [`DECISIONS-vision.md`](./DECISIONS-vision.md). Read
+> this file only for the reasoning it records, and verify any claim in it against
+> the code before acting on it.
+
 **Date:** 2026-07-29
-**Status:** ✅ **run.** This document is the plan as written beforehand, kept
-because the predictions in §4 are worth checking against. What the session
-actually found — including three places where the report drew a conclusion its
-own numbers did not support — is in
-[`SESSION-2-vision.md`](./SESSION-2-vision.md), **which supersedes §5 of this
-document.** Read that before acting on anything here.
+**Status:** the plan as written *beforehand*, kept because the predictions in §4
+are worth checking against. The session ran. What it actually found — including
+three places where the report drew a conclusion its own numbers did not support
+— is in [`SESSION-2-vision.md`](./SESSION-2-vision.md), **which supersedes §5 of
+this document.**
 **Reads with:** [`SPEC-vision-lab.md`](./SPEC-vision-lab.md) §5 (build order) and
 §15 (working rules) · [`VISION-MODELS.md`](./VISION-MODELS.md) (the models)
 

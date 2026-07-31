@@ -1,7 +1,16 @@
 # Session 2: what session 1 actually established, and what to do next
 
+> ## ⚠ This is a dated record, not the current state
+>
+> **Written 2026-07-30 and not maintained since.** Its "what to do next" ordering
+> was superseded by SESSION-3 and again by later work; most of what it proposes
+> has since been built, and some of what it asserts has been corrected.
+>
+> **For current state, go to [`VISION-STATUS.md`](./VISION-STATUS.md).** For the
+> owner's binding decisions, [`DECISIONS-vision.md`](./DECISIONS-vision.md).
+
 **Date:** 2026-07-30
-**Status:** decision document. Supersedes [`SESSION-1-vision.md`](./SESSION-1-vision.md) §5.
+**Status:** decision document, as of its date. Supersedes [`SESSION-1-vision.md`](./SESSION-1-vision.md) §5.
 **⚠ Superseded in part:** [`SESSION-3-vision.md`](./SESSION-3-vision.md) replaces §7's
 ordering (most of it is now built), corrects §1's tsconfig claim and §8's household
 prior, and re-prices §6's estimate. Read it before acting on anything in this file.

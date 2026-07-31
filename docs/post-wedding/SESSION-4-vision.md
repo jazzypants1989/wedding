@@ -1,7 +1,18 @@
 # Session 4: a run was destroyed, and what made it recoverable
 
+> ## ⚠ This is a dated record, not the current state
+>
+> **Written 2026-07-31 and not maintained since.** §5's two "what to do next"
+> items were both done later the same day — the oracle comparison it asks for has
+> been run, and the report has been passed `--oracle`. Its §1–§4 (what was lost,
+> how it was recovered, and the standing rules that came out of it) remain the
+> reason those rules exist and are still accurate.
+>
+> **For current state, go to [`VISION-STATUS.md`](./VISION-STATUS.md).** For the
+> owner's binding decisions, [`DECISIONS-vision.md`](./DECISIONS-vision.md).
+
 **Date:** 2026-07-31
-**Status:** recovery record + standing rules. Adds to
+**Status:** recovery record + standing rules, as of its date. Adds to
 [`SESSION-3-vision.md`](./SESSION-3-vision.md); supersedes nothing.
 **Reads with:** [`SPEC-vision-lab.md`](./SPEC-vision-lab.md) §15 (working rules,
 now with a fourth durable artifact) · [`VISION-MODELS.md`](./VISION-MODELS.md)
@@ -113,6 +124,11 @@ Three things follow:
   instrument that can answer it — an independent detector over the same frames,
   compared under both orders. That experiment has not been run, and it is
   cheap.
+
+  > **Since superseded:** the comparison was run later the same day, against
+  > both surviving runs with the same oracle file. The evidence is in hand and
+  > the decision is the owner's — see
+  > [`VISION-STATUS.md`](./VISION-STATUS.md) §"The channel-order decision".
 - **This is exactly the failure class SPEC §8 is organised around.** It produces
   plausible output and no error. It went unnoticed through an entire session
   because nothing compared the pipeline against the reference on this axis.
@@ -190,10 +206,10 @@ Two things follow, and they are the same two SESSION-2 §7 listed as P0:
 - **Label more people**, to the printed target, via `relabel-data.js --pool-a N`
   — which grows pool A as a verified prefix extension of the same seeded
   shuffle, so every existing label stays valid.
-- **Run the report with `--oracle`.** It has still never been passed. Without
-  it the mirror check does not run, and the alignment residual is not a
-  substitute — it cannot see a mirroring that is consistent throughout. The
-  oracle now has a second job as well: settling §3.
+- ~~**Run the report with `--oracle`.** It has still never been passed.~~
+  **Done**, later the same day. The mirror check has now run and landmark order
+  is confirmed correct. The oracle's second job — settling §3 — was done in the
+  same pass.
 
 **Still do not write tuned cutoffs into `defaults.js`.** SESSION-2 §9 rule 6
 deferred that until after the labelling, and the verdict being UNDECIDED is
@@ -203,3 +219,11 @@ something other than face quality — distance from the frame edge measures
 whether someone was the *subject* of the photograph, and an alignment-scale cap
 is a minimum face size in disguise. Re-derive after labelling, round hard, then
 write.
+
+> **Since built:** the report no longer prints those two cutoffs without the
+> reason to distrust them — each carries its caution inline — and it now rounds
+> every recommended value hard rather than to five significant figures. It also
+> separates `detect.longEdge` into its own block, because a re-detection is not
+> a cutoff and printing it among eight safe ones was the live trap this section
+> describes. The deferral itself stands: nothing has been written to
+> `defaults.js`.

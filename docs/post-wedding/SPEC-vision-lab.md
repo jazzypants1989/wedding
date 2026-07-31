@@ -1,9 +1,15 @@
 # Spec: the Vision Lab — a first-party face pipeline
 
-**Date:** 2026-07-29 (revision 4)
-**Status:** ready to build. Start with [`SESSION-1-vision.md`](./SESSION-1-vision.md).
-**Read first:** [`VISION-MODELS.md`](./VISION-MODELS.md) — every model fact this
-spec depends on, each one parsed out of the actual file.
+**Date:** 2026-07-29, revised 2026-07-31 (revision 5)
+**Status:** **living build spec — partly built.** Tiers 0 and 1 exist in the
+repository; tiers 2–7 do not. This document describes the whole design including
+the parts not yet written, so read every section as "the design", and read
+[`VISION-STATUS.md`](./VISION-STATUS.md) for what actually exists today. Where a
+section describes something unbuilt, it now says so inline.
+**Read first:** [`DECISIONS-vision.md`](./DECISIONS-vision.md) — the owner's
+binding answers, which settle §2.1's fork and §14's Q4 · then
+[`VISION-MODELS.md`](./VISION-MODELS.md) — every model fact this spec depends
+on, each one parsed out of the actual file.
 **Background:** [`../what-counts-as-a-dependency.md`](../what-counts-as-a-dependency.md)
 (why borrowed weights are acceptable and borrowed code is not).
 
@@ -42,18 +48,33 @@ photographs at up to ~25 MP, a roster of ~100 names, and a batch that runs on on
 machine in minutes. Nothing below depends on any property of a particular set of
 photographs.
 
-Three new directories and one extended page:
+Three new directories and one extended page (⊙ = exists today, ○ = designed, not
+built):
 
 ```
-public/vision/          NEW · venue-agnostic pipeline: kernels, models, decode,
-                               align, group. Pure numeric JS. No DOM, no node:*
-public/vision/weights/  NEW · gitignored. Populated by scripts/vision/fetch-weights.js
-scripts/vision/         inspect-onnx.js and oracle-macos.swift already exist here
-public/pages/studio/    EXISTING, EXTENDED — a third bench
-  ├─ effects lab        existing — 29 effects, live param tuning
-  ├─ sound lab          existing — synth cues vs samples A/B
-  └─ vision lab         NEW  (§9)
+⊙ public/vision/          venue-agnostic pipeline: align, gate, group, metrics,
+                          assign, confidence, must-link, frame-hash, defaults.
+                          Pure numeric JS. No DOM, no node:*. Fully unit-tested
+○ public/vision/weights/  gitignored (already reserved in .gitignore); the
+                          directory does not exist yet because nothing fetches
+                          into it — weights currently live in tmp/weights/ and
+                          are checked by scripts/vision/verify-weights.js
+⊙ scripts/vision/         the CLI side: session1 batch, report, labeller,
+                          relabel, oracle, inspector, ingest, weight verifier
+○ public/pages/studio/    EXTENDED — a third bench
+  ⊙ effects lab           existing — 29 effects, live param tuning
+  ⊙ sound lab             existing — synth cues vs samples A/B
+  ○ vision lab            NOT BUILT  (§9)
 ```
+
+⚠ **`public/vision/` is not yet the whole pipeline.** It holds every stage the
+project wrote itself; **detect** and **describe** are still the borrowed engine's
+(§2.1), reached through `scripts/vision/engine-loader.js`. `public/vision/detect.js`
+exists, but it is the geometry *after* detection — rescaling boxes to source
+pixels and de-duplicating survivors — not the network. The head decode of §6.1,
+the NMS, the convolutions: all still the borrowed runtime's. That is tier 3–4
+work, and §6.1 below is its specification rather than a description of what runs
+today.
 
 **Explicit non-goal:** do not rewrite the 29 visual effects onto the GPU. They
 are DOM-based, they work, the payoff is nil. `public/vision/` is justified on its
@@ -97,13 +118,29 @@ So the honest position, stated once:
   is trusted without re-checking, and it is deleted when the kernels pass. This
   is how we find out whether the product works before spending four weeks, and
   it is how every hand-written layer gets checked (§8).
-- **As the shipped implementation: no, not without changing the rule.** Which is
-  a decision the owner can legitimately make — see the first decisive question in
-  [`SESSION-1-vision.md`](./SESSION-1-vision.md). It is a different project, not
-  a worse one, and it takes about three days instead of four weeks.
+- **As the *permanent* shipped implementation: no, not without changing the
+  rule.** Which is a decision the owner can legitimately make — it is a different
+  project, not a worse one, and it takes about three days instead of four weeks.
 
-Everything below assumes the first answer. If the answer is the second, §§5–8
-collapse to "call the runtime" and the rest of the document still stands.
+### ⚠ 2.1a The owner has answered this, and the answer is BOTH
+
+[`DECISIONS-vision.md`](./DECISIONS-vision.md) §1 settles what this section and
+§14 Q4 both leave open, and no session re-litigates it:
+
+> **A usable feature first, as fast as possible, on the borrowed engine,
+> admin-only. Then weeks of dedicated craft** — tiers 2–4 and beyond, ending with
+> the borrowed engine deleted.
+
+That is not a third option; it is this section's first answer with an explicit
+interim. The borrowed engine's status is unchanged — **scaffolding with an
+extended lifetime.** It stays in `tmp/rig/`, no module in the repository names
+it, it is never on the server request path, and it is deleted in the craft phase.
+What §2.1 forbids is shipping it as the *permanent* implementation, and the craft
+phase is precisely what removes the permanence.
+
+So no rule changes, and nothing in §§5–8 collapses. The one thing that does
+change is *ordering*: tier 1 ships before tiers 2–4 rather than after, which is
+what the ladder in §5 was designed for anyway.
 
 **WASM is excluded by the same rule**, not by the Content-Security-Policy. Every
 WASM runtime worth having is third-party code. (The CSP is already per-page —
@@ -121,12 +158,31 @@ Web Workers are fine under `default-src 'self'`; WGSL is not governed by
 place where "we're non-commercial" stops being a sufficient answer, because
 copyleft does not care about commercial status.
 
+⚠ **Build status: half of this exists.** The verification half is written and
+tested; the fetching half is not, and `scripts/vision/fetch-weights.js` **does
+not exist**. Several documents refer to it in the present tense; they are
+describing the design. What is real today:
+
+| Piece | State |
+|---|---|
+| `public/vision/weights/` gitignored | ⊙ reserved in `.gitignore`; directory not created, because nothing writes to it |
+| Pinned SHA-256 table | ⊙ **built** — in `scripts/vision/verify-weights.js`, sourced from the ledger |
+| Hash check that fails loudly | ⊙ **built**, and it does three things `shasum -c` does not (see the file's header): matches by *bytes* rather than filename, names a git-lfs pointer file as such instead of letting it fail misleadingly downstream, and distinguishes missing from wrong |
+| Downloading | ○ **not built.** Weights are placed by hand and verified after |
+| `<name>.LICENCE.md` generation | ○ not built |
+| The converter (`pack-tensors.js`) | ○ not built — tier 2 |
+| Model registry | ○ not built; the ledger is currently the registry, read by humans |
+
+The design, unchanged and still the target:
+
 - `public/vision/weights/` is **gitignored**.
 - `scripts/vision/fetch-weights.js` reads the pinned table in
   [`VISION-MODELS.md`](./VISION-MODELS.md), downloads, **verifies SHA-256 and
   refuses to proceed on mismatch**, runs the converter, and writes
   `<name>.LICENCE.md` beside each artifact with source URL, full licence text,
-  retrieval date and hash.
+  retrieval date and hash. `verify-weights.js` is the honest seed of it — the
+  fetch list minus the fetching — so building it means adding a downloader in
+  front of a check that already works.
 - A **model registry** — a plain data table, the way `EFFECT_CONFIGS` is — holds
   per model: source URL, hash, licence id, input layout, **normalisation
   constants**, **alignment template**, descriptor dimension, recommended
@@ -230,10 +286,14 @@ already applied.
   abstraction: it already handles try-exec probing, argv arrays, HEIC and
   orientation. Extending it with a raw-RGB command is a small addition to a
   solved problem. No JPEG decoder, no WebP decoder, none of that.
-  - ⚠ **vips is currently half-broken on this machine**: its HEIF module fails to
-    load (missing `libx265`), and `vips header` is not a subcommand —
-    `vipsheader` is a separate binary. `brew reinstall x265 vips` before relying
-    on it, or let the backend's probe fall through to ImageMagick, which works.
+  - ⚠ **vips was half-broken on this machine when this was written** (2026-07-29):
+    its HEIF module failed to load (missing `libx265`), and `vips header` is not
+    a subcommand — `vipsheader` is a separate binary. **Since fixed:** batch runs
+    have completed on vips 8.18 with no fallback, and the backend each run
+    actually used is recorded in that run's `timing.json`. If it breaks again,
+    `brew reinstall x265 vips`, or let the backend's probe fall through to
+    ImageMagick, which also works. Read `timing.json`, not this paragraph, to
+    learn what a given run used.
 - **Browser** (`public/vision/pixels-dom.js`): `createImageBitmap(file, {
   imageOrientation: "from-image" })` → `OffscreenCanvas` → `getImageData`, then
   drop alpha. `public/components/media-processing.js:46` already does the first
@@ -323,22 +383,28 @@ Three things this buys that a bottom-up order does not:
 Every rung ships something, and stopping anywhere leaves a finished thing rather
 than a hole.
 
-| Tier | What | Ships |
-|---|---|---|
-| **0** | [Session 1](./SESSION-1-vision.md): borrowed engine + first-party align/gate/group/metrics + labelling UI | **A measured answer to "does this work?"**, plus a labelled evaluation set |
-| **1** | Grouping + assignment UI + schema, still on the borrowed engine | **The actual feature**, usable, admin-only |
-| **2** | Inspector output → tensor pack → converter → `fetch-weights` | Licence question closed. Nothing user-visible |
-| **3** | `scalar` kernels + our detector, checked against tier 0's engine | **Face-aware crops, face counts, "photos with people"** |
-| **4** | Our recogniser + `pool`, checked layer-by-layer | Borrowed engine deleted. `tmp/rig/` removed |
-| **5** | Vision lab bench in `/studio` | You can *see* it, which is what makes it trustworthy |
-| **6** | Upload-time detection in guest browsers | New uploads self-detect |
-| **7** | `webgpu` backend | Minutes → seconds. For fun |
+| Tier | What | Ships | State |
+|---|---|---|---|
+| **0** | [Session 1](./SESSION-1-vision.md): borrowed engine + first-party align/gate/group/metrics + labelling UI | **A measured answer to "does this work?"**, plus a labelled evaluation set | ⊙ **built and run** |
+| **1** | Grouping + assignment UI + schema, still on the borrowed engine | **The actual feature**, usable, admin-only | ⊙ **built**, ○ never run on real data |
+| **2** | Inspector output → tensor pack → converter → `fetch-weights` | Licence question closed. Nothing user-visible | ◐ inspector built; converter and fetcher not |
+| **3** | `scalar` kernels + our detector, checked against tier 0's engine | **Face-aware crops, face counts, "photos with people"** | ○ |
+| **4** | Our recogniser + `pool`, checked layer-by-layer | Borrowed engine deleted. `tmp/rig/` removed | ○ |
+| **5** | Vision lab bench in `/studio` | You can *see* it, which is what makes it trustworthy | ○ |
+| **6** | Upload-time detection in guest browsers | New uploads self-detect | ○ |
+| **7** | `webgpu` backend | Minutes → seconds. For fun | ○ |
 
 **The decision point is after tier 0**, and there are two of them: *is the
 feature worth building*, and *is it worth building by hand*. Tier 1 delivers the
 feature on borrowed code; tiers 2–4 replace the borrowed code with ours. Those
 are separable, and pretending otherwise is what pushed the risk to the end of
 earlier plans.
+
+⚠ **Both decisions are now made** ([`DECISIONS-vision.md`](./DECISIONS-vision.md)
+§1): yes and yes, **in that order**. Tier 1 first and soon; tiers 2–4 after, as
+the project rather than as a chore. The gap between "tier 1 is built" and "tier 1
+has been run" is the shortest path to a working feature and is where the next
+work goes — see [`VISION-STATUS.md`](./VISION-STATUS.md).
 
 ---
 
@@ -649,6 +715,12 @@ groupings, the quality gate against the measured geometry ranges. Add these as
 
 ## 9. The Vision Lab
 
+⚠ **Not built.** This is tier 5, and nothing in `public/pages/studio/` implements
+it. What plays its role today is the HTML report
+(`scripts/vision/session1-report.js`) plus the contact sheet — batch artifacts
+under `tmp/`, not a live bench, and no knob on them is adjustable without
+re-running. The section below is the design, not a description.
+
 A third bench in `/studio`, following the effects-lab idiom exactly: a registry,
 declared defaults, generic controls from `components/effect-controls.js`, live
 re-run on change, per-browser overrides via `override-store.js`. Every tunable in
@@ -675,12 +747,30 @@ Beyond the effects lab it needs:
 
 ## 10. Schema and privacy
 
+⊙ **Built.** Both tables exist in `db/schema.js` under the `add_media_faces`
+migration, with the precedence triggers below, and the admin API
+(`api/admin/faces.js`) and Faces tab are wired to them. **Neither table has ever
+held a row** — the ingest has not been run for real. See
+[`VISION-STATUS.md`](./VISION-STATUS.md).
+
 **Tables**, following the existing polymorphic-target trigger and soft-delete
 patterns:
 
 - `media_faces` — `media_id`, bbox, landmarks, quality score, `descriptor` BLOB
   (nullable: detection-only rows exist), model version, source (`cli` | `upload`).
 - `face_identities` — group → `guests` link, confirmed-by, confirmed-at.
+
+⚠ **`face_identities.guest_id` is `NOT NULL`, and that is a design decision with
+a consequence this spec did not anticipate.** An identity *is* the confirmed link
+to a roster guest — that is what "confirmed" means in the schema, and an unnamed
+recognition group correctly has no row at all. But the `guests` table holds
+**parties, not people** (a row is an invitation), and plenty of people in the
+photographs are not on it at all: photographer, vendors, plus-ones recorded under
+someone else's row, children. So "confirm this group" currently has nothing valid
+to point at for a large share of the cast. **This is the one schema-level blocker
+between the built feature and a usable one**, it is listed as open in
+[`DECISIONS-vision.md`](./DECISIONS-vision.md) §5, and
+[`VISION-STATUS.md`](./VISION-STATUS.md) proposes the options.
 
 Store the model version so a swap cannot silently mix incompatible descriptors.
 Deleting a guest or a media row **must cascade.**
@@ -745,10 +835,15 @@ Constraints if it is built:
 
 ## 12. Effort
 
+⚠ **The first two rows are spent, not forecast.** Both were built; the estimates
+are kept only so the remaining rows can be read against a calibration. Tier 0's
+"~30 min of labelling" was the one badly wrong number in this table — labelling
+to a useful density is hours, and the census is not finished yet.
+
 | Piece | Effort |
 |---|---|
-| **Tier 0 — session 1: rig, align, gate, group, metrics, labelling UI** | **1 evening + ~30 min of labelling** |
-| Tier 1 — assignment UI, schema, wiring | 4–6 days |
+| ~~**Tier 0 — session 1: rig, align, gate, group, metrics, labelling UI**~~ | ~~1 evening + ~30 min of labelling~~ · **done; labelling under-estimated** |
+| ~~Tier 1 — assignment UI, schema, wiring~~ | ~~4–6 days~~ · **built, not yet run** |
 | Tier 2 — tensor pack, converter, `fetch-weights` | 3–4 days |
 | Tier 3 — `scalar` kernels + detector + decode + NMS | 4–6 days |
 | Tier 4 — recogniser + `pool`, layer-by-layer verification | 5–8 days |
@@ -808,20 +903,36 @@ the largest activation, and verify every kernel against `scalar` first.
 
 ## 14. Open questions
 
-**Answered by measurement in session 1:**
+**Answered by measurement in session 1 — all three now have answers:**
 
-1. **Do the descriptors separate these people?** The only genuine unknown. §7 is
-   the instrument.
-2. **What are the actual thresholds?** Score, NMS IoU, gate cutoffs, grouping
-   cutoff. Reference defaults are starting positions.
-3. **Cluster-first or label-first** (§6.5) — the data will suggest one.
+1. **Do the descriptors separate these people?** ✅ **Yes**, on the faces the
+   gate keeps, and the gate is doing a large share of that work. The full
+   qualification is the report's own verdict, which is currently UNDECIDED for a
+   reason that is about the *sampling frame*, not about the feature — see
+   [`DECISIONS-vision.md`](./DECISIONS-vision.md) §3 and
+   [`VISION-STATUS.md`](./VISION-STATUS.md).
+2. **What are the actual thresholds?** Measured, and the report prints them each
+   run. **Deliberately not written into `defaults.js` yet** (SESSION-2 §9 r6):
+   they were fitted on an unfinished labelling, two of them are proxies for
+   something other than face quality, and one of the values the report prints
+   is not a cutoff at all but a re-detection. The report now flags all three
+   classes distinctly.
+3. **Cluster-first or label-first** (§6.5) → **label-first.** Prototype rank-1
+   is high while no single global grouping cutoff welds nobody, which is exactly
+   §6.5's "step 4 is arguably the whole product". Grouping's job is to make the
+   first labelling cheap; it is not the product shape.
 
-**Decisions for the owner, in [`SESSION-1-vision.md`](./SESSION-1-vision.md):**
+**Decisions for the owner — Q4 is now answered:**
 
-4. Is the hand-written implementation the point, or is the feature the point
-   (§2.1)? This is the largest fork in the project.
-5. Upload-time detection: build it, or leave the CLI to it (§11)?
+4. ~~Is the hand-written implementation the point, or is the feature the point
+   (§2.1)?~~ ✅ **Answered: both, feature first.** See §2.1a and
+   [`DECISIONS-vision.md`](./DECISIONS-vision.md) §1. **This is binding and is
+   not re-opened.**
+5. Upload-time detection: build it, or leave the CLI to it (§11)? — **still
+   open**, and the case has weakened further (§11).
 6. Does anything guest-facing ever use this, or is it admin-only forever (§10)?
+   — **still open.** Admin-only is what is built and what ships first;
+   guest-facing is a later, opt-in decision, not a default.
 
 **Recorded rather than answered:**
 

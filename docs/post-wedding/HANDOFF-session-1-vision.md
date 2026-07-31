@@ -1,5 +1,14 @@
 # Handoff: Session 1 (vision) — pipeline wired, nothing measured yet
 
+> ## ⚠ This is a dated record, and the most stale document in this directory
+>
+> **Written 2026-07-29.** Its headline — "nothing has been run against real
+> photographs" — stopped being true the same evening. It also points at an
+> approved plan outside the repo which may no longer exist. Kept only for the
+> per-task rationale it records.
+>
+> **For current state, go to [`VISION-STATUS.md`](./VISION-STATUS.md).**
+
 **Date:** 2026-07-29
 **Status:** all 8 tasks complete and green. **Nothing has been run against real
 photographs.** That is the owner's step (see "Ownership of the run"), and it is

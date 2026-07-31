@@ -1,16 +1,27 @@
 # Vision models: provenance ledger
 
-**Date:** 2026-07-29
-**Status:** verified reference. Every number below was read out of the actual
-file, not a write-up.
+**Date:** 2026-07-29, revised 2026-07-31
+**Status:** **verified reference, and the one document here that has not gone
+stale.** Every structural number below was read out of the actual file rather
+than a write-up, and every table was re-confirmed by re-parsing. Treat it as
+current; treat the session documents as history.
 **Companions:** [build spec](./SPEC-vision-lab.md) ·
+[current state](./VISION-STATUS.md) ·
+[owner decisions](./DECISIONS-vision.md) ·
 [feasibility study](./RESEARCH-face-recognition.md) ·
 [dependency essay](../what-counts-as-a-dependency.md)
 
-This is the ledger `scripts/fetch-weights.js` pins against and
-`public/vision/weights/<name>.LICENCE.md` is generated from. It exists because a
-trained weight file is the one artifact in this codebase nobody can audit by
-reading it, so everything *around* it has to be written down instead.
+This is the ledger the weight tooling pins against. It exists because a trained
+weight file is the one artifact in this codebase nobody can audit by reading it,
+so everything *around* it has to be written down instead.
+
+⚠ **Which tooling, precisely.** `scripts/vision/verify-weights.js` **exists** and
+carries the pinned digests below; it checks a directory of weight files and fails
+loudly on any mismatch. `scripts/vision/fetch-weights.js` — the downloader, and
+the generator of `public/vision/weights/<name>.LICENCE.md` — **does not exist
+yet**; it is tier 2. Weights are currently placed by hand and verified after the
+fact. Where this file or the spec refers to `fetch-weights.js` in the present
+tense, read it as the design it is committing to.
 
 **Nothing in this ledger is committed to the repo.** See
 [§Distribution](#distribution-why-no-weights-are-committed).
@@ -394,12 +405,36 @@ reports no error. Two consequences for anything built here:
    `timing.json` through the engine's `info()`. Two runs made under different
    orders are not comparable and nothing else in the artifacts distinguishes
    them.
-2. **Which order is right for our input is an open question**, not a settled
+2. **Which order is right for our input was an open question**, not a settled
    one — more detections is not better detection. `scripts/vision/oracle-macos.swift`
    is the instrument: run both orders against an independent detector on the
-   same frames. Until that is done, the pipeline's order is a choice inherited
-   from whoever wrote the wrapper, not a decision. See
-   [`SESSION-4-vision.md`](./SESSION-4-vision.md) §3.
+   same frames. See [`SESSION-4-vision.md`](./SESSION-4-vision.md) §3.
+
+   **⚠ Status 2026-07-31: the experiment has been run; the decision has not been
+   made.** Two complete batch runs over an identical photograph set exist, one
+   fed RGB and one fed BGR, and both were scored against the same macOS Vision
+   oracle file using the report's own `oracleSummary`. The result is not a tie
+   and not a landslide:
+
+   - **BGR — the reference order — recovers materially more of the faces the
+     independent detector also found.** That is the number closest to "did we
+     miss someone", and it favours BGR.
+   - **BGR also produces more detections the oracle does not confirm**, so its
+     agreement rate is lower. That is ambiguous rather than damning: Vision is
+     conservative and its non-confirmation is not the same as a false positive.
+   - Landmark placement is very slightly better under BGR.
+
+   Evidence and the training-convention prior both point the same way, and no
+   measurement contradicts it. **This ledger records the finding, not a
+   decision** — because adopting BGR means re-detecting, which renumbers every
+   face and orphans every existing label. It is a labelling decision wearing a
+   configuration decision's clothes. The trade-off, and what would have to be
+   built first to make it cheap, are in
+   [`VISION-STATUS.md`](./VISION-STATUS.md).
+
+   The measurements themselves stay in `tmp/` and out of this repository, per
+   the fourth photograph rule — they are counts of faces of identifiable people.
+   Re-derive them locally with the comparison described in `VISION-STATUS.md`.
 
 **The alignment template**, from `getSimilarityTransformMatrix` in
 `modules/objdetect/src/face_recognize.cpp`:
@@ -509,11 +544,19 @@ This repository is **public**. Committing a weights file makes us its
 distributor, which is a different permission from using it — and the one place
 where "it's non-commercial" stops being a sufficient answer.
 
-So: **`public/vision/weights/` is gitignored, and `scripts/fetch-weights.js`
-populates it.** The script reads this ledger, downloads from the pinned URLs,
+So: **`public/vision/weights/` is gitignored, and `scripts/vision/fetch-weights.js`
+will populate it.** The script reads this ledger, downloads from the pinned URLs,
 verifies SHA-256, refuses to proceed on mismatch, and writes
 `<name>.LICENCE.md` next to each artifact with source URL, full licence text,
 retrieval date and hash.
+
+⚠ **Until it is written, the guarantee is upheld by hand and by
+`verify-weights.js`.** Weights are downloaded manually into a gitignored
+directory and checked against the pinned digests. The repo still distributes zero
+encumbered bytes — that part was never the script's doing, it is `.gitignore`'s —
+but the *licence-text-beside-the-artifact* half of the promise is not automated
+yet. Anyone cloning this repo today has to fetch weights themselves, and this
+ledger is what tells them from where.
 
 Four things this buys, in order of weight:
 
@@ -681,9 +724,14 @@ The first four rows are configuration. Only the last is a project.
 
 Run after any upstream change, before trusting anything above:
 
-1. `node scripts/vision/inspect-onnx.js public/vision/weights/*.onnx` — op
-   inventory, attribute signatures, initializer count, params, input/output
-   shapes.
+0. `node scripts/vision/verify-weights.js <dir>` — the fast one, and the one to
+   run first. Every pinned digest, checked by bytes rather than by filename, with
+   git-lfs pointer files named as such. Exit 0 only when everything verifies.
+1. `node scripts/vision/inspect-onnx.js <dir>/*.onnx` — op inventory, attribute
+   signatures, initializer count, params, input/output shapes. (The path is
+   `public/vision/weights/` once tier 2's fetcher exists; until then it is
+   wherever the weights were placed by hand, which is an argument, never a
+   guess.)
 2. Diff the op-type set against the tables here. **Op types matter; counts vary
    between exports of the same model.** (`2023mar` and `2026may` happen to agree
    exactly; the non-opencv_zoo `yunet_n_640_640` export does not.)

@@ -1,7 +1,16 @@
 # Session 3: two audits, a merge, and the feature getting built
 
+> ## ⚠ This is a dated record, not the current state
+>
+> **Written 2026-07-30 and not maintained since.** It records what was built that
+> day. Code has changed since — including fixes to defects in the report this
+> session shipped.
+>
+> **For current state, go to [`VISION-STATUS.md`](./VISION-STATUS.md).** For the
+> owner's binding decisions, [`DECISIONS-vision.md`](./DECISIONS-vision.md).
+
 **Date:** 2026-07-30
-**Status:** decision + build record. Supersedes [`SESSION-2-vision.md`](./SESSION-2-vision.md) §7
+**Status:** decision + build record, as of its date. Supersedes [`SESSION-2-vision.md`](./SESSION-2-vision.md) §7
 (the what-to-do-next ordering) and corrects one claim in its §1 and one proposal in its §8.
 **Reads with:** [`SPEC-vision-lab.md`](./SPEC-vision-lab.md) §15 (since amended — the
 one carve-out is now three) · [`VISION-MODELS.md`](./VISION-MODELS.md) (AuraFace now
