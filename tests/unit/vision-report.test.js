@@ -1015,6 +1015,30 @@ test("renderHtml is self-contained: no network references at all", () => {
   assert.ok(html.includes("Do not quote the same-minute stratum"))
 })
 
+test("the HTML report carries the verdict's interval, not just the verdict", () => {
+  // The terminal printed the interval and the labelling target from the start;
+  // the HTML printed a bare verdict. That is the artifact someone reads twice,
+  // so it was the one showing a conclusion with none of the evidence about how
+  // much to trust it.
+  const analysis = analyse(run())
+  const html = renderHtml(analysis)
+
+  if (Number.isFinite(analysis.interval.lo)) {
+    assert.ok(html.includes("Interval on the basis AUC"), "the HTML must show the interval the verdict buckets on")
+    assert.ok(html.includes("resamples <b>people</b>"), "and must say what the resampling unit is")
+  } else {
+    assert.ok(html.includes("fewer than 3 distinct people"), "an absent interval must be stated, not omitted")
+  }
+
+  if (analysis.labellingTarget) {
+    const t = analysis.labellingTarget
+    assert.ok(
+      html.includes(t.extraPeople === 0 ? "Labelling is sufficient" : `${t.peopleNeeded} labelled`),
+      "the HTML must carry the labelling target the terminal prints",
+    )
+  }
+})
+
 test("the HTML report shows the joint gate beside both baselines, and hides the sixty rows", () => {
   const html = renderHtml(TRAP)
   const j = TRAP.d.joint

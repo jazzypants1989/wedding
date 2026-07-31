@@ -3310,6 +3310,41 @@ export function renderHtml(analysis) {
   }
   out.push("</div>")
 
+  // The interval the verdict actually buckets on, and how much more labelling
+  // would sharpen it. These printed to the terminal only until now, which meant
+  // the HTML — the artifact someone actually reads twice — showed a verdict
+  // with none of the evidence about how much it should be trusted.
+  if (Number.isFinite(analysis.interval.lo)) {
+    out.push(
+      `<p><b>Interval on the basis AUC: [${num(analysis.interval.lo)}, ${num(analysis.interval.hi)}]</b> ` +
+        `(person-level bootstrap, ${analysis.interval.resamples} resamples` +
+        (analysis.interval.degenerate > 0 ? `, ${analysis.interval.degenerate} degenerate` : "") +
+        `). Pairs are O(n²) from far fewer people, so pair counts flatter the evidence; the interval ` +
+        `resamples <b>people</b>, which is the unit that actually varies.</p>`,
+    )
+  } else {
+    out.push(
+      '<div class="warn"><b>No interval: fewer than 3 distinct people on one side of the pair lists.</b> ' +
+        "Any AUC on this page is a direction, not a measurement.</div>",
+    )
+  }
+  if (analysis.labellingTarget) {
+    const t = analysis.labellingTarget
+    if (t.extraPeople === 0) {
+      out.push(
+        `<p>Labelling is sufficient for the current verdict band: the interval (width ${num(t.widthNow)}) ` +
+          `fits inside the band with margin to spare. More labels would sharpen it, not change it.</p>`,
+      )
+    } else {
+      out.push(
+        `<p>To leave the UNDECIDED band at the current point estimate: roughly <b>${t.peopleNeeded} labelled ` +
+          `people</b> (${t.extraPeople} more than the ${t.peopleNow} now, ≈${t.extraFaces} more labelled faces at ` +
+          `the current per-person rate). Fitted from width·√people across subsamples — an estimate, not a promise, ` +
+          `and it shrinks fastest if the new people <b>recur</b> across the day.</p>`,
+      )
+    }
+  }
+
   out.push("<h3>Cutoffs to write into public/vision/defaults.js</h3>")
   out.push(
     "<pre>" +
