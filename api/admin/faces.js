@@ -29,7 +29,14 @@ import {
   unidentifiedFacesWithDescriptors,
   confirmedIdentityFaces,
   facesForMediaWithNames,
+  facesForPropagation,
+  frameKeysByMediaId,
+  confirmedCooccurrence,
+  confirmedIdentitiesPerMedia,
+  faceModelVersions,
+  mediaChipInfo,
   getFaceById,
+  getIdentityById,
   setFaceIdentity,
   softDeleteFace,
   createIdentity,
@@ -39,6 +46,7 @@ import {
 import { now } from "../../db/utils.js"
 import { groupFaces, distanceMatrix, centroid } from "../../public/vision/group.js"
 import { buildPrototypes, matchFace } from "../../public/vision/assign.js"
+import { propagateWithinFrames } from "../../public/vision/must-link.js"
 import { getDefaults } from "../../public/vision/defaults.js"
 
 /** Audit action names for this module. Not registered in core/utils.js's
@@ -49,6 +57,7 @@ const FACE_AUDIT_ACTIONS = Object.freeze({
   ASSIGN: "FACE_ASSIGN",
   UNASSIGN: "FACE_UNASSIGN",
   NOT_A_FACE: "FACE_NOT_A_FACE",
+  PROPAGATE: "FACE_PROPAGATE",
 })
 
 /** One batch mutation (assign/unassign/not-a-face) touches at most this many
@@ -143,7 +152,27 @@ function loadPrototypesByModelVersion(modelVersion) {
   return { prototypes, meta }
 }
 
-/** @param {UnidentifiedFaceRow} face */
+/**
+ * A face chip entry as the admin UI needs it: the box, plus the file key and
+ * ORIGINAL pixel dimensions it crops a thumbnail against. Built field by field,
+ * like every other payload here, so a descriptor column can never ride along.
+ * @param {{ id: number, media_id: number, bbox_x: number, bbox_y: number, bbox_w: number, bbox_h: number }} face
+ * @param {ReadonlyMap<number, { fileKey: string, width: number | null, height: number | null }>} chips
+ */
+function chipOf(face, chips) {
+  const info = chips.get(face.media_id)
+  return {
+    faceId: face.id,
+    mediaId: face.media_id,
+    fileKey: info ? info.fileKey : null,
+    width: info ? info.width : null,
+    height: info ? info.height : null,
+    box: boxOf(face),
+  }
+}
+
+/** Structural, not tied to one row type — every face-shaped row has these four.
+ *  @param {{ bbox_x: number, bbox_y: number, bbox_w: number, bbox_h: number }} face */
 function boxOf(face) {
   return { x: face.bbox_x, y: face.bbox_y, w: face.bbox_w, h: face.bbox_h }
 }
@@ -154,11 +183,12 @@ export async function overview(req, res) {
   const groupDefaults = getDefaults("group")
   const byVersion = loadUnidentifiedByModelVersion()
 
-  /** @type {Array<{ faceIds: number[], media: Array<{ faceId: number, mediaId: number, box: { x: number, y: number, w: number, h: number } }>, suggestion: { guestId: number, guestName: string, margin: number } | null, size: number }>} */
+  /** @type {Array<{ faceIds: number[], media: Array<ReturnType<typeof chipOf>>, suggestion: { guestId: number, guestName: string, margin: number } | null, size: number }>} */
   const rawGroups = []
 
   for (const [modelVersion, { faces, set }] of byVersion) {
     if (faces.length === 0) continue
+    const chips = mediaChipInfo([...new Set(faces.map((f) => f.media_id))])
     const photoIds = faces.map((f) => f.media_id)
     const clusters = groupFaces(set, {
       cutoff: /** @type {number} */ (groupDefaults.cutoff),
@@ -169,11 +199,7 @@ export async function overview(req, res) {
 
     for (const cluster of clusters) {
       const faceIds = cluster.members.map((i) => faces[i].id)
-      const media = cluster.members.map((i) => ({
-        faceId: faces[i].id,
-        mediaId: faces[i].media_id,
-        box: boxOf(faces[i]),
-      }))
+      const media = cluster.members.map((i) => chipOf(faces[i], chips))
 
       /** @type {{ guestId: number, guestName: string, margin: number } | null} */
       let suggestion = null
@@ -203,13 +229,43 @@ export async function overview(req, res) {
   return sendJson(res, 200, { counts, groups })
 }
 
+/**
+ * How strongly each candidate identity co-occurs with the identities already
+ * confirmed in a given photograph, as a plain count of shared frames.
+ *
+ * ⚠ ORDERING ONLY (SPEC §6.4, SESSION-2 §8). This never changes which
+ * candidates exist, never changes their distances, and never changes which one
+ * is `best` — it breaks ties between candidates the descriptor already
+ * considers comparable. A prior allowed to override the evidence confidently
+ * mislabels exactly the people who moved between groups during the day.
+ * @param {ReadonlyArray<import('../../db/types.js').CooccurrenceRow>} rows
+ * @returns {(identityId: number, presentIdentityIds: ReadonlySet<number>) => number}
+ */
+function cooccurrenceScorer(rows) {
+  /** @type {Map<string, number>} */
+  const pairs = new Map()
+  for (const row of rows) {
+    pairs.set(`${row.identity_a}:${row.identity_b}`, row.frames)
+  }
+  return (identityId, present) => {
+    let total = 0
+    for (const other of present) {
+      if (other === identityId) continue
+      const key = identityId < other ? `${identityId}:${other}` : `${other}:${identityId}`
+      total += pairs.get(key) ?? 0
+    }
+    return total
+  }
+}
+
 /** @type {Types.faceQueueHandler} */
 export async function queue(req, res) {
   const assignDefaults = getDefaults("assign")
   const sameBandCutoff = /** @type {number} */ (assignDefaults.sameBandCutoff)
   const byVersion = loadUnidentifiedByModelVersion()
+  const scoreCooccurrence = cooccurrenceScorer(confirmedCooccurrence())
 
-  /** @type {Array<{ faceId: number, mediaId: number, box: { x: number, y: number, w: number, h: number }, candidates: Array<{ guestId: number | null, guestName: string | null, distance: number, margin: number }>, unlocks: number }>} */
+  /** @type {Array<ReturnType<typeof chipOf> & { candidates: Array<{ guestId: number | null, guestName: string | null, distance: number, margin: number, cooccurrence: number }>, unlocks: number }>} */
   const items = []
 
   for (const [modelVersion, { faces, set }] of byVersion) {
@@ -223,11 +279,21 @@ export async function queue(req, res) {
     // the `unlocks` count below. groupFaces is never called here, so nothing
     // needs to guard against its in-place Lance-Williams mutation.
     const { n, d } = distanceMatrix(set)
+    // Frame keys, so `unlocks` counts distinct MOMENTS. Counting media rows
+    // lets a ten-shot burst of one moment outrank a face that appears across
+    // ten genuinely different pictures — the coverage-table bug in a second
+    // costume (SESSION-2 §2b, plan 4.4).
+    const mediaIds = [...new Set(faces.map((f) => f.media_id))]
+    const frameKey = frameKeysByMediaId(mediaIds)
+    const chips = mediaChipInfo(mediaIds)
+    // Who is already confirmed in each photo, for the co-occurrence ordering.
+    const confirmedInPhoto = confirmedIdentitiesPerMedia()
 
     for (let i = 0; i < faces.length; i++) {
       const face = faces[i]
       const descriptor = set.data.subarray(i * set.dim, (i + 1) * set.dim)
       const match = matchFace(descriptor, prototypes)
+      const present = confirmedInPhoto.get(face.media_id) ?? new Set()
       const top3 = match.candidates.slice(0, 3).map((c, idx) => {
         const next = match.candidates[idx + 1]
         const info = meta.get(c.label)
@@ -236,31 +302,28 @@ export async function queue(req, res) {
           guestName: info ? info.guestName : null,
           distance: c.distance,
           margin: next ? next.distance - c.distance : Infinity,
+          cooccurrence: scoreCooccurrence(Number(c.label), present),
         }
       })
 
-      // unlocks: distinct media (frames) among this bucket's unidentified faces
-      // within sameBandCutoff of face i, INCLUDING face i's own photo — the
-      // diagonal is 0 by construction, so it is always counted without a
-      // special case.
-      /** @type {Set<number>} */
-      const mediaSet = new Set()
+      // unlocks: distinct FRAMES among this bucket's unidentified faces within
+      // sameBandCutoff of face i, INCLUDING face i's own frame — the diagonal
+      // is 0 by construction, so it is always counted without a special case.
+      /** @type {Set<string>} */
+      const frameSet = new Set()
       const row = i * n
       for (let j = 0; j < n; j++) {
-        if (d[row + j] < sameBandCutoff) mediaSet.add(faces[j].media_id)
+        if (d[row + j] < sameBandCutoff) frameSet.add(frameKey.get(faces[j].media_id) ?? `media:${faces[j].media_id}`)
       }
 
-      items.push({
-        faceId: face.id,
-        mediaId: face.media_id,
-        box: boxOf(face),
-        candidates: top3,
-        unlocks: mediaSet.size,
-      })
+      items.push({ ...chipOf(face, chips), candidates: top3, unlocks: frameSet.size })
     }
   }
 
-  items.sort((a, b) => b.unlocks - a.unlocks)
+  // Most-unlocking first, so abandoning the queue at any point has kept the
+  // most value — the queue is never something that must be finished to be
+  // worth anything (SESSION-2 §4b).
+  items.sort((a, b) => b.unlocks - a.unlocks || a.faceId - b.faceId)
   const truncated = items.length > QUEUE_MAX_ITEMS
   return sendJson(res, 200, { items: items.slice(0, QUEUE_MAX_ITEMS), truncated })
 }
@@ -365,6 +428,174 @@ export async function notAFace(req, res, { session }) {
     ip: getClientIp(req),
     resourceType: "media_face",
     details: { faceIds, changed },
+  })
+
+  return sendJson(res, 200, { success: true, changed })
+}
+
+/**
+ * Every model_version's propagation proposals, computed fresh. Shared by the
+ * GET (review) and POST (apply) handlers so the two can never disagree about
+ * what was proposed — the POST re-derives rather than trusting a client to
+ * hand back a proposal it was shown earlier.
+ * @returns {{ proposals: Array<import('../../public/vision/types.js').PropagationProposal>, suppressed: Array<import('../../public/vision/types.js').PropagationSuppression>, rowByFaceId: Map<number, import('../../db/types.js').PropagationFaceRow> }}
+ */
+function computePropagations() {
+  const opts = getDefaults("propagate")
+  /** @type {Array<import('../../public/vision/types.js').PropagationProposal>} */
+  const proposals = []
+  /** @type {Array<import('../../public/vision/types.js').PropagationSuppression>} */
+  const suppressed = []
+  /** @type {Map<number, import('../../db/types.js').PropagationFaceRow>} */
+  const rowByFaceId = new Map()
+
+  // One model_version at a time: descriptors from different models are not
+  // comparable, and rule 3's corroboration is a distance between two of them.
+  for (const modelVersion of faceModelVersions()) {
+    const rows = facesForPropagation(modelVersion)
+    if (rows.length === 0) continue
+
+    const first = blobToDescriptor(rows[0].descriptor)
+    const dim = first.length
+    const data = new Float32Array(rows.length * dim)
+    /** @type {Array<import('../../public/vision/types.js').PropagationFace>} */
+    const faces = []
+    /** @type {import('../../db/types.js').PropagationFaceRow[]} */
+    const kept = []
+    for (const row of rows) {
+      const vec = blobToDescriptor(row.descriptor)
+      // Same defensive drop as the other loaders: a row whose descriptor is
+      // the wrong length for its own model_version contributes nothing rather
+      // than corrupting every later row's offset.
+      if (vec.length !== dim) continue
+      data.set(vec, kept.length * dim)
+      faces.push({
+        faceId: row.id,
+        frame: row.frame_root_sha256,
+        photoId: row.media_id,
+        box: boxOf(row),
+        identityId: row.face_identity_id,
+        descriptorRow: kept.length,
+      })
+      kept.push(row)
+      rowByFaceId.set(row.id, row)
+    }
+    if (faces.length === 0) continue
+
+    const result = propagateWithinFrames(
+      faces,
+      { dim, data: data.subarray(0, kept.length * dim) },
+      {
+        minIou: /** @type {number} */ (opts.minIou),
+        iouMargin: /** @type {number} */ (opts.iouMargin),
+        corroborationCutoff: /** @type {number} */ (opts.corroborationCutoff),
+      },
+    )
+    proposals.push(...result.proposals)
+    suppressed.push(...result.suppressed)
+  }
+
+  return { proposals, suppressed, rowByFaceId }
+}
+
+/** @type {Types.facePropagationsHandler} */
+export async function propagations(req, res) {
+  const { proposals, rowByFaceId } = computePropagations()
+
+  // Identity -> guest, so the reviewer sees a name rather than a row id.
+  /** @type {Map<number, { guestId: number, guestName: string } | null>} */
+  const guestByIdentity = new Map()
+  /** @param {number} identityId */
+  const guestFor = (identityId) => {
+    if (guestByIdentity.has(identityId)) return guestByIdentity.get(identityId) ?? null
+    const identity = getIdentityById(identityId)
+    const guest = identity ? getGuestById(identity.guest_id) : null
+    const info = identity && guest ? { guestId: guest.id, guestName: guest.name } : null
+    guestByIdentity.set(identityId, info)
+    return info
+  }
+
+  const chips = mediaChipInfo([...new Set([...rowByFaceId.values()].map((r) => r.media_id))])
+
+  const items = proposals.map((p) => {
+    const from = rowByFaceId.get(p.fromFaceId)
+    const to = rowByFaceId.get(p.toFaceId)
+    const info = guestFor(p.identityId)
+    return {
+      // The TARGET is the chip: it is the face the reviewer is being asked
+      // about, and it is the one that changes if they say yes.
+      ...(to ? chipOf(to, chips) : { faceId: p.toFaceId, mediaId: null, fileKey: null, width: null, height: null, box: null }),
+      toFaceId: p.toFaceId,
+      fromFaceId: p.fromFaceId,
+      from: from ? chipOf(from, chips) : null,
+      guestId: info ? info.guestId : null,
+      guestName: info ? info.guestName : null,
+      iou: p.iou,
+      distance: p.distance,
+    }
+  })
+
+  return sendJson(res, 200, { items })
+}
+
+/** @type {Types.facePropagateHandler} */
+export async function propagate(req, res, { session }) {
+  const body = await parseBody(req)
+  const faceIds = validateFaceIds(body.toFaceIds)
+
+  const { proposals } = computePropagations()
+  /** @type {Map<number, number>} */
+  const identityByTarget = new Map(proposals.map((p) => [p.toFaceId, p.identityId]))
+
+  // A face the client asked for that is not (or is no longer) a live proposal
+  // is refused rather than quietly skipped — the proposal set is recomputed
+  // from current rows, so a stale UI must be told, not humoured.
+  const unknown = faceIds.filter((id) => !identityByTarget.has(id))
+  if (unknown.length > 0) {
+    throw new ValidationError(
+      `${unknown.length} face(s) are not current propagation proposals. Reload the proposal list and try again.`,
+    )
+  }
+
+  const { changed, identities } = withTransaction(() => {
+    /** @type {Map<number, number>} propagated-identity id, by source confirmed identity */
+    const propagatedFor = new Map()
+    let n = 0
+    for (const faceId of faceIds) {
+      const sourceIdentityId = /** @type {number} */ (identityByTarget.get(faceId))
+      let target = propagatedFor.get(sourceIdentityId)
+      if (target === undefined) {
+        const source = getIdentityById(sourceIdentityId)
+        if (!source) throw new NotFoundError(`Identity ${sourceIdentityId}`)
+        // ⚠ Rule 4. The face is NEVER pointed at the confirmed identity: that
+        // would let it seed a prototype (confirmedIdentityFaces selects
+        // provenance='confirmed'), and an unreviewed guess reinforcing itself
+        // is the exact feedback loop the provenance column exists to block.
+        // It gets a separate, second-class 'propagated' identity for the same
+        // guest instead.
+        const existing = identitiesForGuest(source.guest_id).find((i) => i.provenance === "propagated")
+        const identity =
+          existing ??
+          createIdentity({
+            guestId: source.guest_id,
+            confirmedBy: session?.token ?? null,
+            confirmedAt: now(),
+            provenance: "propagated",
+          })
+        target = identity.id
+        propagatedFor.set(sourceIdentityId, target)
+      }
+      if (setFaceIdentity(faceId, target)) n++
+    }
+    return { changed: n, identities: [...propagatedFor.values()] }
+  })
+
+  log({
+    action: FACE_AUDIT_ACTIONS.PROPAGATE,
+    adminId: session?.token,
+    ip: getClientIp(req),
+    resourceType: "media_face",
+    details: { faceIds, changed, identities },
   })
 
   return sendJson(res, 200, { success: true, changed })

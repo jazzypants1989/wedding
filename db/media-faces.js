@@ -172,6 +172,152 @@ export function facesForMediaWithNames(mediaId) {
     ORDER BY mf.id`.all()
 }
 
+/**
+ * Every live, descriptor-bearing face of one model version that sits in a
+ * multi-photo frame class, with its frame key and current identity.
+ *
+ * The `HAVING COUNT(DISTINCT id) > 1` subquery is the whole point: propagation
+ * can only ever act inside a frame class that contains more than one
+ * photograph, and skipping the singletons here keeps the O(faces^2)-per-class
+ * work in must-link.js proportional to the bursts rather than to the library.
+ *
+ * Identified and unidentified faces both come back — propagation needs the
+ * confirmed ones as sources and the undecided ones as targets, and it needs to
+ * see an already-taken box to refuse to overwrite it.
+ * @type {Types.facesForPropagation}
+ */
+export function facesForPropagation(modelVersion) {
+  return sql`SELECT mf.id AS id, mf.media_id AS media_id,
+      mf.bbox_x AS bbox_x, mf.bbox_y AS bbox_y, mf.bbox_w AS bbox_w, mf.bbox_h AS bbox_h,
+      mf.face_identity_id AS face_identity_id, mf.descriptor AS descriptor,
+      m.frame_root_sha256 AS frame_root_sha256
+    FROM media_faces mf
+    JOIN media m ON m.id = mf.media_id AND m.deleted_at IS NULL
+    WHERE mf.deleted_at IS NULL AND mf.descriptor IS NOT NULL
+      AND mf.model_version = ${modelVersion}
+      AND m.frame_root_sha256 IN (
+        SELECT frame_root_sha256 FROM media
+        WHERE frame_root_sha256 IS NOT NULL AND deleted_at IS NULL
+        GROUP BY frame_root_sha256 HAVING COUNT(DISTINCT id) > 1
+      )
+    ORDER BY mf.id`.all()
+}
+
+/**
+ * media_id -> frame key, for weighting "how many photographs does answering
+ * this unlock" in distinct FRAMES rather than distinct rows. A ten-shot burst
+ * of one moment is one frame, not ten — counting rows is the coverage-table
+ * bug in a second costume.
+ *
+ * Falls back to the media id itself for a row the CLI has not yet given a
+ * frame root, so an un-ingested row counts as its own frame rather than
+ * vanishing from the weighting.
+ * @type {Types.frameKeysByMediaId}
+ */
+export function frameKeysByMediaId(mediaIds) {
+  if (mediaIds.length === 0) return new Map()
+  /** @type {Array<{ id: number, frame_root_sha256: string | null }>} */
+  const rows = sql`SELECT id, frame_root_sha256 FROM media
+    WHERE id IN ${sql.list(mediaIds)} AND deleted_at IS NULL`.all()
+  /** @type {Map<number, string>} */
+  const map = new Map()
+  for (const row of rows) map.set(row.id, row.frame_root_sha256 ?? `media:${row.id}`)
+  for (const id of mediaIds) if (!map.has(id)) map.set(id, `media:${id}`)
+  return map
+}
+
+/**
+ * media_id -> what a face chip needs to crop a thumbnail to one box client-side:
+ * the file key to build the variant URL from, and the ORIGINAL pixel dimensions
+ * the box coordinates are expressed in.
+ *
+ * Without the dimensions a box in source pixels cannot be mapped onto a
+ * thumbnail of unknown scale, so the admin UI silently falls back to showing
+ * the whole (uncropped) photo for every face — which is exactly what it did
+ * before this existed. Never carries a descriptor.
+ * @type {Types.mediaChipInfo}
+ */
+export function mediaChipInfo(mediaIds) {
+  if (mediaIds.length === 0) return new Map()
+  /** @type {Array<{ id: number, file_key: string, width: number | null, height: number | null }>} */
+  const rows = sql`SELECT id, file_key, width, height FROM media
+    WHERE id IN ${sql.list(mediaIds)} AND deleted_at IS NULL`.all()
+  /** @type {Map<number, { fileKey: string, width: number | null, height: number | null }>} */
+  const map = new Map()
+  for (const row of rows) map.set(row.id, { fileKey: row.file_key, width: row.width, height: row.height })
+  return map
+}
+
+/**
+ * Every descriptor model version present on a live face row, ascending.
+ * Descriptors from two models are not comparable, so any computation over
+ * distances has to partition by this first.
+ * @type {Types.faceModelVersions}
+ */
+export function faceModelVersions() {
+  /** @type {Array<{ model_version: string }>} */
+  const rows = sql`SELECT DISTINCT model_version FROM media_faces
+    WHERE deleted_at IS NULL AND descriptor IS NOT NULL
+    ORDER BY model_version`.all()
+  return rows.map((r) => r.model_version)
+}
+
+/**
+ * media_id -> the CONFIRMED identities already placed in that photograph.
+ *
+ * The "who else is in this frame" half of the co-occurrence prior. Confirmed
+ * only, for the same reason `confirmedCooccurrence` is: conditioning a
+ * suggestion on an earlier unreviewed guess is how one mistake becomes a
+ * consistent-looking set of them.
+ * @type {Types.confirmedIdentitiesPerMedia}
+ */
+export function confirmedIdentitiesPerMedia() {
+  /** @type {Array<{ media_id: number, identity_id: number }>} */
+  const rows = sql`SELECT DISTINCT mf.media_id AS media_id, mf.face_identity_id AS identity_id
+    FROM media_faces mf
+    JOIN face_identities fi ON fi.id = mf.face_identity_id
+      AND fi.deleted_at IS NULL AND fi.provenance = 'confirmed'
+    WHERE mf.deleted_at IS NULL AND mf.face_identity_id IS NOT NULL`.all()
+  /** @type {Map<number, Set<number>>} */
+  const map = new Map()
+  for (const row of rows) {
+    const found = map.get(row.media_id)
+    if (found) found.add(row.identity_id)
+    else map.set(row.media_id, new Set([row.identity_id]))
+  }
+  return map
+}
+
+/**
+ * How often each pair of CONFIRMED identities appears in one photograph.
+ *
+ * People at a wedding cluster socially, so "who is usually in frame with this
+ * person" is real evidence about an unknown face — and it is evidence the
+ * descriptor does not have, which is what makes it worth anything at the hard
+ * tail where the descriptor is weakest.
+ *
+ * ⚠ Confirmed identities ONLY, and it ORDERS suggestions — never decides one
+ * (SPEC §6.4's clothing-colour line). A prior allowed to override the evidence
+ * confidently mislabels exactly the people who moved between groups during the
+ * day. Propagated identities are excluded for the same reason they never seed
+ * a prototype: an unreviewed guess must not become the evidence for the next
+ * guess.
+ * @type {Types.confirmedCooccurrence}
+ */
+export function confirmedCooccurrence() {
+  return sql`SELECT a.face_identity_id AS identity_a, b.face_identity_id AS identity_b,
+      COUNT(DISTINCT a.media_id) AS frames
+    FROM media_faces a
+    JOIN media_faces b ON b.media_id = a.media_id AND b.face_identity_id > a.face_identity_id
+      AND b.deleted_at IS NULL
+    JOIN face_identities fa ON fa.id = a.face_identity_id
+      AND fa.deleted_at IS NULL AND fa.provenance = 'confirmed'
+    JOIN face_identities fb ON fb.id = b.face_identity_id
+      AND fb.deleted_at IS NULL AND fb.provenance = 'confirmed'
+    WHERE a.deleted_at IS NULL AND a.face_identity_id IS NOT NULL
+    GROUP BY a.face_identity_id, b.face_identity_id`.all()
+}
+
 /** @type {Types.mediaWithFaces} */
 export function mediaWithFaces(mediaIds) {
   // "Which of these media ids have at least one live face row" — feed/gallery

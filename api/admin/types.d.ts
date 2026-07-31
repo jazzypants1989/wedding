@@ -803,6 +803,25 @@ export function faceNotAFaceHandler(
   routeInfo: AuthenticatedRouteInfo,
 ): Promise<void>
 
+/** GET /api/admin/faces/propagations — must-link proposals: identities that
+ *  could be carried onto an unidentified face in a near-duplicate frame.
+ *  PROPOSALS only; nothing is applied by reading this. */
+export function facePropagationsHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void>
+
+/** POST /api/admin/faces/propagate — { toFaceIds: number[] } → apply those
+ *  proposals. Each target gets a second-class `provenance='propagated'`
+ *  identity for the same guest, never the confirmed one, so a propagation can
+ *  never seed a prototype. Proposals are re-derived server-side; a face that
+ *  is no longer proposed is refused, not humoured. */
+export function facePropagateHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
 /** GET /api/admin/media/:id/faces — live faces for one photo, box + guest name
  *  (null when unidentified). */
 export function faceForMediaHandler(

@@ -324,6 +324,8 @@ route("GET", "/api/admin/faces/queue", adminFaces.queue, { admin: true })
 route("POST", "/api/admin/faces/assign", adminFaces.assign, { admin: true })
 route("POST", "/api/admin/faces/unassign", adminFaces.unassign, { admin: true })
 route("POST", "/api/admin/faces/not-a-face", adminFaces.notAFace, { admin: true })
+route("GET", "/api/admin/faces/propagations", adminFaces.propagations, { admin: true })
+route("POST", "/api/admin/faces/propagate", adminFaces.propagate, { admin: true })
 // Per-photo face view, alongside the curated-gallery /api/admin/media/:id/* routes.
 route("GET", "/api/admin/media/:id/faces", adminFaces.forMedia, { admin: true })
 

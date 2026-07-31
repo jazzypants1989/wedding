@@ -118,7 +118,10 @@ All committed with regression tests; SESSION-2 §2's list continues.
 | Oracle 5-point output (geometry-named mouth corners) + mouth mirror check | `oracle-macos.swift`, report | committed, tested |
 | ONNX activation exposure (append-only graph-output surgery) | `scripts/vision/expose-activations.js` | committed, tested |
 | Labels backup | `scripts/vision/labels-backup.js` | committed |
-| Admin assignment feature (ingest CLI, admin API, Faces tab) | `scripts/vision/ingest-faces.js`, `api/admin/faces.js`, `public/pages/admin/face-assignment.js` | see hand-off note — verify before trusting |
+| Admin assignment feature (ingest CLI, admin API, Faces tab) | `scripts/vision/ingest-faces.js`, `api/admin/faces.js`, `public/pages/admin/face-assignment.js` | committed, tested |
+| Must-link propagation across near-duplicate frames (four rules) + admin review UI | `public/vision/must-link.js`, `api/admin/faces.js`, `public/pages/admin/face-assignment.js` | committed, tested |
+| Frame identity + capture time as durable columns | `db/schema.js` (`media.frame_root_sha256`), `scripts/vision/ingest-faces.js` | committed, tested |
+| Co-occurrence prior over confirmed identities (ordering only) | `db/media-faces.js`, `api/admin/faces.js` | committed, tested |
 
 Architecture note worth keeping: **clusters are not persisted.** The only
 durable identity state is `face_identities` + `media_faces.face_identity_id`;
@@ -135,10 +138,17 @@ Three options now, all still open, but priced:
 1. **Hand-written kernels.** The "missing prerequisite" of SESSION-2 §6 cost
    **under an hour**, not half a day — `inspect-onnx.js` already knew every
    field number, and `graph` is a direct field of `ModelProto` (one length
-   prefix to rewrite; the varint-width-growth case is test-pinned). One risk
-   deliberately left open: whether a stock runtime accepts the shapeless
-   appended output at `session.run` time — check it when `tmp/rig/` is next
-   installed. SESSION-2 also overstated the tool as "load-bearing for tiers 3–4
+   prefix to rewrite; the varint-width-growth case is test-pinned). The one
+   risk left open — whether a stock runtime accepts the shapeless appended
+   output at `session.run` time — **is now closed: it does.** Checked against
+   `onnxruntime-node` on both models, on synthetic input: the patched files
+   load, the appended tensors come back with correct concrete shapes resolved
+   at run time, and **the pre-existing outputs are bit-identical to the
+   unpatched file's** (max absolute difference exactly zero, not merely within
+   tolerance). It holds for the dynamic-dim detector export as well as the
+   static recogniser, so shape inference over symbolic dims is not disturbed
+   by an output carrying no declared shape. Oracle A is available whenever
+   tiers 3–4 want it. SESSION-2 also overstated the tool as "load-bearing for tiers 3–4
    in their entirety": end-to-end comparison over many inputs leaves little
    room for a surviving layer bug; the tool is the *debugger* for when
    end-to-end fails.
@@ -152,7 +162,49 @@ Three options now, all still open, but priced:
    does nothing about a malicious postinstall — only hand-writing does. A real
    third option, not a loophole; it still deserves a written decision.
 
-## 5. Standing rules
+## 5. What the propagation pass added, and three things it settled
+
+**Must-link is the inverse of cannot-link, and it is the only mechanism that
+gets coverage back.** `group.js` refuses to merge two faces in one photograph;
+`must-link.js` carries a confirmed identity onto the *same* box in a
+near-duplicate frame — the burst shot, the retouched export — which is where
+the people the quality gate discarded actually are. All four safety rules are
+enforced and each has a test that fails the propagation: frames resolve to a
+union-find root rather than a one-hop pointer; the best box must beat the
+runner-up by a margin (two guests shoulder to shoulder is the failure case);
+the descriptors must corroborate the geometry (two people swapping places
+between frames is invisible to boxes alone); and an applied propagation writes
+a second-class `provenance='propagated'` identity, never the confirmed one, so
+it can never seed a prototype.
+
+**Frame identity is now a column, not a recomputed guess.**
+`media.frame_root_sha256` holds the sha256 of the lowest-id photo in the run's
+duplicate equivalence class — content-addressed, so a re-run that numbers
+photos differently still agrees with itself. That keeps the near-duplicate
+cutoff a single CLI-authoritative decision instead of a threshold that could
+quietly differ between the batch and the server. `media.captured_at` is
+populated by the same pass; it was a column nothing wrote until now.
+
+Three things settled along the way:
+
+- **The queue was weighting the wrong unit.** `unlocks` counted distinct
+  *media rows*, so a ten-shot burst of one moment outranked a face appearing
+  across ten genuinely different pictures — the coverage-table bug of §2, in a
+  second costume. It now counts distinct frames.
+- **A separate merge-groups action is not needed.** Because `assign`
+  find-or-creates exactly one confirmed identity per guest, naming two
+  over-split groups with the same guest already merges them onto one identity.
+  That is now pinned by a test. Whether the *discoverability* of that is good
+  enough — a reviewer has to notice the two groups are one person — is a
+  judgement to make while using it, not one to pre-empt with UI.
+- **Every face chip in the Faces tab was rendering uncropped.** The frontend
+  documented an assumption that the server rode `fileKey` + original
+  `width`/`height` alongside each box. It did not, so every crop silently
+  bailed out and showed the whole photograph. Fixed at the source and pinned
+  by an integration test — a good argument for writing assumptions down where
+  a test can later be pointed at them.
+
+## 6. Standing rules
 
 SESSION-2 §9 stands, with rule 3 amended by §1e above (one artifact, one
 backup path, never committed). Everything else — path-as-argument, nothing

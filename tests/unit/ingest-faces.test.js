@@ -14,6 +14,7 @@ import { after, before, describe, it } from "node:test"
 
 import {
   backfillFromManifest,
+  frameMetadataForPhotos,
   ingestRun,
   joinPhotosToMedia,
   openDatabase,
@@ -209,6 +210,56 @@ describe("joinPhotosToMedia", () => {
     const { matched, unmatchedCount } = joinPhotosToMedia([photo()], new Map())
     assert.equal(matched.length, 0)
     assert.equal(unmatchedCount, 1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// frameMetadataForPhotos (pure)
+// ---------------------------------------------------------------------------
+
+describe("frameMetadataForPhotos", () => {
+  it("gives a photo with no duplicates itself as its own frame root", () => {
+    const meta = frameMetadataForPhotos([photo({ id: 0, sha256: "sha-a" })])
+    assert.equal(meta.get(0)?.frameRootSha256, "sha-a")
+  })
+
+  it("resolves a transitively-linked burst to ONE content-addressed root", () => {
+    // A->B and C->B. All three are the same moment; a one-hop reading would
+    // leave C pointing at B while A pointed at B too but never at C.
+    const meta = frameMetadataForPhotos([
+      photo({ id: 0, sha256: "sha-a" }),
+      photo({ id: 1, sha256: "sha-b", nearDuplicateOf: 0 }),
+      photo({ id: 2, sha256: "sha-c", nearDuplicateOf: 1 }),
+    ])
+    assert.equal(meta.get(0)?.frameRootSha256, "sha-a")
+    assert.equal(meta.get(1)?.frameRootSha256, "sha-a")
+    assert.equal(meta.get(2)?.frameRootSha256, "sha-a")
+  })
+
+  it("treats exact and near duplicate links as the same equivalence", () => {
+    const meta = frameMetadataForPhotos([
+      photo({ id: 0, sha256: "sha-a" }),
+      photo({ id: 1, sha256: "sha-a", exactDuplicateOf: 0 }),
+      photo({ id: 2, sha256: "sha-c", nearDuplicateOf: 0 }),
+    ])
+    const roots = new Set([0, 1, 2].map((id) => meta.get(id)?.frameRootSha256))
+    assert.deepEqual([...roots], ["sha-a"])
+  })
+
+  it("converts EXIF capture time to an ISO string, and leaves a photo without one null", () => {
+    const meta = frameMetadataForPhotos([
+      photo({ id: 0, sha256: "sha-a", capturedAtMs: 1700000000000 }),
+      photo({ id: 1, sha256: "sha-b", capturedAtMs: null }),
+    ])
+    assert.equal(meta.get(0)?.capturedAt, new Date(1700000000000).toISOString())
+    assert.equal(meta.get(1)?.capturedAt, null)
+  })
+
+  it("falls back to a photo's own hash when its duplicate target was never written", () => {
+    // A --limit'ed run can reference a photo id it has no row for. The column
+    // must still get a value; its own frame is the truthful reading.
+    const meta = frameMetadataForPhotos([photo({ id: 7, sha256: "sha-g", nearDuplicateOf: 3 })])
+    assert.equal(meta.get(7)?.frameRootSha256, "sha-g")
   })
 })
 

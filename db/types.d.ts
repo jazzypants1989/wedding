@@ -1216,6 +1216,60 @@ export interface ConfirmedIdentityFaceRow {
  *  never mixed in; call once per version in play. */
 export function confirmedIdentityFaces(modelVersion: string): ConfirmedIdentityFaceRow[]
 
+/** One live, descriptor-bearing face inside a multi-photo frame class, with
+ *  the frame key and whatever identity it currently carries. Both identified
+ *  and unidentified rows: propagation needs the former as sources, the latter
+ *  as targets, and needs to see a taken box in order to refuse it. */
+export interface PropagationFaceRow {
+  id: number
+  media_id: number
+  bbox_x: number
+  bbox_y: number
+  bbox_w: number
+  bbox_h: number
+  face_identity_id: number | null
+  descriptor: Uint8Array
+  frame_root_sha256: string
+}
+
+/** Faces eligible for must-link propagation, for ONE model_version. Restricted
+ *  to frame classes holding more than one photograph — a lone photo has no
+ *  neighbouring frame to propagate into. */
+export function facesForPropagation(modelVersion: string): PropagationFaceRow[]
+
+/** media_id -> frame key, for counting distinct FRAMES rather than distinct
+ *  rows. A media row with no CLI-assigned frame root is its own frame. Empty
+ *  input returns an empty map. */
+export function frameKeysByMediaId(mediaIds: number[]): Map<number, string>
+
+/** Every descriptor model version on a live face row, ascending. Any
+ *  computation over distances must partition by this first. */
+export function faceModelVersions(): string[]
+
+/** media_id -> the file key and ORIGINAL pixel dimensions a face chip needs to
+ *  crop a thumbnail to one box client-side. Without the dimensions the box
+ *  cannot be mapped onto a thumbnail and the UI shows the whole photo. */
+export function mediaChipInfo(
+  mediaIds: number[],
+): Map<number, { fileKey: string; width: number | null; height: number | null }>
+
+/** media_id -> the confirmed identities already placed in that photograph.
+ *  The "who else is in this frame" half of the co-occurrence prior. */
+export function confirmedIdentitiesPerMedia(): Map<number, Set<number>>
+
+/** How many distinct photographs each pair of confirmed identities shares.
+ *  `identity_a < identity_b` always, so each pair appears once. */
+export interface CooccurrenceRow {
+  identity_a: number
+  identity_b: number
+  frames: number
+}
+
+/** Co-occurrence counts over CONFIRMED identities only. Orders suggestions;
+ *  never decides one. Propagated identities are excluded so an unreviewed
+ *  guess cannot become the evidence for the next guess. */
+export function confirmedCooccurrence(): CooccurrenceRow[]
+
 /** One live face on one photo, with the identified guest's id/name if any
  *  (LEFT JOIN, so an unidentified face still gets a row with both null).
  *  Never carries the descriptor column. */

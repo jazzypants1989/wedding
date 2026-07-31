@@ -5,18 +5,19 @@
  *  summary. Every confirm is an immediate POST; there is no batch "finish" step
  *  and no keyboard-trapping modal, so the page is abandonable at any point.
  *
- *  CONTRACT NOTE: the API contract this was built against
- *  (GET /api/admin/faces/overview, /queue; POST assign/unassign/not-a-face;
- *  GET /api/admin/media/:id/faces) has no crop endpoint. Faces are shown by
- *  loading the photo's existing `/media/:fileKey/thumb` variant and cropping
- *  to the face's box client-side (see renderFaceChip + positionFaceChipImage).
- *  That requires the ORIGINAL photo's pixel width/height alongside each face's
- *  box — the contract's `media`/queue-item entries only name faceId/mediaId/
- *  box, so this ASSUMES the server rides `fileKey` + `width`/`height` along
- *  with them too (documented on FaceChipEntry in types.d.ts). If that
- *  assumption is wrong, the chip falls back to an uncropped (but still
- *  correctly-loaded) thumbnail — see the early-return in
- *  positionFaceChipImage.
+ *  CONTRACT NOTE: there is no crop endpoint. Faces are shown by loading the
+ *  photo's existing `/media/:fileKey/thumb` variant and cropping to the face's
+ *  box client-side (see renderFaceChip + positionFaceChipImage). That needs
+ *  the ORIGINAL photo's pixel width/height alongside each box, because the box
+ *  is in original-pixel coordinates and the thumb is an unknown scale of it.
+ *  This was originally written as an ASSUMPTION about the server, and the
+ *  assumption was wrong — the payloads carried faceId/mediaId/box only, so
+ *  every chip in this tab silently rendered an uncropped thumbnail. The server
+ *  now sends `fileKey` + `width`/`height` on every chip entry (`chipOf` in
+ *  api/admin/faces.js, pinned by an integration test). The graceful
+ *  degradation is still there — a missing dimension bails out of
+ *  positionFaceChipImage rather than breaking the row — but it is now the
+ *  fallback it was meant to be rather than the normal case.
  *
  *  GET /api/admin/media/:id/faces and POST .../unassign are part of the
  *  contract but unused here: nothing in the UI shape this was built to calls
@@ -45,6 +46,8 @@ const CHIP_SIZE = 96
 let overview = null
 /** @type {Types.FacesQueueResponse | null} */
 let queueData = null
+/** @type {Types.FacePropagationsResponse | null} */
+let propagationData = null
 
 /** Guest roster cache for the name-input autocomplete (mirrors thank-you.js's
  *  ensureGuestsLoaded — a per-module cache, not shared admin state). */
@@ -71,13 +74,15 @@ export async function loadFaceAssignment() {
   const body = getElement("faces-body")
   showLoading(body)
   try {
-    const [ov, q] = await Promise.all([
+    const [ov, q, p] = await Promise.all([
       api("/api/admin/faces/overview"),
       api("/api/admin/faces/queue"),
+      api("/api/admin/faces/propagations"),
       ensureGuestsLoaded(),
     ])
     overview = /** @type {Types.FacesOverviewResponse} */ (ov)
     queueData = /** @type {Types.FacesQueueResponse} */ (q)
+    propagationData = /** @type {Types.FacePropagationsResponse} */ (p)
     renderCounts()
     renderBody()
   } catch (err) {
@@ -142,6 +147,7 @@ function renderBody() {
       <h3 id="faces-queue-heading">Ask queue</h3>
       ${queueMarkup()}
     </section>
+    ${propagationsMarkup()}
     <section class="faces-section" aria-labelledby="faces-identified-heading">
       <h3 id="faces-identified-heading">Identified</h3>
       ${identifiedMarkup()}
@@ -523,6 +529,99 @@ function handleAskRowClick(row, target) {
   }
 }
 
+// ---- Same-moment (must-link propagation) -------------------------------
+
+/**
+ * Proposals to carry a confirmed identity onto the same person in a
+ * near-duplicate frame. Hidden entirely when there are none, so it costs
+ * nothing on a library with no bursts.
+ *
+ * Deliberately a SEPARATE section from the ask queue, and deliberately opt-in
+ * per row: these are the system's own inferences rather than a human's, and
+ * they are the only place in this tab where the evidence is geometric rather
+ * than a name someone typed. Rolling them into the queue would hide that
+ * distinction behind an identical-looking confirm.
+ */
+function propagationsMarkup() {
+  const items = propagationData ? propagationData.items : []
+  if (items.length === 0) return ""
+  return html`
+    <section class="faces-section" aria-labelledby="faces-propagations-heading">
+      <h3 id="faces-propagations-heading">Same moment</h3>
+      <p class="text-muted faces-propagation-note">
+        These photographs are near-duplicates of one already-named face, and both the box and the
+        descriptor agree. Confirming records the name as <em>propagated</em> — it will never be used
+        to recognise anyone else.
+      </p>
+      <ul class="faces-propagation-list">
+        ${items.map(propagationRowMarkup)}
+      </ul>
+      <button type="button" class="btn btn-secondary btn-sm faces-propagate-all">
+        Accept all ${items.length}
+      </button>
+    </section>
+  `
+}
+
+/** @param {Types.FacePropagation} item */
+function propagationRowMarkup(item) {
+  return html`
+    <li class="face-propagation-row" data-face-id="${item.toFaceId}">
+      ${item.from ? renderFaceChip(item.from, { dimmed: true, toggleable: false }) : ""}
+      ${renderFaceChip(item, { dimmed: false, toggleable: false })}
+      <div class="face-propagation-main">
+        <span class="face-propagation-name">${item.guestName || "Unknown guest"}</span>
+        <span class="text-muted"
+          >overlap ${item.iou.toFixed(2)} · distance ${item.distance.toFixed(2)}</span
+        >
+      </div>
+      <div class="face-propagation-actions">
+        <button type="button" class="btn btn-secondary btn-sm face-propagation-accept">
+          Yes, same person
+        </button>
+        <button type="button" class="btn btn-secondary btn-sm face-propagation-dismiss">
+          Not now
+        </button>
+      </div>
+    </li>
+  `
+}
+
+/** @param {number[]} toFaceIds */
+async function applyPropagations(toFaceIds) {
+  const ids = toFaceIds.filter((id) => !pending.has(id))
+  if (ids.length === 0) return
+  for (const id of ids) pending.add(id)
+  try {
+    await api("/api/admin/faces/propagate", {
+      method: "POST",
+      body: JSON.stringify({ toFaceIds: ids }),
+    })
+    showSuccess(ids.length === 1 ? "Name carried across" : `Name carried across ${ids.length} faces`)
+    await loadFaceAssignment()
+  } catch (err) {
+    showError(getErrorMessage(err))
+  } finally {
+    for (const id of ids) pending.delete(id)
+  }
+}
+
+/** @param {HTMLElement} row @param {Element} target */
+function handlePropagationRowClick(row, target) {
+  const faceId = parseInt(row.dataset.faceId || "", 10)
+  if (Number.isNaN(faceId)) return
+  if (target.closest(".face-propagation-accept")) {
+    void applyPropagations([faceId])
+    return
+  }
+  if (target.closest(".face-propagation-dismiss")) {
+    // Visual-only, like the ask queue's "None of these": there is no
+    // "reviewed, declined" state to record, and inventing one would mean a
+    // second kind of durable judgement nothing else in the pipeline reads.
+    row.remove()
+  }
+}
+
 // ---- Identified (minimal — see file header re: no per-person breakdown) ---
 
 function identifiedMarkup() {
@@ -549,8 +648,11 @@ function identifiedMarkup() {
  * @param {{ dimmed: boolean, toggleable: boolean }} opts
  */
 function renderFaceChip(entry, opts) {
-  const box = entry.box
-  const img = html`<img class="face-chip-img" src="/media/${entry.fileKey}/thumb" alt=""
+  // Both can be absent if the media row vanished between the queries that
+  // built this payload. Same degradation as a missing width/height: the chip
+  // renders without a crop rather than the row disappearing.
+  const box = entry.box ?? { x: 0, y: 0, w: 0, h: 0 }
+  const img = html`<img class="face-chip-img" src="/media/${entry.fileKey ?? ""}/thumb" alt=""
     data-orig-w="${entry.width ?? ""}" data-orig-h="${entry.height ?? ""}"
     data-box-x="${box.x}" data-box-y="${box.y}" data-box-w="${box.w}" data-box-h="${box.h}"
     loading="lazy" />`
@@ -630,6 +732,16 @@ function handleFacesBodyClick(e) {
   const askRow = target.closest(".face-ask-row")
   if (askRow instanceof HTMLElement) {
     handleAskRowClick(askRow, target)
+    return
+  }
+  const propagationRow = target.closest(".face-propagation-row")
+  if (propagationRow instanceof HTMLElement) {
+    handlePropagationRowClick(propagationRow, target)
+    return
+  }
+  if (target.closest(".faces-propagate-all")) {
+    const items = propagationData ? propagationData.items : []
+    void applyPropagations(items.map((i) => i.toFaceId))
     return
   }
   const chip = target.closest(".face-chip.is-toggleable")

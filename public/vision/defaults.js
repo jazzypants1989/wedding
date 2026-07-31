@@ -135,6 +135,34 @@ const VISION_CONFIG = {
      */
     sameBandCutoff: 0.64,
   },
+
+  propagate: {
+    /**
+     * Floor on how much the source box must overlap the best box in the
+     * neighbouring frame before propagation is even considered. High, because
+     * these are near-duplicate frames: the same person a fraction of a second
+     * apart barely moves, so a genuine match overlaps heavily and anything
+     * that does not is a different person, not a moved one.
+     */
+    minIou: 0.5,
+    /**
+     * How far the best box must beat the runner-up. Rule 2 of must-link.js.
+     * Two guests standing shoulder to shoulder both overlap a source box
+     * respectably; without a margin, "best of two near-ties" attaches one
+     * person's name to the person beside them.
+     */
+    iouMargin: 0.2,
+    /**
+     * Cosine DISTANCE above which the two descriptors are taken to disagree
+     * and the propagation is suppressed however good the geometry looks.
+     * Deliberately looser than `group.cutoff`: this is a veto, not a decision.
+     * Its job is to catch the case geometry cannot see at all — two people
+     * swapping places between frames — not to re-adjudicate identity, and a
+     * tight value here would veto exactly the poor-quality faces the whole
+     * mechanism exists to recover.
+     */
+    corroborationCutoff: 0.64,
+  },
 }
 
 /**

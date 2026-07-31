@@ -1147,4 +1147,45 @@ export function runMigrations(db) {
     `)
     record.run("add_media_faces")
   }
+
+  // Frame identity, as a durable column rather than a recomputed guess.
+  //
+  // A photo delivery contains near-identical frames — burst shots, and
+  // retouched/unretouched exports of one exposure. Two things downstream need
+  // to know which rows are the same MOMENT rather than the same file:
+  //
+  //  - must-link propagation (SPEC §6.4's cannot-link, inverted): a person
+  //    confidently identified in one frame of a burst is the same person in
+  //    the next, which recovers coverage the quality gate discards.
+  //  - queue weighting: "how many photographs does answering this unlock"
+  //    must count distinct frames, or a ten-shot burst of one moment
+  //    outranks a face that appears across ten genuinely different pictures.
+  //
+  // The value is the sha256 of the LOWEST-id photo in the run's duplicate
+  // equivalence class — content-addressed, so it survives re-ingest and does
+  // not depend on a run's local photo numbering. A photo with no duplicates is
+  // its own root, so the column is never null for an ingested row and
+  // "group by frame" needs no coalesce.
+  //
+  // ⚠ The equivalence classes are the CLI's transitive closure over exact
+  // (sha256) and near (perceptual hash) duplicate links — computed once by
+  // scripts/vision/session1.js and resolved by frameRoots()'s union-find, NOT
+  // recomputed per request from a threshold on this side. That keeps the
+  // near-duplicate cutoff a single CLI-authoritative decision (§10) instead of
+  // a tunable that could quietly differ between the batch and the server.
+  if (!applied.get("add_media_frame_root")) {
+    const haveMediaCols = new Set(
+      /** @type {Array<{ name: string }>} */ (
+        db.prepare("PRAGMA table_info(media)").all()
+      ).map((c) => c.name),
+    )
+    if (!haveMediaCols.has("frame_root_sha256")) {
+      db.exec(`ALTER TABLE media ADD COLUMN frame_root_sha256 TEXT`)
+    }
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_media_frame_root
+        ON media(frame_root_sha256) WHERE frame_root_sha256 IS NOT NULL;
+    `)
+    record.run("add_media_frame_root")
+  }
 }

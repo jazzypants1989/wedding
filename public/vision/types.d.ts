@@ -24,6 +24,7 @@ export interface VisionDefaults {
   group: { cutoff: number; cannotLinkWithinPhoto: boolean }
   describe: { mirrorAverage: boolean }
   assign: { sameBandCutoff: number }
+  propagate: { minIou: number; iouMargin: number; corroborationCutoff: number }
 }
 
 /** Whole table, deep-copied. */
@@ -510,6 +511,89 @@ export function assignPhoto(
   prototypes: readonly Prototype[],
   options: AssignOptions,
 ): PhotoAssignment
+
+// --- must-link.js ---
+
+/** One face as the propagator sees it. */
+export interface PropagationFace {
+  faceId: number
+  /**
+   * ALREADY-RESOLVED frame equivalence key — a union-find root, never a
+   * one-hop duplicate pointer. `frameRoots()` output on the CLI side,
+   * `media.frame_root_sha256` on the server side.
+   */
+  frame: string | number
+  /** Distinct photograph within the frame class. */
+  photoId: number
+  box: FaceBox
+  /** Confirmed identity, or null if undecided. */
+  identityId: number | null
+  /** Row in the companion DescriptorSet, or null when the face has none. */
+  descriptorRow: number | null
+}
+
+export interface PropagationProposal {
+  fromFaceId: number
+  toFaceId: number
+  identityId: number
+  /** IoU of the two boxes across the frame pair. */
+  iou: number
+  /** IoU of the next-best box in the target photo — the ambiguity check's denominator. */
+  runnerUpIou: number
+  /** Cosine distance between the two descriptors. */
+  distance: number
+}
+
+export type PropagationSuppressionReason =
+  /** No box in the target photo overlapped the source enough to consider. */
+  | "no-overlap"
+  /** Best box did not beat the runner-up by `iouMargin` — two people side by side. */
+  | "ambiguous-box"
+  /** Target already carries a DIFFERENT confirmed identity; never overwritten. */
+  | "already-identified"
+  /** Target has no descriptor, so rule 3 has nothing to corroborate with. */
+  | "no-descriptor"
+  /** Descriptors disagree past `corroborationCutoff` — geometry was not enough. */
+  | "descriptor-disagrees"
+  /** Two different source faces both claimed this target. Both dropped. */
+  | "conflicting-sources"
+  /** One identity claimed two boxes in a single photo. Both dropped. */
+  | "duplicate-identity-in-photo"
+
+export interface PropagationSuppression {
+  fromFaceId: number
+  toFaceId: number
+  identityId: number
+  reason: PropagationSuppressionReason
+  iou: number
+  runnerUpIou: number
+  distance: number | null
+}
+
+export interface PropagationOptions {
+  /** Floor on best-box overlap before a propagation is even considered. */
+  minIou: number
+  /** How far the best box must beat the runner-up. Rule 2. */
+  iouMargin: number
+  /** Cosine distance above which the descriptors are taken to disagree. Rule 3. */
+  corroborationCutoff: number
+}
+
+/**
+ * Propose carrying confirmed identities onto unidentified faces in
+ * near-duplicate frames. Every result is a PROPOSAL — nothing here decides,
+ * and a caller that writes one must record it as `provenance='propagated'` so
+ * it can never seed a prototype (rule 4).
+ *
+ * Deterministic: frames are visited in sorted key order and photos in
+ * ascending id, so the same input always yields the same list in the same
+ * order regardless of Map iteration or input ordering.
+ */
+export function propagateWithinFrames(
+  faces: readonly PropagationFace[],
+  set: DescriptorSet,
+  options: PropagationOptions,
+): { proposals: PropagationProposal[]; suppressed: PropagationSuppression[] }
 
 // --- confidence.js ---
 

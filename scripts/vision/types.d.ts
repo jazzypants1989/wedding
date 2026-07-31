@@ -1248,7 +1248,23 @@ export interface IngestRunResult {
   /** No sha256 match against any imported media row — likely not imported yet. */
   unmatched: number
   facesInserted: number
+  /** `media` rows given a `frame_root_sha256`. Zero on a dry run. */
+  framesWritten: number
+  /** `media` rows given a `captured_at`. Photos with no EXIF time are skipped. */
+  capturedAtWritten: number
 }
+
+/**
+ * Per-photo frame identity and capture time for the `media` columns. Pure — no
+ * DB access — so the union-find resolution is testable against plain records.
+ *
+ * Keyed by run-local photo id; the VALUE's frame root is content-addressed (the
+ * sha256 of the lowest-id photo in the duplicate equivalence class), so it
+ * survives a re-run that numbered the photos differently.
+ */
+export function frameMetadataForPhotos(
+  photos: readonly Session1PhotoRecord[],
+): Map<number, { frameRootSha256: string; capturedAt: string | null }>
 
 /**
  * The main pass: join the run's JSONL to media by sha256, refuse (or

@@ -1399,13 +1399,14 @@ export interface FaceBox {
  */
 export interface FaceChipEntry {
   faceId: number
-  mediaId: number
-  fileKey: string
+  mediaId: number | null
+  /** Null only if the media row vanished between queries. */
+  fileKey: string | null
   /** The ORIGINAL photo's pixel width, or null if unknown (chip falls back
    *  to an uncropped thumbnail — see positionFaceChipImage). */
   width: number | null
   height: number | null
-  box: FaceBox
+  box: FaceBox | null
 }
 
 /** A named-group's system-suggested identity (from prototype matching against
@@ -1457,6 +1458,29 @@ export interface FaceQueueItem extends FaceChipEntry {
 export interface FacesQueueResponse {
   items: FaceQueueItem[]
   truncated: boolean
+}
+
+/** One must-link proposal from GET /api/admin/faces/propagations: a confirmed
+ *  identity that could be carried onto this (unidentified) face because the
+ *  two sit in near-duplicate frames with agreeing boxes AND agreeing
+ *  descriptors. Applying it writes a second-class `propagated` identity that
+ *  can never seed a prototype. */
+export interface FacePropagation extends FaceChipEntry {
+  toFaceId: number
+  fromFaceId: number
+  /** The confirmed face the identity is coming from. */
+  from: FaceChipEntry | null
+  guestId: number | null
+  guestName: string | null
+  /** Box overlap across the frame pair. */
+  iou: number
+  /** Cosine distance between the two descriptors — rule 3's corroboration. */
+  distance: number
+}
+
+/** GET /api/admin/faces/propagations. */
+export interface FacePropagationsResponse {
+  items: FacePropagation[]
 }
 
 /** POST /api/admin/faces/assign response. `identified` is how many faces the

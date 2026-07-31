@@ -164,6 +164,174 @@ describe("admin auth is required on every route", () => {
     const res = await fetch(`${BASE_URL}/api/admin/media/1/faces`)
     assert.strictEqual(res.status, 401)
   })
+
+  it("401s GET /api/admin/faces/propagations with no session", async () => {
+    const res = await fetch(`${BASE_URL}/api/admin/faces/propagations`)
+    assert.strictEqual(res.status, 401)
+  })
+
+  it("401s POST /api/admin/faces/propagate with no session", async () => {
+    const res = await fetch(`${BASE_URL}/api/admin/faces/propagate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ toFaceIds: [1] }),
+    })
+    assert.strictEqual(res.status, 401)
+  })
+})
+
+describe("face chips carry what a client-side crop needs", () => {
+  it("overview and queue rows ride fileKey + original dimensions alongside the box", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const mediaId = seedMedia()
+    db.prepare(`UPDATE media SET width = 4000, height = 3000 WHERE id = ?`).run(mediaId)
+    const faceId = seedFace(mediaId, CLUSTER_A1)
+
+    const ov = await json(await asAdmin("/api/admin/faces/overview"))
+    const chip = ov.groups[0].media[0]
+    assert.strictEqual(chip.faceId, faceId)
+    assert.ok(chip.fileKey, "a chip without a fileKey renders no image at all")
+    // Boxes are in ORIGINAL pixels; without these the crop cannot be scaled to
+    // the thumb variant and the UI silently shows the whole photograph.
+    assert.strictEqual(chip.width, 4000)
+    assert.strictEqual(chip.height, 3000)
+    assertNoDescriptor(ov)
+  })
+})
+
+describe("naming two groups the same guest merges them", () => {
+  it("both groups end up on ONE confirmed identity, so no separate merge action is needed", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    // Deliberate over-splitting (SPEC §6.4) means one person can appear as two
+    // groups. Because assign() finds-or-creates a single confirmed identity per
+    // guest, naming both with the same guest is already the merge.
+    const faceA = seedFace(seedMedia(), CLUSTER_A1)
+    const faceB = seedFace(seedMedia(), CLUSTER_B1)
+    const guestId = seedGuest({ name: "Split Across Groups" })
+
+    for (const faceId of [faceA, faceB]) {
+      const res = await asAdmin("/api/admin/faces/assign", {
+        method: "POST",
+        body: JSON.stringify({ faceIds: [faceId], guestId }),
+      })
+      assert.strictEqual(res.status, 200)
+    }
+
+    const identities = /** @type {any[]} */ (
+      db.prepare(`SELECT id FROM face_identities WHERE guest_id = ? AND deleted_at IS NULL`).all(guestId)
+    )
+    assert.strictEqual(identities.length, 1, "a second naming must reuse the first identity, not create another")
+
+    const faces = /** @type {any[]} */ (
+      db.prepare(`SELECT DISTINCT face_identity_id AS id FROM media_faces WHERE id IN (?, ?)`).all(faceA, faceB)
+    )
+    assert.strictEqual(faces.length, 1, "both faces point at the same identity")
+    assert.strictEqual(faces[0].id, identities[0].id)
+  })
+})
+
+describe("must-link propagation across near-duplicate frames", () => {
+  /** Two media rows sharing one frame root — a burst, as the CLI would record it. */
+  function seedBurst() {
+    const a = seedMedia()
+    const b = seedMedia()
+    db.prepare(`UPDATE media SET frame_root_sha256 = 'frame-1' WHERE id IN (?, ?)`).run(a, b)
+    return { a, b }
+  }
+
+  it("proposes carrying a confirmed identity onto the same box in the next frame, and applying it never seeds a prototype", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const { a, b } = seedBurst()
+    const box = { x: 10, y: 10, w: 100, h: 100 }
+    const sourceFace = seedFace(a, CLUSTER_A1, { box })
+    const targetFace = seedFace(b, CLUSTER_A2, { box: { x: 12, y: 12, w: 100, h: 100 } })
+
+    const guestId = seedGuest({ name: "Burst Guest" })
+    const assigned = await asAdmin("/api/admin/faces/assign", {
+      method: "POST",
+      body: JSON.stringify({ faceIds: [sourceFace], guestId }),
+    })
+    assert.strictEqual(assigned.status, 200)
+
+    const listed = await asAdmin("/api/admin/faces/propagations")
+    assert.strictEqual(listed.status, 200)
+    const body = await json(listed)
+    assertNoDescriptor(body)
+    assert.strictEqual(body.items.length, 1)
+    assert.strictEqual(body.items[0].fromFaceId, sourceFace)
+    assert.strictEqual(body.items[0].toFaceId, targetFace)
+    assert.strictEqual(body.items[0].guestName, "Burst Guest")
+
+    const applied = await asAdmin("/api/admin/faces/propagate", {
+      method: "POST",
+      body: JSON.stringify({ toFaceIds: [targetFace] }),
+    })
+    assert.strictEqual(applied.status, 200)
+    assert.strictEqual((await json(applied)).changed, 1)
+
+    // The target now carries a PROPAGATED identity for the same guest — never
+    // the confirmed one, or it would seed a prototype and reinforce itself.
+    const row = /** @type {any} */ (
+      db
+        .prepare(
+          `SELECT fi.provenance AS provenance, fi.guest_id AS guest_id
+             FROM media_faces mf JOIN face_identities fi ON fi.id = mf.face_identity_id
+            WHERE mf.id = ?`,
+        )
+        .get(targetFace)
+    )
+    assert.strictEqual(row.provenance, "propagated")
+    assert.strictEqual(row.guest_id, guestId)
+  })
+
+  it("proposes nothing when the two photos are not in one frame class", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const a = seedMedia()
+    const b = seedMedia()
+    db.prepare(`UPDATE media SET frame_root_sha256 = 'frame-a' WHERE id = ?`).run(a)
+    db.prepare(`UPDATE media SET frame_root_sha256 = 'frame-b' WHERE id = ?`).run(b)
+    const box = { x: 10, y: 10, w: 100, h: 100 }
+    const sourceFace = seedFace(a, CLUSTER_A1, { box })
+    seedFace(b, CLUSTER_A2, { box })
+
+    const guestId = seedGuest({ name: "Unrelated Frames" })
+    await asAdmin("/api/admin/faces/assign", {
+      method: "POST",
+      body: JSON.stringify({ faceIds: [sourceFace], guestId }),
+    })
+
+    const listed = await asAdmin("/api/admin/faces/propagations")
+    assert.deepStrictEqual((await json(listed)).items, [])
+  })
+
+  it("refuses to propagate onto a face that is not a current proposal", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const { a, b } = seedBurst()
+    const box = { x: 10, y: 10, w: 100, h: 100 }
+    const sourceFace = seedFace(a, CLUSTER_A1, { box })
+    // Descriptors disagree, so rule 3 suppresses: geometry alone is not enough.
+    const targetFace = seedFace(b, CLUSTER_B1, { box })
+
+    const guestId = seedGuest({ name: "Disagreeing Descriptor" })
+    await asAdmin("/api/admin/faces/assign", {
+      method: "POST",
+      body: JSON.stringify({ faceIds: [sourceFace], guestId }),
+    })
+
+    const listed = await asAdmin("/api/admin/faces/propagations")
+    assert.deepStrictEqual((await json(listed)).items, [])
+
+    const applied = await asAdmin("/api/admin/faces/propagate", {
+      method: "POST",
+      body: JSON.stringify({ toFaceIds: [targetFace] }),
+    })
+    assert.strictEqual(applied.status, 400)
+  })
 })
 
 describe("overview + queue: on-demand grouping and matching", () => {

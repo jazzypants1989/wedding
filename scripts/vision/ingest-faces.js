@@ -45,6 +45,7 @@ import { bindExecutor, sql } from "../../db/sql.js"
 import { now } from "../../db/utils.js"
 import { insertFace, descriptorToBlob } from "../../db/media-faces.js"
 import { loadManifest } from "../lib/import-manifest.js"
+import { frameRoots } from "./session1-report.js"
 
 const USAGE = `Usage: node scripts/vision/ingest-faces.js <run-dir> [options]
 
@@ -249,6 +250,42 @@ export function joinPhotosToMedia(photos, mediaBySha) {
   return { matched, unmatchedCount }
 }
 
+/**
+ * Per-photo frame identity and capture time, as the columns want them. Pure —
+ * no DB access — so the union-find resolution is unit-testable against plain
+ * records.
+ *
+ * The frame root is the sha256 of the LOWEST-id photo in the duplicate
+ * equivalence class, not the class's run-local id: content-addressed, so it
+ * means the same thing after a re-run that numbered the photos differently.
+ * `frameRoots` is imported from the report, never reimplemented — it is the
+ * transitive closure (A->B, C->B puts A and C together), and a one-hop
+ * pointer here would silently split exactly the classes it exists to join.
+ *
+ * A photo with no duplicates is its own root, so every ingested row gets a
+ * non-null value and "group by frame" downstream needs no coalesce.
+ * @type {Types.frameMetadataForPhotos}
+ */
+export function frameMetadataForPhotos(photos) {
+  const roots = frameRoots(photos)
+  /** @type {Map<number, string>} */
+  const shaByPhotoId = new Map(photos.map((p) => [p.id, p.sha256]))
+
+  /** @type {Map<number, { frameRootSha256: string, capturedAt: string | null }>} */
+  const out = new Map()
+  for (const photo of photos) {
+    const rootId = roots.get(photo.id) ?? photo.id
+    out.set(photo.id, {
+      // A root that has no row of its own (a --limit'ed run referencing a
+      // photo it never wrote) falls back to the photo's own hash rather than
+      // leaving the column null: its own frame, which is the truthful reading.
+      frameRootSha256: shaByPhotoId.get(rootId) ?? photo.sha256,
+      capturedAt: photo.capturedAtMs === null ? null : new Date(photo.capturedAtMs).toISOString(),
+    })
+  }
+  return out
+}
+
 /** @param {number} mediaId @param {string} modelVersion */
 function existingCliFaceCount(mediaId, modelVersion) {
   /** @type {{ n: number } | undefined} */
@@ -305,10 +342,34 @@ export function ingestRun({ db, runDir, modelVersion, replace, dryRun }) {
     }
   }
 
+  const frameMeta = frameMetadataForPhotos(photos)
+
+  let framesWritten = 0
+  let capturedAtWritten = 0
   if (!dryRun) {
     withTransaction(db, () => {
       if (replace) {
         for (const mediaId of matchedMediaIds) retireCliFaces(mediaId, modelVersion)
+      }
+      // Frame identity and capture time are properties of the PHOTOGRAPH, not
+      // of a descriptor model, so they are written on every run regardless of
+      // --replace and are not scoped to model_version. The CLI is
+      // authoritative for both (§10), so a re-run overwrites rather than
+      // filling only nulls — that is what makes a corrected near-duplicate
+      // cutoff take effect on a second pass.
+      for (const { photo, mediaId } of matched) {
+        const meta = frameMeta.get(photo.id)
+        if (!meta) continue
+        framesWritten += Number(
+          sql`UPDATE media SET frame_root_sha256 = ${meta.frameRootSha256}
+            WHERE id = ${mediaId}`.run().changes,
+        )
+        if (meta.capturedAt !== null) {
+          capturedAtWritten += Number(
+            sql`UPDATE media SET captured_at = ${meta.capturedAt}
+              WHERE id = ${mediaId}`.run().changes,
+          )
+        }
       }
       for (const face of facesToInsert) {
         const mediaId = /** @type {number} */ (mediaIdByPhotoId.get(face.photoId))
@@ -333,6 +394,8 @@ export function ingestRun({ db, runDir, modelVersion, replace, dryRun }) {
     matched: matched.length,
     unmatched: unmatchedCount,
     facesInserted: facesToInsert.length,
+    framesWritten,
+    capturedAtWritten,
   }
 }
 
@@ -421,6 +484,10 @@ async function main() {
       console.log(`matched to media: ${result.matched}`)
       console.log(`unmatched (no sha match): ${result.unmatched}`)
       console.log(`faces inserted: ${result.facesInserted}` + (args.dryRun ? " (dry run — nothing written)" : ""))
+      if (!args.dryRun) {
+        console.log(`frame roots written: ${result.framesWritten}`)
+        console.log(`capture times written: ${result.capturedAtWritten}`)
+      }
     }
   } finally {
     db.close()
