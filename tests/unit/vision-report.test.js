@@ -37,6 +37,7 @@ import {
   bestSweepPoint,
   frameRoots,
   jointGate,
+  labellingTarget,
   loadRun,
   parseArgs,
   personFolds,
@@ -1598,4 +1599,72 @@ test("cByPool evaluates pool A and pool B queries separately against the full pr
   const lo = Math.min(analysis.cByPool.poolA.rank1, analysis.cByPool.poolB.rank1)
   const hi = Math.max(analysis.cByPool.poolA.rank1, analysis.cByPool.poolB.rank1)
   assert.ok(analysis.c.rank1 >= lo - 1e-9 && analysis.c.rank1 <= hi + 1e-9)
+})
+
+// ---------------------------------------------------------------------------
+// The verdict buckets on the interval, not the point estimate
+// ---------------------------------------------------------------------------
+
+test("a point estimate whose interval spans a band boundary prints UNDECIDED", () => {
+  const v = verdict({
+    auc: 0.95,
+    fprAt95Tpr: 0.1,
+    rank1: 0.9,
+    basis: "held-out gate estimate",
+    ungatedAuc: 0.8,
+    keptFraction: 0.5,
+    weldFreeCutoffExists: true,
+    recoverablePeople: 5,
+    people: 10,
+    lo: 0.88, // REAL SIGNAL band
+    hi: 0.99, // CLEAN SEPARATION band — a person re-draw could move the verdict
+  })
+  assert.ok(v.headline.includes("UNDECIDED"), "the verdict depends on who got labelled, and must say so")
+  assert.ok(v.detail.some((line) => line.includes("0.880")), "the interval itself is stated")
+
+  const settled = verdict({
+    auc: 0.95,
+    fprAt95Tpr: 0.1,
+    rank1: 0.9,
+    basis: "held-out gate estimate",
+    ungatedAuc: 0.8,
+    keptFraction: 0.5,
+    weldFreeCutoffExists: true,
+    recoverablePeople: 5,
+    people: 10,
+    lo: 0.92,
+    hi: 0.97, // both endpoints in the same band as the point estimate
+  })
+  assert.ok(!settled.headline.includes("UNDECIDED"), "an interval inside one band changes nothing")
+})
+
+test("labellingTarget estimates people, refuses when there is nothing to estimate", () => {
+  // Sixteen synthetic people, several same-pairs each, well-separated diffs.
+  /** @type {V.TaggedSamePair[]} */
+  const same = []
+  /** @type {V.TaggedDiffPair[]} */
+  const diff = []
+  const names = []
+  for (let p = 0; p < 16; p++) names.push(`p${p}`)
+  let wiggle = 0
+  for (const a of names) {
+    for (let k = 0; k < 4; k++) {
+      wiggle = (wiggle * 9301 + 49297) % 233280
+      same.push({ distance: 0.2 + (wiggle / 233280) * 0.1, person: a })
+    }
+  }
+  for (let i = 0; i < names.length; i++) {
+    for (let j = i + 1; j < names.length; j++) {
+      wiggle = (wiggle * 9301 + 49297) % 233280
+      diff.push({ distance: 0.7 + (wiggle / 233280) * 0.1, personA: names[i], personB: names[j] })
+    }
+  }
+  const target = labellingTarget({ auc: 0.93, sameTagged: same, diffTagged: diff }, { lo: 0.85, hi: 0.97 }, 3)
+  assert.ok(target, "sixteen people is enough to estimate from")
+  assert.equal(target.peopleNow, 16)
+  assert.ok(target.peopleNeeded >= 1 && Number.isFinite(target.peopleNeeded))
+  assert.ok(target.extraFaces >= target.extraPeople, "faces scale by the per-person rate (3)")
+
+  assert.equal(labellingTarget({ auc: 0.93, sameTagged: same, diffTagged: diff }, { lo: NaN, hi: NaN }, 3), null)
+  assert.equal(labellingTarget({ auc: 0.93, sameTagged: same.slice(0, 4), diffTagged: [] }, { lo: 0.8, hi: 0.9 }, 3), null)
 })

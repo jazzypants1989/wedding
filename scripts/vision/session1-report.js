@@ -59,6 +59,7 @@ import { boxIou } from "../../public/vision/detect.js"
 import { applyGate, gateCheckKeys } from "../../public/vision/gate.js"
 import { distanceMatrix, groupFaces } from "../../public/vision/group.js"
 import {
+  bootstrapAuc,
   groupingQuality,
   histogram,
   leaveOneOutRank1,
@@ -68,6 +69,7 @@ import {
 } from "../../public/vision/metrics.js"
 
 import { computeDatasetId } from "./dataset-id.js"
+import { seededRandom } from "./session1.js"
 
 const MINUTE_MS = 60_000
 const HOUR_MS = 3_600_000
@@ -88,6 +90,29 @@ const MIN_STRATUM_PAIRS = 10
  * makes the report more honest and more often silent; it never makes it wrong.
  */
 const MIN_VERDICT_PAIRS = 30
+
+/**
+ * Person-level bootstrap resamples behind the verdict's interval, and the fixed
+ * seed that makes two runs of the report print the same interval. 200 is enough
+ * for stable 2.5/97.5 percentiles at the two-decimal precision anything here is
+ * read at; the cost is milliseconds.
+ */
+const BOOTSTRAP_RESAMPLES = 200
+const BOOTSTRAP_SEED = 0x5e551015
+
+/**
+ * Which of verdict()'s bands an AUC lands in, by the AUC alone (the top band
+ * also requires an FPR condition on the point estimate; interval endpoints are
+ * compared on AUC only, which can only make the check MORE willing to call
+ * itself undecided, never less).
+ * @param {number} auc @returns {number}
+ */
+function verdictBand(auc) {
+  if (auc >= 0.98) return 3
+  if (auc >= 0.9) return 2
+  if (auc >= 0.75) return 1
+  return 0
+}
 
 /** Label written by the labeller for "this detection is not a face". */
 const NOT_A_FACE = "x"
@@ -721,7 +746,7 @@ function gateCandidates(faces, axis, defaultValue) {
  * @param {object} [options]
  * @param {(face: Types.Session1FaceRecord) => boolean} [options.pairsFrom] narrows the AUC pairs only
  * @param {Set<number>} [options.queryFaceIds] narrows the rank-1 queries only
- * @returns {{ auc: number, fprAt95Tpr: number, rank1: number, kept: number, evaluated: number, correct: number, samePairs: number, diffPairs: number, same: number[], diff: number[] }}
+ * @returns {{ auc: number, fprAt95Tpr: number, rank1: number, kept: number, evaluated: number, correct: number, samePairs: number, diffPairs: number, same: number[], diff: number[], sameTagged: V.TaggedSamePair[], diffTagged: V.TaggedDiffPair[] }}
  */
 function scoreWithGate(run, stratumKey, include, options = {}) {
   const pairsFrom = options.pairsFrom
@@ -731,7 +756,7 @@ function scoreWithGate(run, stratumKey, include, options = {}) {
     include: pairsFrom ? (f) => include(f) && pairsFrom(f) : include,
   })
   const spec = separationStrata(poolA).find((s) => s.key === stratumKey)
-  const { same, diff } = pairDistances(poolA.set, {
+  const { same, diff, sameTagged, diffTagged } = pairDistances(poolA.set, {
     labels: poolA.labels,
     keep: spec ? (spec.keep ?? undefined) : undefined,
   })
@@ -756,6 +781,10 @@ function scoreWithGate(run, stratumKey, include, options = {}) {
     // quantity and is far noisier when the folds are thin; see `heldOutGate`.
     same,
     diff,
+    // Person-tagged, for the cluster bootstrap: pairs are O(n²) from far fewer
+    // people, so an interval must resample people, and that needs the tags.
+    sameTagged,
+    diffTagged,
   }
 }
 
@@ -910,6 +939,10 @@ export function heldOutGate(run, stratumKey, base, total, k) {
   const pooledSame = []
   /** @type {number[]} */
   const pooledDiff = []
+  /** @type {V.TaggedSamePair[]} */
+  const pooledSameTagged = []
+  /** @type {V.TaggedDiffPair[]} */
+  const pooledDiffTagged = []
   let pooledCorrect = 0
   let pooledEvaluated = 0
 
@@ -934,6 +967,8 @@ export function heldOutGate(run, stratumKey, base, total, k) {
 
     pooledSame.push(...scored.same)
     pooledDiff.push(...scored.diff)
+    pooledSameTagged.push(...scored.sameTagged)
+    pooledDiffTagged.push(...scored.diffTagged)
     pooledCorrect += scored.correct
     pooledEvaluated += scored.evaluated
 
@@ -959,6 +994,8 @@ export function heldOutGate(run, stratumKey, base, total, k) {
     contributingFolds: results.filter((r) => r.samePairs > 0 || r.diffPairs > 0).length,
     samePairs: pooledSame.length,
     diffPairs: pooledDiff.length,
+    sameTagged: pooledSameTagged,
+    diffTagged: pooledDiffTagged,
     evaluated: pooledEvaluated,
     auc: measurable ? pooled.auc : NaN,
     fprAt95Tpr: measurable ? pooled.fprAt95Tpr : NaN,
@@ -1007,6 +1044,8 @@ export function reportD(run, stratumKey, options = {}) {
       rank1: baselineScore.rank1,
       samePairs: baselineScore.samePairs,
       diffPairs: baselineScore.diffPairs,
+      sameTagged: baselineScore.sameTagged,
+      diffTagged: baselineScore.diffTagged,
     },
     baselineFprAt95Tpr: baselineScore.fprAt95Tpr,
     ungated: {
@@ -1017,6 +1056,8 @@ export function reportD(run, stratumKey, options = {}) {
       rank1: ungatedScore.rank1,
       samePairs: ungatedScore.samePairs,
       diffPairs: ungatedScore.diffPairs,
+      sameTagged: ungatedScore.sameTagged,
+      diffTagged: ungatedScore.diffTagged,
     },
     keys,
     joint,
@@ -1477,8 +1518,10 @@ export function residualSummary(faces, maxResidual) {
  * `keptFraction` is the SHIPPED gate's, in every branch — the held-out folds each
  * chose their own cutoffs, but the gate that would actually ship is the one
  * selected on everything, so that is the one whose keep rate a reader needs.
+ * The tagged pair lists ride along so the caller can put an interval on the
+ * chosen number — same pairs, same population, resampled by person.
  * @param {ReturnType<typeof reportD>} d
- * @returns {{ auc: number, fprAt95Tpr: number, rank1: number, keptFraction: number, label: string }}
+ * @returns {{ auc: number, fprAt95Tpr: number, rank1: number, keptFraction: number, label: string, sameTagged: V.TaggedSamePair[], diffTagged: V.TaggedDiffPair[] }}
  */
 export function verdictBasis(d) {
   const total = d.joint.result.total
@@ -1497,6 +1540,8 @@ export function verdictBasis(d) {
       rank1: d.heldOut.rank1,
       keptFraction: total > 0 ? d.joint.result.kept / total : NaN,
       label: `held-out gate estimate (${d.heldOut.contributingFolds}-fold, pooled over people the selection never saw)`,
+      sameTagged: d.heldOut.sameTagged,
+      diffTagged: d.heldOut.diffTagged,
     }
   }
   if (Number.isFinite(d.baseline.auc) && powered(d.baseline.samePairs, d.baseline.diffPairs)) {
@@ -1506,6 +1551,8 @@ export function verdictBasis(d) {
       rank1: d.baseline.rank1,
       keptFraction: total > 0 ? d.baseline.kept / total : NaN,
       label: "default gate, whose cutoffs predate these labels and so cannot be overfitted to them",
+      sameTagged: d.baseline.sameTagged,
+      diffTagged: d.baseline.diffTagged,
     }
   }
   if (Number.isFinite(d.ungated.auc) && powered(d.ungated.samePairs, d.ungated.diffPairs)) {
@@ -1515,6 +1562,8 @@ export function verdictBasis(d) {
       rank1: d.ungated.rank1,
       keptFraction: 1,
       label: "NO GATE AT ALL — the wrong population, reported only because nothing better could be measured",
+      sameTagged: d.ungated.sameTagged,
+      diffTagged: d.ungated.diffTagged,
     }
   }
   return {
@@ -1526,6 +1575,95 @@ export function verdictBasis(d) {
       `UNDER-POWERED — no configuration reached ${MIN_VERDICT_PAIRS} same-person and ` +
       `${MIN_VERDICT_PAIRS} different-person pairs, so no verdict is offered. Label more ` +
       `people, prioritising whoever recurs most.`,
+    sameTagged: /** @type {V.TaggedSamePair[]} */ ([]),
+    diffTagged: /** @type {V.TaggedDiffPair[]} */ ([]),
+  }
+}
+
+/**
+ * How many more labelled people it would take for the verdict interval to fit
+ * inside one band — the number SESSION-2's P0 should have asked for instead of
+ * "roughly twenty minutes". Estimated by subsampling the labelled PEOPLE at
+ * several sizes, measuring how the bootstrap interval widens, fitting
+ * width ≈ c/√people, and solving for the width that clears the nearest verdict
+ * boundary. Everything here is computed and printed; nothing is written down.
+ *
+ * Returns null when there is nothing to estimate: no finite interval, too few
+ * people to subsample, or a fit that came out non-finite (all three mean the
+ * same thing — label more before estimating how much more to label).
+ * @param {{ auc: number, sameTagged: readonly V.TaggedSamePair[], diffTagged: readonly V.TaggedDiffPair[] }} basis
+ * @param {{ lo: number, hi: number }} ci
+ * @param {number} facesPerPerson observed labelled-faces-per-person rate, for the faces translation
+ * @returns {{ widthNow: number, margin: number, peopleNow: number, peopleNeeded: number, extraPeople: number, extraFaces: number } | null}
+ */
+export function labellingTarget(basis, ci, facesPerPerson) {
+  if (!Number.isFinite(ci.lo) || !Number.isFinite(ci.hi) || !Number.isFinite(basis.auc)) return null
+
+  /** @type {Set<string>} */
+  const universe = new Set()
+  for (const p of basis.sameTagged) universe.add(p.person)
+  for (const p of basis.diffTagged) {
+    universe.add(p.personA)
+    universe.add(p.personB)
+  }
+  const peopleNow = universe.size
+  if (peopleNow < 6) return null
+
+  const widthNow = ci.hi - ci.lo
+  // Distance from the point estimate to the nearest band boundary. The interval
+  // fits inside the band when its half-width is under this margin.
+  let margin = Infinity
+  for (const b of [0.75, 0.9, 0.98]) margin = Math.min(margin, Math.abs(basis.auc - b))
+  if (!Number.isFinite(margin) || margin <= 0) return null
+
+  // Fit width·√people ≈ c across subsampled sizes. People, not pairs: pairs are
+  // the thing whose count lies about the evidence.
+  const names = [...universe].sort()
+  const rng = seededRandom(BOOTSTRAP_SEED ^ 0x517e57)
+  /** @type {Array<{ m: number, width: number }>} */
+  const points = [{ m: peopleNow, width: widthNow }]
+  for (const fraction of [0.5, 0.7, 0.85]) {
+    const m = Math.round(peopleNow * fraction)
+    if (m < 4) continue
+    // Seeded Fisher-Yates over the sorted names, take the prefix.
+    const pool = names.slice()
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1))
+      const t = pool[i]
+      pool[i] = pool[j]
+      pool[j] = t
+    }
+    const chosen = new Set(pool.slice(0, m))
+    const same = basis.sameTagged.filter((p) => chosen.has(p.person))
+    const diff = basis.diffTagged.filter((p) => chosen.has(p.personA) && chosen.has(p.personB))
+    const sub = bootstrapAuc(same, diff, seededRandom(BOOTSTRAP_SEED ^ m), BOOTSTRAP_RESAMPLES)
+    if (Number.isFinite(sub.lo) && Number.isFinite(sub.hi)) points.push({ m, width: sub.hi - sub.lo })
+  }
+  if (points.length < 2) return null
+
+  // Least squares through the origin on width vs 1/√m.
+  let num = 0
+  let den = 0
+  for (const p of points) {
+    const x = 1 / Math.sqrt(p.m)
+    num += p.width * x
+    den += x * x
+  }
+  const c = num / den
+  if (!Number.isFinite(c) || c <= 0) return null
+
+  // 10% slack inside the band, so "just enough" does not flap between runs.
+  const neededWidth = 1.8 * margin
+  const peopleNeeded = Math.ceil((c / neededWidth) ** 2)
+  const extraPeople = Math.max(0, peopleNeeded - peopleNow)
+  const rate = Number.isFinite(facesPerPerson) && facesPerPerson > 0 ? facesPerPerson : 1
+  return {
+    widthNow,
+    margin,
+    peopleNow,
+    peopleNeeded,
+    extraPeople,
+    extraFaces: Math.ceil(extraPeople * rate),
   }
 }
 
@@ -1559,10 +1697,14 @@ export function verdictBasis(d) {
  * @param {boolean} input.weldFreeCutoffExists whether report B found a cutoff that welded nobody
  * @param {number} input.recoverablePeople
  * @param {number} input.people
+ * @param {number} [input.lo] lower (p2.5) endpoint of the person-level bootstrap over the SAME pairs
+ * @param {number} [input.hi] upper (p97.5) endpoint
  * @returns {{ headline: string, description: string, detail: string[] }}
  */
 export function verdict(input) {
   const { auc, fprAt95Tpr, rank1, basis, ungatedAuc, keptFraction, weldFreeCutoffExists, recoverablePeople, people } = input
+  const lo = input.lo ?? NaN
+  const hi = input.hi ?? NaN
   const share = people > 0 ? recoverablePeople / people : NaN
 
   /** @type {string[]} */
@@ -1573,6 +1715,21 @@ export function verdict(input) {
   if (!Number.isFinite(auc)) {
     headline = "UNDECIDED — not enough independent pairs to measure separation"
     description = "Label more faces, or label people who appear in more than one part of the day."
+  } else if (Number.isFinite(lo) && Number.isFinite(hi) && verdictBand(lo) !== verdictBand(hi)) {
+    // A point estimate lands in exactly one band by construction; a small
+    // labelled set does not entitle it to. The person-level interval says how
+    // far the number would move if the PEOPLE had been drawn again, and when
+    // it spans a boundary, the honest reading is that the verdict depends on
+    // who happened to get labelled. Say that, instead of whichever band the
+    // point happened to fall in.
+    headline = "UNDECIDED — the confidence interval spans a verdict boundary"
+    description =
+      "The point estimate falls in one band, but the person-level bootstrap says a re-draw of the " +
+      "labelled people could land it in another. Label more people before acting on any band's advice."
+    detail.push(
+      `Interval [${lo.toFixed(3)}, ${hi.toFixed(3)}] around ${auc.toFixed(3)}, resampled by person — ` +
+        `pairs are not independent evidence; people are.`,
+    )
   } else if (auc >= 0.98 && fprAt95Tpr <= 0.02) {
     headline = "CLEAN SEPARATION — a single global cutoff works across everybody"
     description = weldFreeCutoffExists
@@ -1980,6 +2137,28 @@ export function analyse(run, options = {}) {
   const shipped = gatedSweeps.length > 0 ? gatedSweeps[gatedSweeps.length - 1] : null
   const shippedSweep = shipped ? bestSweepPoint(shipped.points) : null
   const basis = verdictBasis(d)
+
+  // The interval the verdict buckets on: a person-level bootstrap over the
+  // SAME tagged pairs the basis AUC was computed from. Seeded, so two runs of
+  // the report print the same interval.
+  const interval = bootstrapAuc(basis.sameTagged, basis.diffTagged, seededRandom(BOOTSTRAP_SEED), BOOTSTRAP_RESAMPLES)
+
+  // Labelled-faces-per-person, for translating "label K more people" into an
+  // approximate face count. From pool A, the uniform sample.
+  /** @type {Set<string>} */
+  const poolAPeople = new Set()
+  let poolALabelled = 0
+  for (const label of poolA.labels) {
+    if (label === null) continue
+    poolALabelled++
+    poolAPeople.add(label)
+  }
+  const target = labellingTarget(
+    { auc: basis.auc, sameTagged: basis.sameTagged, diffTagged: basis.diffTagged },
+    interval,
+    poolAPeople.size > 0 ? poolALabelled / poolAPeople.size : NaN,
+  )
+
   const conclusion = verdict({
     auc: basis.auc,
     fprAt95Tpr: basis.fprAt95Tpr,
@@ -1993,6 +2172,8 @@ export function analyse(run, options = {}) {
     weldFreeCutoffExists: shippedSweep ? shippedSweep.weldFree : bestPick ? bestPick.weldFree : false,
     recoverablePeople: recoverable,
     people: c.perPerson.length,
+    lo: interval.lo,
+    hi: interval.hi,
   })
 
   return {
@@ -2027,6 +2208,8 @@ export function analyse(run, options = {}) {
     coverage,
     d,
     e: { timing: run.timing, resolution, oracle, mirror, residual },
+    interval,
+    labellingTarget: target,
     verdict: conclusion,
     recommended: recommendations({
       best,
@@ -2548,6 +2731,34 @@ export function printSummary(analysis, log = console.log, options = {}) {
   log(` ${analysis.verdict.headline}`)
   log(` ${analysis.verdict.description}`)
   for (const line of analysis.verdict.detail) log(`  - ${line}`)
+
+  if (Number.isFinite(analysis.interval.lo)) {
+    log("")
+    log(
+      ` Interval on the basis AUC: [${num(analysis.interval.lo)}, ${num(analysis.interval.hi)}]` +
+        ` (person-level bootstrap, ${analysis.interval.resamples} resamples` +
+        (analysis.interval.degenerate > 0 ? `, ${analysis.interval.degenerate} degenerate` : "") +
+        `)`,
+    )
+    log(" Pairs are O(n²) from far fewer people, so pair counts flatter the evidence;")
+    log(" the interval resamples PEOPLE, which is the unit that actually varies.")
+  } else {
+    log("")
+    log(" No interval: fewer than 3 distinct people on one side of the pair lists.")
+    log(" Any AUC above is a direction, not a measurement.")
+  }
+  if (analysis.labellingTarget) {
+    const t = analysis.labellingTarget
+    if (t.extraPeople === 0) {
+      log(` Labelling is sufficient for the current verdict band: the interval (width ${num(t.widthNow)})`)
+      log(` fits inside the band with margin to spare. More labels would sharpen, not change, it.`)
+    } else {
+      log(` To leave the UNDECIDED band at the current point estimate: roughly ${t.peopleNeeded} labelled`)
+      log(` people (${t.extraPeople} more than the ${t.peopleNow} now, ≈${t.extraFaces} more labelled faces`)
+      log(` at the current per-person rate). Fitted from width·√people across subsamples — an estimate,`)
+      log(` not a promise, and it shrinks fastest if the new people RECUR across the day.`)
+    }
+  }
 
   log("")
   log(" Cutoffs to write into public/vision/defaults.js:")
@@ -3130,7 +3341,13 @@ export function renderHtml(analysis) {
 const USAGE =
   "usage: node scripts/vision/session1-report.js <run-dir> [--oracle <file.jsonl>] [--html | --no-html] [--out <file>] [--verbose]"
 
-/** @type {Types.parseArgs} */
+/**
+ * Typed inline rather than via a shared `Types.parseArgs` name: several CLIs in
+ * this directory each export a `parseArgs`, and a shared declaration name turns
+ * into an accidental overload set the moment a second one is declared.
+ * @param {readonly string[]} argv
+ * @returns {Types.ReportArgs}
+ */
 export function parseArgs(argv) {
   /** @type {Types.ReportArgs} */
   const args = { dir: null, oracle: null, html: true, out: null, verbose: false }
