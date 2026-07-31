@@ -35,6 +35,7 @@ import * as moderation from "../api/admin/moderation.js"
 import * as adminGuestbook from "../api/admin/guestbook.js"
 import * as adminAccounts from "../api/admin/accounts.js"
 import * as adminMedia from "../api/admin/media.js"
+import * as adminFaces from "../api/admin/faces.js"
 import * as siteContent from "../api/admin/site-content.js"
 import * as effectConfig from "../api/admin/effect-config.js"
 import * as setup from "../api/setup.js"
@@ -314,6 +315,17 @@ route("POST", "/api/admin/media/:id/promote", adminMedia.promote, { admin: true 
 route("GET", "/api/admin/media/:id/references", adminMedia.references, { admin: true })
 route("PATCH", "/api/admin/media/:id", adminMedia.caption, { admin: true })
 route("DELETE", "/api/admin/media/:id", adminMedia.remove, { admin: true })
+
+// Admin face-assignment routes (docs/post-wedding/SPEC-vision-lab.md §10/§15).
+// Literal segments (`overview`, `queue`, `assign`, `unassign`, `not-a-face`)
+// keep these clear of any future `/:id` face route.
+route("GET", "/api/admin/faces/overview", adminFaces.overview, { admin: true })
+route("GET", "/api/admin/faces/queue", adminFaces.queue, { admin: true })
+route("POST", "/api/admin/faces/assign", adminFaces.assign, { admin: true })
+route("POST", "/api/admin/faces/unassign", adminFaces.unassign, { admin: true })
+route("POST", "/api/admin/faces/not-a-face", adminFaces.notAFace, { admin: true })
+// Per-photo face view, alongside the curated-gallery /api/admin/media/:id/* routes.
+route("GET", "/api/admin/media/:id/faces", adminFaces.forMedia, { admin: true })
 
 // Admin blocklist routes
 route("GET", "/api/admin/blocklist", blocklist.list, { admin: true })

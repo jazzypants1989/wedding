@@ -1158,3 +1158,79 @@ export function softDeleteIdentity(id: number): boolean
 /** Which of the given media ids have at least one live (non-deleted) face
  *  row. Empty input returns an empty set. */
 export function mediaWithFaces(mediaIds: number[]): Set<number>
+
+/** Pack a descriptor into its storage form: 4 bytes per float, little-endian,
+ *  explicit (Buffer.writeFloatLE), independent of host endianness. */
+export function descriptorToBlob(vector: Float32Array): Buffer
+
+/** Inverse of descriptorToBlob. Accepts either a Buffer or the plain
+ *  Uint8Array node:sqlite returns for a BLOB column. */
+export function blobToDescriptor(blob: Uint8Array | Buffer): Float32Array
+
+export interface FaceCounts {
+  /** Live (non-deleted) rows, identified or not. */
+  faces: number
+  /** Live rows with a face_identity_id. */
+  identified: number
+  /** Live rows with no face_identity_id. */
+  unidentified: number
+  /** Soft-deleted rows ("not a face"). */
+  notAFace: number
+}
+
+/** Counts for the admin overview tile row. SUM() over an empty table reads
+ *  back as 0, not SQLite's native NULL. */
+export function getFaceCounts(): FaceCounts
+
+/** One live, undecided, descriptor-bearing face row — the shape group.js and
+ *  assign.js need (bbox for display, model_version to partition descriptor
+ *  spaces, descriptor to compute with). */
+export interface UnidentifiedFaceRow {
+  id: number
+  media_id: number
+  bbox_x: number
+  bbox_y: number
+  bbox_w: number
+  bbox_h: number
+  model_version: string
+  descriptor: Uint8Array
+}
+
+/** Every live, undecided face with a descriptor, id ascending. Grouping and
+ *  matching are computed on demand from this — nothing about a group is
+ *  persisted (see the admin routes' module comment). */
+export function unidentifiedFacesWithDescriptors(): UnidentifiedFaceRow[]
+
+/** One face belonging to a CONFIRMED (never 'propagated') identity, restricted
+ *  to a single descriptor model version. */
+export interface ConfirmedIdentityFaceRow {
+  identity_id: number
+  guest_id: number
+  guest_name: string
+  face_id: number
+  descriptor: Uint8Array
+}
+
+/** Every live face confirmed to a guest, for ONE model_version — the material
+ *  a prototype is built from. Descriptors from a different model_version are
+ *  never mixed in; call once per version in play. */
+export function confirmedIdentityFaces(modelVersion: string): ConfirmedIdentityFaceRow[]
+
+/** One live face on one photo, with the identified guest's id/name if any
+ *  (LEFT JOIN, so an unidentified face still gets a row with both null).
+ *  Never carries the descriptor column. */
+export interface FaceWithNameRow {
+  id: number
+  media_id: number
+  bbox_x: number
+  bbox_y: number
+  bbox_w: number
+  bbox_h: number
+  face_identity_id: number | null
+  guest_id: number | null
+  guest_name: string | null
+}
+
+/** Live faces for one photo, id ascending, each carrying the identified
+ *  guest's name if any. The descriptor is never selected. */
+export function facesForMediaWithNames(mediaId: number): FaceWithNameRow[]

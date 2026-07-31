@@ -23,6 +23,7 @@ export interface VisionDefaults {
   gate: Record<string, number>
   group: { cutoff: number; cannotLinkWithinPhoto: boolean }
   describe: { mirrorAverage: boolean }
+  assign: { sameBandCutoff: number }
 }
 
 /** Whole table, deep-copied. */

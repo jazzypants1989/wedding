@@ -752,3 +752,68 @@ export function login(req: IncomingMessage, res: ServerResponse): Promise<void>
  * await logout(req, res);
  */
 export function logout(req: IncomingMessage, res: ServerResponse): Promise<void>
+
+/** @file faces.js - Types for admin face-assignment endpoints
+ *  (docs/post-wedding/SPEC-vision-lab.md §10/§15). Clusters/matches are computed
+ *  on demand, never persisted — see that file's module comment. */
+
+/** A face box in source-image pixels, as every route below returns it. */
+export interface FaceBoxOut {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/** GET /api/admin/faces/overview — tile counts + live groups over unidentified
+ *  faces, largest first, each with a prototype-match suggestion when at least
+ *  one identity is confirmed. */
+export function faceOverviewHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void>
+
+/** GET /api/admin/faces/queue — the "ask" queue: unidentified faces with at
+ *  least one candidate prototype, ranked by `unlocks` (distinct photos that
+ *  would gain a name if this face were confirmed). Capped, `truncated` says so. */
+export function faceQueueHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void>
+
+/** POST /api/admin/faces/assign — { faceIds: number[], guestId } → find-or-create
+ *  a CONFIRMED identity for the guest and point every face at it, one txn. */
+export function faceAssignHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** POST /api/admin/faces/unassign — { faceIds: number[] } → clear face_identity_id. */
+export function faceUnassignHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** POST /api/admin/faces/not-a-face — { faceIds: number[] } → soft-delete the rows. */
+export function faceNotAFaceHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** GET /api/admin/media/:id/faces — live faces for one photo, box + guest name
+ *  (null when unidentified). */
+export function faceForMediaHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+export const overview: SyncHandler
+export const queue: SyncHandler
+export const assign: AuthedHandler
+export const unassign: AuthedHandler
+export const notAFace: AuthedHandler
+export const forMedia: ParamsHandler

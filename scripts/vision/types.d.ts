@@ -7,7 +7,8 @@
  * organisational tidiness, it is the constraint that keeps one implementation
  * usable in both venues.
  */
-import type { ImageBackend, MediaBackends, RgbImage } from "../lib/types.js"
+import type { DatabaseSync } from "node:sqlite"
+import type { ImageBackend, ImportManifest, MediaBackends, RgbImage } from "../lib/types.js"
 import type {
   DescriptorSet,
   Detection,
@@ -1054,6 +1055,9 @@ export interface HeldOutGate {
   /** Pooled across every fold — the denominator the AUC actually rests on. */
   samePairs: number
   diffPairs: number
+  /** The same pooled pairs, person-tagged, for the verdict's cluster bootstrap. */
+  sameTagged: import("../../public/vision/types.js").TaggedSamePair[]
+  diffTagged: import("../../public/vision/types.js").TaggedDiffPair[]
   /** Pooled held-out faces queried for rank-1. */
   evaluated: number
   auc: number
@@ -1184,3 +1188,90 @@ export function lengthDelimited(fieldNum: number, bytes: Buffer): Buffer
  * nothing already in the file is renumbered or moved.
  */
 export function exposeActivations(buf: Buffer, tensorNames: readonly string[]): ExposeResult
+
+// --- ingest-faces.js ---
+
+/** Parsed CLI arguments. `runDir` may be null only when `backfillManifest` is set. */
+export interface IngestArgs {
+  runDir: string | null
+  database: string | null
+  modelVersion: string | null
+  backfillManifest: string | null
+  replace: boolean
+  dryRun: boolean
+}
+
+export type IngestArgsResult =
+  | { valid: true; value: IngestArgs }
+  | { valid: false; error: string }
+
+/** No regex: a manual switch over known `--flags`. Unknown flags are refused. */
+export function parseArgs(argv: string[]): IngestArgsResult
+
+/** One JSONL file. A malformed line is counted and skipped, never fatal. */
+export function readJsonl<T>(file: string): { records: T[]; skipped: number; present: boolean }
+
+/**
+ * Open (creating if needed) a SQLite file with the server's own schema, and
+ * bind db/sql.js's `sql` template to THIS connection — not db/connection.js's
+ * process-wide singleton, so callers (the CLI, or a unit test) can point this
+ * exact logic at any file without an import-order dance.
+ */
+export function openDatabase(dbPath: string): DatabaseSync
+
+/** sha256 -> media.id, for every non-deleted media row that has one. */
+export function loadMediaShaMap(): Map<string, number>
+
+/**
+ * Pure join: no DB access. `mediaBySha` is supplied already queried, so this
+ * is unit-testable with a plain Map.
+ */
+export function joinPhotosToMedia(
+  photos: readonly Session1PhotoRecord[],
+  mediaBySha: ReadonlyMap<string, number>,
+): {
+  matched: Array<{ photo: Session1PhotoRecord; mediaId: number }>
+  unmatchedCount: number
+}
+
+export interface IngestRunOptions {
+  db: DatabaseSync
+  runDir: string
+  modelVersion: string
+  replace: boolean
+  dryRun: boolean
+}
+
+export interface IngestRunResult {
+  photosInRun: number
+  matched: number
+  /** No sha256 match against any imported media row — likely not imported yet. */
+  unmatched: number
+  facesInserted: number
+}
+
+/**
+ * The main pass: join the run's JSONL to media by sha256, refuse (or
+ * `--replace`) a (media_id, model_version) re-run, and insert one
+ * `media_faces` row per face of every matched photo — one transaction.
+ */
+export function ingestRun(options: IngestRunOptions): IngestRunResult
+
+export interface BackfillManifestOptions {
+  db: DatabaseSync
+  manifest: ImportManifest
+  dryRun: boolean
+}
+
+export interface BackfillManifestResult {
+  total: number
+  updated: number
+}
+
+/** Populate media.source_sha256 from an import-media manifest, for rows that
+ *  don't have it yet. Counts only — never a filename. */
+export function backfillFromManifest(options: BackfillManifestOptions): BackfillManifestResult
+
+/** Throws unless given a non-empty model version tag; returns it unchanged
+ *  otherwise. The main pass's refusal to ever guess a descriptor model. */
+export function requireModelVersion(modelVersion: string | null): string

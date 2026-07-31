@@ -120,6 +120,21 @@ const VISION_CONFIG = {
      */
     mirrorAverage: false,
   },
+
+  assign: {
+    /**
+     * Cosine DISTANCE below which two UNIDENTIFIED faces are treated as "the
+     * same person" for the admin ask-queue's `unlocks` estimate (how many
+     * photos would gain a name if this one face were confirmed). This is a
+     * priority signal, not an identity decision, so it deliberately reuses the
+     * published pairwise VERIFICATION distance — `1 -` the SFace repo's own
+     * 0.363 similarity threshold (see REFERENCE_VERIFICATION_SIMILARITY below)
+     * — rather than `group.cutoff`'s tighter, asymmetric-cost clustering
+     * threshold: over-including here just means asking about a face sooner,
+     * where over-including in a persisted cluster means welding two people.
+     */
+    sameBandCutoff: 0.64,
+  },
 }
 
 /**
