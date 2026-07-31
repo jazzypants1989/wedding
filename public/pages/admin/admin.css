@@ -2310,3 +2310,164 @@ tr:hover td {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ============ Faces tab — assisted face tagging (SPEC-vision-lab.md §6.5) ============ */
+
+.faces-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+.faces-counts strong {
+  color: var(--color-text);
+}
+
+.faces-section {
+  margin-bottom: var(--spacing-lg);
+}
+.faces-section h3 {
+  margin-bottom: var(--spacing-sm);
+}
+
+.faces-empty,
+.faces-empty-state {
+  color: var(--color-text-muted);
+}
+.faces-cli-hint {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-primary-faint);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+}
+
+/* Face chip — a fixed-size crop of one face, positioned client-side from the
+   media's `thumb` variant + the face's source-pixel box (no crop endpoint). */
+.face-chip {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-faint);
+  flex: 0 0 auto;
+}
+.face-chip-img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.face-chip.is-toggleable {
+  cursor: pointer;
+}
+.face-chip.is-toggleable:focus-visible {
+  outline: var(--border-width-thick) solid var(--color-primary);
+  outline-offset: 2px;
+}
+.face-chip.is-dimmed {
+  opacity: 0.35;
+  filter: grayscale(70%);
+}
+
+/* Groups */
+.faces-groups-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--spacing-md);
+}
+.face-group-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-sm);
+  background: var(--color-card-bg);
+}
+.face-group-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+.face-group-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+.face-group-name-input {
+  flex: 1 1 auto;
+  min-width: 10ch;
+}
+.face-group-suggestion {
+  font-size: var(--text-xs);
+}
+.face-group-input-error {
+  flex-basis: 100%;
+  color: var(--color-status-pending-text);
+  font-size: var(--text-xs);
+}
+
+/* Ask queue */
+.faces-ask-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.face-ask-row {
+  display: flex;
+  gap: var(--spacing-md);
+  align-items: flex-start;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-sm);
+  background: var(--color-card-bg);
+}
+.face-ask-row:focus-visible {
+  outline: var(--border-width-thick) solid var(--color-primary);
+  outline-offset: 2px;
+}
+.face-ask-row.is-dismissed {
+  opacity: 0.55;
+}
+.face-ask-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.face-ask-candidates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+.face-ask-candidate kbd {
+  margin-right: var(--spacing-2xs);
+}
+.face-ask-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+.face-ask-unlocks {
+  font-size: var(--text-xs);
+}
+.faces-queue-truncated {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.faces-identified-summary {
+  color: var(--color-text-muted);
+}

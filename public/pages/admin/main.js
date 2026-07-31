@@ -13,6 +13,7 @@ import { initManualSms } from "./manual-sms.js"
 import { initModeration, loadModeration, loadModerationCount } from "./moderation.js"
 import { initInbox, loadInbox, refreshInboxBadge } from "./inbox.js"
 import { initGalleryAdmin, loadGalleryAdmin } from "./gallery-admin.js"
+import { initFaceAssignment, loadFaceAssignment } from "./face-assignment.js"
 import {
   initThankYous,
   loadThankYous,
@@ -145,6 +146,8 @@ function switchTab(tabId) {
     loadModeration()
   } else if (tabId === "gallery") {
     loadGalleryAdmin()
+  } else if (tabId === "faces") {
+    loadFaceAssignment()
   } else if (tabId === "thankyous") {
     loadThankYous()
   } else if (tabId === "site-content") {
@@ -207,6 +210,7 @@ function init() {
   initModeration()
   initInbox()
   initGalleryAdmin()
+  initFaceAssignment()
   initThankYous()
   initSiteContent()
   initEffectConfig()

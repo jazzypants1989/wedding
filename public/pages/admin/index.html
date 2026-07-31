@@ -104,6 +104,8 @@
         </button>
         <button class="tab-btn" data-tab="gallery" role="tab" id="tab-btn-gallery" aria-selected="false"
           aria-controls="tab-gallery" tabindex="-1">Gallery</button>
+        <button class="tab-btn" data-tab="faces" role="tab" id="tab-btn-faces" aria-selected="false"
+          aria-controls="tab-faces" tabindex="-1">Faces</button>
         <button class="tab-btn" data-tab="thankyous" role="tab" id="tab-btn-thankyous" aria-selected="false"
           aria-controls="tab-thankyous" tabindex="-1">
           Thank yous
@@ -418,6 +420,31 @@
             <div id="loved-grid" class="curated-grid">
               <!-- Populated by JS -->
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Faces Tab: assisted face tagging against the guest roster
+           (docs/post-wedding/SPEC-vision-lab.md §6.5). A list, never a
+           wizard — Groups / Ask queue / Identified, populated by JS. -->
+      <div id="tab-faces" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-faces" hidden>
+        <div class="card">
+          <div class="card-header flex-between">
+            <h2>Faces</h2>
+            <div class="header-buttons">
+              <button type="button" id="faces-refresh-btn" class="btn btn-secondary btn-sm">Refresh</button>
+            </div>
+          </div>
+          <p class="text-muted card-text">
+            Faces found in your photos, grouped by who they likely belong to. Name a group to
+            teach the matcher that person — the more you name, the better the Ask queue below gets
+            at suggesting the rest.
+          </p>
+          <div id="faces-counts" class="faces-counts" aria-live="polite"></div>
+          <!-- Shared by every group's name input (list="faces-guest-roster"); populated by JS. -->
+          <datalist id="faces-guest-roster"></datalist>
+          <div id="faces-body" class="faces-body">
+            <!-- Populated by JS: an empty state, or the Groups / Ask queue / Identified sections -->
           </div>
         </div>
       </div>

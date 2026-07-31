@@ -1371,3 +1371,104 @@ export function initInbox(): void
 export function loadInbox(): Promise<void>
 /** Badge-only refresh (piggybacks on main.js's existing poll). */
 export function refreshInboxBadge(): Promise<void>
+
+/** @file face-assignment.js — Types for the admin Faces tab (assisted face
+ *  tagging against the guest roster, docs/post-wedding/SPEC-vision-lab.md
+ *  §6.5). Built against a server contract that has no crop endpoint, so a
+ *  face is displayed by cropping the media's existing `thumb` variant
+ *  client-side to the face's box — which needs the ORIGINAL photo's pixel
+ *  width/height alongside the box. The contract's overview/queue payloads
+ *  name only `faceId`/`mediaId`/`box` on each entry; `fileKey`, `width` and
+ *  `height` here are an ASSUMED addition (matching MediaListItem's fields),
+ *  not confirmed against a running server. If the server omits them, the
+ *  chip degrades to an uncropped thumbnail rather than failing. */
+
+/** A face's pixel bounding box, in the ORIGINAL photo's coordinate space. */
+export interface FaceBox {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/**
+ * One face's appearance, as needed to render a cropped chip for it (used by
+ * both a group's member grid and an ask-queue row). `fileKey`/`width`/`height`
+ * are the assumed addition described above — everything else is the given
+ * contract's shape verbatim.
+ */
+export interface FaceChipEntry {
+  faceId: number
+  mediaId: number
+  fileKey: string
+  /** The ORIGINAL photo's pixel width, or null if unknown (chip falls back
+   *  to an uncropped thumbnail — see positionFaceChipImage). */
+  width: number | null
+  height: number | null
+  box: FaceBox
+}
+
+/** A named-group's system-suggested identity (from prototype matching against
+ *  already-confirmed faces), pre-filling — never auto-submitting — the
+ *  group's name input. */
+export interface FaceGroupSuggestion {
+  guestId: number
+  guestName: string
+  margin: number
+}
+
+/** One unnamed cluster from GET /api/admin/faces/overview, largest first. */
+export interface FaceGroup {
+  key: string
+  faceIds: number[]
+  media: FaceChipEntry[]
+  suggestion: FaceGroupSuggestion | null
+}
+
+export interface FaceOverviewCounts {
+  faces: number
+  identified: number
+  unidentified: number
+  notAFace: number
+}
+
+/** GET /api/admin/faces/overview. */
+export interface FacesOverviewResponse {
+  counts: FaceOverviewCounts
+  groups: FaceGroup[]
+}
+
+/** One prototype-match candidate offered for an ask-queue face. */
+export interface FaceCandidate {
+  guestId: number
+  guestName: string
+  distance: number
+  margin: number
+}
+
+/** One row of GET /api/admin/faces/queue, ordered by `unlocks` descending —
+ *  confirming it identifies the most further photo appearances. */
+export interface FaceQueueItem extends FaceChipEntry {
+  candidates: FaceCandidate[]
+  unlocks: number
+}
+
+/** GET /api/admin/faces/queue. */
+export interface FacesQueueResponse {
+  items: FaceQueueItem[]
+  truncated: boolean
+}
+
+/** POST /api/admin/faces/assign response. `identified` is how many faces the
+ *  call just identified (usually === the request's faceIds.length). */
+export interface FaceAssignResponse {
+  ok: boolean
+  identified: number
+}
+
+/** Load the Faces tab's overview + ask queue + guest roster, then render. */
+export function loadFaceAssignment(): Promise<void>
+
+/** Wire up the Faces tab (refresh button, delegated click/keydown/input on
+ *  the tab body — groups, ask queue, and the name-input autocomplete). */
+export function initFaceAssignment(): void
