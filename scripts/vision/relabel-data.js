@@ -10,7 +10,7 @@
  *  batch to get them would cost hours of inference and, far worse, renumber the
  *  faces.
  *
- *  Three properties this file is responsible for.
+ *  Four properties this file is responsible for.
  *
  *  1. **Pool assignment and presentation order are CARRIED OVER, not
  *     re-derived.** They are read verbatim out of the existing label-data.js.
@@ -19,11 +19,20 @@
  *     invalidating labels already collected and the honesty of the number they
  *     support. Re-deriving from the recorded seed is the fallback for a run with
  *     no label-data.js at all, and it says out loud that it did so.
- *  2. **`datasetId` identifies the DATA, not its size.** sha256 over every
+ *  2. **Pool A may GROW, but never shrink or re-draw.** `--pool-a N` with an
+ *     existing label-data.js re-derives pools at the larger size N from the
+ *     same recorded seed. `assignPools` shuffles face POSITIONS keyed only by
+ *     seed and face order, then takes a prefix of it — so the same seed over
+ *     the same faces makes a larger pool A a strict superset of a smaller one
+ *     (SESSION-2-vision.md §7 P0). `growAssignments` VERIFIES that superset
+ *     holds rather than trusting the argument, and refuses if it does not:
+ *     that only happens when the recorded seed does not reproduce the file's
+ *     existing pools, meaning the two files are from different runs.
+ *  3. **`datasetId` identifies the DATA, not its size.** sha256 over every
  *     face's id, photo id and box. The v1 fingerprint was a function of face
  *     count alone, so two different runs of the same length looked identical and
  *     a labels.json could be paired with the wrong run without complaint.
- *  3. **The file is written atomically.** A half-written label-data.js is a
+ *  4. **The file is written atomically.** A half-written label-data.js is a
  *     labelling page that will not load, and the labeller is usually the person
  *     least able to diagnose it. Temp file, then rename.
  *
@@ -63,11 +72,17 @@ Usage: node scripts/vision/relabel-data.js <run-dir> [options]
   --roster            Read guest names from the database for autocomplete.
   --database PATH     Database path (default: $DATABASE_PATH or data/wedding.db).
   --no-context        Do not reference context crops even if context/ exists.
+  --pool-a N          Grow pool A to N faces (must be >= its current size).
+                      With a previous label-data.js, every existing label stays
+                      valid: pool A only grows, and the faces already in it are
+                      verified to still be in it before anything is written.
+                      With no previous label-data.js, N is just the initial
+                      pool size passed through to the re-derivation.
   --help
 `
 
 const BOOLEAN_FLAGS = ["roster", "no-context", "help"]
-const VALUE_FLAGS = ["database"]
+const VALUE_FLAGS = ["database", "pool-a"]
 
 /** Exit codes, matching scripts/vision/session1.js. */
 const EXIT = { CLEAN: 0, ABORTED: 2 }
@@ -159,6 +174,17 @@ export function parseArgs(argv) {
     }
   }
 
+  /** @type {number | null} */
+  let poolA = null
+  if (values["pool-a"] !== undefined) {
+    const text = values["pool-a"]
+    const n = Number(text)
+    if (!Number.isInteger(n) || n < 1) {
+      return { valid: false, error: `--pool-a must be a positive integer, got ${text}` }
+    }
+    poolA = n
+  }
+
   return {
     valid: true,
     value: {
@@ -170,6 +196,7 @@ export function parseArgs(argv) {
         values.database ?? process.env.DATABASE_PATH ?? path.join("data", "wedding.db"),
       ),
       context: !flags.has("no-context"),
+      poolA,
     },
   }
 }
@@ -311,16 +338,116 @@ export function carryAssignments(faces, previous) {
 }
 
 /**
+ * Grow pool A from a previous label-data.js: re-derive pools at a larger size
+ * from the seed timing.json recorded, and check the OLD pool A survives as a
+ * subset of the new one before trusting any of it.
+ *
+ * `assignPools` does a full Fisher-Yates shuffle of face POSITIONS keyed only
+ * by seed and face order, then takes the first `poolASize` of it (see
+ * session1.js). Same seed, same faces, larger size: the new pool A is a
+ * longer prefix of the same shuffled sequence, so it strictly contains every
+ * shorter prefix drawn from it — which is the "sequential uniform sampling
+ * without replacement is still uniform" property SESSION-2-vision.md §7 P0
+ * rests the whole growth idea on. This function does not cite that argument
+ * and trust it; it VERIFIES the prefix on every call. The only way the check
+ * can fail is a seed or face set that does not match what produced the file
+ * being grown — exactly the "these are two different runs" case
+ * `carryAssignments` above already refuses rather than guesses through.
+ *
+ * Pool B's group ids are never re-derived here, on purpose. `groupPoolB`
+ * renumbers group ids whenever pool-B membership changes — and it changes on
+ * every growth, since the promoted faces leave it — so re-running it would
+ * hand out fresh ids to a population that only shrank. labels.json's
+ * `excluded` map is keyed by group id, so a renumbering would silently attach
+ * an exclusion recorded against one cluster to a different one. Every face
+ * that stays in pool B keeps the OLD group id it already had: stale but
+ * stable, which is strictly safer than fresh but wrong.
+ * @type {Types.growAssignments}
+ */
+export function growAssignments(faces, previous, timing, poolASize) {
+  const carried = carryAssignments(faces, previous)
+
+  let previousPoolASize = 0
+  for (const assigned of carried.pools.values()) if (assigned.pool === "A") previousPoolASize++
+
+  if (poolASize < previousPoolASize) {
+    throw new Error(
+      `--pool-a ${poolASize} is smaller than the ${previousPoolASize} face(s) already in pool A. ` +
+        `Pool A only grows: shrinking it would orphan labels already collected on the faces dropped.`,
+    )
+  }
+  if (poolASize > faces.length) {
+    throw new Error(`--pool-a ${poolASize} exceeds the run's ${faces.length} face(s).`)
+  }
+
+  const seed = asInteger((timing?.config ?? {}).shuffleSeed)
+  // groupPoolB is deliberately NOT passed: the re-derivation exists only to
+  // learn which faces the LARGER pool A would contain, and its group ids are
+  // never used (see the file header above).
+  const derived = assignPools(
+    faces.map((face) => ({ id: face.id, crop: face.crop, photoId: face.photoId })),
+    { poolASize, seed: seed ?? undefined },
+  )
+
+  /** @type {Set<number>} */
+  const newPoolA = new Set()
+  for (const face of derived.faces) if (face.pool === "A") newPoolA.add(face.id)
+
+  for (const [id, assigned] of carried.pools) {
+    if (assigned.pool === "A" && !newPoolA.has(id)) {
+      throw new Error(
+        `label-data.js's existing pool A is not contained in the pool A re-derived from timing.json's ` +
+          `recorded seed (face ${id} was pool A before and is not now). The recorded seed does not ` +
+          `reproduce label-data.js's existing pools, so the two files are from different runs. ` +
+          `Growing pool A safely requires the same seed and the same face order that produced the ` +
+          `file being grown, and this is a refusal, not a guess.`,
+      )
+    }
+  }
+
+  /** @type {Map<number, { pool: "A" | "B", group: number | null }>} */
+  const pools = new Map()
+  /** @type {number[]} */
+  const promoted = []
+  for (const face of faces) {
+    const old = /** @type {{ pool: "A" | "B", group: number | null }} */ (
+      carried.pools.get(face.id)
+    )
+    if (old.pool === "B" && newPoolA.has(face.id)) {
+      pools.set(face.id, { pool: "A", group: null })
+      promoted.push(face.id)
+    } else {
+      // Carried verbatim, including a pool-B face's OLD group id — see the
+      // file header on why that staleness is deliberate.
+      pools.set(face.id, { pool: old.pool, group: old.group })
+    }
+  }
+  promoted.sort((a, b) => a - b)
+
+  // Presentation order is untouched. assignPools shuffles it from a stream
+  // keyed by seed and face ids alone, independent of poolASize (see
+  // session1.js and the "changing --pool-a does not reshuffle the
+  // presentation order" test), so re-deriving it would only reproduce the same
+  // array — carrying the recorded one over verbatim says so directly instead
+  // of relying on that independence holding forever.
+  return { pools, order: carried.order, promoted }
+}
+
+/**
  * The fallback when there is no label-data.js to carry: re-run the same seeded
  * sampling the batch did, from the seed and pool size timing.json recorded.
  *
  * Only correct if the run's own configuration is what timing.json says it is,
  * which is why the caller says so out loud. Carrying is always preferred.
+ *
+ * `poolASizeOverride` is `--pool-a`, when given: it takes precedence over
+ * timing.json's recorded size, and becomes the initial pool size for a run
+ * that has no label-data.js at all yet.
  * @type {Types.derivedAssignments}
  */
-export function derivedAssignments(faces, timing) {
+export function derivedAssignments(faces, timing, poolASizeOverride) {
   const config = timing?.config ?? {}
-  const poolASize = asInteger(config.poolASize) ?? FALLBACK_POOL_A
+  const poolASize = asInteger(poolASizeOverride) ?? asInteger(config.poolASize) ?? FALLBACK_POOL_A
   const seed = asInteger(config.shuffleSeed)
 
   const defaults = allDefaults().group
@@ -489,19 +616,56 @@ export async function runRelabel(args, deps = {}) {
   if (run.faces.length === 0) throw new Error(`${args.dir}/faces.jsonl: missing or empty`)
 
   const previous = readPreviousLabelData(args.dir)
-  let carried = true
+  /** @type {"carried" | "derived" | "grown"} */
+  let mode
   /** @type {{ pools: Map<number, { pool: "A" | "B", group: number | null }>, order: number[] }} */
   let assignments
+  /** @type {number[]} */
+  let promoted = []
   if (previous) {
-    assignments = carryAssignments(run.faces, previous)
+    if (args.poolA !== null) {
+      mode = "grown"
+      const grown = growAssignments(run.faces, previous, run.timing, args.poolA)
+      assignments = { pools: grown.pools, order: grown.order }
+      promoted = grown.promoted
+    } else {
+      mode = "carried"
+      assignments = carryAssignments(run.faces, previous)
+    }
   } else {
-    carried = false
+    mode = "derived"
     log(
       "! No existing label-data.js — re-deriving the pools and order from timing.json's recorded\n" +
         "  seed. This reproduces the batch's own sampling only if the run's configuration is what\n" +
         "  timing.json says it is. Any labelling done against a different assignment is invalid.",
     )
-    assignments = derivedAssignments(run.faces, run.timing)
+    assignments = derivedAssignments(run.faces, run.timing, args.poolA)
+  }
+
+  // A promoted face may already carry a pool-B label in labels.json — most
+  // often from a group keystroke, which answered for the whole group at once.
+  // relabel-data.js does not rewrite labels.json, so it cannot fix this; it can
+  // only say how many faces are affected. label.html does not read labels.json
+  // back in either — it restores per-face labels from THIS BROWSER's
+  // localStorage, keyed by a dataset id that pool growth does not change (it
+  // hashes face id/photoId/box, not pool assignment). So on Resume, a promoted
+  // face shows up already answered, as a unit of one, and is not flagged as
+  // outstanding — nothing forces a fresh look at it.
+  if (mode === "grown" && promoted.length > 0 && run.labels) {
+    let alreadyLabelled = 0
+    for (const id of promoted) {
+      if (Object.prototype.hasOwnProperty.call(run.labels.labels, String(id))) alreadyLabelled++
+    }
+    if (alreadyLabelled > 0) {
+      log(
+        `! ${alreadyLabelled} of the ${promoted.length} face(s) promoted to pool A already carry a\n` +
+          "  label in labels.json — most likely a pool-B group answer. label.html will not re-present\n" +
+          "  them as outstanding on its own (it restores labels from this browser's localStorage, not\n" +
+          "  from labels.json). Deliberately revisit each one in pool A and answer it fresh rather than\n" +
+          "  trusting the group answer it inherited: the disagreement rate you find there is only an\n" +
+          "  UPPER BOUND on pool-B contamination, since it also counts ordinary test-retest noise.",
+      )
+    }
   }
 
   /** @type {(id: number) => boolean} */
@@ -547,9 +711,16 @@ export async function runRelabel(args, deps = {}) {
   const poolA = data.faces.filter((face) => face.pool === "A").length
   const poolB = data.faces.length - poolA
 
+  const modeLabel =
+    mode === "carried"
+      ? "carried over unchanged"
+      : mode === "grown"
+        ? `GROWN (${promoted.length} promoted B→A)`
+        : "RE-DERIVED"
+
   log("")
   log(`${data.faces.length} face(s) over ${data.photos?.length ?? 0} photograph(s).`)
-  log(`Pool A ${poolA}, pool B ${poolB} — ${carried ? "carried over unchanged" : "RE-DERIVED"}.`)
+  log(`Pool A ${poolA}, pool B ${poolB} — ${modeLabel}.`)
   log(
     contextCount > 0
       ? `Context crops: ${contextCount} referenced.`
@@ -566,7 +737,8 @@ export async function runRelabel(args, deps = {}) {
     data,
     poolA,
     poolB,
-    carried,
+    mode,
+    promoted: promoted.length,
     contextCrops: contextCount,
     rosterSize: roster ? roster.length : null,
   }

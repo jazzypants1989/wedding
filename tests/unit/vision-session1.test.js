@@ -464,6 +464,25 @@ test("changing --pool-a does not reshuffle the presentation order", () => {
   assert.deepEqual(small.order, large.order)
 })
 
+// This pins the property scripts/vision/relabel-data.js's growAssignments
+// rests its entire "growing pool A is safe" argument on: assignPools shuffles
+// face POSITIONS keyed only by seed and face order, then takes a prefix of it,
+// so the same seed over the same faces makes a larger pool A a strict
+// superset of a smaller one — a longer prefix of the same shuffled sequence.
+// If a future refactor of the shuffle broke this silently, growAssignments'
+// own runtime check would catch it on the next real run, but this test is
+// what catches it before that, on every `npm test`.
+test("pool A at a larger size is a superset of pool A at a smaller size, same seed", () => {
+  const faces = poolFaces(300)
+  const small = assignPools(faces, { poolASize: 100 })
+  const large = assignPools(faces, { poolASize: 150 })
+  const smallA = new Set(small.faces.filter((f) => f.pool === "A").map((f) => f.id))
+  const largeA = new Set(large.faces.filter((f) => f.pool === "A").map((f) => f.id))
+  assert.equal(smallA.size, 100)
+  assert.equal(largeA.size, 150)
+  for (const id of smallA) assert.ok(largeA.has(id), `face ${id} was pool A at 100 but not at 150`)
+})
+
 test("group ids are attached to pool B only, and never to a singleton", () => {
   const faces = poolFaces(10)
   const data = assignPools(faces, {
