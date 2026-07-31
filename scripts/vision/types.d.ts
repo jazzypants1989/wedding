@@ -64,6 +64,22 @@ export function encodePng(image: RgbImage): Buffer
 
 export function writePng(image: RgbImage, filePath: string): void
 
+// --- PNG reader (scripts/vision/png-read.js) ---
+
+/**
+ * Decode a PNG written by png-write.js — 8-bit truecolour RGB (colour type
+ * 2), no interlace, filter type 0 on every scanline. Every other PNG feature
+ * (palette, alpha, 16-bit samples, interlacing, any other filter) is refused
+ * rather than silently handled, because a decoder that guessed would produce
+ * a plausible-looking wrong buffer with no signal that anything was wrong —
+ * exactly the failure mode `redescribe-crops.js` cannot afford to feed into
+ * an embedder unnoticed.
+ *
+ * Every chunk's CRC-32 is checked (a separate table from png-write.js's own —
+ * see that file's header) and a mismatch throws rather than decoding anyway.
+ */
+export function decodePng(buffer: Buffer): RgbImage
+
 // --- Weight verification (scripts/vision/verify-weights.js) ---
 
 export interface PinnedWeight {
@@ -429,6 +445,14 @@ export interface Session1Args {
   resolutionSample: number
   limit: number | null
   poolASize: number
+  /**
+   * Passed to loadEngine as LoadEngineOptions.embedderFile. Null uses
+   * tmp/rig/engine.mjs's own default (SFace). The A/B rig
+   * (scripts/vision/redescribe-crops.js) reuses this same flag name and the
+   * same LoadEngineOptions field, so a candidate model is one flag on either
+   * script rather than two different ones to keep in sync.
+   */
+  embedderFile: string | null
 }
 
 // --- Context crops (scripts/vision/context-crops.js) ---
@@ -529,6 +553,54 @@ export function runContextCrops(
     log?: (line: string) => void
   },
 ): Promise<ContextCropResult>
+
+// --- Re-describing crops under a different embedder (scripts/vision/redescribe-crops.js) ---
+
+/**
+ * Parsed argv. `runDir` is an existing session-1 run whose detections, boxes,
+ * gate signals and labels are reused unchanged — only descriptors are
+ * recomputed. `outDir` is where the new run (same faces, new descriptors) is
+ * written, and is always given (CLAUDE.md; SPEC §15 r1) — nothing here
+ * invents an output path.
+ */
+export interface RedescribeArgs {
+  runDir: string
+  outDir: string
+  enginePath: string
+  weightsDir: string
+  /** Passed to loadEngine as LoadEngineOptions.embedderFile. Null uses the engine's own default. */
+  embedderFile: string | null
+  /** Matches session1.js's flag of the same name. Set it only if the run being compared against did. */
+  mirrorTta: boolean
+}
+
+export interface RedescribeResult {
+  exitCode: number
+  /**
+   * Crops re-described. Deliberately the only number this script reports about
+   * its own output — see the file header on never printing a descriptor
+   * statistic.
+   */
+  faces: number
+}
+
+/**
+ * Decode every crop `faces.jsonl` names, describe it under the engine at
+ * `args.enginePath`/`args.embedderFile`, and write a new run directory whose
+ * `faces.jsonl` is identical to the source except `descriptor` (and
+ * `mirrorDescriptor` under `--mirror-tta`).
+ *
+ * Refuses to run at all if any crop file `faces.jsonl` references is missing,
+ * and writes nothing if interrupted partway — a partial re-describe would
+ * silently bias every comparison made against the run it produced.
+ */
+export function runRedescribe(
+  args: RedescribeArgs,
+  deps?: {
+    engine?: VisionEngine
+    log?: (line: string) => void
+  },
+): Promise<RedescribeResult>
 
 // --- Regenerating label-data.js (scripts/vision/relabel-data.js) ---
 

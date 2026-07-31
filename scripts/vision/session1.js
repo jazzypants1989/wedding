@@ -69,6 +69,8 @@ Usage: node scripts/vision/session1.js <directory> [options]
   --out DIR                 Output directory (default tmp/session1).
   --engine PATH             Engine module (default tmp/rig/engine.mjs).
   --weights DIR             Model weights directory (default tmp/weights).
+  --embedder FILE           Embedder weights filename inside --weights
+                            (default is the engine's own).
   --detect-edge N           Long edge detection runs at.
   --source-edge N           Long edge photographs are decoded at.
   --recursive               Descend into subdirectories.
@@ -84,6 +86,7 @@ const VALUE_FLAGS = [
   "out",
   "engine",
   "weights",
+  "embedder",
   "detect-edge",
   "source-edge",
   "limit",
@@ -324,6 +327,7 @@ export function parseArgs(argv) {
       outDir: path.resolve(values.out ?? "tmp/session1"),
       enginePath: values.engine ?? "tmp/rig/engine.mjs",
       weightsDir: values.weights ?? "tmp/weights",
+      embedderFile: values.embedder ?? null,
       detectEdge: numbers["detect-edge"],
       sourceEdge: numbers["source-edge"],
       recursive: flags.has("recursive"),
@@ -914,7 +918,11 @@ export async function runSession1(args, deps = {}) {
   const backend = backends.image
 
   const engine =
-    deps.engine ?? (await loadEngine(args.enginePath, { weightsDir: args.weightsDir }))
+    deps.engine ??
+    (await loadEngine(args.enginePath, {
+      weightsDir: args.weightsDir,
+      embedderFile: args.embedderFile ?? undefined,
+    }))
 
   const cropsDir = path.join(args.outDir, "crops")
   const scratchDir = path.join(args.outDir, "scratch")

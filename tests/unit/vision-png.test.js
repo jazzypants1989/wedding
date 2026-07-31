@@ -1,4 +1,5 @@
-/** @file Unit test: the hand-written PNG encoder.
+/** @file Unit test: the hand-written PNG encoder, and the decoder that reads
+ *  its files back for the A/B rig (scripts/vision/redescribe-crops.js).
  *
  *  An encoder is the kind of code that produces a file which *looks* right in a
  *  hex dump and fails to open everywhere, so the assertions here are against the
@@ -11,6 +12,11 @@
  *  assertion here that a *different* implementation agrees. It is skipped when
  *  magick is not installed, because a unit test that needs a system binary is a
  *  unit test that fails on someone else's machine for no reason.
+ *
+ *  The decodePng tests near the end hand-build tampered PNG buffers rather than
+ *  going through encodePng for the filter-byte and CRC cases: encodePng only
+ *  ever writes filter type 0 and a valid CRC, so the two failures decodePng
+ *  exists to catch cannot be produced by the encoder that pairs with it.
  */
 
 import assert from "node:assert"
@@ -22,6 +28,7 @@ import zlib from "node:zlib"
 import { after, test } from "node:test"
 
 import { encodePng, writePng } from "../../scripts/vision/png-write.js"
+import { decodePng } from "../../scripts/vision/png-read.js"
 
 /** @type {string[]} */
 const madeDirs = []
@@ -204,5 +211,157 @@ test("ImageMagick decodes our PNG back to the source buffer (skipped without mag
   assert.deepEqual(
     Array.from(ppm.subarray(bodyStart, bodyStart + image.rgb.length)),
     Array.from(image.rgb),
+  )
+})
+
+// ---------------------------------------------------------------------------
+// decodePng — the read side of the round trip.
+// ---------------------------------------------------------------------------
+
+/**
+ * A local CRC-32 + chunk builder, used only to rebuild a tampered IDAT chunk
+ * with a valid CRC for the bad-filter-byte case below. A third, independent
+ * copy of the same standard algorithm png-write.js and png-read.js each keep
+ * their own of (see png-read.js's file header for why): a helper built on
+ * either production implementation could not catch a bug in it.
+ * @type {Int32Array}
+ */
+const DECODE_TEST_CRC_TABLE = (() => {
+  const table = new Int32Array(256)
+  for (let n = 0; n < 256; n++) {
+    let c = n
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+    table[n] = c
+  }
+  return table
+})()
+
+/** @param {Buffer} buf @returns {number} */
+function decodeTestCrc32(buf) {
+  let c = -1
+  for (let i = 0; i < buf.length; i++) c = DECODE_TEST_CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8)
+  return (c ^ -1) >>> 0
+}
+
+/** @param {string} type @param {Buffer} data @returns {Buffer} */
+function buildChunk(type, data) {
+  const head = Buffer.alloc(8)
+  head.writeUInt32BE(data.length, 0)
+  head.write(type, 4, 4, "latin1")
+  const crc = Buffer.alloc(4)
+  crc.writeUInt32BE(decodeTestCrc32(Buffer.concat([head.subarray(4, 8), data])), 0)
+  return Buffer.concat([head, data, crc])
+}
+
+/**
+ * encodePng always writes exactly IHDR (25 bytes: 4 length + 4 type + 13
+ * data + 4 crc) then one IDAT then IEND, so these offsets are fixed by the
+ * encoder's own structure, not guessed at.
+ * @param {Buffer} encoded
+ */
+function splitEncoded(encoded) {
+  const signature = encoded.subarray(0, 8)
+  const ihdrChunk = encoded.subarray(8, 33)
+  const idatLen = encoded.readUInt32BE(33)
+  const idatDataStart = 33 + 8
+  const idatData = encoded.subarray(idatDataStart, idatDataStart + idatLen)
+  const iendChunk = encoded.subarray(idatDataStart + idatLen + 4)
+  return { signature, ihdrChunk, idatData, iendChunk }
+}
+
+test("decodePng round-trips a range of sizes, including 1x1 and odd widths", () => {
+  const sizes = [
+    { width: 1, height: 1 },
+    { width: 1, height: 3 },
+    { width: 3, height: 1 },
+    { width: 5, height: 7 },
+    { width: 112, height: 112 },
+  ]
+  for (const { width, height } of sizes) {
+    const image = syntheticImage(width, height)
+    const decoded = decodePng(encodePng(image))
+    assert.equal(decoded.width, width, `${width}x${height} width`)
+    assert.equal(decoded.height, height, `${width}x${height} height`)
+    assert.deepEqual(Array.from(decoded.rgb), Array.from(image.rgb), `${width}x${height} pixels`)
+  }
+})
+
+test("decodePng refuses a non-zero scanline filter byte", () => {
+  const image = syntheticImage(4, 4)
+  const { signature, ihdrChunk, idatData, iendChunk } = splitEncoded(encodePng(image))
+
+  const raw = zlib.inflateSync(idatData)
+  const tamperedRaw = Buffer.from(raw)
+  // Byte 0 of the inflated stream is the first scanline's filter type.
+  // encodePng only ever writes 0; 1 ("Sub") is a real PNG filter this
+  // decoder deliberately does not implement.
+  tamperedRaw[0] = 1
+  const newIdatChunk = buildChunk("IDAT", zlib.deflateSync(tamperedRaw))
+
+  const tampered = Buffer.concat([signature, ihdrChunk, newIdatChunk, iendChunk])
+  assert.throws(
+    () => decodePng(tampered),
+    (err) => err instanceof Error && err.message.includes("filter type 0"),
+  )
+})
+
+test("decodePng refuses a chunk whose CRC does not match", () => {
+  const image = syntheticImage(4, 4)
+  const encoded = encodePng(image)
+  const corrupted = Buffer.from(encoded)
+  // Byte 41 is the first byte of the IDAT chunk's compressed data (IHDR
+  // occupies [8, 33); the next chunk's 8-byte length+type header occupies
+  // [33, 41)) — flipping it invalidates the CRC the encoder stored, without
+  // needing to know the compressed length.
+  corrupted[41] ^= 0xff
+  assert.throws(
+    () => decodePng(corrupted),
+    (err) => err instanceof Error && err.message.includes("CRC mismatch"),
+  )
+})
+
+test("decodePng refuses a buffer with no PNG signature", () => {
+  const notPng = Buffer.from("this is not a png file at all")
+  assert.throws(
+    () => decodePng(notPng),
+    (err) => err instanceof Error && err.message.includes("bad signature"),
+  )
+})
+
+test("decodePng checks colour type, bit depth and interlace rather than assuming them", () => {
+  const width = 2
+  const height = 2
+  const { signature, idatData } = splitEncoded(encodePng(syntheticImage(width, height)))
+
+  /** @param {(ihdr: Buffer) => void} mutate @returns {Buffer} */
+  const withMutatedIhdr = (mutate) => {
+    const ihdr = Buffer.alloc(13)
+    ihdr.writeUInt32BE(width, 0)
+    ihdr.writeUInt32BE(height, 4)
+    ihdr[8] = 8 // bit depth
+    ihdr[9] = 2 // colour type
+    ihdr[10] = 0 // compression method
+    ihdr[11] = 0 // filter method
+    ihdr[12] = 0 // interlace
+    mutate(ihdr)
+    return Buffer.concat([
+      signature,
+      buildChunk("IHDR", ihdr),
+      buildChunk("IDAT", idatData),
+      buildChunk("IEND", Buffer.alloc(0)),
+    ])
+  }
+
+  assert.throws(
+    () => decodePng(withMutatedIhdr((ihdr) => (ihdr[9] = 3))), // palette
+    (err) => err instanceof Error && err.message.includes("colour type"),
+  )
+  assert.throws(
+    () => decodePng(withMutatedIhdr((ihdr) => (ihdr[8] = 16))), // 16-bit samples
+    (err) => err instanceof Error && err.message.includes("bit depth"),
+  )
+  assert.throws(
+    () => decodePng(withMutatedIhdr((ihdr) => (ihdr[12] = 1))), // Adam7
+    (err) => err instanceof Error && err.message.includes("interlace"),
   )
 })
