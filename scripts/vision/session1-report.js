@@ -1241,8 +1241,12 @@ export function oracleSummary(run, oracle, iouMatch = BOX_MATCH_IOU) {
   let ambiguous = 0
   let eyeChecked = 0
   let eyeFlipped = 0
+  let mouthChecked = 0
+  let mouthFlipped = 0
   /** @type {number[]} */
   const eyeOffsets = []
+  /** @type {number[]} */
+  const noseOffsets = []
 
   for (const photo of run.photos) {
     const rec = lookup(photo.relative)
@@ -1271,6 +1275,9 @@ export function oracleSummary(run, oracle, iouMatch = BOX_MATCH_IOU) {
       box: { x: f.x * sx, y: f.y * sy, w: f.w * sx, h: f.h * sy },
       leftEye: f.leftEye ? [f.leftEye[0] * sx, f.leftEye[1] * sy] : null,
       rightEye: f.rightEye ? [f.rightEye[0] * sx, f.rightEye[1] * sy] : null,
+      noseTip: f.noseTip ? [f.noseTip[0] * sx, f.noseTip[1] * sy] : null,
+      mouthImgLeft: f.mouthImgLeft ? [f.mouthImgLeft[0] * sx, f.mouthImgLeft[1] * sy] : null,
+      mouthImgRight: f.mouthImgRight ? [f.mouthImgRight[0] * sx, f.mouthImgRight[1] * sy] : null,
     }))
     const theirs = scaled.map((f) => f.box)
     oracleFaces += theirs.length
@@ -1291,55 +1298,102 @@ export function oracleSummary(run, oracle, iouMatch = BOX_MATCH_IOU) {
         }
       }
       if (best >= iouMatch) ourMatched++
-      if (best < iouMatch || !bestFace || !bestFace.leftEye || !bestFace.rightEye) return
-
-      // ⚠ THE MIRROR CHECK, against a measurement that is genuinely independent
-      // of ours. The alignment residual catches a landmark order that disagrees
-      // with the TEMPLATE; it cannot catch a mirroring that is consistent all the
-      // way through, because a consistent mirror fits perfectly. Only a second
-      // detector's eyes can see that, which is why SESSION-1 promised this check.
-      //
-      // ⚠ NEVER COMPARE THE TWO SOURCES BY THEIR EYE NAMES. Vision names eyes
-      // from the IMAGE's point of view; our landmark order names them from the
-      // SUBJECT's. The same physical eye therefore carries the opposite word.
-      //
-      // This is worth stating at length because getting it wrong is silent and
-      // symmetrical, and it was gotten wrong in BOTH directions while this check
-      // was being written: matching name-to-name reports ~97% of faces mirrored,
-      // and "correcting" that by inverting the comparison reports ~97% again.
-      // Neither is a fact about the pipeline. Both are the naming clash.
-      //
-      // So neither source's vocabulary is trusted. Ours is anchored by ORDER
-      // (landmark columns 4-5 are the subject's right eye, per the detector's own
-      // decode comment) and theirs by GEOMETRY (whichever point is further left in
-      // the frame). For an upright face the subject's right eye IS the image-left
-      // one, so the correct pairing is ours-subject-right to theirs-image-left.
-      // Then score both pairings by distance and let the closer one win, which
-      // also keeps a rolled head from being counted as a mirror.
-      const oursRight = [row.landmarks[0], row.landmarks[1]]
-      const oursLeft = [row.landmarks[2], row.landmarks[3]]
-      const theirsImageLeft = bestFace.leftEye[0] <= bestFace.rightEye[0] ? bestFace.leftEye : bestFace.rightEye
-      const theirsImageRight = bestFace.leftEye[0] <= bestFace.rightEye[0] ? bestFace.rightEye : bestFace.leftEye
+      if (best < iouMatch || !bestFace) return
 
       /** @param {number[]} a @param {number[]} b */
       const gap = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1])
-      const asExpected = gap(oursRight, theirsImageLeft) + gap(oursLeft, theirsImageRight)
-      const asMirrored = gap(oursRight, theirsImageRight) + gap(oursLeft, theirsImageLeft)
-      eyeChecked++
-      if (asMirrored < asExpected) eyeFlipped++
 
-      // How far apart the two detectors put the eyes, under whichever pairing fits
-      // better — as a fraction of the subject's own eye separation, so a big face
-      // and a small one contribute comparably. Alignment error matters more for
-      // this recogniser than most: its head flattens a 7x7 grid instead of pooling
-      // it, so it has no translation invariance at the end.
+      // Our own eye positions and their separation, by ORDER (landmark columns
+      // 0-1 are the subject's right eye, 2-3 the left — align.js's
+      // LANDMARK_ORDER and the detector's own decode comment). Computed
+      // unconditionally: it is a fact about OUR landmarks alone, independent of
+      // whatever the oracle emitted, and it is the shared scale every scale-free
+      // offset below (eye or nose) divides by.
+      const oursRight = [row.landmarks[0], row.landmarks[1]]
+      const oursLeft = [row.landmarks[2], row.landmarks[3]]
       const sep = gap(oursLeft, oursRight)
-      if (!(sep > 0)) return
-      eyeOffsets.push(Math.min(asExpected, asMirrored) / 2 / sep)
+
+      if (bestFace.leftEye && bestFace.rightEye) {
+        // ⚠ THE MIRROR CHECK, against a measurement that is genuinely independent
+        // of ours. The alignment residual catches a landmark order that disagrees
+        // with the TEMPLATE; it cannot catch a mirroring that is consistent all the
+        // way through, because a consistent mirror fits perfectly. Only a second
+        // detector's eyes can see that, which is why SESSION-1 promised this check.
+        //
+        // ⚠ NEVER COMPARE THE TWO SOURCES BY THEIR EYE NAMES. Vision names eyes
+        // from the IMAGE's point of view; our landmark order names them from the
+        // SUBJECT's. The same physical eye therefore carries the opposite word.
+        //
+        // This is worth stating at length because getting it wrong is silent and
+        // symmetrical, and it was gotten wrong in BOTH directions while this check
+        // was being written: matching name-to-name reports ~97% of faces mirrored,
+        // and "correcting" that by inverting the comparison reports ~97% again.
+        // Neither is a fact about the pipeline. Both are the naming clash.
+        //
+        // So neither source's vocabulary is trusted. Ours is anchored by ORDER
+        // (landmark columns 4-5 are the subject's right eye, per the detector's own
+        // decode comment) and theirs by GEOMETRY (whichever point is further left in
+        // the frame). For an upright face the subject's right eye IS the image-left
+        // one, so the correct pairing is ours-subject-right to theirs-image-left.
+        // Then score both pairings by distance and let the closer one win, which
+        // also keeps a rolled head from being counted as a mirror.
+        const theirsImageLeft = bestFace.leftEye[0] <= bestFace.rightEye[0] ? bestFace.leftEye : bestFace.rightEye
+        const theirsImageRight = bestFace.leftEye[0] <= bestFace.rightEye[0] ? bestFace.rightEye : bestFace.leftEye
+
+        const asExpected = gap(oursRight, theirsImageLeft) + gap(oursLeft, theirsImageRight)
+        const asMirrored = gap(oursRight, theirsImageRight) + gap(oursLeft, theirsImageLeft)
+        eyeChecked++
+        if (asMirrored < asExpected) eyeFlipped++
+
+        // How far apart the two detectors put the eyes, under whichever pairing
+        // fits better — as a fraction of the subject's own eye separation, so a
+        // big face and a small one contribute comparably. Alignment error
+        // matters more for this recogniser than most: its head flattens a 7x7
+        // grid instead of pooling it, so it has no translation invariance at the
+        // end.
+        if (sep > 0) eyeOffsets.push(Math.min(asExpected, asMirrored) / 2 / sep)
+      }
+
+      // The analogous check over the mouth corners, present only when the
+      // oracle emitted them — older oracle files lack the key, which is why
+      // OracleRecord marks it optional.
+      //
+      // Our landmark columns 6-7 are the subject's RIGHT mouth corner and 8-9
+      // the subject's LEFT: align.js's LANDMARK_ORDER is [rightEye, leftEye,
+      // nose, rightMouth, leftMouth], so after the two eye pairs (0-3) and the
+      // nose pair (4-5) the mouth corners follow in that same right-then-left
+      // order. Anchored by ORDER, exactly like the eyes above.
+      //
+      // The oracle's two points are already named by GEOMETRY rather than
+      // vocabulary — oracle-macos.swift picks "mouthImgLeft"/"mouthImgRight" by
+      // pixel x, deliberately neither Vision's naming nor ours, so there is no
+      // naming clash left to fall into here (SESSION-2-vision.md §3). But the
+      // pairing itself is still scored both ways rather than assumed correct:
+      // that is what catches a genuinely swapped landmark order on our side,
+      // the same way the eye check does.
+      if (bestFace.mouthImgLeft && bestFace.mouthImgRight) {
+        const oursRightMouth = [row.landmarks[6], row.landmarks[7]]
+        const oursLeftMouth = [row.landmarks[8], row.landmarks[9]]
+        const mouthExpected =
+          gap(oursRightMouth, bestFace.mouthImgLeft) + gap(oursLeftMouth, bestFace.mouthImgRight)
+        const mouthMirrored =
+          gap(oursRightMouth, bestFace.mouthImgRight) + gap(oursLeftMouth, bestFace.mouthImgLeft)
+        mouthChecked++
+        if (mouthMirrored < mouthExpected) mouthFlipped++
+      }
+
+      // Nose tip: one point, not two, so there is no pairing to get wrong — a
+      // straight scale-free offset, sharing eyeOffsets' own denominator so nose
+      // and eye alignment headroom are directly comparable.
+      if (bestFace.noseTip && sep > 0) {
+        const oursNose = [row.landmarks[4], row.landmarks[5]]
+        noseOffsets.push(gap(oursNose, bestFace.noseTip) / sep)
+      }
     })
   }
 
   const sortedOffsets = eyeOffsets.slice().sort((a, b) => a - b)
+  const sortedNoseOffsets = noseOffsets.slice().sort((a, b) => a - b)
   return {
     photos,
     missing,
@@ -1358,6 +1412,17 @@ export function oracleSummary(run, oracle, iouMatch = BOX_MATCH_IOU) {
       p90: percentile(sortedOffsets, 0.9),
       p99: percentile(sortedOffsets, 0.99),
     },
+    mouthChecked,
+    mouthFlipped,
+    /** Present only when at least one matched face carried an oracle noseTip. */
+    noseOffsetPercentiles:
+      sortedNoseOffsets.length > 0
+        ? {
+            p50: percentile(sortedNoseOffsets, 0.5),
+            p90: percentile(sortedNoseOffsets, 0.9),
+            p99: percentile(sortedNoseOffsets, 0.99),
+          }
+        : null,
   }
 }
 
@@ -2433,10 +2498,23 @@ export function printSummary(analysis, log = console.log, options = {}) {
     log(
       `     p50 ${num(o.eyeOffsetPercentiles.p50)}  p90 ${num(o.eyeOffsetPercentiles.p90)}  p99 ${num(o.eyeOffsetPercentiles.p99)}`,
     )
+    if (o.noseOffsetPercentiles) {
+      log("   nose tip disagreement, same fraction and same denominator as the eyes above:")
+      log(
+        `     p50 ${num(o.noseOffsetPercentiles.p50)}  p90 ${num(o.noseOffsetPercentiles.p90)}  p99 ${num(o.noseOffsetPercentiles.p99)}`,
+      )
+    }
     log("   Neither detector is ground truth, so this bounds ALIGNMENT HEADROOM rather")
     log("   than blaming either. It matters more for this recogniser than for most:")
     log("   its head flattens a 7x7 grid instead of pooling it, so a crop off by a few")
     log("   pixels shifts every one of 50,176 inputs to the final layer.")
+    if (o.mouthChecked > 0) {
+      const mouthShare = o.mouthFlipped / o.mouthChecked
+      log(`   mouth-corner check, same idea, over ${o.mouthChecked} matched faces with oracle mouth data:`)
+      log(`   our subject-right mouth corner on the opposite side to theirs: ${o.mouthFlipped}/${o.mouthChecked} (${pct(mouthShare)})`)
+    } else {
+      log("   mouth-corner check: no matched face carried oracle mouth data (older oracle file?)")
+    }
   } else {
     log(" No oracle file given (--oracle) — detection recall is unverified against an")
     log(" independent detector, AND the mirror check has not run. The residual check")

@@ -1398,6 +1398,91 @@ test("the oracle joins on the full path, because basenames repeat across folders
   assert.equal(summary.ourMatched, 1, "a basename join picks the empty first folder and scores zero")
 })
 
+test("the oracle mouth check survives the two sources naming mouth corners oppositely", () => {
+  // The same trap as the eyes (SESSION-2-vision.md §3), and the same fix:
+  // oracle-macos.swift deliberately does NOT name these points from either
+  // Vision's vocabulary (the image's point of view) or ours (the subject's) —
+  // it names them "mouthImgLeft"/"mouthImgRight" by GEOMETRY (smaller/larger
+  // pixel x). But geometry alone is not enough to prove our side is right: a
+  // reader who assumed the fields pair with ours by NAME similarity (matching
+  // "mouthImgLeft" to "oursLeftMouth" because both say "left") would get this
+  // upright face wrong, because the subject's LEFT mouth corner is on the
+  // image's RIGHT side. Anchoring ours by ORDER (columns 6-7 subject-right,
+  // 8-9 subject-left) and scoring both possible pairings by distance is what
+  // gets it right instead of by luck.
+  //
+  // Upright face: subject's right mouth corner at x=105 (image-left), subject's
+  // left mouth corner at x=135 (image-right) — the same box and eye landmarks
+  // as the eye mirror-check fixture above, extended with a correctly-ordered
+  // mouth.
+  const correct = {
+    ...face({ id: 0, photoId: 0, angle: 0 }),
+    box: { x: 80, y: 80, w: 80, h: 80 },
+    landmarks: [100, 100, 140, 100, 120, 120, 105, 140, 135, 140],
+  }
+  const frame = { ...photo({ id: 0, capturedAtMs: T }), relative: "album/mouth-frame", width: 400, height: 400 }
+  /** @type {Types.LoadedRun} */
+  const run = { photos: [frame], faces: [correct], labels: null, timing: null, resolution: [] }
+  /** @type {Types.OracleRecord} */
+  const oracleRow = {
+    path: "/somewhere/album/mouth-frame",
+    w: 400,
+    h: 400,
+    ms: 1,
+    faces: [
+      {
+        x: 80,
+        y: 80,
+        w: 80,
+        h: 80,
+        // Named by geometry: smaller pixel x is "Img Left", regardless of
+        // whose anatomical corner it happens to be.
+        mouthImgLeft: [105, 140],
+        mouthImgRight: [135, 140],
+      },
+    ],
+  }
+
+  const ok = oracleSummary(run, [oracleRow])
+  assert.equal(ok.mouthChecked, 1)
+  assert.equal(ok.mouthFlipped, 0, "correctly-ordered mouth corners must NOT be reported as flipped")
+
+  // Now genuinely swap the mouth landmark columns — the bug this check exists
+  // to catch, invisible to the alignment residual when the swap is consistent.
+  const swapped = { ...correct, landmarks: [100, 100, 140, 100, 120, 120, 135, 140, 105, 140] }
+  const bad = oracleSummary({ ...run, faces: [swapped] }, [oracleRow])
+  assert.equal(bad.mouthChecked, 1)
+  assert.equal(bad.mouthFlipped, 1, "a real swap of the mouth-corner columns must be caught")
+})
+
+test("the oracle mouth check leaves mouthChecked at zero when the oracle carries no mouth data", () => {
+  // Older oracle files predate mouthImgLeft/mouthImgRight (OracleRecord marks
+  // both optional for exactly this reason). The check must sit out rather than
+  // crash or fabricate a verdict from missing points — same posture as the eye
+  // check, which requires both leftEye and rightEye before it counts anything.
+  const noMouth = {
+    ...face({ id: 0, photoId: 0, angle: 0 }),
+    box: { x: 80, y: 80, w: 80, h: 80 },
+    landmarks: [100, 100, 140, 100, 120, 120, 105, 140, 135, 140],
+  }
+  const frame = { ...photo({ id: 0, capturedAtMs: T }), relative: "album/no-mouth-frame", width: 400, height: 400 }
+  /** @type {Types.LoadedRun} */
+  const run = { photos: [frame], faces: [noMouth], labels: null, timing: null, resolution: [] }
+  /** @type {Types.OracleRecord} */
+  const oracleRow = {
+    path: "/somewhere/album/no-mouth-frame",
+    w: 400,
+    h: 400,
+    ms: 1,
+    faces: [{ x: 80, y: 80, w: 80, h: 80, leftEye: [140, 100], rightEye: [100, 100] }],
+  }
+
+  const summary = oracleSummary(run, [oracleRow])
+  assert.equal(summary.mouthChecked, 0)
+  assert.equal(summary.mouthFlipped, 0)
+  assert.equal(summary.eyeChecked, 1, "the eye check is unaffected by the missing mouth data")
+})
+
 // ---------------------------------------------------------------------------
 // The dataset guard: labels.json must belong to THIS run's faces.jsonl
 // ---------------------------------------------------------------------------

@@ -120,6 +120,54 @@ func num(_ d: Double) -> String {
   return String(format: "%.2f", d)
 }
 
+/// One landmark point — normalised, relative to the face bounding box, origin
+/// bottom-left, y UP — converted to full-image pixels, top-left origin, y DOWN.
+/// Same convention `toPixels` applies to the box itself, factored out here so
+/// every per-point conversion in this file (centroid and extremum alike) goes
+/// through one place that knows the axis flip.
+func toPixelPoint(_ p: CGPoint, x: Double, y: Double, w: Double, h: Double) -> (Double, Double) {
+  let fx = x + Double(p.x) * w
+  let fy = y + (1.0 - Double(p.y)) * h
+  return (fx, fy)
+}
+
+/// The centroid of a landmark region, in image pixels.
+func centroidPixels(
+  _ region: VNFaceLandmarkRegion2D, x: Double, y: Double, w: Double, h: Double
+) -> (Double, Double) {
+  var sx = 0.0, sy = 0.0
+  for p in region.normalizedPoints {
+    let (px, py) = toPixelPoint(p, x: x, y: y, w: w, h: h)
+    sx += px
+    sy += py
+  }
+  let n = Double(max(region.pointCount, 1))
+  return (sx / n, sy / n)
+}
+
+/// The point of a landmark region, in image pixels, that is extreme along one
+/// axis (0 = x, 1 = y): the argmax when `keepLarger` is true, the argmin when
+/// false. Returns nil for an empty region rather than an arbitrary point, so a
+/// region Vision reports with zero points cannot silently produce a fabricated
+/// coordinate.
+func extremumPixels(
+  _ region: VNFaceLandmarkRegion2D, x: Double, y: Double, w: Double, h: Double,
+  axis: Int, keepLarger: Bool
+) -> (Double, Double)? {
+  var best: (Double, Double)? = nil
+  var bestKey = keepLarger ? -Double.infinity : Double.infinity
+  for p in region.normalizedPoints {
+    let point = toPixelPoint(p, x: x, y: y, w: w, h: h)
+    let k = axis == 0 ? point.0 : point.1
+    let better = keepLarger ? (k > bestKey) : (k < bestKey)
+    if best == nil || better {
+      best = point
+      bestKey = k
+    }
+  }
+  return best
+}
+
 /// Detect faces in one image and print a JSON line.
 func process(_ path: String) {
   let url = URL(fileURLWithPath: path)
@@ -184,20 +232,47 @@ func process(_ path: String) {
       // Both eyes, as image pixels — this is what our five-point landmark order
       // gets asserted against. Vision gives eye contours; use their centroids.
       if let l = face.landmarks?.leftEye, let r = face.landmarks?.rightEye {
-        func centroid(_ region: VNFaceLandmarkRegion2D) -> (Double, Double) {
-          var sx = 0.0, sy = 0.0
-          for p in region.normalizedPoints { sx += Double(p.x); sy += Double(p.y) }
-          let n = Double(max(region.pointCount, 1))
-          // normalizedPoints are relative to the face bounding box, y up.
-          let fx = x + (sx / n) * w
-          let fy = y + (1.0 - sy / n) * h
-          return (fx, fy)
-        }
-        let (lx, ly) = centroid(l)
-        let (rx, ry) = centroid(r)
+        let (lx, ly) = centroidPixels(l, x: x, y: y, w: w, h: h)
+        let (rx, ry) = centroidPixels(r, x: x, y: y, w: w, h: h)
         // Named from the subject's point of view, matching Vision's own naming.
         fields.append("\"leftEye\":[\(num(lx)),\(num(ly))]")
         fields.append("\"rightEye\":[\(num(rx)),\(num(ry))]")
+      }
+      // Nose tip: Vision's `nose` region runs points along the ridge, not just
+      // the tip, so the tip is picked out as an extremum rather than assumed to
+      // be a particular index. It is the point closest to the mouth — which, in
+      // the pixel space this file already emits (top-left origin, y DOWN), is
+      // simply the LARGEST pixel y. That is deliberately how this is computed:
+      // every candidate point is converted with the one conversion this file
+      // already trusts (`toPixelPoint`, the same one the box and the eye
+      // centroids go through), and only THEN compared — rather than reasoning
+      // about Vision's native y-up/bottom-left convention a second time and
+      // risking exactly the kind of axis mistake this file's header exists to
+      // avoid making twice.
+      if let nose = face.landmarks?.nose,
+         let tip = extremumPixels(nose, x: x, y: y, w: w, h: h, axis: 1, keepLarger: true) {
+        fields.append("\"noseTip\":[\(num(tip.0)),\(num(tip.1))]")
+      }
+      // Mouth corners — deliberately NOT named from either source's vocabulary.
+      // Vision would name these from the IMAGE's point of view; our own
+      // five-point landmark order names the corresponding points from the
+      // SUBJECT's point of view. SESSION-2-vision.md §3 records two opposite
+      // false alarms from trusting one of those vocabularies over the other for
+      // the EYES — matching name-to-name reported ~100% of faces mirrored, and
+      // "correcting" that by inverting the comparison reported ~100% again, the
+      // other way. Neither was a fact about the pipeline.
+      //
+      // The fix there was to stop comparing names at all: anchor our side by
+      // landmark ORDER and Vision's by GEOMETRY, then let the closer of the two
+      // possible pairings win. Naming these fields "mouthImgLeft"/"mouthImgRight"
+      // (smaller/larger pixel x — geometry, not vocabulary) does that pairing
+      // work here instead of leaving it to be redone, and possibly gotten wrong
+      // a third time, on the JS side.
+      if let lips = face.landmarks?.outerLips,
+         let left = extremumPixels(lips, x: x, y: y, w: w, h: h, axis: 0, keepLarger: false),
+         let right = extremumPixels(lips, x: x, y: y, w: w, h: h, axis: 0, keepLarger: true) {
+        fields.append("\"mouthImgLeft\":[\(num(left.0)),\(num(left.1))]")
+        fields.append("\"mouthImgRight\":[\(num(right.0)),\(num(right.1))]")
       }
     }
     rows.append("{" + fields.joined(separator: ",") + "}")
