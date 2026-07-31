@@ -2,6 +2,9 @@
 
 **Date:** 2026-07-30
 **Status:** decision document. Supersedes [`SESSION-1-vision.md`](./SESSION-1-vision.md) §5.
+**⚠ Superseded in part:** [`SESSION-3-vision.md`](./SESSION-3-vision.md) replaces §7's
+ordering (most of it is now built), corrects §1's tsconfig claim and §8's household
+prior, and re-prices §6's estimate. Read it before acting on anything in this file.
 **Reads with:** [`SPEC-vision-lab.md`](./SPEC-vision-lab.md) (the build spec, §15 =
 the rules that govern running any of this) · [`VISION-MODELS.md`](./VISION-MODELS.md)
 (the model ledger, whose §Stale rejections was written from this review)
