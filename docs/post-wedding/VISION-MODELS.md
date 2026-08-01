@@ -633,7 +633,7 @@ take the embedder alone.
 | Params | 65.16 M across 462 initializers — textbook IResNet100 |
 | Input | `data: f32[None,3,112,112]` |
 | Output | `f32[1,512]` — **512-d confirmed** |
-| Normalisation | **NOT in the graph.** No leading `Sub`/`Mul`, no small initializers at all — the caller must normalise externally. The InsightFace convention is `(x − 127.5)/128`, but that is ecosystem knowledge, not something this file states; pin it from InsightFace's own preprocessing source before wiring in |
+| Normalisation | **NOT in the graph.** No leading `Sub`/`Mul`, no small initializers at all — the caller must normalise externally. Pinned from InsightFace's own loader: `(x − 127.5)/127.5` (`python-package/insightface/model_zoo/arcface_onnx.py` lines 29–43 at commit `7fadd42`, corroborated by `recognition/arcface_torch/inference.py`'s `div_(255).sub_(0.5).div_(0.5)`). **Not `/128`** — that is the mxnet-era in-graph constant (SFace's own `scalar_op2 = 0.0078125`), which an earlier revision of this row transplanted here by mistake. Tensor channel order: RGB (`swapRB=True`, arcface_onnx.py lines 82–83) |
 | Exporter quirk | absent — one graph input, weights are initializers only (unlike SFace's 175-input export) |
 
 Three consequences, one of them a correction to this section's own earlier
@@ -716,7 +716,7 @@ What actually has to change to replace a component. This is the concrete form of
 | YuNet `2026may` ↔ `2023mar` ↔ `int8bq` | url + hash | input shape | none | none |
 | YuNet → `face_det_lite` | new entry | input shape, normalisation, landmark order | +`GlobalAveragePool` | new decode (CenterNet-style) |
 | SFace `int8bq` ↔ fp32 | url + hash | none | none | none |
-| SFace → AuraFace | new entry | normalisation **external** — nothing in-graph, pin `(x−127.5)/128` from InsightFace source; dim 512 | none (subset — the residual `Add` is already YuNet's) | none |
+| SFace → AuraFace | new entry | normalisation **external** — nothing in-graph, `(x−127.5)/127.5` pinned from `arcface_onnx.py` at commit `7fadd42` (not `/128`, which is SFace's in-graph constant); dim 512 | none (subset — the residual `Add` is already YuNet's) | none |
 | SFace → EdgeFace | new entry | normalisation `x/127.5−1`, dim 512 | +~22 op types | constant-folding in converter |
 
 The first four rows are configuration. Only the last is a project.
