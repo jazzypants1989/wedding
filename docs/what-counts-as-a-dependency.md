@@ -16,8 +16,9 @@ top of its `CLAUDE.md`: **zero dependencies.** Node built-ins only. No npm
 packages. The `package.json` dev-dependency block contains `typescript` and
 `@types/node`, and neither is ever imported at runtime.
 
-It also has, by now, a media gallery holding a couple of thousand wedding
-photos, and an obvious itch: *could we do face recognition on those?* Not
+It also has, by now, a media gallery built for a couple of thousand wedding
+photos — most of them still waiting to be imported into it — and an obvious
+itch: *could we do face recognition on those?* Not
 because anyone needs it. Because it's the kind of thing you're told requires a
 dependency, and this codebase has spent its whole life not having any.
 
@@ -243,10 +244,11 @@ charge money.
 
 The fix is embarrassingly easy and strictly better: **don't commit the weights.**
 A `fetch-weights.js` script, a hash-pinned manifest, a gitignored directory, and a
-generated `LICENCE.md` per artifact. Now the repo contains zero encumbered bytes,
-and every question about no-derivatives and non-commercial and ShareAlike
-redistribution isn't answered — it's *absent*. Each person who clones it makes
-their own decision at fetch time.
+generated `LICENCE.md` per artifact — a proposal, to be clear: the script is the
+spec's tier 2 and has not been written yet. The repo would then contain zero
+encumbered bytes, and every question about no-derivatives and non-commercial and
+ShareAlike redistribution wouldn't be answered — it would be *absent*. Each person
+who clones it would make their own decision at fetch time.
 
 It also happens to be the thing the owner had already proposed, in different
 words, in the first conversation: *use something for our personal project and
@@ -320,7 +322,7 @@ consolidating graphics, audio and vision," while simultaneously declaring that
 rewriting the 29 existing visual effects onto the GPU was an explicit non-goal.
 Which means the substrate would have had exactly one consumer. That's not
 consolidation, it's an abstraction layer with a press release. The GPU backend is
-now an optional tier six, wanted rather than needed, and the honest reason to build
+now an optional tier seven, wanted rather than needed, and the honest reason to build
 it is that WGSL is fun.
 
 ---
@@ -540,6 +542,13 @@ without re-checking. As the implementation it isn't, and the tempting move — "
 CLI-only, like vips" — is false: vips is a separate binary over a pipe. An
 imported library is not the same animal, and noticing that I wanted it to be was
 its own small lesson in how these rules erode.
+
+*(Note, 2026-07-31: the tension this paragraph argues is no longer open. The
+owner has since ruled — ship the feature now on the borrowed engine, admin-only,
+and hand-write the kernels later as a separate project
+([`DECISIONS-vision.md`](./post-wedding/DECISIONS-vision.md) §1;
+[`SPEC-vision-lab.md`](./post-wedding/SPEC-vision-lab.md) §2.1a). The paragraph
+above stands as the argument as it looked two days before that decision.)*
 
 The risk worth naming hasn't changed: hand-written neural network inference fails
 **silently and numerically.** A transposed weight layout or an off-by-one in

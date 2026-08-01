@@ -90,10 +90,12 @@ matters, `--manifest=` parks it beside the photos — e.g. on the external drive
 the photos live on. A manifest inside the imported directory is recognized and
 skipped, not reported as an unsupported file.
 
-There is no `source_sha256` column on `media` and this is why: adding one means a
-schema migration, an index, an admin-only field on `POST /api/media` and a lookup
-endpoint — a permanent expansion of the core schema to serve a one-directional
-CLI. Revisit only if multi-machine imports become real.
+A `source_sha256` column now exists on `media` — the face-tagging migration added
+it (with an index), and `scripts/vision/ingest-faces.js --backfill-manifest`
+copies this manifest's hashes into it, never overwriting a value already set. The
+importer still does not consult it: doing so would need an admin-only field on
+`POST /api/media` and a lookup endpoint — an expansion of the core API to serve a
+one-directional CLI. Revisit only if multi-machine imports become real.
 
 ---
 

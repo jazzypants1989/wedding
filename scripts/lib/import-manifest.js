@@ -5,10 +5,13 @@
  *  re-import it. Keyed by origin underneath that, so a staging run does not
  *  suppress a production one.
  *
- *  Why a local file rather than the database. There is no source_sha256 column
- *  on `media`, and adding one means a schema migration, an index, an admin-only
- *  field on POST /api/media and a lookup endpoint — a permanent expansion of
- *  the core schema to serve a one-directional CLI. `app_state` is not reachable
+ *  Why a local file rather than the database. A `source_sha256` column now
+ *  exists on `media` (added by the face-tagging migration in db/schema.js, and
+ *  back-filled from this manifest by `scripts/vision/ingest-faces.js
+ *  --backfill-manifest`, which never overwrites a set value) — but the importer
+ *  still does not read it: using it would need an admin-only field on
+ *  POST /api/media and a lookup endpoint — an expansion of the core API to
+ *  serve a one-directional CLI. `app_state` is not reachable
  *  over HTTP either (setAppState only serves its own fixed keys). The cost of
  *  the file is that it is machine-local, so a second machine re-imports;
  *  --manifest lets the user park it beside the photos if that matters.

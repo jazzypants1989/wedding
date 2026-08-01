@@ -600,11 +600,14 @@ The table above was written before the pipeline had ever been run end to end.
 Two of its exclusions rest on premises that session 1 changed, and a rejection
 whose premise has gone is not a decision, it is an inheritance.
 
-**1. The size constraint that disqualified AuraFace was retired by a decision
-made in the same session.** 260.69 MB is disqualifying only if the model is
-shipped to guests' browsers, which is tier 6 — and
+**1. The size constraint that disqualified AuraFace is contingent on tier 6's
+fate — recommended against, but not decided.** 260.69 MB is disqualifying only
+if the model is shipped to guests' browsers, which is tier 6.
 [`SESSION-1-vision.md`](./SESSION-1-vision.md) §5 Q4 recommends against tier 6
-("no, or much later"). For an admin-side batch on the owner's own machine, a
+("no, or much later"), but [`SPEC-vision-lab.md`](./SPEC-vision-lab.md) §11
+still specs upload-time detection as a live rung of the ladder, so read what
+follows as conditional: *if* in-browser detection stays rejected, the size
+objection dissolves. For an admin-side batch on the owner's own machine, a
 260 MB file is unremarkable; the photographs it processes are larger by orders
 of magnitude. What is left once the size objection goes is: **Apache-2.0, and
 *fewer* op types than SFace's eight** — which makes it cheaper to hand-write,

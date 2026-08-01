@@ -20,18 +20,18 @@ wrong. Read it for context, then read the spec.
 | §1 four-stage pipeline; difficulty concentrates in Embed | ✅ **Stands.** The framing the whole project uses |
 | §2 vendor pico.js (~200 lines MIT JS) + `puploc` | ❌ **Reversed.** Owner ruled out vendoring third-party *code*. All code is first-party; only weights are imported. The chosen CNN detector also emits five landmarks directly, deleting the entire pupil-localisation stage |
 | §3 Option A: vendor a small CNN, hand-write inference | ✅ **Stands** — this is the plan. But see the timing correction below |
-| §3 Option A timings: "221 MFLOPs, 0.2–1 s/face, 20–100 min for the gallery" | ⚠️ **Optimistic.** Computed for MobileFaceNet at 1.0 M params. The chosen model (SFace) is **9.67 M** — nearly 10×. Treat as unmeasured; see SPEC §5.2 |
+| §3 Option A timings: "221 MFLOPs, 0.2–1 s/face, 20–100 min for the gallery" | ⚠️ **Optimistic.** Computed for MobileFaceNet at 1.0 M params. The chosen model (SFace) is **9.67 M** — nearly 10×. Treat as unmeasured; see SPEC §12 |
 | §3 Option B: classical LBP/HOG descriptor as a cheap baseline | 🔶 **Never spiked, still un-refuted.** The cheapest unknown in the project |
-| §3 Option C: browser `FaceDetector` API | ✅ **Stands** — don't build on it. But macOS Vision *is* now used as a dev-machine oracle (SPEC §9.1) |
-| §4.1 the client already has decoded bitmaps — detection is nearly free | ✅ **Stands, and got promoted.** This is now the "free rider" design in SPEC §8 |
+| §3 Option C: browser `FaceDetector` API | ✅ **Stands** — don't build on it. But macOS Vision *is* now used as a dev-machine oracle (SPEC §8.2) |
+| §4.1 the client already has decoded bitmaps — detection is nearly free | ✅ **Stands, and got promoted.** This is now the "free rider" design in SPEC §11 |
 | §4.2 server-side is harder; no image decode in Node | ❌ **Wrong conclusion from a true premise.** Node genuinely cannot decode images — but the repo already shells out to vips/ImageMagick/sips (`CLAUDE.md:17`, `scripts/lib/image-backend.js`). `magick x.jpg -depth 8 RGB:-` yields raw pixels. **Offline CLI is now the primary venue** |
-| §4.3 the CSP blocks WebAssembly | ⚠️ **True but not load-bearing.** The CSP is already per-page (`FRAMEABLE_SAMEORIGIN_PAGES`), so scoping a relaxation to `/studio` would be trivial. WASM is excluded because every usable runtime is third-party *code*. See SPEC §6.1 |
+| §4.3 the CSP blocks WebAssembly | ⚠️ **True but not load-bearing.** The CSP is already per-page (`FRAMEABLE_SAMEORIGIN_PAGES`), so scoping a relaxation to `/studio` would be trivial. WASM is excluded because every usable runtime is third-party *code*. See SPEC §2.1a |
 | §4.4 read `display`, not `thumb`, never `original` | 🔶 **Applies to the browser-batch venue only.** The CLI reads `uploads/` off disk, where `original` is the right choice |
-| §4.5 no-regex is a non-issue; needs new tables | ✅ **Stands.** See SPEC §12 |
+| §4.5 no-regex is a non-issue; needs new tables | ✅ **Stands.** See SPEC §10 |
 | §4.6 you already know who the guests are | ✅ **Stands, and it's the key reframe.** Assisted tagging against a ~100-person roster, not open-set identification |
 | §5 recommended architecture (worker + pico.js in admin page) | ❌ **Superseded** by SPEC §4's venue-agnostic core with four adapter seams |
-| §6 tier table (0–3) | ❌ **Superseded** by SPEC §10's seven-rung ladder |
-| §7 privacy | ✅ **Stands and still governs.** Sharpened in SPEC §12: embeddings are computed admin-side only |
+| §6 tier table (0–3) | ❌ **Superseded** by SPEC §5's eight-rung ladder (tiers 0–7) |
+| §7 privacy | ✅ **Stands and still governs.** Sharpened in SPEC §10: embeddings are computed admin-side only |
 | §8 the reframe — the useful features may not need identity | ✅ **Stands, and it aged well.** Tiers 1–3 of the current plan are exactly this |
 
 **One thing this document got right that later drafts nearly lost:** §8's
