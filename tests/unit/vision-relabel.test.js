@@ -18,7 +18,7 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 
 import { assignPools } from "../../scripts/vision/session1.js"
-import { carryAssignments, growAssignments } from "../../scripts/vision/relabel-data.js"
+import { carryAssignments, derivedAssignments, growAssignments } from "../../scripts/vision/relabel-data.js"
 
 /**
  * A minimal but fully-typed Session1FaceRecord. Only `id`, `crop` and
@@ -178,4 +178,45 @@ test("carryAssignments still refuses a face missing from the previous file (unch
     () => carryAssignments(all, before),
     (err) => err instanceof Error && err.message.includes("different runs"),
   )
+})
+
+// ---------------------------------------------------------------------------
+// Descriptor canonicalization: which vector pool-B regrouping reads
+// ---------------------------------------------------------------------------
+
+test("derivedAssignments groups a legacy-shape file on mirrorDescriptor, not descriptor", () => {
+  // Pre-canonicalization files kept the mirror-averaged vector in
+  // `mirrorDescriptor` and the single pass in `descriptor`; regrouping such a
+  // file must keep reading the averaged one or its meaning changes. The two
+  // faces are identical in mirror space and orthogonal in descriptor space,
+  // so which field was read is exactly what the group outcome shows.
+  /** @type {Types.Session1FaceRecord[]} */
+  const legacy = [
+    { ...face(0), descriptor: [1, 0], mirrorDescriptor: [0, 1] },
+    { ...face(1), descriptor: [-1, 0], mirrorDescriptor: [0, 1] },
+  ]
+  const { pools } = derivedAssignments(legacy, null, 0)
+  const a = pools.get(0)
+  const b = pools.get(1)
+  assert.ok(a && b)
+  assert.equal(a.pool, "B")
+  assert.notEqual(a.group, null, "identical mirror vectors must group")
+  assert.equal(a.group, b.group)
+})
+
+test("derivedAssignments groups a canonical-shape file on descriptor alone", () => {
+  // Since the D2 fix, `descriptor` is canonical (already averaged when the
+  // run mirrored) and `descriptorUnmirrored` is diagnostic only — grouping
+  // must not read it.
+  /** @type {Types.Session1FaceRecord[]} */
+  const canonical = [
+    { ...face(0), descriptor: [0, 1], descriptorUnmirrored: [1, 0] },
+    { ...face(1), descriptor: [0, 1], descriptorUnmirrored: [-1, 0] },
+  ]
+  const { pools } = derivedAssignments(canonical, null, 0)
+  const a = pools.get(0)
+  const b = pools.get(1)
+  assert.ok(a && b)
+  assert.notEqual(a.group, null, "identical canonical descriptors must group")
+  assert.equal(a.group, b.group)
 })

@@ -13,9 +13,10 @@
  *     fair comparison at the one seam that is this script's to guard.
  *  2. **Nothing is re-detected.** Face ids, boxes, landmarks, gate signals and
  *     labels all carry over unchanged from `faces.jsonl` — only `descriptor`
- *     (and `mirrorDescriptor` under `--mirror-tta`) is replaced. That is what
- *     keeps `labels.json`'s `datasetId` valid: it hashes id, photo id and box,
- *     none of which move.
+ *     (canonical: mirror-averaged under `--mirror-tta`, with the single-pass
+ *     vector kept as `descriptorUnmirrored`) is replaced. That is what keeps
+ *     `labels.json`'s `datasetId` valid: it hashes id, photo id and box, none
+ *     of which move.
  *  3. **A missing crop aborts the whole run, not just that face.** Silently
  *     re-describing 996 of 1000 crops would shift both pools by a few faces
  *     and quietly bias whatever the report goes on to quote. The check runs
@@ -60,9 +61,10 @@ Usage: node scripts/vision/redescribe-crops.js <run-dir> --out DIR [options]
   --embedder FILE    Embedder weights filename inside --weights (default is
                      the engine's own).
   --weights DIR      Model weights directory (default tmp/weights).
-  --mirror-tta       Also describe each crop mirrored, and average — matches
-                     session1.js's flag of the same name; set it only if the
-                     run being compared against did.
+  --mirror-tta       Also describe each crop mirrored; the average becomes the
+                     canonical descriptor — matches session1.js's flag of the
+                     same name; set it only if the run being compared against
+                     did.
   --help
 `
 
@@ -228,10 +230,13 @@ function round(value) {
  * One face's new descriptor(s), under whichever engine was loaded. No
  * statistic about the result — a norm, a distance, anything — is computed
  * here or anywhere in this file; see the file header.
+ * `descriptor` is CANONICAL: mirror-averaged under `--mirror-tta`, with the
+ * single-pass vector kept as `descriptorUnmirrored` so session1-report.js can
+ * price what averaging bought.
  * @param {Types.VisionEngine} engine
  * @param {LibTypes.RgbImage} image
  * @param {boolean} mirrorTta
- * @returns {Promise<{ descriptor: number[], mirrorDescriptor?: number[] }>}
+ * @returns {Promise<{ descriptor: number[], descriptorUnmirrored?: number[] }>}
  */
 async function describeFace(engine, image, mirrorTta) {
   const descriptor = await engine.describe(image)
@@ -245,30 +250,32 @@ async function describeFace(engine, image, mirrorTta) {
   // reason: normalising each and averaging would leave a vector off the unit
   // sphere whose length encodes how much the two disagreed, which every
   // cosine distance downstream would then silently divide out.
-  const mirrorDescriptor = l2Normalize(averaged)
   return {
-    descriptor: Array.from(descriptor, round),
-    mirrorDescriptor: Array.from(mirrorDescriptor, round),
+    descriptor: Array.from(l2Normalize(averaged), round),
+    descriptorUnmirrored: Array.from(descriptor, round),
   }
 }
 
 /**
- * The source face record with its descriptor(s) replaced. `mirrorDescriptor`
- * is deleted when this run did not recompute one — carrying over a value
- * computed under the OLD model would be a mismatched-model field that looks
- * like data from this run and is not.
+ * The source face record with its descriptor(s) replaced. `descriptorUnmirrored`
+ * is deleted when this run did not recompute one, and the legacy
+ * `mirrorDescriptor` field (pre-canonicalization runs kept the averaged vector
+ * there) is always deleted — carrying over a value computed under the OLD
+ * model would be a mismatched-model field that looks like data from this run
+ * and is not.
  * @param {Types.Session1FaceRecord} original
- * @param {{ descriptor: number[], mirrorDescriptor?: number[] }} redescribed
+ * @param {{ descriptor: number[], descriptorUnmirrored?: number[] }} redescribed
  * @returns {Types.Session1FaceRecord}
  */
 function withNewDescriptor(original, redescribed) {
   /** @type {Types.Session1FaceRecord} */
   const next = { ...original, descriptor: redescribed.descriptor }
-  if (redescribed.mirrorDescriptor) {
-    next.mirrorDescriptor = redescribed.mirrorDescriptor
+  if (redescribed.descriptorUnmirrored) {
+    next.descriptorUnmirrored = redescribed.descriptorUnmirrored
   } else {
-    delete next.mirrorDescriptor
+    delete next.descriptorUnmirrored
   }
+  delete next.mirrorDescriptor
   return next
 }
 
@@ -365,6 +372,10 @@ export async function runRedescribe(args, deps = {}) {
     timing.config = {
       ...timing.config,
       redescribedWith: args.embedderFile ?? "(engine default embedder)",
+      // THIS run's setting, not the source run's: it says whether the
+      // descriptors in this directory are mirror-averaged, which is what a
+      // reader of the output needs to know.
+      mirrorTta: args.mirrorTta,
     }
     fs.writeFileSync(path.join(args.outDir, "timing.json"), JSON.stringify(timing, null, 2) + "\n")
   } else {

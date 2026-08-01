@@ -467,6 +467,11 @@ export function derivedAssignments(faces, timing, poolASizeOverride) {
   /** @type {Map<number, number[]>} */
   const descriptorsById = new Map()
   for (const face of faces) {
+    // `descriptor` is canonical (mirror-averaged when the run used
+    // --mirror-tta). The `mirrorDescriptor` branch is vestigial: it exists
+    // only for pre-canonicalization run files still on disk, which kept the
+    // averaged vector there — reading them must not change what they meant.
+    // Current writers (session1.js, redescribe-crops.js) never emit it.
     descriptorsById.set(face.id, face.mirrorDescriptor ?? face.descriptor)
   }
 

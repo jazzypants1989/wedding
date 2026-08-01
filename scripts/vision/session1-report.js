@@ -281,13 +281,30 @@ export function frameRoots(photos) {
 // ---------------------------------------------------------------------------
 
 /**
+ * Which vector to read from a face record. `descriptor` is canonical — the
+ * writers (session1.js, redescribe-crops.js) put the mirror-averaged vector
+ * THERE when --mirror-tta is on, keeping the single-pass one in
+ * `descriptorUnmirrored` — so the default (no variant) is always right.
+ *
+ * The `mirrorDescriptor` branch is vestigial: it exists only for
+ * pre-canonicalization run files still on disk, which held the single-pass
+ * vector in `descriptor` and the average in `mirrorDescriptor`. Reading them
+ * must not change what they meant, so "averaged" prefers that legacy field
+ * and "single" falls back to `descriptor`, which is where those files kept it.
  * @param {Types.Session1FaceRecord} face
- * @param {boolean} mirror
+ * @param {Types.DescriptorVariant | undefined} variant
  * @returns {number[]}
  */
-function descriptorOf(face, mirror) {
-  const mirrored = face.mirrorDescriptor
-  return mirror && mirrored && mirrored.length > 0 ? mirrored : face.descriptor
+function descriptorOf(face, variant) {
+  if (variant === "averaged") {
+    const legacy = face.mirrorDescriptor
+    return legacy && legacy.length > 0 ? legacy : face.descriptor
+  }
+  if (variant === "single") {
+    const single = face.descriptorUnmirrored
+    return single && single.length > 0 ? single : face.descriptor
+  }
+  return face.descriptor
 }
 
 /**
@@ -298,7 +315,7 @@ function descriptorOf(face, mirror) {
  * @returns {Types.FaceView}
  */
 export function buildView(run, options = {}) {
-  const mirror = options.mirror === true
+  const variant = options.variant
   const wantPool = options.pool ?? null
   const labelFile = run.labels
   const labelMap = labelFile ? labelFile.labels : {}
@@ -329,7 +346,7 @@ export function buildView(run, options = {}) {
     picked.push({ face, label })
   }
 
-  const dim = picked.length > 0 ? descriptorOf(picked[0].face, mirror).length : 0
+  const dim = picked.length > 0 ? descriptorOf(picked[0].face, variant).length : 0
   const data = new Float32Array(picked.length * dim)
   /** @type {Array<string | null>} */
   const labels = []
@@ -345,7 +362,7 @@ export function buildView(run, options = {}) {
   const records = []
 
   picked.forEach(({ face, label }, row) => {
-    const vec = descriptorOf(face, mirror)
+    const vec = descriptorOf(face, variant)
     if (vec.length !== dim) {
       throw new Error(`face ${face.id}: descriptor has ${vec.length} dims, expected ${dim}`)
     }
@@ -2176,19 +2193,41 @@ export function analyse(run, options = {}) {
 
   /** @type {{ auc: number, rank1: number, mirrorAuc: number, mirrorRank1: number } | null} */
   let mirror = null
-  if (run.faces.some((f) => f.mirrorDescriptor && f.mirrorDescriptor.length > 0)) {
-    const poolAMirror = buildView(run, { pool: "A", requireLabel: true, mirror: true })
-    const labelledMirror = buildView(run, { requireLabel: true, mirror: true })
-    const spec = separationStrata(poolAMirror).find((s) => s.key === headline.key)
-    const pairs = pairDistances(poolAMirror.set, {
-      labels: poolAMirror.labels,
-      keep: spec ? (spec.keep ?? undefined) : undefined,
-    })
+  // Either field means the run carries both variants: current runs keep the
+  // single-pass vector in `descriptorUnmirrored` (with the average canonical
+  // in `descriptor`); pre-canonicalization runs kept the average in
+  // `mirrorDescriptor` (with the single-pass vector in `descriptor`).
+  // descriptorOf resolves each variant correctly for both shapes, so the two
+  // sides are computed symmetrically instead of assuming the default view is
+  // the single-pass one — which stopped being true when `descriptor` became
+  // canonical.
+  const hasBothVariants = run.faces.some(
+    (f) =>
+      (f.mirrorDescriptor && f.mirrorDescriptor.length > 0) ||
+      (f.descriptorUnmirrored && f.descriptorUnmirrored.length > 0),
+  )
+  if (hasBothVariants) {
+    /** @param {Types.DescriptorVariant} variant */
+    const side = (variant) => {
+      const poolAV = buildView(run, { pool: "A", requireLabel: true, variant })
+      const labelledV = buildView(run, { requireLabel: true, variant })
+      const spec = separationStrata(poolAV).find((s) => s.key === headline.key)
+      const pairs = pairDistances(poolAV.set, {
+        labels: poolAV.labels,
+        keep: spec ? (spec.keep ?? undefined) : undefined,
+      })
+      return {
+        auc: separation(pairs.same, pairs.diff).auc,
+        rank1: leaveOneOutRank1(labelledV.set, labelledV.labels).rank1,
+      }
+    }
+    const single = side("single")
+    const averaged = side("averaged")
     mirror = {
-      auc: headline.report.auc,
-      rank1: c.rank1,
-      mirrorAuc: separation(pairs.same, pairs.diff).auc,
-      mirrorRank1: leaveOneOutRank1(labelledMirror.set, labelledMirror.labels).rank1,
+      auc: single.auc,
+      rank1: single.rank1,
+      mirrorAuc: averaged.auc,
+      mirrorRank1: averaged.rank1,
     }
   }
 

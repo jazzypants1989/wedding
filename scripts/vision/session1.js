@@ -74,7 +74,9 @@ Usage: node scripts/vision/session1.js <directory> [options]
   --detect-edge N           Long edge detection runs at.
   --source-edge N           Long edge photographs are decoded at.
   --recursive               Descend into subdirectories.
-  --mirror-tta              Also describe each crop mirrored, and average.
+  --mirror-tta              Also describe each crop mirrored; the average becomes
+                            the face's canonical descriptor (the single-pass
+                            vector is kept as descriptorUnmirrored).
   --limit N                 Stop after N photographs.
   --pool-a N                Faces in the uniformly-sampled pool (default 150).
   --resolution-sample N     Photographs also detected at --source-edge (default 50).
@@ -432,8 +434,9 @@ export function buildPhotoRecord(input) {
  * @property {number} photoId
  * @property {VisionTypes.Detection} detection in SOURCE-buffer pixels
  * @property {VisionTypes.GateSignals} signals
- * @property {Float32Array} descriptor
- * @property {Float32Array} [mirrorDescriptor]
+ * @property {Float32Array} descriptor canonical — mirror-averaged when --mirror-tta is on
+ * @property {Float32Array} [descriptorUnmirrored] the single-pass vector, kept
+ *   under --mirror-tta so the report can price what averaging bought
  */
 
 /**
@@ -463,8 +466,8 @@ export function buildFaceRecord(input) {
     },
     descriptor: Array.from(input.descriptor, (v) => round(v, 5)),
   }
-  if (input.mirrorDescriptor) {
-    record.mirrorDescriptor = Array.from(input.mirrorDescriptor, (v) => round(v, 5))
+  if (input.descriptorUnmirrored) {
+    record.descriptorUnmirrored = Array.from(input.descriptorUnmirrored, (v) => round(v, 5))
   }
   return record
 }
@@ -813,9 +816,14 @@ export async function processPhoto(file, context) {
     stage("gate", t)
 
     t = performance.now()
-    const descriptor = await context.engine.describe(aligned.crop)
+    // `descriptor` is CANONICAL: it is the vector every consumer — grouping,
+    // the report's headline, ingest-faces.js — reads without having to know
+    // whether mirror averaging was on. Under --mirror-tta the average goes
+    // there and the single-pass vector moves to `descriptorUnmirrored`, kept
+    // only so the report's mirror A/B can price what averaging bought.
+    let descriptor = await context.engine.describe(aligned.crop)
     /** @type {Float32Array | undefined} */
-    let mirrorDescriptor
+    let descriptorUnmirrored
     if (context.args.mirrorTta) {
       const mirrored = await context.engine.describe(mirrorCrop(aligned.crop))
       const averaged = new Float32Array(descriptor.length)
@@ -825,7 +833,8 @@ export async function processPhoto(file, context) {
       // Average, THEN normalise. Normalising each and averaging gives a vector
       // off the unit sphere whose length encodes how much the two disagreed,
       // which every cosine distance downstream would then silently divide out.
-      mirrorDescriptor = l2Normalize(averaged)
+      descriptorUnmirrored = descriptor
+      descriptor = l2Normalize(averaged)
     }
     describeMs += stage("describe", t)
 
@@ -836,7 +845,7 @@ export async function processPhoto(file, context) {
         detection,
         signals,
         descriptor,
-        mirrorDescriptor,
+        descriptorUnmirrored,
       }),
     )
     crops.push(aligned.crop)
@@ -1018,7 +1027,9 @@ export async function runSession1(args, deps = {}) {
         for (const face of outcome.faces) {
           facesOut.write(face)
           faces.push(face)
-          descriptorsById.set(face.id, face.mirrorDescriptor ?? face.descriptor)
+          // Canonical by construction: buildFaceRecord in this same run put the
+          // mirror-averaged vector in `descriptor` when --mirror-tta was on.
+          descriptorsById.set(face.id, face.descriptor)
         }
         if (outcome.resolution) {
           resolutionOut.write(outcome.resolution)

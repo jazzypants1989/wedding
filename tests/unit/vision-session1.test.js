@@ -21,6 +21,8 @@ import os from "node:os"
 import path from "node:path"
 import { after, test } from "node:test"
 
+import { mirrorCrop } from "../../public/vision/align.js"
+import { l2Normalize } from "../../public/vision/group.js"
 import {
   assignPools,
   buildContactData,
@@ -344,7 +346,7 @@ test("buildPhotoRecord carries the duplicate links and rounds the timings", () =
   assert.equal(typeof record.capturedAtMs, "number")
 })
 
-test("buildFaceRecord emits every gate signal and omits mirrorDescriptor when absent", () => {
+test("buildFaceRecord emits every gate signal and omits descriptorUnmirrored when absent", () => {
   const signals = {
     score: 0.912345,
     boxPx: 84.4444,
@@ -368,7 +370,8 @@ test("buildFaceRecord emits every gate signal and omits mirrorDescriptor when ab
   assert.deepEqual(Object.keys(plain.signals).sort(), Object.keys(signals).sort())
   assert.equal(plain.signals.borderPx, -3.5, "a negative border is a real signal, not clamped")
   assert.deepEqual(plain.descriptor, [0.5, -0.25])
-  assert.equal("mirrorDescriptor" in plain, false)
+  assert.equal("descriptorUnmirrored" in plain, false)
+  assert.equal("mirrorDescriptor" in plain, false, "the legacy field is never written")
 
   const mirrored = buildFaceRecord({
     id: 6,
@@ -376,9 +379,10 @@ test("buildFaceRecord emits every gate signal and omits mirrorDescriptor when ab
     detection: detection(10, 20, 60),
     signals,
     descriptor: new Float32Array([0.5, -0.25]),
-    mirrorDescriptor: new Float32Array([0.4, -0.3]),
+    descriptorUnmirrored: new Float32Array([0.4, -0.3]),
   })
-  assert.deepEqual(mirrored.mirrorDescriptor, [0.4, -0.3])
+  assert.deepEqual(mirrored.descriptorUnmirrored, [0.4, -0.3])
+  assert.equal("mirrorDescriptor" in mirrored, false, "the legacy field is never written")
 })
 
 // --- Resolution comparison ---------------------------------------------------
@@ -572,6 +576,7 @@ test("processPhoto runs decode → detect → align → gate → describe with a
   assert.equal(outcome.crops[0].width, 112)
   assert.equal(outcome.crops[0].height, 112)
   assert.equal(outcome.faces[0].descriptor.length, 8)
+  assert.equal("descriptorUnmirrored" in outcome.faces[0], false)
   assert.equal("mirrorDescriptor" in outcome.faces[0], false)
   // Every signal recorded; nothing rejected. The gate scores here and decides
   // in the report, because the cutoffs come from the input's own distribution.
@@ -686,11 +691,33 @@ test("--mirror-tta describes the crop twice and averages before normalising", as
 
   assert.equal(engine.seen.describeCalls, 2)
   const face = outcome.faces[0]
-  assert.ok(face.mirrorDescriptor, "the mirror-averaged descriptor sits alongside the plain one")
-  if (!face.mirrorDescriptor) return
-  assert.equal(face.mirrorDescriptor.length, face.descriptor.length)
-  const norm = Math.sqrt(face.mirrorDescriptor.reduce((sum, v) => sum + v * v, 0))
-  assert.ok(Math.abs(norm - 1) < 1e-3, `mirror descriptor is L2-normalised (got ${norm})`)
+
+  // `descriptor` is CANONICAL: it must be the normalised average of the two
+  // describe passes, not the single pass — this is the D2 fix, and it is what
+  // ingest-faces.js reads. The fake engine is a deterministic pixel function,
+  // so the expected vectors can be recomputed here from the crop itself.
+  const round5 = (/** @type {number} */ v) => Math.round(v * 1e5) / 1e5
+  const oracle = fakeEngine()
+  const single = await oracle.describe(outcome.crops[0])
+  const mirrored = await oracle.describe(mirrorCrop(outcome.crops[0]))
+  const averaged = new Float32Array(single.length)
+  for (let k = 0; k < single.length; k++) averaged[k] = (single[k] + mirrored[k]) / 2
+  assert.deepEqual(
+    face.descriptor,
+    Array.from(l2Normalize(averaged), round5),
+    "descriptor is the mirror-averaged vector, normalised after averaging",
+  )
+
+  assert.ok(face.descriptorUnmirrored, "the single-pass vector is kept alongside the canonical one")
+  if (!face.descriptorUnmirrored) return
+  assert.deepEqual(
+    face.descriptorUnmirrored,
+    Array.from(single, round5),
+    "descriptorUnmirrored is the un-averaged single pass",
+  )
+  assert.equal("mirrorDescriptor" in face, false, "the legacy field is never written")
+  const norm = Math.sqrt(face.descriptor.reduce((sum, v) => sum + v * v, 0))
+  assert.ok(Math.abs(norm - 1) < 1e-3, `canonical descriptor is L2-normalised (got ${norm})`)
 })
 
 // --- The whole run -----------------------------------------------------------
