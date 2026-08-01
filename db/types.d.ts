@@ -1072,6 +1072,63 @@ export function createRecoveryToken(
  */
 export function consumeRecoveryToken(tokenHash: string): number | null
 
+/** @file people.js - Types for the photographed-cast table (schema.js
+ *  `add_people`). A person is who a face belongs to; a guest is an invitation. */
+
+import type { Person } from "../types.js"
+
+export interface CreatePersonInput {
+  displayName: string
+  /** Optional link to a roster guest. NULL = off-roster. */
+  guestId?: number | null
+  /** From the authenticated admin session — never client-supplied. */
+  createdBy?: string | null
+  notes?: string | null
+}
+
+/** Insert a people row and return it. */
+export function createPerson(input: CreatePersonInput): Person
+
+/** Live person by id, or undefined. */
+export function getPersonById(id: number): Person | undefined
+
+/** One live person as the admin list shows them: linked guest name (null for
+ *  off-roster), live identity count, live face count. */
+export interface PersonListRow {
+  id: number
+  display_name: string
+  guest_id: number | null
+  guest_name: string | null
+  notes: string | null
+  identities: number
+  faces: number
+}
+
+/** Every live person, display-name order (case-insensitive), for the admin
+ *  datalist + management list. */
+export function listPeople(): PersonListRow[]
+
+/** Case-insensitive exact display-name matches among live people. Duplicate
+ *  names are legal; creation surfaces these rather than silently picking one. */
+export function findLivePeopleByName(displayName: string): Person[]
+
+export interface UpdatePersonInput {
+  displayName?: string
+  /** `null` unlinks the guest; `undefined` leaves the link untouched. */
+  guestId?: number | null
+  notes?: string | null
+}
+
+/** Patch a live person. Returns false if the person is missing/deleted. */
+export function updatePerson(id: number, input: UpdatePersonInput): boolean
+
+/** Soft-delete a person. The API layer refuses this while live identities
+ *  reference them (person_id is NOT NULL, so they would point at a tombstone). */
+export function softDeletePerson(id: number): boolean
+
+/** How many live face_identities reference this person. */
+export function liveIdentityCountForPerson(personId: number): number
+
 /** @file media-faces.js - Types for face pipeline database operations
  *  (docs/post-wedding/SPEC-vision-lab.md §10) */
 
@@ -1132,7 +1189,7 @@ export function setFaceIdentity(id: number, identityId: number | null): boolean
 export function softDeleteFace(id: number): boolean
 
 export interface CreateIdentityInput {
-  guestId: number
+  personId: number
   confirmedBy?: string | null
   confirmedAt?: string | null
   /** Defaults to 'confirmed'. Propagated identities are second-class — see
@@ -1140,14 +1197,24 @@ export interface CreateIdentityInput {
   provenance?: FaceIdentityProvenance
 }
 
-/** Insert a face_identities row and return the full row. */
+/** Insert a face_identities row and return the full row. At most one live row
+ *  per (person, provenance) — idx_face_identities_person enforces it. */
 export function createIdentity(input: CreateIdentityInput): FaceIdentity
 
 export function getIdentityById(id: number): FaceIdentity | undefined
 
-/** Live identities linked to one guest, id ascending (usually 0 or 1, but not
- *  constrained to it). */
-export function identitiesForGuest(guestId: number): FaceIdentity[]
+/** Live identities linked to one person, id ascending — at most one per
+ *  provenance, which is what makes `.find(...)` over this deterministic. */
+export function identitiesForPerson(personId: number): FaceIdentity[]
+
+/** Person-merge primitive: point every media_faces row (live or soft-deleted)
+ *  at a different identity. Returns the number of rows moved. */
+export function repointFaces(fromIdentityId: number, toIdentityId: number): number
+
+/** Person-merge primitive: move a live identity to another person. Subject to
+ *  idx_face_identities_person — throws if the target person already has a live
+ *  identity of the same provenance (merge consolidates first). */
+export function setIdentityPerson(identityId: number, personId: number): boolean
 
 /** Soft-delete an identity row (its media_faces.face_identity_id references
  *  are NOT cleared by this — only a hard delete/cascade does that; callers
@@ -1202,11 +1269,15 @@ export interface UnidentifiedFaceRow {
 export function unidentifiedFacesWithDescriptors(): UnidentifiedFaceRow[]
 
 /** One face belonging to a CONFIRMED (never 'propagated') identity, restricted
- *  to a single descriptor model version. */
+ *  to a single descriptor model version. `person_name` is always present;
+ *  `guest_id`/`guest_name` come off a LEFT JOIN and are null for an off-roster
+ *  person — every consumer must handle that. */
 export interface ConfirmedIdentityFaceRow {
   identity_id: number
-  guest_id: number
-  guest_name: string
+  person_id: number
+  person_name: string
+  guest_id: number | null
+  guest_name: string | null
   face_id: number
   descriptor: Uint8Array
 }
@@ -1270,7 +1341,7 @@ export interface CooccurrenceRow {
  *  guess cannot become the evidence for the next guess. */
 export function confirmedCooccurrence(): CooccurrenceRow[]
 
-/** One live face on one photo, with the identified guest's id/name if any
+/** One live face on one photo, with the identified person's id/name if any
  *  (LEFT JOIN, so an unidentified face still gets a row with both null).
  *  Never carries the descriptor column. */
 export interface FaceWithNameRow {
@@ -1281,10 +1352,10 @@ export interface FaceWithNameRow {
   bbox_w: number
   bbox_h: number
   face_identity_id: number | null
-  guest_id: number | null
-  guest_name: string | null
+  person_id: number | null
+  person_name: string | null
 }
 
 /** Live faces for one photo, id ascending, each carrying the identified
- *  guest's name if any. The descriptor is never selected. */
+ *  person's name if any. The descriptor is never selected. */
 export function facesForMediaWithNames(mediaId: number): FaceWithNameRow[]

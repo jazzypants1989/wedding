@@ -23,7 +23,7 @@ import { getClientIp } from "../../core/rate-limit.js"
 import { validateId, validateIdArray, ValidationError, NotFoundError } from "../../core/validation.js"
 import { withTransaction } from "../../db/utils.js"
 import { getMediaById } from "../../db/media.js"
-import { getGuestById } from "../guests/data.js"
+import { getPersonById } from "../../db/people.js"
 import {
   getFaceCounts,
   unidentifiedFacesWithDescriptors,
@@ -40,7 +40,7 @@ import {
   setFaceIdentity,
   softDeleteFace,
   createIdentity,
-  identitiesForGuest,
+  identitiesForPerson,
   blobToDescriptor,
 } from "../../db/media-faces.js"
 import { now } from "../../db/utils.js"
@@ -117,15 +117,15 @@ function loadUnidentifiedByModelVersion() {
 
 /**
  * Per-person centroid prototypes from every CONFIRMED identity's faces of one
- * model_version, plus a label -> {guestId, guestName} lookup. Propagated
+ * model_version, plus a label -> {personId, personName} lookup. Propagated
  * identities never contribute (db/media-faces.js's query already excludes
  * them) — SPEC §9's feedback-loop guard.
  * @param {string} modelVersion
- * @returns {{ prototypes: import('../../public/vision/types.js').Prototype[], meta: Map<string, { guestId: number, guestName: string }> }}
+ * @returns {{ prototypes: import('../../public/vision/types.js').Prototype[], meta: Map<string, { personId: number, personName: string }> }}
  */
 function loadPrototypesByModelVersion(modelVersion) {
   const rows = confirmedIdentityFaces(modelVersion)
-  /** @type {Map<string, { guestId: number, guestName: string }>} */
+  /** @type {Map<string, { personId: number, personName: string }>} */
   const meta = new Map()
   if (rows.length === 0) return { prototypes: [], meta }
 
@@ -145,7 +145,7 @@ function loadPrototypesByModelVersion(modelVersion) {
     }
     data.set(vec, i * dim)
     assignments.push(label)
-    if (!meta.has(label)) meta.set(label, { guestId: row.guest_id, guestName: row.guest_name })
+    if (!meta.has(label)) meta.set(label, { personId: row.person_id, personName: row.person_name })
   })
 
   const prototypes = buildPrototypes({ dim, data }, assignments)
@@ -183,7 +183,7 @@ export async function overview(req, res) {
   const groupDefaults = getDefaults("group")
   const byVersion = loadUnidentifiedByModelVersion()
 
-  /** @type {Array<{ faceIds: number[], media: Array<ReturnType<typeof chipOf>>, suggestion: { guestId: number, guestName: string, margin: number } | null, size: number }>} */
+  /** @type {Array<{ faceIds: number[], media: Array<ReturnType<typeof chipOf>>, suggestion: { personId: number, personName: string, margin: number } | null, size: number }>} */
   const rawGroups = []
 
   for (const [modelVersion, { faces, set }] of byVersion) {
@@ -201,14 +201,14 @@ export async function overview(req, res) {
       const faceIds = cluster.members.map((i) => faces[i].id)
       const media = cluster.members.map((i) => chipOf(faces[i], chips))
 
-      /** @type {{ guestId: number, guestName: string, margin: number } | null} */
+      /** @type {{ personId: number, personName: string, margin: number } | null} */
       let suggestion = null
       if (prototypes.length > 0) {
         const vec = centroid(set, cluster.members)
         const match = matchFace(vec, prototypes)
         if (match.best) {
           const info = meta.get(match.best.label)
-          if (info) suggestion = { guestId: info.guestId, guestName: info.guestName, margin: match.margin }
+          if (info) suggestion = { personId: info.personId, personName: info.personName, margin: match.margin }
         }
       }
 
@@ -265,7 +265,7 @@ export async function queue(req, res) {
   const byVersion = loadUnidentifiedByModelVersion()
   const scoreCooccurrence = cooccurrenceScorer(confirmedCooccurrence())
 
-  /** @type {Array<ReturnType<typeof chipOf> & { candidates: Array<{ guestId: number | null, guestName: string | null, distance: number, margin: number, cooccurrence: number }>, unlocks: number }>} */
+  /** @type {Array<ReturnType<typeof chipOf> & { candidates: Array<{ personId: number | null, personName: string | null, distance: number, margin: number, cooccurrence: number }>, unlocks: number }>} */
   const items = []
 
   for (const [modelVersion, { faces, set }] of byVersion) {
@@ -298,8 +298,8 @@ export async function queue(req, res) {
         const next = match.candidates[idx + 1]
         const info = meta.get(c.label)
         return {
-          guestId: info ? info.guestId : null,
-          guestName: info ? info.guestName : null,
+          personId: info ? info.personId : null,
+          personName: info ? info.personName : null,
           distance: c.distance,
           margin: next ? next.distance - c.distance : Infinity,
           cooccurrence: scoreCooccurrence(Number(c.label), present),
@@ -350,17 +350,17 @@ export async function assign(req, res, { session }) {
   const body = await parseBody(req)
   const faceIds = validateFaceIds(body.faceIds)
 
-  const guestIdResult = validateId(body.guestId, "guestId")
-  if (!guestIdResult.valid) throw new ValidationError(guestIdResult.error)
-  const guest = getGuestById(guestIdResult.value)
-  if (!guest) throw new NotFoundError("Guest")
+  const personIdResult = validateId(body.personId, "personId")
+  if (!personIdResult.valid) throw new ValidationError(personIdResult.error)
+  const person = getPersonById(personIdResult.value)
+  if (!person) throw new NotFoundError("Person")
 
   const { identityId, changed } = withTransaction(() => {
-    const existing = identitiesForGuest(guestIdResult.value).find((i) => i.provenance === "confirmed")
+    const existing = identitiesForPerson(personIdResult.value).find((i) => i.provenance === "confirmed")
     const identity =
       existing ??
       createIdentity({
-        guestId: guestIdResult.value,
+        personId: personIdResult.value,
         confirmedBy: session?.token ?? null,
         confirmedAt: now(),
         provenance: "confirmed",
@@ -379,10 +379,10 @@ export async function assign(req, res, { session }) {
     ip: getClientIp(req),
     resourceType: "face_identity",
     resourceId: identityId,
-    details: { guestId: guestIdResult.value, faceIds, changed },
+    details: { personId: personIdResult.value, faceIds, changed },
   })
 
-  return sendJson(res, 200, { success: true, guestId: guestIdResult.value, identityId, changed })
+  return sendJson(res, 200, { success: true, personId: personIdResult.value, identityId, changed })
 }
 
 /** @type {Types.faceUnassignHandler} */
@@ -502,16 +502,16 @@ function computePropagations() {
 export async function propagations(req, res) {
   const { proposals, rowByFaceId } = computePropagations()
 
-  // Identity -> guest, so the reviewer sees a name rather than a row id.
-  /** @type {Map<number, { guestId: number, guestName: string } | null>} */
-  const guestByIdentity = new Map()
+  // Identity -> person, so the reviewer sees a name rather than a row id.
+  /** @type {Map<number, { personId: number, personName: string } | null>} */
+  const personByIdentity = new Map()
   /** @param {number} identityId */
-  const guestFor = (identityId) => {
-    if (guestByIdentity.has(identityId)) return guestByIdentity.get(identityId) ?? null
+  const personFor = (identityId) => {
+    if (personByIdentity.has(identityId)) return personByIdentity.get(identityId) ?? null
     const identity = getIdentityById(identityId)
-    const guest = identity ? getGuestById(identity.guest_id) : null
-    const info = identity && guest ? { guestId: guest.id, guestName: guest.name } : null
-    guestByIdentity.set(identityId, info)
+    const person = identity ? getPersonById(identity.person_id) : null
+    const info = identity && person ? { personId: person.id, personName: person.display_name } : null
+    personByIdentity.set(identityId, info)
     return info
   }
 
@@ -520,7 +520,7 @@ export async function propagations(req, res) {
   const items = proposals.map((p) => {
     const from = rowByFaceId.get(p.fromFaceId)
     const to = rowByFaceId.get(p.toFaceId)
-    const info = guestFor(p.identityId)
+    const info = personFor(p.identityId)
     return {
       // The TARGET is the chip: it is the face the reviewer is being asked
       // about, and it is the one that changes if they say yes.
@@ -528,8 +528,8 @@ export async function propagations(req, res) {
       toFaceId: p.toFaceId,
       fromFaceId: p.fromFaceId,
       from: from ? chipOf(from, chips) : null,
-      guestId: info ? info.guestId : null,
-      guestName: info ? info.guestName : null,
+      personId: info ? info.personId : null,
+      personName: info ? info.personName : null,
       iou: p.iou,
       distance: p.distance,
     }
@@ -572,12 +572,12 @@ export async function propagate(req, res, { session }) {
         // provenance='confirmed'), and an unreviewed guess reinforcing itself
         // is the exact feedback loop the provenance column exists to block.
         // It gets a separate, second-class 'propagated' identity for the same
-        // guest instead.
-        const existing = identitiesForGuest(source.guest_id).find((i) => i.provenance === "propagated")
+        // person instead.
+        const existing = identitiesForPerson(source.person_id).find((i) => i.provenance === "propagated")
         const identity =
           existing ??
           createIdentity({
-            guestId: source.guest_id,
+            personId: source.person_id,
             confirmedBy: session?.token ?? null,
             confirmedAt: now(),
             provenance: "propagated",
@@ -613,8 +613,8 @@ export async function forMedia(req, res, { params }) {
   const faces = rows.map((row) => ({
     faceId: row.id,
     box: { x: row.bbox_x, y: row.bbox_y, w: row.bbox_w, h: row.bbox_h },
-    guestId: row.guest_id,
-    guestName: row.guest_name,
+    personId: row.person_id,
+    personName: row.person_name,
   }))
 
   return sendJson(res, 200, { faces })

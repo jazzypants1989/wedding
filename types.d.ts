@@ -707,14 +707,34 @@ export interface MediaFace {
 }
 
 /**
+ * A person in the photographed cast (schema.js `add_people` migration). NOT an
+ * invitation: `guests` rows are one-per-party with an invite code, and many
+ * people in the photographs are not on that roster at all. `guest_id` is the
+ * optional link back to a roster row (NULL = off-roster: a partner recorded
+ * under someone else's row, a child, the photographer, a vendor).
+ */
+export interface Person {
+  id: number
+  display_name: string
+  guest_id: number | null
+  /** Admin session that created the row — derived server-side, never client-supplied. */
+  created_by: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+}
+
+/**
  * A confirmed (or auto-propagated) link from a face-recognition group to a
- * roster guest. `guest_id` is NOT NULL by design: an identity row IS the
- * confirmed link, not a placeholder that can exist before one (see schema.js
- * comment for the full reasoning).
+ * person. `person_id` is NOT NULL by design: an identity row IS the confirmed
+ * link, not a placeholder that can exist before one (see schema.js comment for
+ * the full reasoning). At most one LIVE identity per (person, provenance) —
+ * enforced by a partial unique index, because code takes the first match.
  */
 export interface FaceIdentity {
   id: number
-  guest_id: number
+  person_id: number
   confirmed_by: string | null
   confirmed_at: string | null
   provenance: FaceIdentityProvenance

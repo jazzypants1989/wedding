@@ -753,6 +753,51 @@ export function login(req: IncomingMessage, res: ServerResponse): Promise<void>
  */
 export function logout(req: IncomingMessage, res: ServerResponse): Promise<void>
 
+/** @file people.js - Types for admin people endpoints (the photographed cast
+ *  face tagging assigns to). Duplicate display names are legal; merge exists
+ *  because of it; created_by/actors always derive from the admin session. */
+
+/** GET /api/admin/people — every live person, display-name order, with the
+ *  linked guest's name (null off-roster) and live identity/face counts. */
+export function peopleListHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void>
+
+/** POST /api/admin/people — { displayName, guestId?, notes?, confirmDuplicate? }.
+ *  Refuses (409) a same-name create unless confirmDuplicate is true, naming the
+ *  existing people, so creation is never a side effect of typing. */
+export function personCreateHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** PATCH /api/admin/people/:id — { displayName?, guestId?, notes? }. guestId is
+ *  three-state: absent = untouched, null = unlink, number = link. */
+export function personUpdateHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** POST /api/admin/people/merge — { fromPersonId, intoPersonId }: fold one
+ *  person into another (re-point identities and faces, retire the source).
+ *  Prototypes are computed on demand, so the re-point IS the rebuild. */
+export function personMergeHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** DELETE /api/admin/people/:id — soft delete. Refuses (409, with a message
+ *  the UI shows verbatim) while live identities still reference the person. */
+export function personDeleteHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
 /** @file faces.js - Types for admin face-assignment endpoints
  *  (docs/post-wedding/SPEC-vision-lab.md §10/§15). Clusters/matches are computed
  *  on demand, never persisted — see that file's module comment. */
@@ -781,8 +826,9 @@ export function faceQueueHandler(
   res: ServerResponse,
 ): Promise<void>
 
-/** POST /api/admin/faces/assign — { faceIds: number[], guestId } → find-or-create
- *  a CONFIRMED identity for the guest and point every face at it, one txn. */
+/** POST /api/admin/faces/assign — { faceIds: number[], personId } → find-or-create
+ *  a CONFIRMED identity for the person and point every face at it, one txn.
+ *  Assigning by name is not an API shape. */
 export function faceAssignHandler(
   req: IncomingMessage,
   res: ServerResponse,
@@ -813,7 +859,7 @@ export function facePropagationsHandler(
 
 /** POST /api/admin/faces/propagate — { toFaceIds: number[] } → apply those
  *  proposals. Each target gets a second-class `provenance='propagated'`
- *  identity for the same guest, never the confirmed one, so a propagation can
+ *  identity for the same person, never the confirmed one, so a propagation can
  *  never seed a prototype. Proposals are re-derived server-side; a face that
  *  is no longer proposed is refused, not humoured. */
 export function facePropagateHandler(

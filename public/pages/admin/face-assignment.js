@@ -49,11 +49,12 @@ let queueData = null
 /** @type {Types.FacePropagationsResponse | null} */
 let propagationData = null
 
-/** Guest roster cache for the name-input autocomplete (mirrors thank-you.js's
- *  ensureGuestsLoaded — a per-module cache, not shared admin state). */
-/** @type {{ id: number, name: string }[]} */
-let guestOptions = []
-let guestsLoaded = false
+/** People cache for the name-input autocomplete and the People section (a
+ *  per-module cache, not shared admin state). A person is who a face belongs
+ *  to; the guest roster is only the optional link on a person. */
+/** @type {Types.PersonEntry[]} */
+let peopleData = []
+let peopleLoaded = false
 
 /** Faces excluded ("reject from this action") per group, keyed by
  *  `String(group.key)`. Client-only until "Not a face" or a reload. */
@@ -78,7 +79,7 @@ export async function loadFaceAssignment() {
       api("/api/admin/faces/overview"),
       api("/api/admin/faces/queue"),
       api("/api/admin/faces/propagations"),
-      ensureGuestsLoaded(),
+      refreshPeople(),
     ])
     overview = /** @type {Types.FacesOverviewResponse} */ (ov)
     queueData = /** @type {Types.FacesQueueResponse} */ (q)
@@ -91,27 +92,24 @@ export async function loadFaceAssignment() {
   }
 }
 
-/** Load the guest roster once (for the name-autocomplete datalist), same
- *  fetch as the thank-you tab's picker. Failing to load it is non-fatal —
- *  groups/queue still render, just without suggestions until a retry. */
-async function ensureGuestsLoaded() {
-  if (guestsLoaded) return
+/** Load the people list (for the name-autocomplete datalist + People section).
+ *  Failing to load it is non-fatal — groups/queue still render, just without
+ *  autocomplete until a retry. */
+async function refreshPeople() {
   try {
-    const data = /** @type {Types.GuestsApiResponse} */ (
-      await api("/api/admin/guests?limit=1000&offset=0")
-    )
-    guestOptions = data.guests.map((g) => ({ id: g.id, name: g.name }))
-    guestsLoaded = true
-    renderRosterDatalist()
+    const data = /** @type {Types.PeopleApiResponse} */ (await api("/api/admin/people"))
+    peopleData = data.people
+    peopleLoaded = true
+    renderPeopleDatalist()
   } catch (err) {
-    console.error("Failed to load guest roster for face autocomplete:", err)
+    console.error("Failed to load people for face autocomplete:", err)
   }
 }
 
-function renderRosterDatalist() {
-  const dl = document.getElementById("faces-guest-roster")
+function renderPeopleDatalist() {
+  const dl = document.getElementById("faces-people-roster")
   if (!dl) return
-  dl.innerHTML = html`${guestOptions.map((g) => html`<option value="${g.name}"></option>`)}`
+  dl.innerHTML = html`${peopleData.map((p) => html`<option value="${p.displayName}"></option>`)}`
 }
 
 function renderCounts() {
@@ -151,6 +149,10 @@ function renderBody() {
     <section class="faces-section" aria-labelledby="faces-identified-heading">
       <h3 id="faces-identified-heading">Identified</h3>
       ${identifiedMarkup()}
+    </section>
+    <section class="faces-section" aria-labelledby="faces-people-heading">
+      <h3 id="faces-people-heading">People</h3>
+      ${peopleMarkup()}
     </section>
   `
   wireFaceChipImages(body)
@@ -192,33 +194,37 @@ function groupCardMarkup(group) {
         )}
       </div>
       <div class="face-group-controls">
-        <input type="text" class="face-group-name-input" list="faces-guest-roster"
-          placeholder="Who is this?" value="${suggestion ? suggestion.guestName : ""}"
-          aria-label="Guest name for this group" data-group-key="${groupKey}" maxlength="200" />
+        <input type="text" class="face-group-name-input" list="faces-people-roster"
+          placeholder="Who is this?" value="${suggestion ? suggestion.personName : ""}"
+          aria-label="Person name for this group" data-group-key="${groupKey}" maxlength="200" />
         <button type="button" class="btn btn-secondary btn-sm face-group-notaface"
           data-group-key="${groupKey}" ${excluded.size === 0 ? "disabled" : ""}>
           Not a face${excluded.size > 0 ? ` (${excluded.size})` : ""}
         </button>
         ${suggestion
           ? html`<span class="face-group-suggestion text-muted"
-              >suggested: ${suggestion.guestName} · margin ${suggestion.margin.toFixed(2)}</span
+              >suggested: ${suggestion.personName} · margin ${suggestion.margin.toFixed(2)}</span
             >`
           : ""}
         <span class="face-group-input-error" role="alert" hidden></span>
+        <!-- The explicit-create step: hidden until a typed name matches no
+             person. Creating a person is never a side effect of typing. -->
+        <button type="button" class="btn btn-secondary btn-sm face-group-create-person"
+          data-group-key="${groupKey}" hidden></button>
       </div>
     </div>
   `
 }
 
 /**
- * Resolve a typed name to exactly one guest by case-insensitive exact match
- * against the roster (no regex — plain lower-casing + equality).
+ * Resolve a typed name to exactly one person by case-insensitive exact match
+ * (no regex — plain lower-casing + equality).
  * @param {string} name
  * @returns {{ status: "ok", id: number } | { status: "ambiguous" } | { status: "none" }}
  */
-function resolveGuestByName(name) {
+function resolvePersonByName(name) {
   const lower = name.toLowerCase()
-  const matches = guestOptions.filter((g) => g.name.toLowerCase() === lower)
+  const matches = peopleData.filter((p) => p.displayName.toLowerCase() === lower)
   if (matches.length === 1) return { status: "ok", id: matches[0].id }
   if (matches.length > 1) return { status: "ambiguous" }
   return { status: "none" }
@@ -237,49 +243,105 @@ function showGroupInputError(input, msg) {
 function hideGroupInputError(input) {
   const err = input.parentElement?.querySelector(".face-group-input-error")
   if (err instanceof HTMLElement) err.hidden = true
+  const createBtn = input.parentElement?.querySelector(".face-group-create-person")
+  if (createBtn instanceof HTMLButtonElement) createBtn.hidden = true
 }
 
-/** Enter in a group's name input: assign every non-excluded face in the group
- *  to the resolved guest. @param {HTMLInputElement} input */
-async function handleGroupNameEnter(input) {
-  const groupKey = input.dataset.groupKey || ""
+/** The group's assignable (non-excluded) face ids, or null with an error shown.
+ *  @param {string} groupKey @param {HTMLInputElement} input */
+function assignableFaceIds(groupKey, input) {
   const group = overview?.groups.find((g) => String(g.key) === groupKey)
-  if (!group) return
-  const name = input.value.trim()
-  if (!name) return
-
-  const resolved = resolveGuestByName(name)
-  if (resolved.status !== "ok") {
-    showGroupInputError(
-      input,
-      resolved.status === "ambiguous"
-        ? "Multiple guests share that name — type more of it to narrow it down."
-        : "No matching guest — pick a name from the list.",
-    )
-    return
-  }
-
+  if (!group) return null
   const excluded = excludedByGroup.get(groupKey) || new Set()
   const faceIds = group.faceIds.filter((id) => !excluded.has(id))
   if (faceIds.length === 0) {
     showGroupInputError(input, "Every face here is excluded — nothing left to assign.")
+    return null
+  }
+  return faceIds
+}
+
+/** POST the assignment and reload. @param {number[]} faceIds @param {number} personId
+ *  @param {string} name @param {string} groupKey */
+async function assignFacesToPerson(faceIds, personId, name, groupKey) {
+  const res = /** @type {Types.FaceAssignResponse} */ (
+    await api("/api/admin/faces/assign", {
+      method: "POST",
+      body: JSON.stringify({ faceIds, personId }),
+    })
+  )
+  const n = res.changed ?? faceIds.length
+  showSuccess(`Assigned ${n} face${n === 1 ? "" : "s"} to ${name}`)
+  excludedByGroup.delete(groupKey)
+  await loadFaceAssignment()
+}
+
+/** Enter in a group's name input: assign every non-excluded face in the group
+ *  to the resolved person — or, when no person has that name, reveal the
+ *  explicit "create person" confirm step (never create as a side effect of
+ *  typing). @param {HTMLInputElement} input */
+async function handleGroupNameEnter(input) {
+  const groupKey = input.dataset.groupKey || ""
+  const name = input.value.trim()
+  if (!name) return
+
+  const resolved = resolvePersonByName(name)
+  if (resolved.status === "ambiguous") {
+    showGroupInputError(
+      input,
+      "Multiple people share that name — rename one in the People section below, then retry.",
+    )
+    return
+  }
+  if (resolved.status === "none") {
+    const createBtn = input.parentElement?.querySelector(".face-group-create-person")
+    if (createBtn instanceof HTMLButtonElement) {
+      createBtn.textContent = `Create person “${name}” & assign`
+      createBtn.hidden = false
+      showGroupInputError(input, "No person has that name yet. Create them?")
+    }
     return
   }
 
+  const faceIds = assignableFaceIds(groupKey, input)
+  if (!faceIds) return
+
   input.disabled = true
   try {
-    const res = /** @type {Types.FaceAssignResponse} */ (
-      await api("/api/admin/faces/assign", {
-        method: "POST",
-        body: JSON.stringify({ faceIds, guestId: resolved.id }),
-      })
-    )
-    const n = res.identified ?? faceIds.length
-    showSuccess(`Assigned ${n} face${n === 1 ? "" : "s"} to ${name}`)
-    excludedByGroup.delete(groupKey)
-    await loadFaceAssignment()
+    await assignFacesToPerson(faceIds, resolved.id, name, groupKey)
   } catch (err) {
     input.disabled = false
+    showGroupInputError(input, getErrorMessage(err))
+  }
+}
+
+/** The explicit-create confirm: create the person, then assign the group.
+ *  @param {string} groupKey @param {HTMLButtonElement} btn */
+async function handleGroupCreatePerson(groupKey, btn) {
+  const card = findGroupCard(groupKey)
+  const input = card?.querySelector(".face-group-name-input")
+  if (!(input instanceof HTMLInputElement)) return
+  const name = input.value.trim()
+  if (!name) return
+
+  const faceIds = assignableFaceIds(groupKey, input)
+  if (!faceIds) return
+
+  btn.disabled = true
+  input.disabled = true
+  try {
+    const created = /** @type {Types.PersonCreateResponse} */ (
+      await api("/api/admin/people", {
+        method: "POST",
+        body: JSON.stringify({ displayName: name }),
+      })
+    )
+    await assignFacesToPerson(faceIds, created.person.id, name, groupKey)
+  } catch (err) {
+    btn.disabled = false
+    input.disabled = false
+    // A 409 here means someone with this name appeared since the list loaded
+    // — the message names them; reloading refreshes the autocomplete.
     showGroupInputError(input, getErrorMessage(err))
   }
 }
@@ -397,7 +459,7 @@ function askRowMarkup(item) {
             (c, i) => html`
               <button type="button" class="btn btn-secondary btn-sm face-ask-candidate"
                 data-index="${i}">
-                <kbd>${i + 1}</kbd> ${c.guestName} · margin ${c.margin.toFixed(2)}
+                <kbd>${i + 1}</kbd> ${c.personName} · margin ${c.margin.toFixed(2)}
               </button>
             `,
           )}
