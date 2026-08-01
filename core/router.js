@@ -36,6 +36,7 @@ import * as adminGuestbook from "../api/admin/guestbook.js"
 import * as adminAccounts from "../api/admin/accounts.js"
 import * as adminMedia from "../api/admin/media.js"
 import * as adminFaces from "../api/admin/faces.js"
+import * as adminPeople from "../api/admin/people.js"
 import * as siteContent from "../api/admin/site-content.js"
 import * as effectConfig from "../api/admin/effect-config.js"
 import * as setup from "../api/setup.js"
@@ -328,6 +329,16 @@ route("GET", "/api/admin/faces/propagations", adminFaces.propagations, { admin: 
 route("POST", "/api/admin/faces/propagate", adminFaces.propagate, { admin: true })
 // Per-photo face view, alongside the curated-gallery /api/admin/media/:id/* routes.
 route("GET", "/api/admin/media/:id/faces", adminFaces.forMedia, { admin: true })
+
+// Admin people routes — the photographed cast face tagging assigns to
+// (a person is who a face belongs to; a guest is an invitation). `merge` is
+// literal and registered before `/:id` for clarity, though the router would
+// match either way.
+route("GET", "/api/admin/people", adminPeople.listPeople, { admin: true })
+route("POST", "/api/admin/people", adminPeople.create, { admin: true })
+route("POST", "/api/admin/people/merge", adminPeople.merge, { admin: true })
+route("PATCH", "/api/admin/people/:id", adminPeople.update, { admin: true })
+route("DELETE", "/api/admin/people/:id", adminPeople.remove, { admin: true })
 
 // Admin blocklist routes
 route("GET", "/api/admin/blocklist", blocklist.list, { admin: true })

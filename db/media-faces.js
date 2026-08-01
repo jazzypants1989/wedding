@@ -83,9 +83,9 @@ export function softDeleteFace(id) {
 }
 
 /** @type {Types.createIdentity} */
-export function createIdentity({ guestId, confirmedBy = null, confirmedAt = null, provenance = "confirmed" }) {
-  const result = sql`INSERT INTO face_identities (guest_id, confirmed_by, confirmed_at, provenance)
-    VALUES (${guestId}, ${confirmedBy}, ${confirmedAt}, ${provenance})`.run()
+export function createIdentity({ personId, confirmedBy = null, confirmedAt = null, provenance = "confirmed" }) {
+  const result = sql`INSERT INTO face_identities (person_id, confirmed_by, confirmed_at, provenance)
+    VALUES (${personId}, ${confirmedBy}, ${confirmedAt}, ${provenance})`.run()
   return /** @type {import('../types.js').FaceIdentity} */ (
     getIdentityById(Number(result.lastInsertRowid))
   )
@@ -96,11 +96,36 @@ export function getIdentityById(id) {
   return sql`SELECT * FROM face_identities WHERE id = ${id} AND deleted_at IS NULL`.get()
 }
 
-/** @type {Types.identitiesForGuest} */
-export function identitiesForGuest(guestId) {
+/**
+ * Live identities linked to one person, id ascending. At most one per
+ * provenance thanks to idx_face_identities_person, which is what makes
+ * `identitiesForPerson(id).find(...)` deterministic.
+ * @type {Types.identitiesForPerson}
+ */
+export function identitiesForPerson(personId) {
   return sql`SELECT * FROM face_identities
-    WHERE guest_id = ${guestId} AND deleted_at IS NULL
+    WHERE person_id = ${personId} AND deleted_at IS NULL
     ORDER BY id`.all()
+}
+
+/**
+ * Point every media_faces row (live or not) at a different identity — the
+ * person-merge primitive. Includes soft-deleted face rows on purpose: a
+ * superseded row that resurfaces must not resurrect a reference to a
+ * soft-deleted identity of a soft-deleted person.
+ * @type {Types.repointFaces}
+ */
+export function repointFaces(fromIdentityId, toIdentityId) {
+  const result = sql`UPDATE media_faces SET face_identity_id = ${toIdentityId}
+    WHERE face_identity_id = ${fromIdentityId}`.run()
+  return Number(result.changes)
+}
+
+/** @type {Types.setIdentityPerson} */
+export function setIdentityPerson(identityId, personId) {
+  const result = sql`UPDATE face_identities SET person_id = ${personId}
+    WHERE id = ${identityId} AND deleted_at IS NULL`.run()
+  return result.changes > 0
 }
 
 /** @type {Types.softDeleteIdentity} */
@@ -141,13 +166,20 @@ export function unidentifiedFacesWithDescriptors() {
  * must never seed a prototype, SPEC §9/schema.js), restricted to one descriptor
  * model version so a match never mixes descriptor spaces. One row per face;
  * the caller groups by identity_id to build one prototype per identity.
+ *
+ * Joins through people for the display name; the guests join is LEFT on
+ * purpose — an off-roster person has no guest row, so `guest_id`/`guest_name`
+ * are null and every consumer must handle that. `person_name` is the one that
+ * is always present.
  * @type {Types.confirmedIdentityFaces}
  */
 export function confirmedIdentityFaces(modelVersion) {
-  return sql`SELECT fi.id AS identity_id, fi.guest_id AS guest_id, g.name AS guest_name,
+  return sql`SELECT fi.id AS identity_id, p.id AS person_id, p.display_name AS person_name,
+      p.guest_id AS guest_id, g.name AS guest_name,
       mf.id AS face_id, mf.descriptor AS descriptor
     FROM face_identities fi
-    JOIN guests g ON g.id = fi.guest_id
+    JOIN people p ON p.id = fi.person_id AND p.deleted_at IS NULL
+    LEFT JOIN guests g ON g.id = p.guest_id AND g.deleted_at IS NULL
     JOIN media_faces mf ON mf.face_identity_id = fi.id
       AND mf.deleted_at IS NULL AND mf.descriptor IS NOT NULL AND mf.model_version = ${modelVersion}
     WHERE fi.deleted_at IS NULL AND fi.provenance = 'confirmed'
@@ -155,19 +187,19 @@ export function confirmedIdentityFaces(modelVersion) {
 }
 
 /**
- * Live faces for one photo, each with the guest name if identified (LEFT JOIN
- * through face_identities → guests). NEVER selects the descriptor column —
- * this is the shape the per-photo admin view returns straight to JSON.
+ * Live faces for one photo, each with the person's display name if identified
+ * (LEFT JOIN through face_identities → people). NEVER selects the descriptor
+ * column — this is the shape the per-photo admin view returns straight to JSON.
  * @type {Types.facesForMediaWithNames}
  */
 export function facesForMediaWithNames(mediaId) {
   return sql`SELECT mf.id AS id, mf.media_id AS media_id,
       mf.bbox_x AS bbox_x, mf.bbox_y AS bbox_y, mf.bbox_w AS bbox_w, mf.bbox_h AS bbox_h,
       mf.face_identity_id AS face_identity_id,
-      g.id AS guest_id, g.name AS guest_name
+      p.id AS person_id, p.display_name AS person_name
     FROM media_faces mf
     LEFT JOIN face_identities fi ON fi.id = mf.face_identity_id AND fi.deleted_at IS NULL
-    LEFT JOIN guests g ON g.id = fi.guest_id
+    LEFT JOIN people p ON p.id = fi.person_id AND p.deleted_at IS NULL
     WHERE mf.media_id = ${mediaId} AND mf.deleted_at IS NULL
     ORDER BY mf.id`.all()
 }

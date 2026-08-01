@@ -1148,6 +1148,223 @@ export function runMigrations(db) {
     record.run("add_media_faces")
   }
 
+  // The people table (docs/post-wedding/SPEC-vision-lab.md §10 amendment): the
+  // photographed CAST, not the invitation roster. `guests` rows are invitations
+  // — one row per party — and many people in the photographs are not on it
+  // (partners recorded under someone else's row, children, the photographer,
+  // vendors). face_identities therefore re-keys from guest_id to a NOT NULL
+  // person_id; people.guest_id is the optional link back to the roster.
+  //
+  // ⚠ MIGRATION SHAPE IS LOAD-BEARING. face_identities must be REBUILT (SQLite
+  // cannot add a NOT NULL column without a default, and the departing guest_id
+  // carries an FK and a partial index), and under this codebase's connection
+  // setup (db/connection.js turns foreign_keys ON before migrations run) a
+  // plain `DROP TABLE face_identities` performs an implicit delete of every
+  // row and FIRES media_faces' `ON DELETE SET NULL` — silently nulling every
+  // face assignment in the database, with no error, and only on a database
+  // that actually has assignments (i.e. production, not a fresh install).
+  // Hence, in order:
+  //   1. `PRAGMA foreign_keys = OFF` BEFORE opening the transaction — the
+  //      pragma is a NO-OP inside an open transaction;
+  //   2. the whole rebuild in ONE transaction, so a mid-rebuild throw cannot
+  //      leave a half-built schema behind (no other migration in this file
+  //      uses one; this one cannot afford not to);
+  //   3. `id` PRESERVED in the copy — with foreign keys off, nothing would
+  //      catch every media_faces.face_identity_id dangling;
+  //   4. in the failure path ROLLBACK runs FIRST, then the finally restores
+  //      `foreign_keys = ON` — restoring the pragma while a transaction is
+  //      still open is itself a silent no-op, so the order matters. (Do not
+  //      copy relax_comment_account_null's shape above: its two bare exec
+  //      calls leave the long-lived connection running with FKs off if the
+  //      rebuild throws mid-way.)
+  //   5. after COMMIT, `PRAGMA foreign_key_check` must come back empty, and
+  //      that is asserted here rather than hoped.
+  //
+  // Existing rows are MIGRATED, never refused (a refusing migration stops the
+  // server booting): one person per distinct guest_id, display name taken from
+  // the guest's name, guest_id preserved as the link. Duplicate live
+  // (guest_id, provenance) identities — legal under the old schema, where
+  // first-match behaviour depended on row order — are consolidated onto the
+  // lowest id in the same pass, so the new partial UNIQUE index
+  // (person_id, provenance) WHERE deleted_at IS NULL can go on.
+  if (!applied.get("add_people")) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS people (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        display_name TEXT NOT NULL,
+        guest_id INTEGER,                       -- NULL = not on the roster
+        created_by TEXT,
+        notes TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        deleted_at TEXT DEFAULT NULL,
+        FOREIGN KEY (guest_id) REFERENCES guests(id) ON DELETE SET NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_people_guest
+        ON people(guest_id) WHERE deleted_at IS NULL;
+
+      CREATE TRIGGER IF NOT EXISTS auto_updated_at_people
+      AFTER UPDATE ON people
+      FOR EACH ROW
+      WHEN NEW.updated_at = OLD.updated_at
+      BEGIN
+        UPDATE people SET updated_at = datetime('now') WHERE id = NEW.id;
+      END;
+    `)
+
+    const fiCols = new Set(
+      /** @type {Array<{ name: string }>} */ (
+        db.prepare("PRAGMA table_info(face_identities)").all()
+      ).map((c) => c.name),
+    )
+    if (!fiCols.has("person_id")) {
+      // Point 1 above: MUST precede BEGIN, or it silently does nothing.
+      db.exec("PRAGMA foreign_keys = OFF")
+      let committed = false
+      try {
+        db.exec("BEGIN")
+
+        // One person per distinct guest the old identities reference.
+        // guest_id was NOT NULL, so there is no null-guest case to handle.
+        db.exec(`
+          INSERT INTO people (display_name, guest_id)
+          SELECT g.name, g.id FROM guests g
+          WHERE g.id IN (SELECT DISTINCT guest_id FROM face_identities)
+          ORDER BY g.id
+        `)
+
+        // Consolidate duplicate live (guest_id, provenance) identities onto
+        // the lowest id: re-point their faces, then soft-delete the extras so
+        // the partial unique index below can be created. Ids are never reused
+        // for a different guest, so downstream references stay truthful.
+        const dupes = /** @type {Array<{ guest_id: number, provenance: string, keeper: number }>} */ (
+          db
+            .prepare(
+              `SELECT guest_id, provenance, MIN(id) AS keeper
+               FROM face_identities WHERE deleted_at IS NULL
+               GROUP BY guest_id, provenance HAVING COUNT(*) > 1`,
+            )
+            .all()
+        )
+        for (const dupe of dupes) {
+          db.prepare(
+            `UPDATE media_faces SET face_identity_id = ?
+             WHERE face_identity_id IN (
+               SELECT id FROM face_identities
+               WHERE guest_id = ? AND provenance = ? AND deleted_at IS NULL AND id != ?
+             )`,
+          ).run(dupe.keeper, dupe.guest_id, dupe.provenance, dupe.keeper)
+          db.prepare(
+            `UPDATE face_identities SET deleted_at = datetime('now')
+             WHERE guest_id = ? AND provenance = ? AND deleted_at IS NULL AND id != ?`,
+          ).run(dupe.guest_id, dupe.provenance, dupe.keeper)
+        }
+
+        db.exec(`
+          CREATE TABLE face_identities_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            person_id INTEGER NOT NULL,
+            confirmed_by TEXT,
+            confirmed_at TEXT,
+            provenance TEXT NOT NULL DEFAULT 'confirmed',   -- confirmed|propagated
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            deleted_at TEXT DEFAULT NULL,
+            FOREIGN KEY (person_id) REFERENCES people(id)
+          );
+
+          INSERT INTO face_identities_new
+            (id, person_id, confirmed_by, confirmed_at, provenance,
+             created_at, updated_at, deleted_at)
+            SELECT fi.id, p.id, fi.confirmed_by, fi.confirmed_at, fi.provenance,
+                   fi.created_at, fi.updated_at, fi.deleted_at
+            FROM face_identities fi
+            JOIN people p ON p.guest_id = fi.guest_id;
+        `)
+
+        // The JOIN above silently drops an identity whose guest row vanished.
+        // Foreign keys have been ON since the table's creation, so that state
+        // is genuine referential corruption — fail loud rather than quietly
+        // orphaning someone's confirmations.
+        const oldCount = /** @type {{ n: number }} */ (
+          db.prepare("SELECT COUNT(*) AS n FROM face_identities").get()
+        ).n
+        const newCount = /** @type {{ n: number }} */ (
+          db.prepare("SELECT COUNT(*) AS n FROM face_identities_new").get()
+        ).n
+        if (newCount !== oldCount) {
+          throw new Error(
+            `add_people: face_identities rebuild would drop ${oldCount - newCount} row(s) ` +
+              `whose guest_id has no guests row — refusing to migrate a corrupt database`,
+          )
+        }
+
+        db.exec(`
+          DROP TABLE face_identities;
+          ALTER TABLE face_identities_new RENAME TO face_identities;
+
+          -- Recreated because DROP TABLE took the old ones with it. The index
+          -- is REDEFINED over person_id and made UNIQUE: code takes the FIRST
+          -- matching (person, provenance) identity, so without uniqueness
+          -- behaviour depends on row order.
+          CREATE UNIQUE INDEX idx_face_identities_person
+            ON face_identities(person_id, provenance) WHERE deleted_at IS NULL;
+
+          CREATE TRIGGER check_face_identities_provenance_insert
+          BEFORE INSERT ON face_identities
+          FOR EACH ROW
+          WHEN NEW.provenance NOT IN ('confirmed', 'propagated')
+          BEGIN
+            SELECT RAISE(ABORT, 'Invalid identity provenance. Must be: confirmed or propagated');
+          END;
+
+          CREATE TRIGGER check_face_identities_provenance_update
+          BEFORE UPDATE ON face_identities
+          FOR EACH ROW
+          WHEN NEW.provenance NOT IN ('confirmed', 'propagated')
+          BEGIN
+            SELECT RAISE(ABORT, 'Invalid identity provenance. Must be: confirmed or propagated');
+          END;
+
+          CREATE TRIGGER auto_updated_at_face_identities
+          AFTER UPDATE ON face_identities
+          FOR EACH ROW
+          WHEN NEW.updated_at = OLD.updated_at
+          BEGIN
+            UPDATE face_identities SET updated_at = datetime('now') WHERE id = NEW.id;
+          END;
+        `)
+
+        db.exec("COMMIT")
+        committed = true
+      } finally {
+        if (!committed) {
+          // ROLLBACK FIRST, pragma second — the other order re-enables
+          // foreign keys inside a still-open transaction, which is a no-op,
+          // and the connection would run FK-less for the rest of the process.
+          try {
+            db.exec("ROLLBACK")
+          } catch {
+            /* already rolled back */
+          }
+        }
+        db.exec("PRAGMA foreign_keys = ON")
+      }
+
+      // Point 5: with foreign keys re-enabled, the whole database must be
+      // referentially clean — every media_faces.face_identity_id must still
+      // point at a face_identities row that exists.
+      const violations = db.prepare("PRAGMA foreign_key_check").all()
+      if (violations.length > 0) {
+        throw new Error(
+          `add_people: PRAGMA foreign_key_check reported ${violations.length} violation(s) after the rebuild`,
+        )
+      }
+    }
+    record.run("add_people")
+  }
+
   // Frame identity, as a durable column rather than a recomputed guess.
   //
   // A photo delivery contains near-identical frames — burst shots, and
