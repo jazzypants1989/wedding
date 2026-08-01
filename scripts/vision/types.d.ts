@@ -1308,3 +1308,164 @@ export function backfillFromManifest(options: BackfillManifestOptions): Backfill
 /** Throws unless given a non-empty model version tag; returns it unchanged
  *  otherwise. The main pass's refusal to ever guess a descriptor model. */
 export function requireModelVersion(modelVersion: string | null): string
+
+// --- rekey-labels.js ---
+
+/**
+ * The opt-in names sidecar `identities.json`, exactly as label.html's
+ * buildExport writes it: person key → name (and the roster guest id, when the
+ * autocomplete supplied one). Person keys are scrambled per export (the same
+ * permutation as the labels.json written alongside it), so the keys only mean
+ * anything against that one labels.json.
+ */
+export interface Session1IdentitiesFile {
+  version: number
+  datasetId?: string
+  identities: Record<string, { guestId: number | null; name: string }>
+}
+
+/** The two JSONL files a run is joined by — photos for the sha256 join,
+ *  faces for the per-photograph box match. */
+export interface RekeyRun {
+  photos: readonly Session1PhotoRecord[]
+  faces: readonly Session1FaceRecord[]
+}
+
+/** Reads `<dir>/photos.jsonl` + `faces.jsonl`; throws when either is missing
+ *  or empty. Malformed lines are counted and skipped, never fatal. */
+export function readRekeyRun(dir: string): { photos: Session1PhotoRecord[]; faces: Session1FaceRecord[] }
+
+/**
+ * sha256 → photo, refusing (throwing) when two photographs share a hash: the
+ * join would be ambiguous, and a silent "last wins" is D7 one layer up.
+ * `side` names the offending run in the error ("--from" / "--to").
+ */
+export function indexPhotosBySha(
+  photos: readonly Session1PhotoRecord[],
+  side: string,
+): Map<string, Session1PhotoRecord>
+
+/** Why each unmatched SOURCE face failed, as counts — never a path, never a
+ *  name. The five reasons are checked in this order per face. */
+export interface RekeyMatchCounts {
+  /** The photograph's sha256 is absent from the target run. */
+  photoMissing: number
+  /** The target photograph exists but has no face rows at all. */
+  noCandidate: number
+  /** Best overlap under MATCH_IOU_FLOOR. */
+  belowFloor: number
+  /** Some other source face overlaps the chosen target more. */
+  notMutual: number
+  /** Mutual best, but the runner-up on either side is within MATCH_IOU_MARGIN. */
+  marginTooSmall: number
+}
+
+export interface RekeyMatchResult {
+  /** source face id → target face id, accepted pairs only. */
+  map: Map<number, number>
+  unmatched: RekeyMatchCounts
+  photosJoined: number
+  photosSourceOnly: number
+  photosTargetOnly: number
+}
+
+/**
+ * Join photographs by sha256, then match each photograph's boxes across the
+ * runs: a pair is accepted only when each box is the other's highest-IoU
+ * candidate AND that IoU beats each side's runner-up by MATCH_IOU_MARGIN
+ * (with MATCH_IOU_FLOOR under everything). Both conditions are symmetric, so
+ * the outcome is independent of input order. Throws on a duplicate sha256 in
+ * either run (D7).
+ */
+export function matchRuns(source: RekeyRun, target: RekeyRun): RekeyMatchResult
+
+/** `poolA.json`: the target face ids whose SOURCE face was in pool A —
+ *  explicit carry, because the labelling page ignores `pool` on import (D6)
+ *  and pool A is the only individually-judged sample. Ascending. */
+export interface PoolCarryFile {
+  version: number
+  datasetId: string
+  faceIds: number[]
+}
+
+/** One converted exclusion: "this target face is not that person", person key
+ *  under the SAME fresh remap as the rewritten labels.json/identities.json. */
+export interface ExclusionRecord {
+  faceId: number
+  notPerson: string
+}
+
+/** `exclusions.json`: labels.json's group-keyed `excluded` map converted to
+ *  per-face records (D5 — group ids renumber and are never copied). Sorted by
+ *  faceId, then key. */
+export interface ExclusionsCarryFile {
+  version: number
+  datasetId: string
+  exclusions: ExclusionRecord[]
+}
+
+export interface RekeyCounts {
+  photosJoined: number
+  photosSourceOnly: number
+  photosTargetOnly: number
+  sourceFaces: number
+  facesMatched: number
+  unmatched: RekeyMatchCounts
+  labelsCarried: number
+  /** Labelled source faces whose face did not match anything in the target. */
+  labelsLost: number
+  personsCarried: number
+  /** Person keys whose every labelled face was lost. */
+  personsLost: number
+  namesCarried: number
+  namesDropped: number
+  poolACarried: number
+  poolALost: number
+  skippedCarried: number
+  skippedLost: number
+  exclusionsConverted: number
+  exclusionsDroppedUnmatched: number
+  /** The group's surviving labels named zero or several persons, or the one
+   *  person lost every face — nothing safe to attach the exclusion to. */
+  exclusionsDroppedNoPerson: number
+}
+
+export interface RekeyResult {
+  /** Target numbering, fresh person keys, target datasetId, re-keyed `pool`
+   *  map, re-keyed `skipped`. `group` and `excluded` deliberately absent (D5). */
+  labels: Session1LabelFile
+  /** Null when no identities file was given. Same remap as `labels` (D4). */
+  identities: Session1IdentitiesFile | null
+  poolA: PoolCarryFile
+  exclusions: ExclusionsCarryFile
+  counts: RekeyCounts
+}
+
+/**
+ * The whole rewrite, pure: match the runs, allocate ONE fresh person-key remap
+ * (D4), and emit all four outputs under it. Throws on: a duplicate sha256 in
+ * either run (D7); a labels file whose datasetId does not hash from the source
+ * faces; a labels file with no `pool` map (D6); an identities file whose
+ * datasetId disagrees or whose person keys the labels never use (a mismatched
+ * export pair — D4).
+ */
+export function rekeyLabels(
+  source: RekeyRun,
+  target: RekeyRun,
+  labelFile: Session1LabelFile,
+  identitiesFile: Session1IdentitiesFile | null,
+): RekeyResult
+
+/** Parsed CLI arguments; paths resolved. */
+export interface RekeyArgs {
+  from: string
+  to: string
+  labels: string
+  identities: string | null
+  outDir: string
+  force: boolean
+}
+
+/** Read the runs and files, rekey, write the outputs into `outDir`, print
+ *  counts (only counts) through `log`. Returns the process exit code. */
+export function runRekey(args: RekeyArgs, log: (line: string) => void): number
