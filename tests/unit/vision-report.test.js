@@ -208,6 +208,7 @@ const RESOLUTION = [
  * @param {string} name
  * @param {object} [overrides]
  * @param {Types.Session1LabelFile | null} [overrides.labels]
+ * @param {Types.Session1FaceRecord[]} [overrides.faces] Replaces FACES wholesale.
  * @param {string} [overrides.facesTail] Raw text appended to faces.jsonl.
  * @returns {string}
  */
@@ -217,7 +218,7 @@ function writeRun(name, overrides = {}) {
   /** @param {string} file @param {unknown[]} rows */
   const jsonl = (file, rows) => fs.writeFileSync(path.join(dir, file), rows.map((r) => JSON.stringify(r)).join("\n") + "\n")
   jsonl("photos.jsonl", PHOTOS)
-  jsonl("faces.jsonl", FACES)
+  jsonl("faces.jsonl", overrides.faces ?? FACES)
   jsonl("resolution.jsonl", RESOLUTION)
   fs.writeFileSync(path.join(dir, "timing.json"), JSON.stringify(TIMING))
   const labels = "labels" in overrides ? overrides.labels : LABELS
@@ -604,15 +605,61 @@ test("bestSweepPoint says so when NO point welded nobody, instead of implying on
 // Mirror descriptors
 // ---------------------------------------------------------------------------
 
-test("buildView prefers the mirror-averaged descriptor only when asked", () => {
+test("a legacy-shape file reads as it always did: 'averaged' prefers mirrorDescriptor", () => {
+  // FACES is the pre-canonicalization shape: face 5 keeps the single-pass
+  // vector in `descriptor` and the mirror-averaged one in `mirrorDescriptor`.
+  // Reading such a file must not change its meaning.
   const loaded = run()
   const plain = buildView(loaded, { pool: "A", requireLabel: true })
-  const mirrored = buildView(loaded, { pool: "A", requireLabel: true, mirror: true })
+  const averaged = buildView(loaded, { pool: "A", requireLabel: true, variant: "averaged" })
+  const single = buildView(loaded, { pool: "A", requireLabel: true, variant: "single" })
   // Face 5 is the only one carrying a mirror descriptor, and it sits at row 5 —
   // dim 2, so its components are at indices 10 and 11.
-  assert.deepEqual(Array.from(plain.set.data.slice(0, 10)), Array.from(mirrored.set.data.slice(0, 10)))
-  assert.notEqual(plain.set.data[10], mirrored.set.data[10])
-  assert.notEqual(plain.set.data[11], mirrored.set.data[11])
+  assert.deepEqual(Array.from(plain.set.data.slice(0, 10)), Array.from(averaged.set.data.slice(0, 10)))
+  assert.notEqual(plain.set.data[10], averaged.set.data[10])
+  assert.notEqual(plain.set.data[11], averaged.set.data[11])
+  // In a legacy file `descriptor` IS the single pass, so "single" == default.
+  assert.deepEqual(Array.from(single.set.data), Array.from(plain.set.data))
+})
+
+/**
+ * The canonical-shape twin of FACES: face 5's `descriptor` holds the
+ * mirror-averaged vector (what legacy kept in `mirrorDescriptor`) and
+ * `descriptorUnmirrored` the single pass (what legacy kept in `descriptor`).
+ * Same two vector sets, new field layout.
+ * @returns {Types.Session1FaceRecord[]}
+ */
+function canonicalShapeFaces() {
+  return FACES.map((f) => {
+    if (f.id !== 5) return { ...f }
+    /** @type {Types.Session1FaceRecord} */
+    const swapped = { ...f, descriptor: onCircle(1.35), descriptorUnmirrored: onCircle(1.4) }
+    delete swapped.mirrorDescriptor
+    return swapped
+  })
+}
+
+test("a canonical-shape file: the default view reads `descriptor`, 'single' the un-averaged pass", () => {
+  const loaded = loadRun(writeRun("canonical-shape", { faces: canonicalShapeFaces() }))
+  const plain = buildView(loaded, { pool: "A", requireLabel: true })
+  const averaged = buildView(loaded, { pool: "A", requireLabel: true, variant: "averaged" })
+  const single = buildView(loaded, { pool: "A", requireLabel: true, variant: "single" })
+  // `descriptor` already IS the average, so "averaged" == default…
+  assert.deepEqual(Array.from(averaged.set.data), Array.from(plain.set.data))
+  // …and "single" swaps in the un-averaged vector, for face 5 only.
+  assert.deepEqual(Array.from(single.set.data.slice(0, 10)), Array.from(plain.set.data.slice(0, 10)))
+  assert.notEqual(single.set.data[10], plain.set.data[10])
+  assert.notEqual(single.set.data[11], plain.set.data[11])
+})
+
+test("the mirror A/B reads identically off both file shapes", () => {
+  // Same two vector sets, different field layout: every A/B number must agree,
+  // or one of the two shapes is being misread.
+  const legacy = analyse(run()).e.mirror
+  const canonical = analyse(loadRun(writeRun("canonical-ab", { faces: canonicalShapeFaces() }))).e.mirror
+  assert.ok(legacy, "the legacy shape still triggers the A/B")
+  assert.ok(canonical, "descriptorUnmirrored alone triggers the A/B")
+  assert.deepEqual(canonical, legacy)
 })
 
 // ---------------------------------------------------------------------------

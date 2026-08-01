@@ -220,9 +220,26 @@ export interface Session1FaceRecord {
    * distribution — which a filtering batch cannot know before it runs.
    */
   signals: GateSignals
-  /** 128 floats, L2-normalised, rounded for file size. */
+  /**
+   * The CANONICAL descriptor — L2-normalised, rounded for file size, and
+   * mirror-averaged when the run used --mirror-tta. Every consumer (grouping,
+   * the report's headline, ingest) reads this field without needing to know
+   * the mirror setting; timing.json's `config.mirrorTta` records which it was.
+   */
   descriptor: number[]
-  /** Present only under --mirror-tta: the mirror-averaged descriptor. */
+  /**
+   * Present only under --mirror-tta: the single-pass (un-averaged) vector,
+   * kept solely so session1-report.js's mirror A/B can price what averaging
+   * bought. Never canonical; nothing ingests it.
+   */
+  descriptorUnmirrored?: number[]
+  /**
+   * LEGACY, never written by current code. Pre-canonicalization runs held the
+   * single-pass vector in `descriptor` and the mirror-averaged one here.
+   * Readers keep a fallback on this field only so old run files on disk keep
+   * their original meaning; re-describing via redescribe-crops.js migrates a
+   * run to the canonical shape and drops this field.
+   */
   mirrorDescriptor?: number[]
 }
 
@@ -272,6 +289,13 @@ export interface Session1Timing {
     detectEdge?: number
     sourceEdge?: number
     nearDuplicateBits?: number
+    /**
+     * Whether the descriptors in THIS run directory are mirror-averaged —
+     * i.e. whether `descriptor` is the average of the crop and its mirror.
+     * session1.js records its flag; redescribe-crops.js overwrites it with
+     * its own, because its output's descriptors are its own doing.
+     */
+    mirrorTta?: boolean
   } & Record<string, unknown>
 }
 
@@ -588,8 +612,12 @@ export interface RedescribeResult {
 /**
  * Decode every crop `faces.jsonl` names, describe it under the engine at
  * `args.enginePath`/`args.embedderFile`, and write a new run directory whose
- * `faces.jsonl` is identical to the source except `descriptor` (and
- * `mirrorDescriptor` under `--mirror-tta`).
+ * `faces.jsonl` is identical to the source except the descriptors: `descriptor`
+ * is replaced (canonical — mirror-averaged under `--mirror-tta`, with the
+ * single-pass vector kept as `descriptorUnmirrored`), and any legacy
+ * `mirrorDescriptor` is dropped, which makes this the migration tool for
+ * pre-canonicalization runs. The output's timing.json records this run's
+ * `mirrorTta`.
  *
  * Refuses to run at all if any crop file `faces.jsonl` references is missing,
  * and writes nothing if interrupted partway — a partial re-describe would
@@ -867,6 +895,16 @@ export interface FaceView {
   poolAssumed: boolean
 }
 
+/**
+ * Which of a face's stored vectors a view reads. Absent means the canonical
+ * `descriptor`. The named variants exist for the mirror A/B alone: "single"
+ * is the un-averaged pass (`descriptorUnmirrored`, or `descriptor` in
+ * pre-canonicalization files), "averaged" the mirror-averaged one
+ * (`descriptor`, or the legacy `mirrorDescriptor` in pre-canonicalization
+ * files).
+ */
+export type DescriptorVariant = "single" | "averaged"
+
 /** Which faces `buildView` packs, and which descriptor it takes from each. */
 export interface ViewOptions {
   /**
@@ -875,8 +913,8 @@ export interface ViewOptions {
    * already found. Fine for volume in reports B and C, disqualifying in A.
    */
   pool?: "A" | "B" | null
-  /** Prefer `mirrorDescriptor` where the run recorded one. */
-  mirror?: boolean
+  /** Absent = the canonical `descriptor`. See DescriptorVariant. */
+  variant?: DescriptorVariant
   requireLabel?: boolean
   include?: (face: Session1FaceRecord) => boolean
 }
