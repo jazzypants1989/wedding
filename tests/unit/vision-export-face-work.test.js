@@ -28,8 +28,10 @@ import { sql } from "../../db/sql.js"
 import { createIngest } from "../../db/vision-ingests.js"
 import {
   applyFaceWorkImport,
+  batchIdForDigest,
   buildFaceWorkExport,
   canonicalJson,
+  exportDestinationRefusal,
   faceWorkBoxKey,
   faceWorkDigest,
   faceWorkPreflight,
@@ -118,15 +120,62 @@ function seedFace(db, { mediaId, ingestId, box, descriptor = false }) {
 }
 
 /**
- * A person plus their confirmed identity.
+ * A person plus one identity — confirmed unless a test asks otherwise.
  * @param {import('node:sqlite').DatabaseSync} db
  * @param {string} displayName
+ * @param {import('../../types.js').FaceIdentityProvenance} [provenance]
  */
-function seedPerson(db, displayName) {
+function seedPerson(db, displayName, provenance = "confirmed") {
   useDatabase(db)
   const person = createPerson({ displayName })
-  const identity = createIdentity({ personId: person.id, provenance: "confirmed" })
+  const identity = createIdentity({ personId: person.id, provenance })
   return { personId: person.id, identityId: identity.id }
+}
+
+/** Every live identity, as `<display name>/<provenance>`.
+ *  @param {import('node:sqlite').DatabaseSync} db */
+function identityProvenances(db) {
+  useDatabase(db)
+  /** @type {Array<{ display_name: string, provenance: string }>} */
+  const rows = sql`SELECT p.display_name AS display_name, fi.provenance AS provenance
+    FROM face_identities fi
+    JOIN people p ON p.id = fi.person_id
+    WHERE fi.deleted_at IS NULL
+    ORDER BY p.display_name, fi.provenance`.all()
+  return rows.map((row) => `${row.display_name}/${row.provenance}`)
+}
+
+/**
+ * The faces `db/media-faces.js`'s `confirmedIdentityFaces` would hand the
+ * recogniser as ground truth — the exact filter the provenance column exists to
+ * be. Written out here rather than imported so the test states the property it
+ * is protecting instead of trusting the same predicate twice.
+ * @param {import('node:sqlite').DatabaseSync} db
+ */
+function confirmedFaceCount(db) {
+  useDatabase(db)
+  /** @type {{ n: number } | undefined} */
+  const row = sql`SELECT COUNT(*) AS n FROM media_faces mf
+    JOIN face_identities fi ON fi.id = mf.face_identity_id
+    WHERE mf.deleted_at IS NULL AND fi.deleted_at IS NULL AND fi.provenance = 'confirmed'`.get()
+  return row ? row.n : 0
+}
+
+/**
+ * Re-seal a hand-edited artifact: mutate the payload, then recompute the digest
+ * and the batch id so it is internally consistent. This is exactly the effort a
+ * hand-edit costs — the digest is unkeyed — which is why every refusal below has
+ * to come from validating the CONTENT, not from the hash.
+ * @param {import('../../scripts/vision/types.js').FaceWorkArtifact} artifact
+ * @param {(payload: any) => void} mutate
+ * @returns {string}
+ */
+function reseal(artifact, mutate) {
+  const copy = JSON.parse(JSON.stringify(artifact))
+  mutate(copy.payload)
+  copy.contentSha256 = faceWorkDigest(copy.payload)
+  copy.batchId = batchIdForDigest(copy.contentSha256)
+  return JSON.stringify(copy)
 }
 
 /**
@@ -227,13 +276,15 @@ function buildSource() {
   return { db, ingest, faceIds, ada, bram }
 }
 
-/** The target machine: the same photographs and the same boxes, nobody named. */
-function buildTarget({ boxShift = 0, provenance = {} } = {}) {
+/** The target machine: the same photographs and the same boxes, nobody named.
+ *  `photos` narrows it to a SUBSET, which is the ordinary production case — the
+ *  server carries a curated selection, not the whole shoot. */
+function buildTarget({ boxShift = 0, provenance = {}, photos = PHOTOS } = {}) {
   const db = freshDb()
   const ingest = seedIngest(db, provenance)
   /** @type {number[]} */
   const faceIds = []
-  for (const photo of PHOTOS) {
+  for (const photo of photos) {
     const mediaId = seedMedia(db, photo.sha)
     faceIds.push(
       seedFace(db, {
@@ -246,9 +297,9 @@ function buildTarget({ boxShift = 0, provenance = {} } = {}) {
   return { db, ingest, faceIds }
 }
 
-/** @param {import('node:sqlite').DatabaseSync} db */
-function exportFrom(db) {
-  return buildFaceWorkExport({ db, ingestId: null, facesFrom: "ingest", includePropagated: false })
+/** @param {import('node:sqlite').DatabaseSync} db @param {boolean} [includePropagated] */
+function exportFrom(db, includePropagated = false) {
+  return buildFaceWorkExport({ db, ingestId: null, facesFrom: "ingest", includePropagated })
 }
 
 /**
@@ -1108,6 +1159,342 @@ describe("--dry-run", () => {
 
     source.db.close()
     target.db.close()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Defect 1: a guess must never arrive as ground truth
+// ---------------------------------------------------------------------------
+
+describe("propagated identities", () => {
+  /** A source whose third face carries a PROPAGATED identity — the model's
+   *  guess, not a human's judgement. */
+  function sourceWithPropagated() {
+    const source = buildSource()
+    const cleo = seedPerson(source.db, "Cleo Fixture", "propagated")
+    confirm(source.db, source.faceIds[2], cleo.identityId)
+    return { source, cleo }
+  }
+
+  it("are skipped by default, and carry their own provenance when asked for", () => {
+    const { source } = sourceWithPropagated()
+
+    const plain = exportFrom(source.db)
+    assert.equal(plain.stats.skippedPropagated, 1)
+    assert.equal(plain.artifact.payload.confirmations.length, 2)
+    assert.equal(plain.artifact.payload.includesPropagated, false)
+
+    const carried = exportFrom(source.db, true)
+    assert.equal(carried.artifact.payload.includesPropagated, true)
+    const guess = carried.artifact.payload.confirmations.find(
+      (c) => c.key === faceWorkBoxKey(PHOTOS[2].sha, PHOTOS[2].box),
+    )
+    assert.ok(guess)
+    assert.equal(guess.provenance, "propagated")
+
+    source.db.close()
+  })
+
+  it("DO NOT arrive confirmed — the import writes each identity's real provenance", () => {
+    const { source } = sourceWithPropagated()
+    const { artifact } = exportFrom(source.db, true)
+
+    const target = buildTarget()
+    const plan = planFor(target.db, artifact)
+    assert.deepEqual(plan.refusals, [])
+    const result = applyFaceWorkImport({ db: target.db, plan, actor: "test-import", note: null })
+    assert.equal(result.applied, true)
+
+    // The whole point of `face_identities.provenance`: `confirmedIdentityFaces`,
+    // `confirmedIdentitiesPerMedia` and `confirmedCooccurrence` all select
+    // 'confirmed', so a guess laundered into that column is the model being fed
+    // its own output as ground truth.
+    assert.deepEqual(identityProvenances(target.db), [
+      "Ada Fixture/confirmed",
+      "Bram Fixture/confirmed",
+      "Cleo Fixture/propagated",
+    ])
+    assert.equal(confirmedFaceCount(target.db), 2, "the guessed face is not ground truth")
+
+    // And it is still the right person — a propagated arrival is carried, not lost.
+    assert.equal(
+      projectedByKey(target.db).get(faceWorkBoxKey(PHOTOS[2].sha, PHOTOS[2].box)),
+      "Cleo Fixture",
+    )
+
+    source.db.close()
+    target.db.close()
+  })
+
+  it("says how many unreviewed guesses an import is about to carry", () => {
+    const { source } = sourceWithPropagated()
+    const { artifact } = exportFrom(source.db, true)
+    const target = buildTarget()
+    const plan = planFor(target.db, artifact)
+    assert.ok(plan.advisories.some((advisory) => advisory.includes("propagated")))
+    source.db.close()
+    target.db.close()
+  })
+
+  it("gives one person both identities when the artifact carries both verdicts", () => {
+    // Ada is confirmed on photo A and merely guessed on photo C. The two must
+    // land on two identities of the SAME person, not collapse into one.
+    const source = buildSource()
+    useDatabase(source.db)
+    const guess = createIdentity({ personId: source.ada.personId, provenance: "propagated" })
+    confirm(source.db, source.faceIds[2], guess.id)
+
+    const { artifact } = exportFrom(source.db, true)
+    assert.equal(artifact.payload.people.length, 2, "one Ada, not two")
+
+    const target = buildTarget()
+    const plan = planFor(target.db, artifact)
+    applyFaceWorkImport({ db: target.db, plan, actor: "test-import", note: null })
+
+    assert.deepEqual(identityProvenances(target.db), [
+      "Ada Fixture/confirmed",
+      "Ada Fixture/propagated",
+      "Bram Fixture/confirmed",
+    ])
+    assert.equal(confirmedFaceCount(target.db), 2)
+
+    source.db.close()
+    target.db.close()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Defect 2 + 3: what an artifact must not be able to say
+// ---------------------------------------------------------------------------
+
+describe("artifact validation", () => {
+  /** @param {(payload: any) => void} mutate */
+  function parseResealed(mutate) {
+    const source = buildSource()
+    const { artifact } = exportFrom(source.db)
+    const text = reseal(artifact, mutate)
+    source.db.close()
+    return parseFaceWorkArtifact(text)
+  }
+
+  it("REFUSES an op this build does not know, rather than coercing it to assign", () => {
+    // `negative` means "this face is NOT that person" — importing it as `assign`
+    // is the exact inversion of the decision. `clear` means "nobody".
+    for (const op of ["negative", "clear", "merge", ""]) {
+      const parsed = parseResealed((payload) => {
+        payload.confirmations[0].op = op
+      })
+      assert.equal(parsed.valid, false, `op "${op}" must be refused`)
+      if (!parsed.valid) assert.ok(parsed.error.includes("op"))
+    }
+  })
+
+  it("REFUSES an unknown identity provenance", () => {
+    const parsed = parseResealed((payload) => {
+      payload.confirmations[0].provenance = "verified-by-vibes"
+    })
+    assert.equal(parsed.valid, false)
+  })
+
+  it("REFUSES an assign with no person, and a not_a_face with one", () => {
+    const noPerson = parseResealed((payload) => {
+      payload.confirmations[0].personRef = null
+    })
+    assert.equal(noPerson.valid, false)
+
+    const namedNonFace = parseResealed((payload) => {
+      payload.confirmations[0].op = "not_a_face"
+    })
+    assert.equal(namedNonFace.valid, false)
+  })
+
+  it("REFUSES a personRef naming nobody in the people list", () => {
+    const parsed = parseResealed((payload) => {
+      payload.confirmations[0].personRef = "p99"
+    })
+    assert.equal(parsed.valid, false)
+  })
+
+  it("REFUSES a duplicate person ref rather than creating two people from it", () => {
+    const parsed = parseResealed((payload) => {
+      payload.people[1].ref = payload.people[0].ref
+    })
+    assert.equal(parsed.valid, false)
+    if (!parsed.valid) assert.ok(parsed.error.includes("ref"))
+  })
+
+  it("refuses five hand-edited shapes CLEANLY — a message, never a stack trace", () => {
+    /** @type {Array<[string, (payload: any) => void]>} */
+    const cases = [
+      ["a key that is not a string", (payload) => (payload.confirmations[0].key = 12345)],
+      ["a null confirmation", (payload) => (payload.confirmations = [null])],
+      ["a null person", (payload) => (payload.people = [null])],
+      ["an ingest with no config", (payload) => delete payload.ingest.config],
+      ["a display name that is not a string", (payload) => (payload.people[0].displayName = 99999)],
+      ["a key that is not a box key", (payload) => (payload.confirmations[0].key = "no-colon-here")],
+    ]
+    for (const [label, mutate] of cases) {
+      /** @type {ReturnType<typeof parseFaceWorkArtifact>} */
+      let parsed
+      try {
+        parsed = parseResealed(mutate)
+      } catch (err) {
+        assert.fail(`${label}: threw instead of refusing — ${err instanceof Error ? err.message : String(err)}`)
+      }
+      assert.equal(parsed.valid, false, label)
+      if (!parsed.valid) assert.ok(parsed.error.length > 0, label)
+    }
+  })
+})
+
+describe("matchFaceWorkKeys — malformed keys", () => {
+  it("calls a key with no photograph hash malformed, not a missing photograph", () => {
+    /** @type {import('../../scripts/vision/types.js').FaceWorkFaceRow[]} */
+    const targets = [
+      { id: 1, bbox_x: 10, bbox_y: 10, bbox_w: 20, bbox_h: 20, face_identity_id: null, deleted_at: null, sha256: "aa" },
+    ]
+    const { unmatched } = matchFaceWorkKeys(["no-colon-at-all", "aa:1,2,three,4"], targets, {
+      overlap: false,
+    })
+    assert.equal(unmatched.get("no-colon-at-all"), "malformed")
+    assert.equal(unmatched.get("aa:1,2,three,4"), "malformed")
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Defect 3: a partial import must not seal the batch
+// ---------------------------------------------------------------------------
+
+describe("importing against a target that has only some of the photographs", () => {
+  it("creates a person only for a confirmation it actually applied", () => {
+    const source = buildSource()
+    const { artifact } = exportFrom(source.db)
+    // The target has photograph A only. Bram lives entirely on photograph B.
+    const target = buildTarget({ photos: [PHOTOS[0]] })
+
+    const plan = planFor(target.db, artifact)
+    assert.deepEqual(plan.refusals, [])
+    assert.equal(plan.unmatched.photo, 1)
+    assert.equal(plan.peopleToCreate.length, 1, "only the person whose face is here")
+    assert.equal(plan.actions.length, 1)
+
+    const result = applyFaceWorkImport({ db: target.db, plan, actor: "test-import", note: null })
+    assert.equal(result.peopleCreated, 1)
+    assert.equal(result.identitiesCreated, 1)
+    assert.equal(peopleCount(target.db), 1, "no person row for an absent photograph's person")
+    assert.deepEqual(identityProvenances(target.db), ["Ada Fixture/confirmed"])
+
+    source.db.close()
+    target.db.close()
+  })
+
+  it("finishes the job on a re-import once the missing photographs arrive", () => {
+    const source = buildSource()
+    const { artifact } = exportFrom(source.db)
+    const target = buildTarget({ photos: [PHOTOS[0]] })
+
+    applyFaceWorkImport({
+      db: target.db,
+      plan: planFor(target.db, artifact),
+      actor: "test-import",
+      note: null,
+    })
+
+    // The rest of the library is ingested later, as it always is.
+    useDatabase(target.db)
+    const lateMedia = seedMedia(target.db, PHOTOS[1].sha)
+    seedFace(target.db, { mediaId: lateMedia, ingestId: target.ingest.id, box: PHOTOS[1].box })
+
+    const second = planFor(target.db, artifact)
+    assert.equal(second.alreadyApplied, false, "the batch id must not seal an unfinished import")
+    assert.equal(second.actions.length, 1)
+    assert.deepEqual(second.refusals, [])
+    assert.ok(second.advisories.some((advisory) => advisory.includes(artifact.batchId)))
+
+    const result = applyFaceWorkImport({ db: target.db, plan: second, actor: "test-import", note: null })
+    assert.equal(result.applied, true)
+    assert.equal(result.events, 1)
+    assert.equal(
+      projectedByKey(target.db).get(faceWorkBoxKey(PHOTOS[1].sha, PHOTOS[1].box)),
+      "Bram Fixture",
+    )
+
+    // Still ONE batch, so the whole import stays revocable as one decision.
+    useDatabase(target.db)
+    /** @type {{ n: number } | undefined} */
+    const batches = sql`SELECT COUNT(*) AS n FROM face_assignment_batches`.get()
+    assert.equal(batches?.n, 1)
+
+    // And now it really is done.
+    const third = planFor(target.db, artifact)
+    assert.equal(third.alreadyApplied, true)
+
+    source.db.close()
+    target.db.close()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Defect 5: where an export may be written
+// ---------------------------------------------------------------------------
+
+describe("export destination", () => {
+  it("refuses the root of this public repository, and says why", () => {
+    const refusal = exportDestinationRefusal(path.join(REPO_ROOT, "face-work.json"))
+    assert.ok(refusal, "writing real names into the repository root must be refused")
+    assert.ok(refusal.includes("public"))
+  })
+
+  it("refuses a tracked subdirectory too", () => {
+    assert.ok(exportDestinationRefusal(path.join(REPO_ROOT, "docs", "face-work.json")))
+    assert.ok(exportDestinationRefusal(path.join(REPO_ROOT, "scripts", "vision", "out.json")))
+  })
+
+  it("allows a gitignored directory inside the repository", () => {
+    assert.equal(exportDestinationRefusal(path.join(REPO_ROOT, "tmp", "face-work.json")), null)
+    assert.equal(exportDestinationRefusal(path.join(REPO_ROOT, "data", "face-work.json")), null)
+  })
+
+  it("allows anywhere outside the repository", () => {
+    assert.equal(exportDestinationRefusal(path.join(workDir, "face-work.json")), null)
+  })
+
+  it("is enforced by the CLI, not merely warned about", () => {
+    const source = buildSource()
+    const dbPath = path.join(workDir, `db-${dbCounter}.sqlite`)
+    source.db.close()
+
+    const out = path.join(REPO_ROOT, "face-work-should-never-exist.json")
+    fs.rmSync(out, { force: true })
+    const run = spawnSync(
+      process.execPath,
+      [
+        path.join(REPO_ROOT, "scripts", "vision", "export-face-work.js"),
+        "export",
+        out,
+        "--database",
+        dbPath,
+      ],
+      { encoding: "utf8" },
+    )
+    assert.notEqual(run.status, 0)
+    assert.equal(fs.existsSync(out), false)
+  })
+})
+
+describe("batch metadata", () => {
+  it("bounds --actor and --note rather than passing free text to the row", () => {
+    const longNote = parseFaceWorkArgs(["import", "in.json", "--weights", "w", "--engine", "e", "--note", "x".repeat(1000)])
+    assert.equal(longNote.valid, false)
+
+    const newlineNote = parseFaceWorkArgs(["import", "in.json", "--weights", "w", "--engine", "e", "--note", "line\nbreak"])
+    assert.equal(newlineNote.valid, false)
+
+    const pathActor = parseFaceWorkArgs(["import", "in.json", "--weights", "w", "--engine", "e", "--actor", "/etc/passwd"])
+    assert.equal(pathActor.valid, false)
+
+    const ok = parseFaceWorkArgs(["import", "in.json", "--weights", "w", "--engine", "e", "--actor", "jesse", "--note", "Phase 9 hand-off."])
+    assert.equal(ok.valid, true)
   })
 })
 

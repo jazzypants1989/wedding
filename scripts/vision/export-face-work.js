@@ -72,22 +72,52 @@
  *  follows `merged_into` transitively (with a cycle guard), and every identity
  *  read here goes through it.
  *
+ *  ## A guess never arrives as ground truth
+ *
+ *  `face_identities.provenance` is what keeps a human's judgement ('confirmed')
+ *  apart from the model's own guess ('propagated'), and `confirmedIdentityFaces`,
+ *  `confirmedIdentitiesPerMedia` and `confirmedCooccurrence` all select the
+ *  former. So both halves carry it: the export writes each confirmation's real
+ *  provenance, and the import resolves each event to the person's identity OF
+ *  THAT PROVENANCE, creating a second-class 'propagated' one where it must.
+ *  `--include-propagated` widens what is carried; nothing anywhere promotes it.
+ *  Writing every arrival as 'confirmed' would build, on the machine that serves
+ *  the site, exactly the feedback loop the column exists to prevent.
+ *
  *  ## Replay safety
  *
  *  The batch id is the artifact's own content digest — `face-work-<32 hex>` over
  *  the canonical JSON of the payload, excluding the export timestamp. So:
  *
- *   - importing the same file twice is a no-op, caught by
- *     `face_assignment_batches.batch_id` before a single event is appended;
  *   - re-exporting an unchanged source produces the same digest, so a
  *     re-export is a no-op too;
  *   - a hand-edited artifact produces a different digest than the one it
- *     declares, and is refused.
+ *     declares, and is refused IN TRANSIT.
+ *
+ *  What the digest is NOT is an authentication: it is unkeyed, so re-sealing an
+ *  edited file costs one line. Every claim the import acts on — the op, the
+ *  provenance, the refs, the shape of a key — is therefore VALIDATED in
+ *  `parseFaceWorkArtifact`, never asserted by a cast at the boundary.
+ *
+ *  Nor does an existing batch id mean "nothing to do". Production carries a
+ *  curated SUBSET of the photographs, so the ordinary case is an import that
+ *  applies what it can and a later one that finishes the job once the rest is
+ *  ingested. A batch that already exists is APPENDED to, so a completed hand-off
+ *  is still one revocable batch, and `alreadyApplied` means every confirmation
+ *  is satisfied here rather than merely that the id has been seen.
  *
  *  A batch that was imported and then REVOKED is refused outright with no
  *  override. Revocation is a decision someone took; re-running the same file
  *  would silently undo it, and there is no flag whose name would make that
  *  obvious enough.
+ *
+ *  ## Where an export may be written
+ *
+ *  An artifact carries real display names, a content hash per photograph and a
+ *  box per face, and this repository is PUBLIC. So a destination inside the repo
+ *  is REFUSED unless `.gitignore` already covers it — enforced before the
+ *  database is even opened, not warned about after the write. CLAUDE.md's
+ *  framing for this class of rule is "enforced, not just written down".
  *
  *  ## Box matching
  *
@@ -167,8 +197,14 @@ const USAGE = `Usage: node scripts/vision/export-face-work.js <command> [options
 
 Commands:
 
-  export <artifact-path>     Write the portable face-work artifact.
-  import <artifact-path>     Apply one to this machine's database.
+  export <artifact-path>     Write the portable face-work artifact. The path is
+                              REFUSED if it is inside this repository and not
+                              under a directory .gitignore covers — the file
+                              carries people's real names and this repo is public.
+  import <artifact-path>     Apply one to this machine's database. Applies what
+                              this machine has the photographs for; re-run it
+                              after ingesting the rest and the remainder is
+                              appended to the SAME batch.
   preflight                  Check weights + engine only, and stop.
 
 Common options:
@@ -187,7 +223,9 @@ export options:
   --include-propagated       Also carry identities whose provenance is
                               'propagated' — unreviewed guesses. Off by default:
                               the artifact is called face WORK because it is
-                              meant to be the human judgements.
+                              meant to be the human judgements. Carried ones
+                              stay 'propagated' on the target; nothing promotes
+                              a guess to a confirmation.
 
 import options:
 
@@ -208,8 +246,11 @@ import options:
                               overwriting) the incoming decision. An existing
                               confirmation stays in the ledger and the whole
                               import stays revocable as one batch.
-  --actor NAME               face_assignment_batches.actor. Default: face-work-import.
-  --note TEXT                Free-text note on the batch.
+  --actor NAME               face_assignment_batches.actor. Letters, digits,
+                              ".", "-", "_", "@"; at most 64 characters.
+                              Default: face-work-import.
+  --note TEXT                Note on the batch. Printable, one line, at most
+                              200 characters.
 
 preflight options:
 
@@ -243,6 +284,45 @@ const BATCH_ID_CHARS = 32
  *  margin is what makes the outcome independent of iteration order. */
 export const MATCH_IOU_FLOOR = 0.5
 export const MATCH_IOU_MARGIN = 0.1
+
+/**
+ * The ops an artifact may carry, and the whole vocabulary an import understands.
+ *
+ * Deliberately NARROWER than `FaceAssignmentOp`. The ledger also has `clear`
+ * ("this face is nobody") and `negative` ("this face is NOT that person"), and
+ * neither survives a content-keyed hand-off: `negative` is a constraint against
+ * one identity on one machine, and coercing it into an `assign` is the exact
+ * INVERSION of the decision it records. An artifact carrying either is refused
+ * at parse time rather than narrowed by a cast — the file is the boundary, and
+ * a type assertion at a boundary is a claim, not a check.
+ */
+export const ARTIFACT_OPS = Object.freeze(["assign", "not_a_face"])
+
+/** The identity provenances an artifact may carry, and the reason the column
+ *  exists: `confirmed` is a human's judgement, `propagated` is the model's own
+ *  guess. `db/media-faces.js`'s `confirmedIdentityFaces`,
+ *  `confirmedIdentitiesPerMedia` and `confirmedCooccurrence` all select
+ *  `confirmed`, so laundering one into the other is the model being fed its own
+ *  output as ground truth. Both halves of this file keep them apart. */
+export const ARTIFACT_PROVENANCES = Object.freeze(["confirmed", "propagated"])
+
+/** The ops a carried ledger ANNOTATION may report. `negative` is excluded for
+ *  the same reason `ledgerSummaries` excludes it: replay ignores it, so a
+ *  summary naming it would describe a history nobody can reproduce. */
+const ARTIFACT_LEDGER_OPS = Object.freeze(["assign", "clear", "not_a_face"])
+
+/** A person's name is a name. Anything longer is not one, and `people.display_name`
+ *  has no length constraint of its own to catch it. */
+const MAX_DISPLAY_NAME = 200
+
+/** `face_assignment_batches.actor` — a short label naming who ran the import,
+ *  written on the target by the operator standing at it. */
+const MAX_ACTOR = 64
+const ACTOR_CHARS =
+  "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_@"
+
+/** `face_assignment_batches.note` — free text, but bounded and printable. */
+const MAX_NOTE = 200
 
 // ---------------------------------------------------------------------------
 // Canonicalisation — the whole contract between the two halves
@@ -658,14 +738,14 @@ export function ledgerSummaries() {
 
 /** identity id -> the person behind it, for every live identity. */
 function livePersonByIdentity() {
-  /** @type {Array<{ identity_id: number, provenance: string, person_id: number, display_name: string }>} */
+  /** @type {Array<{ identity_id: number, provenance: import('../../types.js').FaceIdentityProvenance, person_id: number, display_name: string }>} */
   const rows = sql`SELECT fi.id AS identity_id, fi.provenance AS provenance,
       p.id AS person_id, p.display_name AS display_name
     FROM face_identities fi
     JOIN people p ON p.id = fi.person_id AND p.deleted_at IS NULL
     WHERE fi.deleted_at IS NULL
     ORDER BY fi.id`.all()
-  /** @type {Map<number, { personId: number, displayName: string, provenance: string }>} */
+  /** @type {Map<number, { personId: number, displayName: string, provenance: import('../../types.js').FaceIdentityProvenance }>} */
   const map = new Map()
   for (const row of rows) {
     map.set(row.identity_id, {
@@ -748,7 +828,7 @@ export function buildFaceWorkExport({ db, ingestId, facesFrom, includePropagated
   const peopleByPersonId = new Map()
   /** @type {Array<{ key: string, op: "not_a_face", ledger: Types.FaceWorkLedgerSummary | null }>} */
   const notAFace = []
-  /** @type {Map<string, { personId: number, provenance: string, ledger: Types.FaceWorkLedgerSummary | null }>} */
+  /** @type {Map<string, { personId: number, provenance: import('../../types.js').FaceIdentityProvenance, ledger: Types.FaceWorkLedgerSummary | null }>} */
   const assigned = new Map()
   let disagreements = 0
   let skippedPropagated = 0
@@ -756,7 +836,7 @@ export function buildFaceWorkExport({ db, ingestId, facesFrom, includePropagated
   for (const [key, group] of grouped) {
     /** @type {Set<string>} */
     const verdicts = new Set()
-    /** @type {{ personId: number, provenance: string, ledger: Types.FaceWorkLedgerSummary | null } | null} */
+    /** @type {{ personId: number, provenance: import('../../types.js').FaceIdentityProvenance, ledger: Types.FaceWorkLedgerSummary | null } | null} */
     let assignment = null
     /** @type {Types.FaceWorkLedgerSummary | null} */
     let notAFaceLedger = null
@@ -803,7 +883,7 @@ export function buildFaceWorkExport({ db, ingestId, facesFrom, includePropagated
       notAFace.push({ key, op: "not_a_face", ledger: notAFaceLedger })
       continue
     }
-    const settled = /** @type {{ personId: number, provenance: string, ledger: Types.FaceWorkLedgerSummary | null }} */ (
+    const settled = /** @type {{ personId: number, provenance: import('../../types.js').FaceIdentityProvenance, ledger: Types.FaceWorkLedgerSummary | null }} */ (
       assignment
     )
     assigned.set(key, settled)
@@ -881,13 +961,154 @@ export function buildFaceWorkExport({ db, ingestId, facesFrom, includePropagated
 // ---------------------------------------------------------------------------
 
 /**
+ * @param {unknown} value
+ * @returns {value is Record<string, unknown>}
+ */
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+}
+
+/**
+ * The ledger annotation on one confirmation, or the reason it is not one.
+ * @param {unknown} ledger
+ * @param {number} index
+ * @returns {string | null}
+ */
+function faceWorkLedgerError(ledger, index) {
+  const at = `payload.confirmations[${index}].ledger`
+  if (ledger === null) return null
+  if (!isPlainObject(ledger)) return `${at} must be an object or null`
+  if (!Number.isInteger(ledger.events) || Number(ledger.events) < 0) {
+    return `${at}.events must be a non-negative integer`
+  }
+  if (typeof ledger.op !== "string" || !ARTIFACT_LEDGER_OPS.includes(ledger.op)) {
+    return `${at}.op is "${String(ledger.op)}" — a carried ledger summary reports ${ARTIFACT_LEDGER_OPS.join(", ")}`
+  }
+  if (ledger.kind !== null && typeof ledger.kind !== "string") {
+    return `${at}.kind must be a string or null`
+  }
+  if (typeof ledger.decidedAt !== "string") return `${at}.decidedAt must be a string`
+  return null
+}
+
+/**
+ * Everything INSIDE the payload, or the first reason it is not an artifact this
+ * build may act on. Returns a message rather than throwing, so a hand-edited
+ * file is a clean refusal instead of a `TypeError` from four frames down.
+ *
+ * This is the boundary. The content digest is unkeyed — anyone who can edit the
+ * file can re-seal it — so it proves the file has not been corrupted IN TRANSIT
+ * and proves nothing at all about what it says. Every claim the import acts on
+ * is checked here, once, before a single row is read.
+ * @param {Record<string, unknown>} body
+ * @returns {string | null}
+ */
+export function faceWorkPayloadError(body) {
+  const ingest = body.ingest
+  if (!isPlainObject(ingest)) return "payload.ingest must be an object"
+  for (const field of [
+    "datasetId",
+    "modelVersion",
+    "detectorSha256",
+    "embedderSha256",
+    "engineSha256",
+    "normalisation",
+    "routeProfile",
+  ]) {
+    if (typeof ingest[field] !== "string") return `payload.ingest.${field} must be a string`
+  }
+  if (ingest.mirrorApplied !== 0 && ingest.mirrorApplied !== 1) {
+    return "payload.ingest.mirrorApplied must be 0 or 1"
+  }
+  if (!isPlainObject(ingest.config)) return "payload.ingest.config must be an object"
+  if (typeof body.includesPropagated !== "boolean") {
+    return "payload.includesPropagated must be a boolean"
+  }
+
+  /** @type {Set<string>} */
+  const refs = new Set()
+  const people = /** @type {unknown[]} */ (body.people)
+  for (let i = 0; i < people.length; i++) {
+    const person = people[i]
+    if (!isPlainObject(person)) return `payload.people[${i}] must be an object`
+    if (typeof person.ref !== "string" || person.ref.length === 0) {
+      return `payload.people[${i}].ref must be a non-empty string`
+    }
+    if (refs.has(person.ref)) {
+      return (
+        `payload.people[${i}].ref "${person.ref}" appears twice. One ref names one person; two ` +
+        `entries under it would create two people and name them both from whichever came last.`
+      )
+    }
+    refs.add(person.ref)
+    if (typeof person.displayName !== "string" || person.displayName.length === 0) {
+      return `payload.people[${i}].displayName must be a non-empty string`
+    }
+    if (person.displayName.length > MAX_DISPLAY_NAME) {
+      return `payload.people[${i}].displayName is longer than ${MAX_DISPLAY_NAME} characters`
+    }
+  }
+
+  const confirmations = /** @type {unknown[]} */ (body.confirmations)
+  /** @type {Set<string>} */
+  const keys = new Set()
+  for (let i = 0; i < confirmations.length; i++) {
+    const at = `payload.confirmations[${i}]`
+    const confirmation = confirmations[i]
+    if (!isPlainObject(confirmation)) return `${at} must be an object`
+    if (typeof confirmation.key !== "string" || parseBoxKey(confirmation.key) === null) {
+      return `${at}.key is not a <photo sha256>:<x>,<y>,<w>,<h> content key`
+    }
+    if (keys.has(confirmation.key)) return `${at} repeats a content key — one box, one decision`
+    keys.add(confirmation.key)
+    if (typeof confirmation.op !== "string" || !ARTIFACT_OPS.includes(confirmation.op)) {
+      return (
+        `${at}.op is "${String(confirmation.op)}". This format carries ` +
+        `${ARTIFACT_OPS.join(" or ")} and nothing else — a "negative" is the statement that a ` +
+        `face is NOT that person, and treating it as an assignment would import the exact ` +
+        `inversion of the decision it records.`
+      )
+    }
+    if (confirmation.op === "assign") {
+      if (typeof confirmation.personRef !== "string" || !refs.has(confirmation.personRef)) {
+        return `${at}.personRef names nobody in payload.people`
+      }
+      if (
+        typeof confirmation.provenance !== "string" ||
+        !ARTIFACT_PROVENANCES.includes(confirmation.provenance)
+      ) {
+        return `${at}.provenance must be ${ARTIFACT_PROVENANCES.join(" or ")}`
+      }
+      if (confirmation.provenance === "propagated" && body.includesPropagated !== true) {
+        return (
+          `${at} is a propagated guess, but payload.includesPropagated is false. The header and ` +
+          `the body disagree about what this artifact is.`
+        )
+      }
+    } else {
+      if (confirmation.personRef !== null) return `${at} is not_a_face and must name nobody`
+      if (confirmation.provenance !== null) {
+        return `${at} is not_a_face and so has no identity provenance`
+      }
+    }
+    const ledgerError = faceWorkLedgerError(confirmation.ledger, i)
+    if (ledgerError) return ledgerError
+  }
+
+  return null
+}
+
+/**
  * Parse and structurally validate an artifact, and check that it hashes to what
  * it says it does.
  *
  * The digest check is not integrity theatre: the batch id is derived from it,
  * so an artifact whose payload was edited after export would otherwise import
  * under the id of the file it used to be — and a later replay of the ORIGINAL
- * would then be treated as already applied.
+ * would then be treated as already applied. It is also not an AUTHENTICATION:
+ * it is unkeyed, so re-sealing a hand-edited file costs one line. That is why
+ * `faceWorkPayloadError` exists and why it runs on every field the import acts
+ * on rather than on the two the header carries.
  * @type {Types.parseFaceWorkArtifact}
  */
 export function parseFaceWorkArtifact(text) {
@@ -923,6 +1144,11 @@ export function parseFaceWorkArtifact(text) {
   }
   if (!body.ingest || typeof body.ingest !== "object" || Array.isArray(body.ingest)) {
     return { valid: false, error: "payload.ingest missing" }
+  }
+
+  const interior = faceWorkPayloadError(body)
+  if (interior !== null) {
+    return { valid: false, error: `${interior}. The artifact is corrupt — export it again rather than repairing it.` }
   }
 
   const digest = faceWorkDigest(/** @type {Types.FaceWorkPayload} */ (payload))
@@ -995,9 +1221,19 @@ export function matchFaceWorkKeys(keys, targetRows, { overlap }) {
      *  from "photo present, box not found" — they want different reactions. */
     const shas = new Set(targetRows.map((row) => row.sha256))
     for (const key of keys) {
+      // Parsed, not sliced. `key.indexOf(":")` on a colon-less key is -1, and
+      // `slice(0, -1)` then yields the key minus its last character — which
+      // matches no photograph and so reported a CORRUPT key as a merely absent
+      // photograph, downgrading a refusal to an advisory. The overlap path has
+      // always parsed; this one now does too.
+      const parsed = parseBoxKey(key)
+      if (!parsed) {
+        unmatched.set(key, "malformed")
+        continue
+      }
       const found = grouped.get(key)
       if (found) matched.set(key, found)
-      else unmatched.set(key, shas.has(key.slice(0, key.indexOf(":"))) ? "box" : "photo")
+      else unmatched.set(key, shas.has(parsed.sha256) ? "box" : "photo")
     }
     return { matched, unmatched }
   }
@@ -1089,12 +1325,32 @@ export function parseBoxKey(key) {
 // Import: plan, then apply
 // ---------------------------------------------------------------------------
 
+/** How many events already carry this batch id. The optimistic-concurrency
+ *  token `applyFaceWorkImport` re-reads inside its transaction.
+ *  @param {string} batchId
+ *  @returns {number} */
+function countBatchEvents(batchId) {
+  /** @type {{ n: number } | undefined} */
+  const row = sql`SELECT COUNT(*) AS n FROM face_assignments WHERE batch_id = ${batchId}`.get()
+  return row ? row.n : 0
+}
+
 /**
  * Work out everything the import would do, and every reason it should not.
  *
  * Split from `applyFaceWorkImport` so `--dry-run` reports the SAME plan the
  * real run executes rather than a second approximation of it, and so the
  * refusals are testable without a write path.
+ *
+ * ⚠ An EXISTING batch is not, on its own, "nothing to do". The batch id is a
+ * function of the artifact alone, and production carries a curated subset of
+ * the photographs — so the ordinary case is an import that applies what it can,
+ * and a later one that finishes the job once the rest of the library is
+ * ingested. Short-circuiting on the id alone made that second run a silent
+ * no-op and lost every confirmation the first could not place, and it could not
+ * even report the gap because the short-circuit ran before the matching did. So
+ * the whole plan is computed either way; an existing batch is APPENDED to,
+ * which keeps the hand-off revocable as one decision.
  * @type {Types.planFaceWorkImport}
  */
 export function planFaceWorkImport({ db, artifact, ingestId, facesFrom, matchOverlap, force }) {
@@ -1104,31 +1360,19 @@ export function planFaceWorkImport({ db, artifact, ingestId, facesFrom, matchOve
   const batchId = artifact.batchId
 
   const existing = getBatch(batchId)
-  if (existing) {
-    if (existing.revoked_at !== null) {
-      return {
-        batchId,
-        alreadyApplied: false,
-        refusals: [
-          `batch ${batchId} was imported and then REVOKED on this machine. Re-importing the ` +
-            `same artifact would silently undo that decision. There is deliberately no flag ` +
-            `for this — if the revocation was wrong, un-revoke it; if the work is wanted ` +
-            `again, export it afresh so it arrives as its own batch.`,
-        ],
-        advisories: [],
-        actions: [],
-        unmatched: { photo: 0, box: 0, ambiguous: 0, malformed: 0 },
-        peopleToCreate: [],
-        peopleMatched: 0,
-        satisfied: 0,
-        conflicts: [],
-      }
-    }
+  if (existing && existing.revoked_at !== null) {
     return {
       batchId,
-      alreadyApplied: true,
-      refusals: [],
-      advisories: [`batch ${batchId} is already on this machine — nothing to do.`],
+      alreadyApplied: false,
+      batchExists: true,
+      existingBatchEvents: countBatchEvents(batchId),
+      refusals: [
+        `batch ${batchId} was imported and then REVOKED on this machine. Re-importing the ` +
+          `same artifact would silently undo that decision. There is deliberately no flag ` +
+          `for this — if the revocation was wrong, un-revoke it; if the work is wanted ` +
+          `again, export it afresh so it arrives as its own batch.`,
+      ],
+      advisories: [],
       actions: [],
       unmatched: { photo: 0, box: 0, ambiguous: 0, malformed: 0 },
       peopleToCreate: [],
@@ -1137,6 +1381,8 @@ export function planFaceWorkImport({ db, artifact, ingestId, facesFrom, matchOve
       conflicts: [],
     }
   }
+  const batchExists = existing !== undefined
+  const existingBatchEvents = batchExists ? countBatchEvents(batchId) : 0
 
   /** @type {string[]} */
   const refusals = []
@@ -1203,6 +1449,17 @@ export function planFaceWorkImport({ db, artifact, ingestId, facesFrom, matchOve
     refusals.push(`${counts.malformed} confirmation key(s) are malformed — the artifact is corrupt.`)
   }
 
+  const propagatedIncoming = payload.confirmations.filter(
+    (confirmation) => confirmation.provenance === "propagated",
+  ).length
+  if (propagatedIncoming > 0) {
+    advisories.push(
+      `${propagatedIncoming} confirmation(s) are 'propagated' — the model's own guesses, not ` +
+        `anyone's judgement. They arrive under a second-class 'propagated' identity so they ` +
+        `cannot seed a prototype; nothing here promotes them to 'confirmed'.`,
+    )
+  }
+
   // --- current state of every matched target face ---
   const identities = livePersonByIdentity()
   /** @type {Map<number, number | null>} person id currently on a target face id */
@@ -1248,14 +1505,33 @@ export function planFaceWorkImport({ db, artifact, ingestId, facesFrom, matchOve
   const conflicts = []
   /** @type {Map<string, number>} ref -> existing target person id */
   const personIdByRef = new Map()
-  /** @type {string[]} refs with no content match — a new person on this machine */
-  const peopleToCreate = []
+  /** @type {Set<string>} refs with no content match — a new person on this machine */
+  const newPersonRefs = new Set()
+
+  /**
+   * The refs this import is actually about: those with at least one confirmation
+   * that found a target face.
+   *
+   * A person whose photographs this machine does not have is not this import's
+   * business at all. Deriving the person list from `payload.people` instead
+   * created a `people` row AND a `confirmed` `face_identities` row for every
+   * absent photograph's person — each one occupying the partial unique index on
+   * `(person_id, provenance)` on behalf of a face nobody here can see.
+   */
+  /** @type {Set<string>} */
+  const refsInScope = new Set()
+  for (const confirmation of payload.confirmations) {
+    if (confirmation.personRef === null) continue
+    if (!matched.has(confirmation.key)) continue
+    refsInScope.add(confirmation.personRef)
+  }
 
   for (const person of payload.people) {
+    if (!refsInScope.has(person.ref)) continue
     const tally = overlapByRef.get(person.ref)
     const candidates = tally ? [...tally.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0]) : []
     if (candidates.length === 0) {
-      peopleToCreate.push(person.ref)
+      newPersonRefs.add(person.ref)
       const collisions = findLivePeopleByName(person.displayName)
       if (collisions.length > 0) {
         advisories.push(
@@ -1326,7 +1602,13 @@ export function planFaceWorkImport({ db, artifact, ingestId, facesFrom, matchOve
           })
           if (!force) continue
         }
-        actions.push({ faceId: row.id, op: "not_a_face", personRef: null, identityId: null })
+        actions.push({
+          faceId: row.id,
+          op: "not_a_face",
+          personRef: null,
+          provenance: null,
+          identityId: null,
+        })
         continue
       }
 
@@ -1346,12 +1628,35 @@ export function planFaceWorkImport({ db, artifact, ingestId, facesFrom, matchOve
         })
         if (!force) continue
       }
-      if (incomingPersonId === null && !peopleToCreate.includes(ref)) {
+      if (incomingPersonId === null && !newPersonRefs.has(ref)) {
         // The person hit an unresolved conflict above; nothing to assign to.
         continue
       }
-      actions.push({ faceId: row.id, op: "assign", personRef: ref, identityId: null })
+      actions.push({
+        faceId: row.id,
+        op: "assign",
+        personRef: ref,
+        // Carried, never assumed. `confirmed` here would be the model's guess
+        // arriving as ground truth on the machine that serves the site.
+        provenance: confirmation.provenance === "propagated" ? "propagated" : "confirmed",
+        identityId: null,
+      })
     }
+  }
+
+  // A person is created for a confirmation this import ACTUALLY applies, and
+  // for no other reason. Derived after the actions rather than before them, so
+  // a ref whose only matched confirmation hit an unresolved conflict does not
+  // leave a person row behind for a face that was never assigned.
+  /** @type {Set<string>} */
+  const refsNeeded = new Set()
+  for (const action of actions) {
+    if (action.op === "assign" && action.personRef !== null) refsNeeded.add(action.personRef)
+  }
+  /** @type {string[]} */
+  const peopleToCreate = []
+  for (const person of payload.people) {
+    if (refsNeeded.has(person.ref) && newPersonRefs.has(person.ref)) peopleToCreate.push(person.ref)
   }
 
   if (conflicts.length > 0 && !force) {
@@ -1363,9 +1668,25 @@ export function planFaceWorkImport({ db, artifact, ingestId, facesFrom, matchOve
     )
   }
 
+  // "Already applied" is a statement about the WORK, not about the batch id.
+  const alreadyApplied = batchExists && actions.length === 0 && refusals.length === 0
+  if (batchExists) {
+    advisories.push(
+      alreadyApplied
+        ? `batch ${batchId} is already on this machine and everything it carries is satisfied ` +
+          `here — nothing to do.`
+        : `batch ${batchId} is already on this machine, but ${actions.length} of its ` +
+          `confirmation(s) are not applied here — the photographs they name were missing when ` +
+          `it was first imported. They are being APPENDED to that same batch, so the hand-off ` +
+          `stays revocable as one decision.`,
+    )
+  }
+
   return {
     batchId,
-    alreadyApplied: false,
+    alreadyApplied,
+    batchExists,
+    existingBatchEvents,
     refusals,
     advisories,
     actions,
@@ -1400,19 +1721,42 @@ export function applyFaceWorkImport({ db, plan, actor, note }) {
 
   return withTransaction(db, () => {
     // Re-check inside the transaction. Between planning and applying another
-    // process could have imported the same artifact; BEGIN IMMEDIATE plus this
-    // read is what makes "identical replay is a no-op" true under concurrency
-    // rather than only in a single-threaded test.
-    if (getBatch(plan.batchId)) {
-      return { batchId: plan.batchId, applied: false, events: 0, peopleCreated: 0, identitiesCreated: 0 }
+    // process could have imported the same artifact; BEGIN IMMEDIATE plus these
+    // reads are what make replay safety true under concurrency rather than only
+    // in a single-threaded test.
+    //
+    // The token is the batch's own event count, because "the batch exists" is no
+    // longer the whole story: an import may legitimately APPEND to a batch a
+    // previous, partial run created. So what has to be unchanged since planning
+    // is the batch's presence AND its size — either moving means the plan was
+    // computed against a state that no longer exists.
+    const batch = getBatch(plan.batchId)
+    if (Boolean(batch) !== plan.batchExists) {
+      throw new Error(
+        `batch ${plan.batchId} ${batch ? "appeared" : "disappeared"} between planning and ` +
+          `applying — another import is running against this database. Nothing was written.`,
+      )
+    }
+    if (batch && batch.revoked_at !== null) {
+      throw new Error(
+        `batch ${plan.batchId} was revoked between planning and applying. Nothing was written.`,
+      )
+    }
+    if (countBatchEvents(plan.batchId) !== plan.existingBatchEvents) {
+      throw new Error(
+        `batch ${plan.batchId} gained or lost events between planning and applying — another ` +
+          `import is running against this database. Nothing was written; re-run.`,
+      )
     }
 
-    createBatch({
-      batchId: plan.batchId,
-      kind: IMPORT_BATCH_KIND,
-      actor,
-      note,
-    })
+    if (!batch) {
+      createBatch({
+        batchId: plan.batchId,
+        kind: IMPORT_BATCH_KIND,
+        actor,
+        note,
+      })
+    }
 
     let peopleCreated = 0
     for (const ref of plan.peopleToCreate) {
@@ -1427,27 +1771,49 @@ export function applyFaceWorkImport({ db, plan, actor, note }) {
       peopleCreated++
     }
 
-    /** @type {Map<string, number>} ref -> face_identities.id */
+    /** @type {Map<string, number>} `<ref> <provenance>` -> face_identities.id */
     const identityIdByRef = new Map()
     let identitiesCreated = 0
     const stamp = now()
-    for (const [ref, personId] of personIdByRef) {
-      const live = identitiesForPerson(personId).filter((identity) => identity.merged_into === null)
-      const confirmed = live.find((identity) => identity.provenance === "confirmed")
-      if (confirmed) {
-        identityIdByRef.set(ref, confirmed.id)
-        continue
+
+    /**
+     * The identity an action writes to, resolved by PROVENANCE as well as by
+     * person.
+     *
+     * `face_identities` holds at most one live row per `(person_id, provenance)`
+     * — so a person who arrives both confirmed and guessed gets two identities,
+     * which is exactly the shape `api/admin/faces.js`'s propagate pass already
+     * uses. Resolved lazily, so an identity is created only for a confirmation
+     * this import actually applies.
+     * @param {string} ref
+     * @param {import('../../types.js').FaceIdentityProvenance} provenance
+     * @returns {number | null}
+     */
+    const identityFor = (ref, provenance) => {
+      const cacheKey = `${ref} ${provenance}`
+      const cached = identityIdByRef.get(cacheKey)
+      if (cached !== undefined) return cached
+      const personId = personIdByRef.get(ref)
+      if (personId === undefined) return null
+
+      const rows = identitiesForPerson(personId)
+      const live = rows.find(
+        (identity) => identity.provenance === provenance && identity.merged_into === null,
+      )
+      if (live) {
+        identityIdByRef.set(cacheKey, live.id)
+        return live.id
       }
-      // A person whose only confirmed identity has been merged away has no live
-      // one to write to, and the partial UNIQUE index on (person_id,
+      // A person whose identity of this provenance has been merged away has no
+      // live one to write to, and the partial UNIQUE index on (person_id,
       // provenance) will not let a second be created. That is a state to repair
       // by hand, not to guess at.
-      const mergedAway = identitiesForPerson(personId).find(
-        (identity) => identity.provenance === "confirmed" && identity.merged_into !== null,
+      const mergedAway = rows.find(
+        (identity) => identity.provenance === provenance && identity.merged_into !== null,
       )
       if (mergedAway) {
         throw new Error(
-          `person ${personId}'s confirmed identity ${mergedAway.id} has been merged into ` +
+          `person ${personId}'s ${provenance} identity ${mergedAway.id} has been merged into ` +
             `${mergedAway.merged_into}. Repair the merge before importing into this person.`,
         )
       }
@@ -1455,10 +1821,11 @@ export function applyFaceWorkImport({ db, plan, actor, note }) {
         personId,
         confirmedBy: actor,
         confirmedAt: stamp,
-        provenance: "confirmed",
+        provenance,
       })
-      identityIdByRef.set(ref, created.id)
+      identityIdByRef.set(cacheKey, created.id)
       identitiesCreated++
+      return created.id
     }
 
     let events = 0
@@ -1475,8 +1842,11 @@ export function applyFaceWorkImport({ db, plan, actor, note }) {
         events++
         continue
       }
-      const identityId = identityIdByRef.get(/** @type {string} */ (action.personRef))
-      if (identityId === undefined) continue
+      const identityId = identityFor(
+        /** @type {string} */ (action.personRef),
+        action.provenance === "propagated" ? "propagated" : "confirmed",
+      )
+      if (identityId === null) continue
       recordAssignment({
         faceId: action.faceId,
         op: "assign",
@@ -1554,6 +1924,109 @@ export async function faceWorkPreflight({ weightsDir, enginePath, expectedEngine
   }
 
   return { ok: failures.length === 0, failures, checks, engineSha256 }
+}
+
+// ---------------------------------------------------------------------------
+// Where an export may be written
+// ---------------------------------------------------------------------------
+
+/** The directories `.gitignore` keeps out of this repository, as path prefixes.
+ *
+ *  Read from the file rather than hard-coded, so the one list git obeys is the
+ *  one this obeys. No regex, per CLAUDE.md: a pattern carrying a wildcard is
+ *  skipped rather than interpreted — git's globbing is not something to
+ *  re-implement, and an unrecognised pattern erring towards "not ignored" errs
+ *  towards refusing the write.
+ *  @param {string} repoRoot
+ *  @returns {string[]} */
+function ignoredPrefixes(repoRoot) {
+  /** @type {string} */
+  let text
+  try {
+    text = fs.readFileSync(path.join(repoRoot, ".gitignore"), "utf8")
+  } catch {
+    // No .gitignore to read is not permission to write into the repository.
+    return ["data", "tmp", "node_modules", "public/vision/weights"]
+  }
+  /** @type {string[]} */
+  const prefixes = []
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim()
+    if (trimmed.length === 0) continue
+    if (trimmed.startsWith("#") || trimmed.startsWith("!")) continue
+    if (trimmed.includes("*") || trimmed.includes("?") || trimmed.includes("[")) continue
+    let pattern = trimmed
+    while (pattern.startsWith("/")) pattern = pattern.slice(1)
+    while (pattern.endsWith("/")) pattern = pattern.slice(0, -1)
+    if (pattern.length === 0) continue
+    prefixes.push(pattern)
+  }
+  return prefixes
+}
+
+/**
+ * Why this destination may not be written, or null.
+ *
+ * An artifact carries people's real display names, one content hash per
+ * photograph and one box per face. This repository is PUBLIC, so a destination
+ * inside it is refused unless it is somewhere git already ignores. CLAUDE.md's
+ * framing for this class of rule is "enforced, not just written down" — a
+ * `PreToolUse` hook already hard-blocks the analogous read, and a printed
+ * warning after `fs.writeFileSync` has already lost.
+ * @type {Types.exportDestinationRefusal}
+ */
+export function exportDestinationRefusal(outPath) {
+  const repoRoot = path.resolve(import.meta.dirname, "..", "..")
+  const absolute = path.resolve(outPath)
+  const relative = path.relative(repoRoot, absolute)
+  if (relative.length === 0) return null
+  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    return null
+  }
+  const posix = relative.split(path.sep).join("/")
+  const prefixes = ignoredPrefixes(repoRoot)
+  for (const prefix of prefixes) {
+    if (posix === prefix || posix.startsWith(`${prefix}/`)) return null
+  }
+  return (
+    `${absolute} is inside this repository, and this repository is public. A face-work ` +
+    `artifact carries people's real display names, one content hash per photograph and one box ` +
+    `per face — none of which may be committed, and a file in a tracked directory is one ` +
+    `\`git add .\` away from being. Write it outside the repository, or under a directory ` +
+    `.gitignore already covers (${prefixes.slice(0, 4).join(", ")}), and move it over a channel ` +
+    `you would move the guest list over.`
+  )
+}
+
+/** Why this `--actor` may not go on the batch row, or null.
+ *  @param {string} value
+ *  @returns {string | null} */
+function batchActorRefusal(value) {
+  if (value.length === 0) return "must not be empty"
+  if (value.length > MAX_ACTOR) return `must be at most ${MAX_ACTOR} characters`
+  for (const character of value) {
+    if (!ACTOR_CHARS.includes(character)) {
+      return (
+        `must be letters, digits, ".", "-", "_" or "@" — it names who ran the import, not a ` +
+        `path, and it is written to a row this tool cannot later tell apart from a real one`
+      )
+    }
+  }
+  return null
+}
+
+/** Why this `--note` may not go on the batch row, or null.
+ *  @param {string} value
+ *  @returns {string | null} */
+function batchNoteRefusal(value) {
+  if (value.length > MAX_NOTE) return `must be at most ${MAX_NOTE} characters`
+  for (const character of value) {
+    const code = character.codePointAt(0) ?? 0
+    if (code < 0x20 || code === 0x7f) {
+      return "must be printable text on one line — no control characters, no newlines"
+    }
+  }
+  return null
 }
 
 // ---------------------------------------------------------------------------
@@ -1637,10 +2110,14 @@ export function parseFaceWorkArgs(argv) {
     } else if (arg === "--actor") {
       i++
       if (i >= argv.length) return { valid: false, error: "--actor needs a value" }
+      const refusal = batchActorRefusal(argv[i])
+      if (refusal) return { valid: false, error: `--actor ${refusal}` }
       args.actor = argv[i]
     } else if (arg === "--note") {
       i++
       if (i >= argv.length) return { valid: false, error: "--note needs a value" }
+      const refusal = batchNoteRefusal(argv[i])
+      if (refusal) return { valid: false, error: `--note ${refusal}` }
       args.note = argv[i]
     } else if (arg.startsWith("--")) {
       return { valid: false, error: `Unknown option: ${arg}` }
@@ -1685,9 +2162,18 @@ export function parseFaceWorkArgs(argv) {
 
 /**
  * @param {Types.FaceWorkArgs} args
- * @returns {Promise<void>}
+ * @returns {Promise<number>}
  */
 async function runExport(args) {
+  // Before the database is opened, and before anything is read: a refused
+  // destination should cost nothing and should never depend on the export
+  // having succeeded first.
+  const destination = exportDestinationRefusal(/** @type {string} */ (args.artifact))
+  if (destination) {
+    console.error(`refused: ${destination}`)
+    return 1
+  }
+
   const db = openDatabase(resolveDbPath(args.database))
   try {
     const { artifact, stats } = buildFaceWorkExport({
@@ -1708,7 +2194,7 @@ async function runExport(args) {
     console.log(`batch id on import:     ${artifact.batchId}`)
     if (args.dryRun) {
       console.log(`\ndry run — nothing written to ${args.artifact}`)
-      return
+      return 0
     }
     const out = /** @type {string} */ (args.artifact)
     fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true })
@@ -1718,6 +2204,7 @@ async function runExport(args) {
       "This file carries people's names. It is never committed; move it over a channel you " +
         "would move the guest list over, and delete it when the import is done.",
     )
+    return 0
   } finally {
     db.close()
   }
@@ -1760,11 +2247,11 @@ async function runImport(args) {
       force: args.force,
     })
 
+    // Printed BEFORE the no-op check, not after it. "Already imported" used to
+    // return here without ever computing — let alone reporting — how many
+    // confirmations this machine could not place, which is precisely the number
+    // an operator staring at a partial import needs to see.
     console.log(`batch id:               ${plan.batchId}`)
-    if (plan.alreadyApplied) {
-      console.log("already imported — no-op.")
-      return 0
-    }
     console.log(`people matched:         ${plan.peopleMatched}`)
     console.log(`people to create:       ${plan.peopleToCreate.length}`)
     console.log(`already satisfied:      ${plan.satisfied}`)
@@ -1779,6 +2266,10 @@ async function runImport(args) {
     if (plan.refusals.length > 0) {
       for (const refusal of plan.refusals) console.error(`\nrefused: ${refusal}`)
       return 1
+    }
+    if (plan.alreadyApplied) {
+      console.log("\nalready imported and fully applied — no-op.")
+      return 0
     }
     if (args.dryRun) {
       console.log("\ndry run — nothing written.")
@@ -1834,7 +2325,7 @@ async function main() {
   }
   const args = parsed.value
   if (args.command === "export") {
-    await runExport(args)
+    process.exitCode = await runExport(args)
     return
   }
   if (args.command === "import") {

@@ -35,6 +35,20 @@
  *  that a consumer of a re-describe output gets `undefined` and stops, instead
  *  of silently recording one model's digests against another model's vectors.
  *
+ *  CONFIG_JSON IS AN ALLOWLIST, and it is one now rather than being called one.
+ *  Three places describe it that way; what enforced it was a three-character
+ *  blocklist ("/", "\", "$"), so a bare filename or a single directory segment
+ *  went straight through. Every string that reaches `config_json` is now looked
+ *  up by FIELD NAME in `CONFIG_STRING_RULES` and checked against that field's own
+ *  value space — six enumerations, three sha256 digests, and one runtime whose
+ *  NAME is enumerated and only whose version is free. A field with no rule is
+ *  refused. `model_version`, the one value that comes from argv and the one hole
+ *  in §4's "never argv, never a path", is validated as a tag in
+ *  `requireModelVersion`, which `buildIngestInput` calls for itself so the check
+ *  is not skippable by calling the assembler directly. This matters because
+ *  `config_json` travels to production in the face-work artifact and this
+ *  repository is public.
+ *
  *  §15 (no photo snooping): this script's <run-dir>/manifest path is its own
  *  explicit argv, which is the one thing the rule permits — it is not
  *  searching a photo library. It never reads a photograph; only JSONL records
@@ -100,7 +114,9 @@ const USAGE = `Usage: node scripts/vision/ingest-faces.js <run-dir> [options]
 
   --model-version TAG       Descriptor model tag. Required for the main pass —
                              refuses to guess; a model swap must never silently
-                             mix descriptor spaces.
+                             mix descriptor spaces. Letters, digits, ".", "-"
+                             and "_", at most 64 characters: it is written to
+                             vision_ingests and travels from there to production.
   --replace                 Soft-delete this run's target (media_id, model_version)
                              pairs' previous 'cli' rows before inserting. Without
                              it, a pair that already has live 'cli' rows is refused.
@@ -357,32 +373,136 @@ export function readTiming(runDir) {
   )
 }
 
+// --- The config_json allowlist, and it is one ---------------------------------
+//
+// §4 promises "never a filesystem path, never argv, never an environment
+// variable", and three places call this an ALLOWLIST. What stood here was a
+// three-character BLOCKLIST: it rejected "/", "\" and "$", so anything without
+// one rode straight through — a model filename (`det_10g.onnx`), a photo
+// directory's name (`wedding-photos-raw`), an environment variable's NAME. On a
+// public repository whose config_json travels to production, "does not contain a
+// slash" is not a description of what may be recorded.
+//
+// So: a closed list of KEYS, each with its own value space. Six of the nine
+// string fields have exactly two or three legal values and are enumerated; three
+// are content digests and must be 64 hex characters. The one genuinely free
+// field, `runtime`, is the engine's self-description — its NAME is enumerated
+// and only its version is free, so a filename cannot be one.
+//
+// Adding a field means adding its rule here. A field with no rule is refused,
+// which is the direction an allowlist is supposed to fail in.
+
+const DIGITS = "0123456789"
+const LOWER = "abcdefghijklmnopqrstuvwxyz"
+const HEX = `${DIGITS}abcdef`
+
+/** Inference runtimes this project's engine may report. `tmp/rig/engine.mjs`
+ *  builds `` `onnxruntime-node ${version}` ``; the rest are here so a deliberate
+ *  backend swap is a one-line reviewed change rather than a reason to loosen the
+ *  rule back into a blocklist. */
+const RUNTIME_NAMES = Object.freeze([
+  "onnxruntime-node",
+  "onnxruntime-web",
+  "onnxruntime",
+  "wasm",
+  "webgpu",
+  "coreml",
+  "cpu",
+  "cuda",
+])
+
+/** Version characters. Letters and dots and dashes ("1.22.0-rc.1"), plus the
+ *  literal "unknown" the engine falls back to when ORT reports no version. */
+const VERSION_CHARS = `${DIGITS}${LOWER}.-+`
+
+/** @param {string} value @param {string} allowed @returns {boolean} */
+function charsFrom(value, allowed) {
+  for (const character of value) if (!allowed.includes(character)) return false
+  return true
+}
+
+/** `<name>` or `<name> <version>`, name from the list above.
+ *  @param {string} value @returns {boolean} */
+function isRuntimeString(value) {
+  const words = value.split(" ")
+  if (words.length > 2) return false
+  if (!RUNTIME_NAMES.includes(words[0])) return false
+  if (words.length === 1) return true
+  return words[1].length > 0 && words[1].length <= 32 && charsFrom(words[1], VERSION_CHARS)
+}
+
+/** @param {ReadonlyArray<string>} values
+ *  @returns {{ describe: string, check: (value: string) => boolean }} */
+function oneOf(values) {
+  return {
+    describe: values.map((value) => `"${value}"`).join(" or "),
+    check: (value) => values.includes(value),
+  }
+}
+
 /**
- * §4's "never a filesystem path, never argv, never an environment variable",
- * enforced instead of promised.
- *
- * Every string that reaches `config_json` goes through here. A path contains a
- * separator, an unexpanded env reference contains `$`, and neither belongs in
- * an object that travels to production out of a public repository — so rather
- * than trusting the assembly below to stay careful, the check is mechanical and
- * a violation is a loud failure at ingest time.
+ * The closed list. Every string that reaches `config_json` is looked up here by
+ * FIELD NAME and checked against that field's own value space.
+ * @type {Readonly<Record<string, { describe: string, check: (value: string) => boolean }>>}
+ */
+const CONFIG_STRING_RULES = Object.freeze({
+  runtime: {
+    describe: `an inference runtime (${RUNTIME_NAMES.join(", ")}) with an optional version`,
+    check: isRuntimeString,
+  },
+  detectChannels: oneOf(["rgb", "bgr"]),
+  embedChannels: oneOf(["rgb", "bgr"]),
+  topKStage: oneOf(["pre", "post"]),
+  // `in-graph` — the network normalises its own input. `arcface` — the engine
+  // applies (x − 127.5) / 127.5 first. There is no third answer: a fourth
+  // normalisation is a new descriptor space and a schema-version bump.
+  embedNorm: oneOf(["in-graph", "arcface"]),
+  // Where the mode came from. `RIG_EMBED_NORM` is the engine's own sentinel for
+  // "an override was used" — the variable's NAME, never its value, and listed
+  // explicitly rather than admitted by a rule that would admit any token.
+  embedNormSource: oneOf(["sha256-table", "digest-table", "override", "RIG_EMBED_NORM"]),
+  detectorSha256: { describe: "a 64-character sha256", check: isSha256 },
+  embedderSha256: { describe: "a 64-character sha256", check: isSha256 },
+  engineSha256: { describe: "a 64-character sha256", check: isSha256 },
+})
+
+/** @param {string} value @returns {boolean} */
+function isSha256(value) {
+  return value.length === 64 && charsFrom(value, HEX)
+}
+
+/**
+ * One allowlisted string, or a refusal naming the field and its value space.
  * @param {unknown} value
  * @param {string} field
  * @returns {string}
  */
 function safeString(value, field) {
+  const rule = CONFIG_STRING_RULES[field]
+  if (!rule) {
+    throw new Error(
+      `config_json: "${field}" has no allowlist rule. Add one to CONFIG_STRING_RULES in ` +
+        `scripts/vision/ingest-faces.js — an unlisted field is refused, not admitted.`,
+    )
+  }
   if (typeof value !== "string" || value.length === 0) {
     throw new Error(`timing.json: provenance.${field} is missing or not a string`)
   }
-  if (value.includes("/") || value.includes("\\") || value.includes("$")) {
+  if (!rule.check(value)) {
     throw new Error(
-      `timing.json: provenance.${field} looks like a path or an environment reference. ` +
-        `config_json is an allowlist of versions, digests and thresholds; it never carries ` +
-        `a path, argv or an environment variable.`,
+      `timing.json: provenance.${field} is "${value}", which is not ${rule.describe}. ` +
+        `config_json is an ALLOWLIST of versions, digests and thresholds — it never carries ` +
+        `a path or an environment reference, an argv value, or a filename, and "does not ` +
+        `contain a slash" was never the same claim.`,
     )
   }
   return value
 }
+
+/** `model_version` characters. A tag, not a sentence: this project's is
+ *  `sface128-n127.5d128-nomirror`. */
+const MODEL_VERSION_CHARS = `${DIGITS}${LOWER}${LOWER.toUpperCase()}.-_`
+const MODEL_VERSION_MAX = 64
 
 /** A finite number, or null. Anything else — a path, a flag, an object — cannot
  *  be one, so this is the other half of the allowlist's mechanical enforcement.
@@ -499,7 +619,10 @@ export function buildIngestInput({ timing, faces, modelVersion }) {
     // shown to be about the same data. Sixteen hex characters: not a path, not
     // a name, and not a measurement anyone can read a photograph out of.
     datasetId: computeDatasetId(faces),
-    modelVersion,
+    // Re-checked here as well as in main(): this is the assembler, and a caller
+    // that reached it without going through the CLI (a test, a later script)
+    // must not be the one path by which argv-shaped text lands on the row.
+    modelVersion: requireModelVersion(modelVersion),
     detectorSha256,
     embedderSha256,
     engineSha256,
@@ -738,6 +861,13 @@ export function backfillFromManifest({ db, manifest, dryRun }) {
  * The main pass's non-negotiable: never guess a descriptor model. Pulled out
  * of `main()` as its own function so the refusal is unit-testable without
  * spinning up a database.
+ *
+ * It also VALIDATES, and that is not decoration. `model_version` is the one
+ * value on `vision_ingests` that comes straight from argv — it was the single
+ * hole in §4's "never argv, never a path", since it reaches `config_json`'s own
+ * row and then travels onward in the portable artifact. A tag is a tag: letters,
+ * digits, `.`, `-` and `_`, bounded. This project's is
+ * `sface128-n127.5d128-nomirror`.
  * @type {Types.requireModelVersion}
  */
 export function requireModelVersion(modelVersion) {
@@ -745,6 +875,15 @@ export function requireModelVersion(modelVersion) {
     throw new Error(
       "--model-version is required for the main pass (refusing to guess a descriptor model — " +
         "a model swap must never silently mix descriptor spaces)",
+    )
+  }
+  if (modelVersion.length > MODEL_VERSION_MAX || !charsFrom(modelVersion, MODEL_VERSION_CHARS)) {
+    throw new Error(
+      `--model-version "${modelVersion}" is not a tag. It must be at most ${MODEL_VERSION_MAX} ` +
+        `letters, digits, ".", "-" or "_" (this project's is ` +
+        `"sface128-n127.5d128-nomirror"). It is written to vision_ingests and travels from ` +
+        `there to production in the face-work artifact, so a path, an environment reference or ` +
+        `a line of prose may not become one.`,
     )
   }
   return modelVersion
