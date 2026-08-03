@@ -46,6 +46,7 @@
 
 import { randomUUID } from "node:crypto"
 
+import { PAGINATION } from "../../types.js"
 import { sendJson, parseBody } from "../../core/http.js"
 import { log, actorId } from "../../core/utils.js"
 import { getClientIp } from "../../core/rate-limit.js"
@@ -72,6 +73,8 @@ import {
   routeStatesOf,
   routeStateCounts,
   facesWithSignals,
+  setAsideMedia,
+  countSetAsideMedia,
 } from "../../db/media-faces.js"
 import { createBatch, recordAssignment } from "../../db/face-assignments.js"
 import { now } from "../../db/utils.js"
@@ -962,6 +965,52 @@ export async function propagate(req, res, { session }) {
   // `batchId` travels back so the pass is revocable by whoever applied it —
   // without it the batch exists but nothing outside the database knows its name.
   return sendJson(res, 200, { success: true, changed, batchId })
+}
+
+/**
+ * The photographs that hold a set-aside face — the door to the escape hatch.
+ *
+ * `assignOne` made a `set_aside` face nameable and the per-photograph dialog put
+ * it on screen, but BOTH are reached from an "Open photo" button rendered next
+ * to a face chip or an ask row. A photograph whose faces are all set aside, or
+ * all already named, is in neither list — so nothing rendered a button for it
+ * and its faces stayed unreachable. This route is the only list here whose rows
+ * are photographs rather than faces, and that is exactly why it closes the gap.
+ *
+ * Ungraded faces do not appear as rows, deliberately — see `setAsideMedia` for
+ * the argument, which is that they are reachable three other ways and a list of
+ * "what nothing else can reach" should not be padded with them. They are still
+ * counted in each row's `liveFaces`.
+ *
+ * Read-only, and it names nothing: it returns ids, a file key and three counts,
+ * never a descriptor and never anything about what a photograph shows.
+ * @type {Types.faceSetAsideHandler}
+ */
+export async function setAside(req, res) {
+  const urlObj = new URL(req.url ?? "/", `http://${req.headers.host}`)
+  const limitParam = urlObj.searchParams.get("limit")
+  const offsetParam = urlObj.searchParams.get("offset")
+  const parsedLimit = limitParam ? parseInt(limitParam, 10) : PAGINATION.DEFAULT_PAGE_SIZE
+  const limit =
+    Number.isNaN(parsedLimit) || parsedLimit < 1
+      ? PAGINATION.DEFAULT_PAGE_SIZE
+      : Math.min(parsedLimit, PAGINATION.MAX_PAGE_SIZE)
+  const parsedOffset = offsetParam ? parseInt(offsetParam, 10) : 0
+  const offset = Number.isNaN(parsedOffset) || parsedOffset < 0 ? 0 : parsedOffset
+
+  // Field by field, like every payload in this file — never a spread of a DB row.
+  const photos = setAsideMedia({ limit, offset }).map((row) => ({
+    mediaId: row.media_id,
+    fileKey: row.file_key,
+    setAsideFaces: row.set_aside_faces,
+    unnamedSetAside: row.unnamed_set_aside,
+    liveFaces: row.live_faces,
+  }))
+
+  // `limit`/`offset` are echoed back as the values actually APPLIED, not as
+  // they arrived: a client that asked for 5000 needs to know it got 100, or its
+  // "show more" arithmetic silently pages past rows nobody ever saw.
+  return sendJson(res, 200, { photos, total: countSetAsideMedia(), limit, offset })
 }
 
 /**

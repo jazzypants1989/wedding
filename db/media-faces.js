@@ -299,6 +299,70 @@ export function routeStateCounts() {
 }
 
 /**
+ * The photographs holding at least one live `set_aside` face, media id
+ * ascending, one page at a time.
+ *
+ * **Why a query about PHOTOGRAPHS belongs in a file about faces.** Every other
+ * list the Faces tab draws is a list of faces, and every one of them filters
+ * `set_aside` out. So a photograph whose faces are *all* set aside — or all
+ * already named — appears in no group's chips and no queue row, nothing renders
+ * a way into the per-photograph view for it, and its faces are unreachable
+ * through the UI entirely. The escape hatch existed; there was no door to it.
+ * This is the query that finds those photographs.
+ *
+ * **Ungraded (`route_state IS NULL`) does NOT put a photograph in this list, and
+ * that is a decision rather than a filter that happened to drop them.** An
+ * ungraded face is shown by the groups, shown by the ask queue, and assignable
+ * in bulk (`BULK_ASSIGNABLE` in api/admin/faces.js) — it is already reachable
+ * several ways, so listing it here would pad a list whose entire meaning is
+ * "these are the ones nothing else can reach". What *would* be D8 again is
+ * letting an ungraded row quietly change the arithmetic, so it does not: the
+ * HAVING clause counts only `set_aside`, while `live_faces` counts every live
+ * face on the photograph, ungraded ones included. A row can never claim a
+ * photograph holds three faces when it holds seven.
+ *
+ * `unnamed_set_aside` is the count that actually moves as the work gets done.
+ * Naming a set-aside face does not re-grade it, so `set_aside_faces` alone would
+ * sit still forever and the list would never look any closer to finished.
+ *
+ * Ordered by media id — NOT by how many faces are set aside. The id is
+ * immutable, so paging through while naming faces cannot make a photograph jump
+ * between pages and be skipped or served twice; a count-ordered list would.
+ * Never selects `descriptor`; this shape goes to the admin UI as JSON.
+ * @type {Types.setAsideMedia}
+ */
+export function setAsideMedia({ limit, offset }) {
+  return sql`SELECT m.id AS media_id, m.file_key AS file_key,
+      SUM(CASE WHEN mf.route_state = 'set_aside' THEN 1 ELSE 0 END) AS set_aside_faces,
+      SUM(CASE WHEN mf.route_state = 'set_aside' AND mf.face_identity_id IS NULL THEN 1 ELSE 0 END)
+        AS unnamed_set_aside,
+      COUNT(mf.id) AS live_faces
+    FROM media m
+    JOIN media_faces mf ON mf.media_id = m.id AND mf.deleted_at IS NULL
+    WHERE m.deleted_at IS NULL
+    GROUP BY m.id
+    HAVING SUM(CASE WHEN mf.route_state = 'set_aside' THEN 1 ELSE 0 END) > 0
+    ORDER BY m.id
+    LIMIT ${limit} OFFSET ${offset}`.all()
+}
+
+/**
+ * How many photographs `setAsideMedia` would return in total, so a page can say
+ * how much is left. Same three conditions as the list — live face, `set_aside`,
+ * live media — expressed as a DISTINCT count rather than a grouped subquery,
+ * because nothing here needs the per-photograph tallies.
+ * @type {Types.countSetAsideMedia}
+ */
+export function countSetAsideMedia() {
+  /** @type {{ total: number } | undefined} */
+  const row = sql`SELECT COUNT(DISTINCT mf.media_id) AS total
+    FROM media_faces mf
+    JOIN media m ON m.id = mf.media_id AND m.deleted_at IS NULL
+    WHERE mf.deleted_at IS NULL AND mf.route_state = 'set_aside'`.get()
+  return row?.total ?? 0
+}
+
+/**
  * Every live, undecided, descriptor-bearing face.
  *
  * ⚠ **Carries `route_state` but does NOT filter on it, deliberately.** Routing

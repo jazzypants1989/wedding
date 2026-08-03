@@ -332,6 +332,11 @@ route("POST", "/api/admin/faces/unassign", adminFaces.unassign, { admin: true })
 route("POST", "/api/admin/faces/not-a-face", adminFaces.notAFace, { admin: true })
 route("GET", "/api/admin/faces/propagations", adminFaces.propagations, { admin: true })
 route("POST", "/api/admin/faces/propagate", adminFaces.propagate, { admin: true })
+// The list of PHOTOGRAPHS holding a set-aside face — the entry point to the
+// route above it. Every other list here is a list of faces and all of them
+// filter `set_aside` out, so a photograph whose faces are all set aside reached
+// none of them and `assign-one` could not be got at for its faces.
+route("GET", "/api/admin/faces/set-aside", adminFaces.setAside, { admin: true })
 // Per-photo face view, alongside the curated-gallery /api/admin/media/:id/* routes.
 route("GET", "/api/admin/media/:id/faces", adminFaces.forMedia, { admin: true })
 
