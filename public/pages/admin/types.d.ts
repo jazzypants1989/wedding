@@ -1413,8 +1413,8 @@ export interface FaceChipEntry {
  *  already-confirmed faces), pre-filling — never auto-submitting — the
  *  group's name input. */
 export interface FaceGroupSuggestion {
-  guestId: number
-  guestName: string
+  personId: number
+  personName: string
   margin: number
 }
 
@@ -1441,10 +1441,12 @@ export interface FacesOverviewResponse {
 
 /** One prototype-match candidate offered for an ask-queue face. */
 export interface FaceCandidate {
-  guestId: number
-  guestName: string
+  personId: number | null
+  personName: string | null
   distance: number
   margin: number
+  /** How often this person already appears alongside the others in this photo. */
+  cooccurrence: number
 }
 
 /** One row of GET /api/admin/faces/queue, ordered by `unlocks` descending —
@@ -1470,8 +1472,8 @@ export interface FacePropagation extends FaceChipEntry {
   fromFaceId: number
   /** The confirmed face the identity is coming from. */
   from: FaceChipEntry | null
-  guestId: number | null
-  guestName: string | null
+  personId: number | null
+  personName: string | null
   /** Box overlap across the frame pair. */
   iou: number
   /** Cosine distance between the two descriptors — rule 3's corroboration. */
@@ -1483,14 +1485,71 @@ export interface FacePropagationsResponse {
   items: FacePropagation[]
 }
 
-/** POST /api/admin/faces/assign response. `identified` is how many faces the
- *  call just identified (usually === the request's faceIds.length). */
+/** POST /api/admin/faces/assign response. `changed` is how many face rows the
+ *  call actually moved onto the identity — it can be fewer than the request's
+ *  faceIds.length when some were already assigned to that same person. */
 export interface FaceAssignResponse {
-  ok: boolean
-  identified: number
+  success: boolean
+  personId: number
+  identityId: number
+  changed: number
 }
 
-/** Load the Faces tab's overview + ask queue + guest roster, then render. */
+/** A person in the photographed cast — who a face belongs to. Distinct from a
+ *  guest, which is an INVITATION: one row per party, and much of the cast
+ *  (partners under someone else's row, children, the photographer, vendors) is
+ *  not on it at all. `guestId` is the optional link back to that roster. */
+export interface PersonEntry {
+  id: number
+  displayName: string
+  guestId: number | null
+  /** Null when the person is off-roster, or when their guest row is deleted. */
+  guestName: string | null
+  notes: string | null
+  /** Live face_identities rows pointing at this person. A person with any
+   *  cannot be deleted — the delete endpoint refuses and says so. */
+  identities: number
+  /** Live faces those identities carry. */
+  faces: number
+}
+
+/** GET /api/admin/people. */
+export interface PeopleApiResponse {
+  people: PersonEntry[]
+}
+
+/** One person as the write endpoints echo them back (no roll-up counts). */
+export interface PersonPayload {
+  id: number
+  displayName: string
+  guestId: number | null
+  notes: string | null
+}
+
+/** POST /api/admin/people. A 409 instead means a live person already has this
+ *  name; creating a second one is possible but must be confirmed explicitly. */
+export interface PersonCreateResponse {
+  success: boolean
+  person: PersonPayload
+}
+
+/** PATCH /api/admin/people/:id. */
+export interface PersonUpdateResponse {
+  success: boolean
+  person: PersonPayload
+}
+
+/** POST /api/admin/people/merge. `carriedGuestLink` is true when the source's
+ *  roster link moved to the target because the target had none; an existing
+ *  link on the target is never overwritten. */
+export interface PersonMergeResponse {
+  success: boolean
+  movedFaces: number
+  movedIdentities: number
+  carriedGuestLink: boolean
+}
+
+/** Load the Faces tab's overview + ask queue + people list, then render. */
 export function loadFaceAssignment(): Promise<void>
 
 /** Wire up the Faces tab (refresh button, delegated click/keydown/input on

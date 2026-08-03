@@ -332,6 +332,72 @@ export function createTables(db) {
   `)
 }
 
+/**
+ * Run a table rebuild — SQLite's only way to change a column's nullability, its
+ * type or its foreign keys — with the four safeguards this pattern needs. Every
+ * one of them exists because omitting it fails SILENTLY.
+ *
+ * 1. `PRAGMA foreign_keys = OFF` **before** `BEGIN`. The pragma is a no-op
+ *    inside an open transaction, so setting it after is the same as not setting
+ *    it. Without it, `DROP TABLE parent` performs an implicit delete of every
+ *    row and FIRES each child's `ON DELETE` action — `SET NULL` children are
+ *    silently blanked, `CASCADE` children silently deleted, no error raised,
+ *    and the migration records itself as applied. That damage is invisible on a
+ *    fresh install (the tables are empty) and total on a populated one.
+ * 2. **One transaction** around the whole rebuild, so a mid-rebuild throw cannot
+ *    leave a half-built schema that the next boot re-enters against.
+ * 3. **`PRAGMA foreign_key_check` before COMMIT, not after.** The check runs
+ *    fine inside a transaction even with enforcement off, and running it there
+ *    means a violation rolls the rebuild back whole. Checking after COMMIT
+ *    would leave the new schema in place and the migration unrecorded — and the
+ *    next boot, finding the rebuild already done, would skip straight past the
+ *    alarm and record the migration as applied.
+ * 4. **ROLLBACK first, pragma second** in the failure path. Restoring
+ *    `foreign_keys = ON` while a transaction is still open is itself a no-op,
+ *    which would leave this long-lived singleton connection running with
+ *    foreign keys OFF for the rest of the process.
+ *
+ * `relax_comment_account_null` above predates this helper and has none of the
+ * four (two bare `exec` calls, no transaction, no check). It is left as-is
+ * because it has already run everywhere; it is not a shape to copy.
+ *
+ * The callback must do the CREATE `_new` / INSERT SELECT / DROP / RENAME and
+ * recreate every index and trigger the DROP took with it. **Preserve `id` in
+ * the copy** — with foreign keys off, nothing catches a child row left pointing
+ * at a renumbered parent.
+ *
+ * @param {import('node:sqlite').DatabaseSync} db
+ * @param {string} label migration name, used in error messages
+ * @param {() => void} rebuild runs inside the transaction, foreign keys already off
+ */
+function rebuildTable(db, label, rebuild) {
+  db.exec("PRAGMA foreign_keys = OFF")
+  let committed = false
+  try {
+    db.exec("BEGIN")
+    rebuild()
+
+    const violations = db.prepare("PRAGMA foreign_key_check").all()
+    if (violations.length > 0) {
+      throw new Error(
+        `${label}: PRAGMA foreign_key_check reported ${violations.length} violation(s) — rolling the rebuild back`,
+      )
+    }
+
+    db.exec("COMMIT")
+    committed = true
+  } finally {
+    if (!committed) {
+      try {
+        db.exec("ROLLBACK")
+      } catch {
+        /* already rolled back */
+      }
+    }
+    db.exec("PRAGMA foreign_keys = ON")
+  }
+}
+
 /** @type {Types.runMigrations} */
 export function runMigrations(db) {
   const applied = db.prepare("SELECT 1 FROM migrations WHERE name = ?")
@@ -1163,22 +1229,9 @@ export function runMigrations(db) {
   // row and FIRES media_faces' `ON DELETE SET NULL` — silently nulling every
   // face assignment in the database, with no error, and only on a database
   // that actually has assignments (i.e. production, not a fresh install).
-  // Hence, in order:
-  //   1. `PRAGMA foreign_keys = OFF` BEFORE opening the transaction — the
-  //      pragma is a NO-OP inside an open transaction;
-  //   2. the whole rebuild in ONE transaction, so a mid-rebuild throw cannot
-  //      leave a half-built schema behind (no other migration in this file
-  //      uses one; this one cannot afford not to);
-  //   3. `id` PRESERVED in the copy — with foreign keys off, nothing would
-  //      catch every media_faces.face_identity_id dangling;
-  //   4. in the failure path ROLLBACK runs FIRST, then the finally restores
-  //      `foreign_keys = ON` — restoring the pragma while a transaction is
-  //      still open is itself a silent no-op, so the order matters. (Do not
-  //      copy relax_comment_account_null's shape above: its two bare exec
-  //      calls leave the long-lived connection running with FKs off if the
-  //      rebuild throws mid-way.)
-  //   5. after COMMIT, `PRAGMA foreign_key_check` must come back empty, and
-  //      that is asserted here rather than hoped.
+  // `rebuildTable` above owns that hazard and the three others that travel with
+  // it; read its comment before touching this. The one safeguard it CANNOT own
+  // is preserving `id` in the copy — see the INSERT ... SELECT below.
   //
   // Existing rows are MIGRATED, never refused (a refusing migration stops the
   // server booting): one person per distinct guest_id, display name taken from
@@ -1219,12 +1272,7 @@ export function runMigrations(db) {
       ).map((c) => c.name),
     )
     if (!fiCols.has("person_id")) {
-      // Point 1 above: MUST precede BEGIN, or it silently does nothing.
-      db.exec("PRAGMA foreign_keys = OFF")
-      let committed = false
-      try {
-        db.exec("BEGIN")
-
+      rebuildTable(db, "add_people", () => {
         // One person per distinct guest the old identities reference.
         // guest_id was NOT NULL, so there is no null-guest case to handle.
         db.exec(`
@@ -1277,6 +1325,10 @@ export function runMigrations(db) {
           INSERT INTO face_identities_new
             (id, person_id, confirmed_by, confirmed_at, provenance,
              created_at, updated_at, deleted_at)
+            -- fi.id is carried across DELIBERATELY. Renumbering here would
+            -- leave every media_faces.face_identity_id pointing at a different
+            -- person's identity, and with foreign keys off for the rebuild
+            -- nothing would catch it.
             SELECT fi.id, p.id, fi.confirmed_by, fi.confirmed_at, fi.provenance,
                    fi.created_at, fi.updated_at, fi.deleted_at
             FROM face_identities fi
@@ -1335,32 +1387,7 @@ export function runMigrations(db) {
             UPDATE face_identities SET updated_at = datetime('now') WHERE id = NEW.id;
           END;
         `)
-
-        db.exec("COMMIT")
-        committed = true
-      } finally {
-        if (!committed) {
-          // ROLLBACK FIRST, pragma second — the other order re-enables
-          // foreign keys inside a still-open transaction, which is a no-op,
-          // and the connection would run FK-less for the rest of the process.
-          try {
-            db.exec("ROLLBACK")
-          } catch {
-            /* already rolled back */
-          }
-        }
-        db.exec("PRAGMA foreign_keys = ON")
-      }
-
-      // Point 5: with foreign keys re-enabled, the whole database must be
-      // referentially clean — every media_faces.face_identity_id must still
-      // point at a face_identities row that exists.
-      const violations = db.prepare("PRAGMA foreign_key_check").all()
-      if (violations.length > 0) {
-        throw new Error(
-          `add_people: PRAGMA foreign_key_check reported ${violations.length} violation(s) after the rebuild`,
-        )
-      }
+      })
     }
     record.run("add_people")
   }

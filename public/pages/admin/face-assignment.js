@@ -1,9 +1,18 @@
-/** @file Faces tab — assisted face tagging against the guest roster
+/** @file Faces tab — assisted face tagging against the photographed CAST
  *  (docs/post-wedding/SPEC-vision-lab.md §6.5, SESSION-2-vision.md §4b). A
- *  list, never a wizard: three sections — unnamed Groups (largest first), an
- *  Ask queue ordered by what confirming would unlock, and a minimal Identified
- *  summary. Every confirm is an immediate POST; there is no batch "finish" step
- *  and no keyboard-trapping modal, so the page is abandonable at any point.
+ *  list, never a wizard: unnamed Groups (largest first), an Ask queue ordered
+ *  by what confirming would unlock, Same moment (must-link propagations), a
+ *  minimal Identified summary, and People. Every confirm is an immediate POST;
+ *  there is no batch "finish" step and no keyboard-trapping modal, so the page
+ *  is abandonable at any point.
+ *
+ *  PEOPLE, NOT GUESTS. Faces are assigned to a `people` row, not to a `guests`
+ *  row. A guest is an INVITATION — one per party, with a unique invite code —
+ *  and much of the cast is not on that list at all: partners recorded under
+ *  someone else's row, children, the photographer, vendors. A person carries an
+ *  optional `guestId` link back to the roster, which is what the second
+ *  datalist in index.html is for. Assigning by name is not an API shape: the
+ *  name input resolves to a personId here and the request carries the id.
  *
  *  CONTRACT NOTE: there is no crop endpoint. Faces are shown by loading the
  *  photo's existing `/media/:fileKey/thumb` variant and cropping to the face's
@@ -56,6 +65,28 @@ let propagationData = null
 let peopleData = []
 let peopleLoaded = false
 
+/** Guest roster cache, used ONLY to link a person to an invitation in the
+ *  People section (mirrors thank-you.js's ensureGuestsLoaded — a per-module
+ *  cache, not shared admin state). Faces are never named against this list;
+ *  they are named against `peopleData`. */
+/** @type {{ id: number, name: string }[]} */
+let guestOptions = []
+let guestsLoaded = false
+
+/**
+ * Fold a name to its comparison key. MIRRORS `nameKey` in db/people.js, which
+ * is the authority — the server refuses a duplicate create on the same rule, so
+ * if these two disagree the UI offers to create someone the server then
+ * rejects. NFC first because a combining accent and a precomposed one look
+ * identical and compare unequal; `toLowerCase` after because it is
+ * Unicode-aware where SQLite's COLLATE NOCASE folds ASCII only. No regex —
+ * both are string methods.
+ * @param {string} name
+ */
+function nameKey(name) {
+  return name.normalize("NFC").toLowerCase()
+}
+
 /** Faces excluded ("reject from this action") per group, keyed by
  *  `String(group.key)`. Client-only until "Not a face" or a reload. */
 const excludedByGroup = /** @type {Map<string, Set<number>>} */ (new Map())
@@ -67,6 +98,10 @@ const dismissedAsk = /** @type {Set<number>} */ (new Set())
 /** Face ids with a mutation in flight — guards double-submit from a fast
  *  double-click or a held-down keyboard shortcut. */
 const pending = /** @type {Set<number>} */ (new Set())
+
+/** The same guard for the People section, keyed by person id. Separate set:
+ *  face ids and person ids are different keyspaces and would collide. */
+const pendingPeople = /** @type {Set<number>} */ (new Set())
 
 // ---- load + top-level render ----------------------------------------------
 
@@ -80,6 +115,7 @@ export async function loadFaceAssignment() {
       api("/api/admin/faces/queue"),
       api("/api/admin/faces/propagations"),
       refreshPeople(),
+      ensureGuestsLoaded(),
     ])
     overview = /** @type {Types.FacesOverviewResponse} */ (ov)
     queueData = /** @type {Types.FacesQueueResponse} */ (q)
@@ -110,6 +146,29 @@ function renderPeopleDatalist() {
   const dl = document.getElementById("faces-people-roster")
   if (!dl) return
   dl.innerHTML = html`${peopleData.map((p) => html`<option value="${p.displayName}"></option>`)}`
+}
+
+/** Load the guest roster ONCE, for the People section's "link an invitation"
+ *  control only — same fetch as the thank-you tab's picker. Non-fatal: without
+ *  it the link inputs render disabled and everything else still works. */
+async function ensureGuestsLoaded() {
+  if (guestsLoaded) return
+  try {
+    const data = /** @type {Types.GuestsApiResponse} */ (
+      await api("/api/admin/guests?limit=1000&offset=0")
+    )
+    guestOptions = data.guests.map((g) => ({ id: g.id, name: g.name }))
+    guestsLoaded = true
+    renderGuestDatalist()
+  } catch (err) {
+    console.error("Failed to load guest roster for person-to-invitation linking:", err)
+  }
+}
+
+function renderGuestDatalist() {
+  const dl = document.getElementById("faces-guest-roster")
+  if (!dl) return
+  dl.innerHTML = html`${guestOptions.map((g) => html`<option value="${g.name}"></option>`)}`
 }
 
 function renderCounts() {
@@ -217,14 +276,14 @@ function groupCardMarkup(group) {
 }
 
 /**
- * Resolve a typed name to exactly one person by case-insensitive exact match
- * (no regex — plain lower-casing + equality).
+ * Resolve a typed name to exactly one person, via `nameKey` — the same fold the
+ * server uses to refuse a duplicate create (no regex, string methods only).
  * @param {string} name
  * @returns {{ status: "ok", id: number } | { status: "ambiguous" } | { status: "none" }}
  */
 function resolvePersonByName(name) {
-  const lower = name.toLowerCase()
-  const matches = peopleData.filter((p) => p.displayName.toLowerCase() === lower)
+  const key = nameKey(name)
+  const matches = peopleData.filter((p) => nameKey(p.displayName) === key)
   if (matches.length === 1) return { status: "ok", id: matches[0].id }
   if (matches.length > 1) return { status: "ambiguous" }
   return { status: "none" }
@@ -527,15 +586,18 @@ async function confirmAskCandidate(faceId, candidateIndex) {
   if (!item) return
   const candidate = item.candidates[candidateIndex]
   if (!candidate) return
+  // personId is null when the prototype's person row vanished between the
+  // queue being built and this click — there is nothing to assign to.
+  if (candidate.personId === null) return
   if (pending.has(faceId)) return
   pending.add(faceId)
   const nextFocusId = nextAskFaceId(faceId)
   try {
     await api("/api/admin/faces/assign", {
       method: "POST",
-      body: JSON.stringify({ faceIds: [faceId], guestId: candidate.guestId }),
+      body: JSON.stringify({ faceIds: [faceId], personId: candidate.personId }),
     })
-    showSuccess(`Assigned to ${candidate.guestName}`)
+    showSuccess(`Assigned to ${candidate.personName}`)
     await loadFaceAssignment()
     focusAskRow(nextFocusId)
   } catch (err) {
@@ -632,7 +694,7 @@ function propagationRowMarkup(item) {
       ${item.from ? renderFaceChip(item.from, { dimmed: true, toggleable: false }) : ""}
       ${renderFaceChip(item, { dimmed: false, toggleable: false })}
       <div class="face-propagation-main">
-        <span class="face-propagation-name">${item.guestName || "Unknown guest"}</span>
+        <span class="face-propagation-name">${item.personName || "Unknown person"}</span>
         <span class="text-muted"
           >overlap ${item.iou.toFixed(2)} · distance ${item.distance.toFixed(2)}</span
         >
@@ -697,6 +759,266 @@ function identifiedMarkup() {
   return html`<p class="faces-identified-summary">
     ${n} face${n === 1 ? "" : "s"} identified so far.
   </p>`
+}
+
+// ---- People (the photographed cast) ---------------------------------------
+
+/**
+ * The roster of people faces get assigned to. A person is who a face belongs
+ * to; a guest is an INVITATION — one row per party — and much of the cast
+ * (partners recorded under someone else's row, children, the photographer,
+ * vendors) is not on it at all. `guestId` is the optional link back.
+ *
+ * A list, like every other section here: no wizard, no modal. Each row does its
+ * own rename / link / merge / delete against a single person, and every action
+ * is an immediate request.
+ *
+ * There is no "create" control in this section on purpose. A person is created
+ * from a group's name input, where the admin is already looking at the faces
+ * they mean — creating one from a bare list is how you end up with two rows for
+ * the same human and no way to tell which is which.
+ */
+function peopleMarkup() {
+  if (!peopleLoaded) {
+    return html`<p class="faces-empty text-muted">Loading people…</p>`
+  }
+  if (peopleData.length === 0) {
+    return html`<p class="faces-empty text-muted">
+      No people yet. Name a group above and the person is created there.
+    </p>`
+  }
+  return html`
+    <ul class="faces-people-list">
+      ${peopleData.map(personRowMarkup)}
+    </ul>
+    ${guestsLoaded
+      ? ""
+      : html`<p class="text-muted faces-people-note">
+          Guest roster unavailable — linking a person to an invitation is disabled until the next
+          refresh.
+        </p>`}
+  `
+}
+
+/** @param {Types.PersonEntry} person */
+function personRowMarkup(person) {
+  const others = peopleData.filter((p) => p.id !== person.id)
+  // person_id is NOT NULL on face_identities, so a person with live identities
+  // cannot be soft-deleted — say why up front rather than letting the button
+  // fail with a 409 the admin has to interpret.
+  const undeletable = person.identities > 0
+  return html`
+    <li class="faces-person-row" data-person-id="${person.id}">
+      <div class="faces-person-main">
+        <input type="text" class="person-name-input" value="${person.displayName}"
+          aria-label="Name" data-person-id="${person.id}" maxlength="200" />
+        <span class="text-muted faces-person-counts">
+          ${person.faces} face${person.faces === 1 ? "" : "s"} ·
+          ${person.identities} identit${person.identities === 1 ? "y" : "ies"}
+        </span>
+      </div>
+      <div class="faces-person-link">
+        ${person.guestId === null
+          ? html`<input type="text" class="person-guest-input" list="faces-guest-roster"
+              placeholder="Link an invitation…" aria-label="Link this person to a guest"
+              maxlength="200" ${guestsLoaded ? "" : "disabled"} />`
+          : html`<span class="faces-person-guest"
+                >invitation: ${person.guestName ?? "(deleted guest)"}</span
+              >
+              <button type="button" class="btn btn-secondary btn-sm person-unlink">
+                Unlink
+              </button>`}
+      </div>
+      <div class="faces-person-actions">
+        ${others.length > 0
+          ? html`<select class="person-merge-select" aria-label="Merge this person into">
+                <option value="">Merge into…</option>
+                ${others.map((o) => html`<option value="${o.id}">${o.displayName}</option>`)}
+              </select>
+              <button type="button" class="btn btn-secondary btn-sm person-merge" disabled>
+                Merge
+              </button>`
+          : ""}
+        <button type="button" class="btn btn-secondary btn-sm person-delete"
+          ${undeletable ? "disabled" : ""}
+          title="${undeletable
+            ? "Reassign or merge this person's faces before deleting them."
+            : "Delete this person"}">
+          Delete
+        </button>
+      </div>
+      <span class="faces-person-error" role="alert" hidden></span>
+    </li>
+  `
+}
+
+/** @param {number} personId */
+function findPersonRow(personId) {
+  const row = getElement("faces-body").querySelector(
+    `.faces-person-row[data-person-id="${personId}"]`,
+  )
+  return row instanceof HTMLElement ? row : null
+}
+
+/** @param {number} personId @param {string} msg */
+function showPersonError(personId, msg) {
+  const err = findPersonRow(personId)?.querySelector(".faces-person-error")
+  if (!(err instanceof HTMLElement)) return
+  err.textContent = msg
+  err.hidden = false
+}
+
+/** @param {number} personId */
+function hidePersonError(personId) {
+  const err = findPersonRow(personId)?.querySelector(".faces-person-error")
+  if (err instanceof HTMLElement) err.hidden = true
+}
+
+/**
+ * Run a people mutation, then reload the whole tab. A reload rather than a
+ * local patch because every one of these changes the group suggestions and the
+ * identified counts too — a merge especially.
+ * @param {number} personId
+ * @param {() => Promise<string>} mutate resolves to the success message
+ */
+async function runPersonAction(personId, mutate) {
+  if (pendingPeople.has(personId)) return
+  pendingPeople.add(personId)
+  hidePersonError(personId)
+  try {
+    showSuccess(await mutate())
+    await loadFaceAssignment()
+  } catch (err) {
+    showPersonError(personId, getErrorMessage(err))
+  } finally {
+    pendingPeople.delete(personId)
+  }
+}
+
+/** @param {HTMLInputElement} input */
+function handlePersonRename(input) {
+  const personId = Number(input.dataset.personId)
+  const person = peopleData.find((p) => p.id === personId)
+  if (!person) return
+  const name = input.value.trim()
+  if (!name) {
+    showPersonError(personId, "A person needs a name.")
+    return
+  }
+  if (name === person.displayName) return
+
+  void runPersonAction(personId, async () => {
+    await api(`/api/admin/people/${personId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ displayName: name }),
+    })
+    return `Renamed to ${name}`
+  })
+}
+
+/** Link a person to a roster guest, resolved from the typed name exactly the
+ *  way a group's name input resolves a person. @param {HTMLInputElement} input */
+function handlePersonLinkGuest(input) {
+  const row = input.closest(".faces-person-row")
+  if (!(row instanceof HTMLElement)) return
+  const personId = Number(row.dataset.personId)
+  const name = input.value.trim()
+  if (!name) return
+
+  const key = nameKey(name)
+  const matches = guestOptions.filter((g) => nameKey(g.name) === key)
+  if (matches.length === 0) {
+    showPersonError(personId, "No invitation by that name — pick one from the list.")
+    return
+  }
+  if (matches.length > 1) {
+    showPersonError(personId, "More than one invitation has that name; link it in the Guests tab.")
+    return
+  }
+
+  void runPersonAction(personId, async () => {
+    await api(`/api/admin/people/${personId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ guestId: matches[0].id }),
+    })
+    return `Linked to ${name}'s invitation`
+  })
+}
+
+/** @param {number} personId */
+function handlePersonUnlink(personId) {
+  void runPersonAction(personId, async () => {
+    await api(`/api/admin/people/${personId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ guestId: null }),
+    })
+    return "Invitation unlinked"
+  })
+}
+
+/** @param {number} personId @param {HTMLElement} row */
+function handlePersonMerge(personId, row) {
+  const select = row.querySelector(".person-merge-select")
+  if (!(select instanceof HTMLSelectElement) || !select.value) return
+  const intoId = Number(select.value)
+  const from = peopleData.find((p) => p.id === personId)
+  const into = peopleData.find((p) => p.id === intoId)
+  if (!from || !into) return
+
+  // Merging is not reversible from this UI — the source person is soft-deleted
+  // and their identities re-pointed — so it is the one action here that asks.
+  if (
+    !window.confirm(
+      `Merge “${from.displayName}” (${from.faces} face${from.faces === 1 ? "" : "s"}) ` +
+        `into “${into.displayName}”? This cannot be undone from here.`,
+    )
+  ) {
+    return
+  }
+
+  void runPersonAction(personId, async () => {
+    const res = /** @type {Types.PersonMergeResponse} */ (
+      await api("/api/admin/people/merge", {
+        method: "POST",
+        body: JSON.stringify({ fromPersonId: personId, intoPersonId: intoId }),
+      })
+    )
+    const moved = res.movedFaces + res.movedIdentities
+    return (
+      `Merged into ${into.displayName} (${moved} row${moved === 1 ? "" : "s"} re-pointed)` +
+      (res.carriedGuestLink ? ", invitation link carried over" : "")
+    )
+  })
+}
+
+/** @param {number} personId */
+function handlePersonDelete(personId) {
+  const person = peopleData.find((p) => p.id === personId)
+  if (!person) return
+  if (!window.confirm(`Delete “${person.displayName}”?`)) return
+
+  void runPersonAction(personId, async () => {
+    await api(`/api/admin/people/${personId}`, { method: "DELETE" })
+    return `Deleted ${person.displayName}`
+  })
+}
+
+/** @param {HTMLElement} row @param {Element} target */
+function handlePersonRowClick(row, target) {
+  const personId = Number(row.dataset.personId)
+  if (Number.isNaN(personId)) return
+
+  if (target.closest(".person-unlink")) {
+    handlePersonUnlink(personId)
+    return
+  }
+  if (target.closest(".person-merge")) {
+    handlePersonMerge(personId, row)
+    return
+  }
+  if (target.closest(".person-delete")) {
+    handlePersonDelete(personId)
+  }
 }
 
 // ---- face chip (shared render path for Groups + Ask queue) ----------------
@@ -811,6 +1133,19 @@ function handleFacesBodyClick(e) {
     toggleChipFromEl(chip)
     return
   }
+  const personRow = target.closest(".faces-person-row")
+  if (personRow instanceof HTMLElement) {
+    handlePersonRowClick(personRow, target)
+    return
+  }
+  // The explicit-create step, revealed by handleGroupNameEnter when a typed
+  // name matches no person. Creating a person is never a side effect of typing.
+  const createBtn = target.closest(".face-group-create-person")
+  if (createBtn instanceof HTMLButtonElement) {
+    const groupKey = createBtn.dataset.groupKey
+    if (groupKey !== undefined) void handleGroupCreatePerson(groupKey, createBtn)
+    return
+  }
   const notAFaceBtn = target.closest(".face-group-notaface")
   if (notAFaceBtn instanceof HTMLButtonElement) {
     const card = notAFaceBtn.closest(".face-group-card")
@@ -832,6 +1167,22 @@ function handleFacesBodyKeydown(e) {
     if (e.key === "Enter") {
       e.preventDefault()
       void handleGroupNameEnter(target)
+    }
+    return
+  }
+
+  if (target instanceof HTMLInputElement && target.classList.contains("person-name-input")) {
+    if (e.key === "Enter") {
+      e.preventDefault()
+      handlePersonRename(target)
+    }
+    return
+  }
+
+  if (target instanceof HTMLInputElement && target.classList.contains("person-guest-input")) {
+    if (e.key === "Enter") {
+      e.preventDefault()
+      handlePersonLinkGuest(target)
     }
     return
   }
@@ -870,6 +1221,28 @@ function handleFacesBodyInput(e) {
   const target = e.target
   if (target instanceof HTMLInputElement && target.classList.contains("face-group-name-input")) {
     hideGroupInputError(target)
+    return
+  }
+  // Merge is destructive and not undoable from here, so its button stays
+  // disabled until a target is actually chosen — no merging into the
+  // placeholder option by reflex.
+  if (target instanceof HTMLSelectElement && target.classList.contains("person-merge-select")) {
+    const btn = target.closest(".faces-person-actions")?.querySelector(".person-merge")
+    if (btn instanceof HTMLButtonElement) btn.disabled = target.value === ""
+    return
+  }
+  if (!(target instanceof Element)) return
+  const row = target.closest(".faces-person-row")
+  if (row instanceof HTMLElement) hidePersonError(Number(row.dataset.personId))
+}
+
+/** Renaming commits on blur as well as Enter, so a typed name is not silently
+ *  discarded by clicking elsewhere. No-ops when the value is unchanged.
+ *  @param {FocusEvent} e */
+function handleFacesBodyFocusOut(e) {
+  const target = e.target
+  if (target instanceof HTMLInputElement && target.classList.contains("person-name-input")) {
+    handlePersonRename(target)
   }
 }
 
@@ -884,4 +1257,6 @@ export function initFaceAssignment() {
   body.addEventListener("click", handleFacesBodyClick)
   body.addEventListener("keydown", handleFacesBodyKeydown)
   body.addEventListener("input", handleFacesBodyInput)
+  // focusout, not blur: blur does not bubble, so it cannot be delegated here.
+  body.addEventListener("focusout", handleFacesBodyFocusOut)
 }

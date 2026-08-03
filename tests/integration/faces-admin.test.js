@@ -18,6 +18,7 @@ import {
   stopServer,
   getTestDb,
   createTestGuest,
+  createTestPerson,
   adminLogin,
   adminFetch,
   BASE_URL,
@@ -50,6 +51,7 @@ function resetFaceTestData() {
   db.prepare(`DELETE FROM media_faces`).run()
   db.prepare(`DELETE FROM face_identities`).run()
   db.prepare(`DELETE FROM media`).run()
+  db.prepare(`DELETE FROM people`).run()
   db.prepare(`DELETE FROM guests`).run()
 }
 
@@ -83,10 +85,12 @@ function seedFace(mediaId, vector, opts = {}) {
   return Number(r.lastInsertRowid)
 }
 
-/** @param {Record<string, unknown>} [overrides] @returns {number} */
-function seedGuest(overrides = {}) {
-  const guest = createTestGuest(db, overrides)
-  return Number(guest.id)
+/** A person in the photographed cast — what faces are actually assigned to.
+ *  Off-roster by default (no guests row), which is the case the people table
+ *  exists for.
+ *  @param {Record<string, unknown>} [overrides] @returns {number} */
+function seedPerson(overrides = {}) {
+  return createTestPerson(db, overrides).id
 }
 
 // Two tight clusters, well separated: cluster A hugs the x-axis, cluster B the
@@ -137,7 +141,7 @@ describe("admin auth is required on every route", () => {
     const res = await fetch(`${BASE_URL}/api/admin/faces/assign`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ faceIds: [1], guestId: 1 }),
+      body: JSON.stringify({ faceIds: [1], personId: 1 }),
     })
     assert.strictEqual(res.status, 401)
   })
@@ -200,27 +204,27 @@ describe("face chips carry what a client-side crop needs", () => {
   })
 })
 
-describe("naming two groups the same guest merges them", () => {
+describe("naming two groups the same person merges them", () => {
   it("both groups end up on ONE confirmed identity, so no separate merge action is needed", async (t) => {
     if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
 
     // Deliberate over-splitting (SPEC §6.4) means one person can appear as two
     // groups. Because assign() finds-or-creates a single confirmed identity per
-    // guest, naming both with the same guest is already the merge.
+    // person, naming both with the same person is already the merge.
     const faceA = seedFace(seedMedia(), CLUSTER_A1)
     const faceB = seedFace(seedMedia(), CLUSTER_B1)
-    const guestId = seedGuest({ name: "Split Across Groups" })
+    const personId = seedPerson({ display_name: "Split Across Groups" })
 
     for (const faceId of [faceA, faceB]) {
       const res = await asAdmin("/api/admin/faces/assign", {
         method: "POST",
-        body: JSON.stringify({ faceIds: [faceId], guestId }),
+        body: JSON.stringify({ faceIds: [faceId], personId }),
       })
       assert.strictEqual(res.status, 200)
     }
 
     const identities = /** @type {any[]} */ (
-      db.prepare(`SELECT id FROM face_identities WHERE guest_id = ? AND deleted_at IS NULL`).all(guestId)
+      db.prepare(`SELECT id FROM face_identities WHERE person_id = ? AND deleted_at IS NULL`).all(personId)
     )
     assert.strictEqual(identities.length, 1, "a second naming must reuse the first identity, not create another")
 
@@ -249,10 +253,10 @@ describe("must-link propagation across near-duplicate frames", () => {
     const sourceFace = seedFace(a, CLUSTER_A1, { box })
     const targetFace = seedFace(b, CLUSTER_A2, { box: { x: 12, y: 12, w: 100, h: 100 } })
 
-    const guestId = seedGuest({ name: "Burst Guest" })
+    const personId = seedPerson({ display_name: "Burst Guest" })
     const assigned = await asAdmin("/api/admin/faces/assign", {
       method: "POST",
-      body: JSON.stringify({ faceIds: [sourceFace], guestId }),
+      body: JSON.stringify({ faceIds: [sourceFace], personId }),
     })
     assert.strictEqual(assigned.status, 200)
 
@@ -263,7 +267,7 @@ describe("must-link propagation across near-duplicate frames", () => {
     assert.strictEqual(body.items.length, 1)
     assert.strictEqual(body.items[0].fromFaceId, sourceFace)
     assert.strictEqual(body.items[0].toFaceId, targetFace)
-    assert.strictEqual(body.items[0].guestName, "Burst Guest")
+    assert.strictEqual(body.items[0].personName, "Burst Guest")
 
     const applied = await asAdmin("/api/admin/faces/propagate", {
       method: "POST",
@@ -272,19 +276,19 @@ describe("must-link propagation across near-duplicate frames", () => {
     assert.strictEqual(applied.status, 200)
     assert.strictEqual((await json(applied)).changed, 1)
 
-    // The target now carries a PROPAGATED identity for the same guest — never
+    // The target now carries a PROPAGATED identity for the same person — never
     // the confirmed one, or it would seed a prototype and reinforce itself.
     const row = /** @type {any} */ (
       db
         .prepare(
-          `SELECT fi.provenance AS provenance, fi.guest_id AS guest_id
+          `SELECT fi.provenance AS provenance, fi.person_id AS person_id
              FROM media_faces mf JOIN face_identities fi ON fi.id = mf.face_identity_id
             WHERE mf.id = ?`,
         )
         .get(targetFace)
     )
     assert.strictEqual(row.provenance, "propagated")
-    assert.strictEqual(row.guest_id, guestId)
+    assert.strictEqual(row.person_id, personId)
   })
 
   it("proposes nothing when the two photos are not in one frame class", async (t) => {
@@ -298,10 +302,10 @@ describe("must-link propagation across near-duplicate frames", () => {
     const sourceFace = seedFace(a, CLUSTER_A1, { box })
     seedFace(b, CLUSTER_A2, { box })
 
-    const guestId = seedGuest({ name: "Unrelated Frames" })
+    const personId = seedPerson({ display_name: "Unrelated Frames" })
     await asAdmin("/api/admin/faces/assign", {
       method: "POST",
-      body: JSON.stringify({ faceIds: [sourceFace], guestId }),
+      body: JSON.stringify({ faceIds: [sourceFace], personId }),
     })
 
     const listed = await asAdmin("/api/admin/faces/propagations")
@@ -317,10 +321,10 @@ describe("must-link propagation across near-duplicate frames", () => {
     // Descriptors disagree, so rule 3 suppresses: geometry alone is not enough.
     const targetFace = seedFace(b, CLUSTER_B1, { box })
 
-    const guestId = seedGuest({ name: "Disagreeing Descriptor" })
+    const personId = seedPerson({ display_name: "Disagreeing Descriptor" })
     await asAdmin("/api/admin/faces/assign", {
       method: "POST",
-      body: JSON.stringify({ faceIds: [sourceFace], guestId }),
+      body: JSON.stringify({ faceIds: [sourceFace], personId }),
     })
 
     const listed = await asAdmin("/api/admin/faces/propagations")
@@ -387,7 +391,7 @@ describe("overview + queue: on-demand grouping and matching", () => {
   it("after one face is confirmed, every group gets a prototype suggestion and the queue ranks by unlocks", async (t) => {
     if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
 
-    const guestA = seedGuest({ name: "Guest A" })
+    const personA = seedPerson({ display_name: "Person A" })
     const mediaA1 = seedMedia()
     const mediaA2 = seedMedia()
     const mediaB1 = seedMedia()
@@ -400,7 +404,7 @@ describe("overview + queue: on-demand grouping and matching", () => {
     const assignRes = await asAdmin("/api/admin/faces/assign", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ faceIds: [faceA1], guestId: guestA }),
+      body: JSON.stringify({ faceIds: [faceA1], personId: personA }),
     })
     assert.strictEqual(assignRes.status, 200)
     const assignBody = await json(assignRes)
@@ -418,7 +422,7 @@ describe("overview + queue: on-demand grouping and matching", () => {
     assert.strictEqual(overview.groups.length, 2)
     for (const group of overview.groups) {
       assert.ok(group.suggestion, "a confirmed identity exists, so every group gets a suggestion")
-      assert.strictEqual(group.suggestion.guestId, guestA)
+      assert.strictEqual(group.suggestion.personId, personA)
     }
 
     const queue = await json(await asAdmin("/api/admin/faces/queue"))
@@ -426,7 +430,7 @@ describe("overview + queue: on-demand grouping and matching", () => {
     assert.strictEqual(queue.items.length, 3)
     for (const item of queue.items) {
       assert.ok(item.candidates.length >= 1)
-      assert.strictEqual(item.candidates[0].guestId, guestA)
+      assert.strictEqual(item.candidates[0].personId, personA)
     }
     // Sorted by unlocks, descending.
     for (let i = 1; i < queue.items.length; i++) {
@@ -441,12 +445,12 @@ describe("overview + queue: on-demand grouping and matching", () => {
     assert.strictEqual(byFaceId.get(faceB2).unlocks, 2)
     assert.ok(byFaceId.get(faceB1).unlocks > byFaceId.get(faceA2).unlocks)
 
-    // Assigning the same guest again reuses the SAME confirmed identity.
+    // Assigning the same person again reuses the SAME confirmed identity.
     const again = await json(
       await asAdmin("/api/admin/faces/assign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ faceIds: [faceA2], guestId: guestA }),
+        body: JSON.stringify({ faceIds: [faceA2], personId: personA }),
       }),
     )
     assert.strictEqual(again.identityId, identityId)
@@ -454,10 +458,10 @@ describe("overview + queue: on-demand grouping and matching", () => {
 })
 
 describe("assign / unassign / not-a-face mutations", () => {
-  it("assigns a batch to a new guest, then unassigns", async (t) => {
+  it("assigns a batch to a new person, then unassigns", async (t) => {
     if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
 
-    const guestB = seedGuest({ name: "Guest B" })
+    const personB = seedPerson({ display_name: "Person B" })
     const mediaB1 = seedMedia()
     const mediaB2 = seedMedia()
     const faceB1 = seedFace(mediaB1, CLUSTER_B1)
@@ -466,7 +470,7 @@ describe("assign / unassign / not-a-face mutations", () => {
     const assignRes = await asAdmin("/api/admin/faces/assign", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ faceIds: [faceB1, faceB2], guestId: guestB }),
+      body: JSON.stringify({ faceIds: [faceB1, faceB2], personId: personB }),
     })
     assert.strictEqual(assignRes.status, 200)
     const assignBody = await json(assignRes)
@@ -476,8 +480,8 @@ describe("assign / unassign / not-a-face mutations", () => {
     assertNoDescriptor(perPhoto)
     assert.strictEqual(perPhoto.faces.length, 1)
     assert.strictEqual(perPhoto.faces[0].faceId, faceB1)
-    assert.strictEqual(perPhoto.faces[0].guestId, guestB)
-    assert.strictEqual(perPhoto.faces[0].guestName, "Guest B")
+    assert.strictEqual(perPhoto.faces[0].personId, personB)
+    assert.strictEqual(perPhoto.faces[0].personName, "Person B")
     assert.deepStrictEqual(perPhoto.faces[0].box, { x: 10, y: 20, w: 50, h: 50 })
 
     const unassignRes = await asAdmin("/api/admin/faces/unassign", {
@@ -490,12 +494,12 @@ describe("assign / unassign / not-a-face mutations", () => {
     assert.strictEqual(unassignBody.changed, 1)
 
     const afterUnassign = await json(await asAdmin(`/api/admin/media/${mediaB1}/faces`))
-    assert.strictEqual(afterUnassign.faces[0].guestId, null)
-    assert.strictEqual(afterUnassign.faces[0].guestName, null)
+    assert.strictEqual(afterUnassign.faces[0].personId, null)
+    assert.strictEqual(afterUnassign.faces[0].personName, null)
 
     // The other face is untouched.
     const stillAssigned = await json(await asAdmin(`/api/admin/media/${mediaB2}/faces`))
-    assert.strictEqual(stillAssigned.faces[0].guestId, guestB)
+    assert.strictEqual(stillAssigned.faces[0].personId, personB)
   })
 
   it("not-a-face soft-deletes the row and it drops out of counts/overview", async (t) => {
@@ -531,34 +535,34 @@ describe("assign / unassign / not-a-face mutations", () => {
 
   it("rejects a batch referencing a missing face id", async (t) => {
     if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
-    const guest = seedGuest({ name: "Ghost" })
+    const person = seedPerson({ display_name: "Ghost" })
     const res = await asAdmin("/api/admin/faces/assign", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ faceIds: [999999], guestId: guest }),
+      body: JSON.stringify({ faceIds: [999999], personId: person }),
     })
     assert.strictEqual(res.status, 404)
   })
 
-  it("rejects assign to a missing guest", async (t) => {
+  it("rejects assign to a missing person", async (t) => {
     if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
     const media = seedMedia()
     const faceId = seedFace(media, CLUSTER_A1)
     const res = await asAdmin("/api/admin/faces/assign", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ faceIds: [faceId], guestId: 999999 }),
+      body: JSON.stringify({ faceIds: [faceId], personId: 999999 }),
     })
     assert.strictEqual(res.status, 404)
   })
 
   it("rejects an empty faceIds array", async (t) => {
     if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
-    const guest = seedGuest({ name: "Empty" })
+    const person = seedPerson({ display_name: "Empty" })
     const res = await asAdmin("/api/admin/faces/assign", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ faceIds: [], guestId: guest }),
+      body: JSON.stringify({ faceIds: [], personId: person }),
     })
     assert.strictEqual(res.status, 400)
   })
@@ -576,5 +580,344 @@ describe("GET /api/admin/media/:id/faces", () => {
     const media = seedMedia()
     const body = await json(await asAdmin(`/api/admin/media/${media}/faces`))
     assert.deepStrictEqual(body.faces, [])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// People — the photographed CAST (D10). `guests` rows are INVITATIONS, one per
+// party with a unique invite code, and much of the cast is not on that list at
+// all: partners recorded under someone else's row, children, the photographer,
+// vendors. Before the people table there was nowhere to put them, which blocked
+// naming outright — naming being the entire product.
+// ---------------------------------------------------------------------------
+
+/** @param {Record<string, unknown>} body */
+function postPerson(body) {
+  return asAdmin("/api/admin/people", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+}
+
+/** @param {number} id @param {Record<string, unknown>} body */
+function patchPerson(id, body) {
+  return asAdmin(`/api/admin/people/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+}
+
+/** @param {number} fromPersonId @param {number} intoPersonId */
+function mergePeople(fromPersonId, intoPersonId) {
+  return asAdmin("/api/admin/people/merge", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fromPersonId, intoPersonId }),
+  })
+}
+
+/** Assign one face to a person, creating the confirmed identity as a side
+ *  effect — the same path the admin UI takes.
+ *  @param {number} faceId @param {number} personId */
+async function assignFace(faceId, personId) {
+  const res = await asAdmin("/api/admin/faces/assign", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ faceIds: [faceId], personId }),
+  })
+  assert.strictEqual(res.status, 200)
+  return (await json(res)).identityId
+}
+
+describe("admin auth is required on every people route", () => {
+  it("401s GET /api/admin/people with no session", async () => {
+    assert.strictEqual((await fetch(`${BASE_URL}/api/admin/people`)).status, 401)
+  })
+
+  it("401s POST /api/admin/people with no session", async () => {
+    const res = await fetch(`${BASE_URL}/api/admin/people`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ displayName: "Nobody" }),
+    })
+    assert.strictEqual(res.status, 401)
+  })
+
+  it("401s POST /api/admin/people/merge with no session", async () => {
+    const res = await fetch(`${BASE_URL}/api/admin/people/merge`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fromPersonId: 1, intoPersonId: 2 }),
+    })
+    assert.strictEqual(res.status, 401)
+  })
+
+  it("401s DELETE /api/admin/people/:id with no session", async () => {
+    const res = await fetch(`${BASE_URL}/api/admin/people/1`, { method: "DELETE" })
+    assert.strictEqual(res.status, 401)
+  })
+})
+
+describe("people: on and off the roster", () => {
+  it("creates a person with NO roster link — the case the table exists for", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const res = await postPerson({ displayName: "The Photographer" })
+    assert.strictEqual(res.status, 201)
+    const body = await json(res)
+    assert.strictEqual(body.person.displayName, "The Photographer")
+    assert.strictEqual(body.person.guestId, null)
+
+    const listed = await json(await asAdmin("/api/admin/people"))
+    const person = listed.people.find((/** @type {any} */ p) => p.id === body.person.id)
+    // Null, not absent and not an empty string: every consumer of the list has
+    // to handle an off-roster person, so the shape says so plainly.
+    assert.strictEqual(person.guestId, null)
+    assert.strictEqual(person.guestName, null)
+    assert.strictEqual(person.identities, 0)
+    assert.strictEqual(person.faces, 0)
+  })
+
+  it("creates a person linked to a guest, and surfaces the guest's name", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const guestId = Number(createTestGuest(db, { name: "Invited Ada" }).id)
+    const created = await json(await postPerson({ displayName: "Ada", guestId }))
+    assert.strictEqual(created.person.guestId, guestId)
+
+    const listed = await json(await asAdmin("/api/admin/people"))
+    const person = listed.people.find((/** @type {any} */ p) => p.id === created.person.id)
+    // The person's own display name and the invitation's name are separate
+    // strings on purpose — an invitation is addressed to a party.
+    assert.strictEqual(person.displayName, "Ada")
+    assert.strictEqual(person.guestName, "Invited Ada")
+  })
+
+  it("404s a link to a guest that does not exist", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    assert.strictEqual((await postPerson({ displayName: "Ghost", guestId: 999999 })).status, 404)
+  })
+
+  it("requires a display name", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    assert.strictEqual((await postPerson({})).status, 400)
+    assert.strictEqual((await postPerson({ displayName: "   " })).status, 400)
+  })
+
+  it("takes created_by from the session and IGNORES anything the client sends", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const created = await json(await postPerson({ displayName: "Actor", createdBy: "not-me" }))
+    const row = /** @type {any} */ (
+      db.prepare(`SELECT created_by FROM people WHERE id = ?`).get(created.person.id)
+    )
+    assert.notStrictEqual(row.created_by, "not-me", "actor fields are never client-supplied")
+  })
+})
+
+describe("people: duplicate names are legal, but never accidental", () => {
+  it("refuses a same-name create unless the duplicate is confirmed", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const first = await json(await postPerson({ displayName: "Sam Taylor" }))
+
+    // An autocomplete cannot tell "the person I mean" from "a different person
+    // with the same name". Silently creating the second fragments an identity
+    // and its prototypes, so the server names the existing candidate instead.
+    const refused = await postPerson({ displayName: "Sam Taylor" })
+    assert.strictEqual(refused.status, 409)
+    assert.ok((await json(refused)).error.includes(String(first.person.id)))
+
+    const confirmed = await postPerson({ displayName: "Sam Taylor", confirmDuplicate: true })
+    assert.strictEqual(confirmed.status, 201)
+    assert.notStrictEqual((await json(confirmed)).person.id, first.person.id)
+  })
+
+  it("matches duplicates case- and accent-fold-insensitively, not by byte equality", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    await postPerson({ displayName: "José" })
+    // Same name, upper-cased: SQLite's COLLATE NOCASE folds ASCII only and
+    // would call these two different people. The server folds in JS instead,
+    // matching what the admin UI does when it resolves a typed name.
+    assert.strictEqual((await postPerson({ displayName: "JOSÉ" })).status, 409)
+    // Same name again, this time with a COMBINING acute instead of the
+    // precomposed character — visually identical, different bytes.
+    assert.strictEqual((await postPerson({ displayName: "José" })).status, 409)
+  })
+})
+
+describe("people: rename, link, unlink", () => {
+  it("renames a person", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const person = seedPerson({ display_name: "Typo" })
+    const res = await patchPerson(person, { displayName: "Fixed" })
+    assert.strictEqual(res.status, 200)
+    assert.strictEqual((await json(res)).person.displayName, "Fixed")
+  })
+
+  it("links, then unlinks, a roster guest", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const person = seedPerson({ display_name: "Late Link" })
+    const guestId = Number(createTestGuest(db, { name: "Roster Row" }).id)
+
+    assert.strictEqual((await json(await patchPerson(person, { guestId }))).person.guestId, guestId)
+    // Explicit null unlinks; an ABSENT guestId leaves the link alone. Without
+    // that distinction there is no way to say "remove the link" at all.
+    assert.strictEqual((await json(await patchPerson(person, { guestId: null }))).person.guestId, null)
+  })
+
+  it("leaves the link untouched when guestId is absent from the patch", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const guestId = Number(createTestGuest(db, { name: "Sticky" }).id)
+    const person = seedPerson({ display_name: "Keeps Link", guest_id: guestId })
+
+    const res = await patchPerson(person, { displayName: "Renamed Only" })
+    assert.strictEqual((await json(res)).person.guestId, guestId)
+  })
+
+  it("400s an empty patch and 404s a missing person", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const person = seedPerson({ display_name: "Untouched" })
+    assert.strictEqual((await patchPerson(person, {})).status, 400)
+    assert.strictEqual((await patchPerson(999999, { displayName: "Nobody" })).status, 404)
+  })
+})
+
+describe("people: merge", () => {
+  it("folds the source's faces onto the target's identity of the same provenance", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const faceA = seedFace(seedMedia(), CLUSTER_A1)
+    const faceB = seedFace(seedMedia(), CLUSTER_B1)
+    const duplicate = seedPerson({ display_name: "Sam T." })
+    const keeper = seedPerson({ display_name: "Sam Taylor" })
+    await assignFace(faceA, duplicate)
+    const keeperIdentity = await assignFace(faceB, keeper)
+
+    const res = await mergePeople(duplicate, keeper)
+    assert.strictEqual(res.status, 200)
+    const body = await json(res)
+    assert.strictEqual(body.movedFaces, 1)
+    assert.strictEqual(body.movedIdentities, 0)
+
+    // Both faces now hang off the keeper's ONE confirmed identity —
+    // idx_face_identities_person allows no second live row per provenance.
+    for (const faceId of [faceA, faceB]) {
+      const row = /** @type {any} */ (
+        db.prepare(`SELECT face_identity_id FROM media_faces WHERE id = ?`).get(faceId)
+      )
+      assert.strictEqual(row.face_identity_id, keeperIdentity)
+    }
+    assert.ok(
+      /** @type {any} */ (
+        db.prepare(`SELECT deleted_at FROM people WHERE id = ?`).get(duplicate)
+      ).deleted_at,
+      "the source person is retired, not hard-deleted",
+    )
+  })
+
+  it("moves the identity itself when the target has none of that provenance", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const faceA = seedFace(seedMedia(), CLUSTER_A1)
+    const duplicate = seedPerson({ display_name: "Only Copy" })
+    const keeper = seedPerson({ display_name: "Real Person" })
+    const identityId = await assignFace(faceA, duplicate)
+
+    const body = await json(await mergePeople(duplicate, keeper))
+    assert.strictEqual(body.movedFaces, 0)
+    assert.strictEqual(body.movedIdentities, 1)
+
+    const row = /** @type {any} */ (
+      db.prepare(`SELECT person_id FROM face_identities WHERE id = ?`).get(identityId)
+    )
+    assert.strictEqual(row.person_id, keeper)
+  })
+
+  it("carries the roster link across when the target has none", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const guestId = Number(createTestGuest(db, { name: "Linked Invitation" }).id)
+    const linked = seedPerson({ display_name: "Dup With Link", guest_id: guestId })
+    const keeper = seedPerson({ display_name: "Keeper" })
+
+    const body = await json(await mergePeople(linked, keeper))
+    assert.strictEqual(body.carriedGuestLink, true)
+
+    const row = /** @type {any} */ (
+      db.prepare(`SELECT guest_id FROM people WHERE id = ?`).get(keeper)
+    )
+    assert.strictEqual(row.guest_id, guestId, "a merge must not silently discard the roster link")
+  })
+
+  it("NEVER overwrites a roster link the target already has", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const sourceGuest = Number(createTestGuest(db, { name: "Source Invitation" }).id)
+    const targetGuest = Number(createTestGuest(db, { name: "Target Invitation" }).id)
+    const source = seedPerson({ display_name: "Source", guest_id: sourceGuest })
+    const target = seedPerson({ display_name: "Target", guest_id: targetGuest })
+
+    const body = await json(await mergePeople(source, target))
+    assert.strictEqual(body.carriedGuestLink, false)
+
+    // Overwriting would silently reassign which invitation a person is, which
+    // is a different claim from "these two rows are the same human".
+    const row = /** @type {any} */ (
+      db.prepare(`SELECT guest_id FROM people WHERE id = ?`).get(target)
+    )
+    assert.strictEqual(row.guest_id, targetGuest)
+  })
+
+  it("refuses merging a person into themselves, and 404s an unknown side", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const person = seedPerson({ display_name: "Alone" })
+    assert.strictEqual((await mergePeople(person, person)).status, 400)
+    assert.strictEqual((await mergePeople(person, 999999)).status, 404)
+    assert.strictEqual((await mergePeople(999999, person)).status, 404)
+  })
+})
+
+describe("people: delete", () => {
+  it("refuses while live identities point at the person, and says why", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const faceId = seedFace(seedMedia(), CLUSTER_A1)
+    const person = seedPerson({ display_name: "Still Named" })
+    await assignFace(faceId, person)
+
+    // face_identities.person_id is NOT NULL, so deleting here would leave the
+    // identity pointing at a tombstone. The refusal has to be legible in the
+    // UI, not an opaque constraint error.
+    const res = await asAdmin(`/api/admin/people/${person}`, { method: "DELETE" })
+    assert.strictEqual(res.status, 409)
+    assert.ok((await json(res)).error.includes("Still Named"))
+    assert.ok(
+      !(/** @type {any} */ (db.prepare(`SELECT deleted_at FROM people WHERE id = ?`).get(person))
+        .deleted_at),
+    )
+  })
+
+  it("soft-deletes a person with no live identities, and drops them from the list", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const person = seedPerson({ display_name: "Never Used" })
+    assert.strictEqual((await asAdmin(`/api/admin/people/${person}`, { method: "DELETE" })).status, 200)
+
+    const row = /** @type {any} */ (
+      db.prepare(`SELECT deleted_at FROM people WHERE id = ?`).get(person)
+    )
+    assert.ok(row.deleted_at, "soft-deleted, not hard-deleted")
+
+    const listed = await json(await asAdmin("/api/admin/people"))
+    assert.ok(!listed.people.some((/** @type {any} */ p) => p.id === person))
+  })
+
+  it("404s deleting a person who does not exist", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    assert.strictEqual((await asAdmin("/api/admin/people/999999", { method: "DELETE" })).status, 404)
   })
 })

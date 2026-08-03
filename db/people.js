@@ -46,15 +46,38 @@ export function listPeople() {
 }
 
 /**
+ * Fold a display name to its comparison key. Exported so the ONE definition of
+ * "the same name" lives here — `public/pages/admin/face-assignment.js` mirrors
+ * it and says so.
+ *
+ * NFC first, then `toLowerCase`. Both matter and neither is optional: a name
+ * typed with a combining accent and the same name typed with a precomposed one
+ * are indistinguishable on screen but different strings, and JS `toLowerCase`
+ * is Unicode-aware where SQLite's `COLLATE NOCASE` folds ASCII only. Using the
+ * collation here would mean the server saw no duplicate for a pair of names the
+ * admin cannot tell apart. No regex — `normalize` and `toLowerCase` are string
+ * methods.
+ * @type {Types.nameKey}
+ */
+export function nameKey(displayName) {
+  return displayName.normalize("NFC").toLowerCase()
+}
+
+/**
  * Case-insensitive exact display-name matches among live people. Duplicate
  * names are a legal state (two guests can share a name), which is exactly why
  * creation must surface these rather than silently picking one.
+ *
+ * Compared in JS via `nameKey` rather than in SQL: see its comment for why the
+ * collation is not good enough. `people` is roster-sized — tens of rows — so
+ * the scan is not worth an index.
  * @type {Types.findLivePeopleByName}
  */
 export function findLivePeopleByName(displayName) {
-  return sql`SELECT * FROM people
-    WHERE deleted_at IS NULL AND display_name = ${displayName} COLLATE NOCASE
-    ORDER BY id`.all()
+  const key = nameKey(displayName)
+  /** @type {import('../types.js').Person[]} */
+  const rows = sql`SELECT * FROM people WHERE deleted_at IS NULL ORDER BY id`.all()
+  return rows.filter((p) => nameKey(p.display_name) === key)
 }
 
 /** @type {Types.updatePerson} */

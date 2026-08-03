@@ -2513,3 +2513,71 @@ tr:hover td {
 .faces-identified-summary {
   color: var(--color-text-muted);
 }
+
+/* People (the photographed cast). One row per person: name, roster link, and
+   the destructive actions kept to the right so they are never the thing your
+   hand lands on first. */
+.faces-people-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.faces-person-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-sm);
+  background: var(--color-card-bg);
+}
+.faces-person-main {
+  flex: 1 1 14rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2xs);
+}
+.person-name-input {
+  width: 100%;
+  font-size: var(--text-sm);
+}
+.faces-person-counts,
+.faces-person-guest {
+  font-size: var(--text-xs);
+}
+.faces-person-link {
+  flex: 0 1 16rem;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: var(--text-xs);
+}
+.person-guest-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--text-xs);
+}
+.faces-person-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+.person-merge-select {
+  font-size: var(--text-xs);
+  max-width: 12rem;
+}
+.faces-person-error {
+  flex: 1 1 100%;
+  font-size: var(--text-xs);
+  color: var(--color-status-pending-text);
+}
+.faces-people-note {
+  font-size: var(--text-xs);
+  margin-top: var(--spacing-sm);
+}

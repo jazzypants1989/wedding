@@ -146,6 +146,22 @@ export interface TestGuest extends TestGuestOverrides {
   notes: string | null
 }
 
+/** A person is who a FACE belongs to; a guest is an INVITATION. `guest_id` is
+ *  optional on purpose — the photographed cast is bigger than the roster. */
+export interface TestPersonOverrides {
+  display_name?: string
+  guest_id?: number | bigint | null
+  created_by?: string | null
+  notes?: string | null
+}
+
+export interface TestPerson extends TestPersonOverrides {
+  id: number
+  display_name: string
+  guest_id: number | bigint | null
+  notes: string | null
+}
+
 export interface TestPetitionOverrides {
   name?: string
   email?: string
@@ -198,6 +214,10 @@ export type CreateTestGuestFn = (
   overrides?: TestGuestOverrides
 ) => TestGuest
 export type DeleteTestGuestFn = (db: DatabaseSync, inviteCode: string) => void
+export type CreateTestPersonFn = (
+  db: DatabaseSync,
+  overrides?: TestPersonOverrides
+) => TestPerson
 export type CreateTestPetitionFn = (
   db: DatabaseSync,
   overrides?: TestPetitionOverrides
@@ -286,6 +306,7 @@ export function startAuxServer(
 export const getTestDb: GetTestDbFn
 export const createTestGuest: CreateTestGuestFn
 export const deleteTestGuest: DeleteTestGuestFn
+export const createTestPerson: CreateTestPersonFn
 export const createTestPetition: CreateTestPetitionFn
 export const deleteTestPetition: DeleteTestPetitionFn
 export const addToBlocklist: AddToBlocklistFn

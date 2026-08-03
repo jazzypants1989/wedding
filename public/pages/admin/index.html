@@ -441,10 +441,17 @@
             at suggesting the rest.
           </p>
           <div id="faces-counts" class="faces-counts" aria-live="polite"></div>
-          <!-- Shared by every group's name input (list="faces-guest-roster"); populated by JS. -->
+          <!-- Two DIFFERENT rosters, and the distinction is the whole point of
+               the people table: a PERSON is who a face belongs to, a GUEST is an
+               invitation (one row per party, and much of the photographed cast
+               is not on it). Faces are named against people; people are
+               optionally linked to guests. Both live OUTSIDE #faces-body,
+               which JS replaces wholesale on every render. -->
+          <datalist id="faces-people-roster"></datalist>
           <datalist id="faces-guest-roster"></datalist>
           <div id="faces-body" class="faces-body">
-            <!-- Populated by JS: an empty state, or the Groups / Ask queue / Identified sections -->
+            <!-- Populated by JS: an empty state, or the Groups / Ask queue /
+                 Same moment / Identified / People sections -->
           </div>
         </div>
       </div>

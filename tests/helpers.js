@@ -1,7 +1,7 @@
 /**
  * @file Test utilities for integration testing
  */
-/** @import { StartServerFn, StopServerFn, GetTestDbFn, CreateTestGuestFn, DeleteTestGuestFn, CreateTestPetitionFn, DeleteTestPetitionFn, AddToBlocklistFn, RemoveFromBlocklistFn, AdminLoginFn, AdminFetchFn, CleanupTestDataFn, CreateTestAccountFn, CreateTestAccountSessionFn, AccountRegisterFn, AccountFetchFn } from './helpers.js' */
+/** @import { StartServerFn, StopServerFn, GetTestDbFn, CreateTestGuestFn, DeleteTestGuestFn, CreateTestPersonFn, CreateTestPetitionFn, DeleteTestPetitionFn, AddToBlocklistFn, RemoveFromBlocklistFn, AdminLoginFn, AdminFetchFn, CleanupTestDataFn, CreateTestAccountFn, CreateTestAccountSessionFn, AccountRegisterFn, AccountFetchFn } from './helpers.js' */
 /** @import { ChildProcessWithoutNullStreams } from 'node:child_process' */
 
 import { spawn } from "node:child_process"
@@ -63,6 +63,9 @@ export const BASE_URL = `http://localhost:${TEST_PORT}`
 
 /** @type {ChildProcessWithoutNullStreams | null} */
 let serverProcess = null
+
+/** Monotonic suffix so createTestPerson never collides on display name. */
+let personSeq = 0
 
 /** @type {StartServerFn} */
 export async function startServer() {
@@ -296,6 +299,29 @@ export function createTestGuest(db, overrides = {}) {
   )
 
   return { ...guest, id: result.lastInsertRowid }
+}
+
+/** A person in the photographed cast. Defaults to OFF-ROSTER (`guest_id` null),
+ *  because that is the case the people table exists for and the one a test is
+ *  most likely to get wrong — pass a guest id explicitly when the link matters.
+ *  @type {CreateTestPersonFn} */
+export function createTestPerson(db, overrides = {}) {
+  personSeq++
+  const person = {
+    display_name: `Test Person ${personSeq}`,
+    guest_id: null,
+    created_by: null,
+    notes: null,
+    ...overrides,
+  }
+
+  const result = db
+    .prepare(
+      `INSERT INTO people (display_name, guest_id, created_by, notes) VALUES (?, ?, ?, ?)`,
+    )
+    .run(person.display_name, person.guest_id, person.created_by, person.notes)
+
+  return { ...person, id: Number(result.lastInsertRowid) }
 }
 
 /** @type {DeleteTestGuestFn} */

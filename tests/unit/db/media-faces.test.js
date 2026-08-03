@@ -2,8 +2,12 @@
  * @file Unit tests for the face pipeline schema (media_faces, face_identities)
  * and db/media-faces.js. Covers docs/post-wedding/SPEC-vision-lab.md §10:
  *   - cascade delete: media -> media_faces rows gone
- *   - cascade delete: guest -> face_identities gone, and media_faces whose
- *     face_identity_id pointed at one of them is nulled (ON DELETE SET NULL)
+ *   - deleting a guest UNLINKS the person (people.guest_id ON DELETE SET NULL)
+ *     and leaves their identity and faces alone — the old schema cascaded a
+ *     guest deletion straight through to face_identities and destroyed the
+ *     naming with it
+ *   - deleting an identity nulls media_faces.face_identity_id (ON DELETE SET
+ *     NULL) — the action D1's table rebuild has to keep from firing
  *   - the precedence trigger, both arrival orders: upload-then-cli (the
  *     upload rows get soft-deleted when the cli row lands) and
  *     cli-then-upload (the upload row is born already superseded)
@@ -23,12 +27,13 @@ import {
   softDeleteFace,
   createIdentity,
   getIdentityById,
-  identitiesForGuest,
+  identitiesForPerson,
   softDeleteIdentity,
   mediaWithFaces,
 } from "../../../db/media-faces.js"
 
 let guestSeq = 0
+let personSeq = 0
 let fileKeySeq = 0
 
 /** @returns {number} */
@@ -42,6 +47,20 @@ function makeGuest() {
       )
       .run(`Face Guest ${guestSeq}`, null, null, 1, `FACEG${guestSeq}`, "pending", null)
       .lastInsertRowid,
+  )
+}
+
+/** A person — who a face belongs to. `guestId` is optional because the cast is
+ *  bigger than the invitation roster, which is the whole reason this table
+ *  exists (D10).
+ *  @param {number | null} [guestId]
+ *  @returns {number} */
+function makePerson(guestId = null) {
+  personSeq++
+  return Number(
+    getDb()
+      .prepare(`INSERT INTO people (display_name, guest_id) VALUES (?, ?)`)
+      .run(`Face Person ${personSeq}`, guestId).lastInsertRowid,
   )
 }
 
@@ -153,36 +172,59 @@ describe("db/media-faces + media_faces/face_identities schema", () => {
 
   describe("face_identities CRUD", () => {
     it("creates an identity defaulting to provenance='confirmed'", () => {
-      const guestId = makeGuest()
-      const identity = createIdentity({ guestId })
-      assert.strictEqual(identity.guest_id, guestId)
+      const personId = makePerson()
+      const identity = createIdentity({ personId })
+      assert.strictEqual(identity.person_id, personId)
       assert.strictEqual(identity.provenance, "confirmed")
       assert.strictEqual(identity.confirmed_by, null)
     })
 
     it("creates a propagated identity explicitly", () => {
-      const guestId = makeGuest()
-      const identity = createIdentity({ guestId, provenance: "propagated" })
+      const personId = makePerson()
+      const identity = createIdentity({ personId, provenance: "propagated" })
       assert.strictEqual(identity.provenance, "propagated")
     })
 
-    it("identitiesForGuest excludes soft-deleted rows", () => {
-      const guestId = makeGuest()
-      const identity = createIdentity({ guestId })
-      assert.strictEqual(identitiesForGuest(guestId).length, 1)
+    it("creates an identity for an OFF-ROSTER person", () => {
+      // The point of the people table: the photographer, a child, a partner
+      // recorded under someone else's invitation — none of them have a guests
+      // row, and all of them need naming.
+      const personId = makePerson(null)
+      const identity = createIdentity({ personId })
+      assert.strictEqual(identity.person_id, personId)
+    })
+
+    it("identitiesForPerson excludes soft-deleted rows", () => {
+      const personId = makePerson()
+      const identity = createIdentity({ personId })
+      assert.strictEqual(identitiesForPerson(personId).length, 1)
 
       softDeleteIdentity(identity.id)
-      assert.strictEqual(identitiesForGuest(guestId).length, 0)
+      assert.strictEqual(identitiesForPerson(personId).length, 0)
       assert.strictEqual(getIdentityById(identity.id), undefined)
+    })
+
+    it("refuses a second LIVE identity of the same provenance for one person", () => {
+      // idx_face_identities_person. Without it, `identitiesForPerson(id).find(
+      // ...)` picks by row order, and which identity a face lands on becomes
+      // an accident of insertion history.
+      const personId = makePerson()
+      const first = createIdentity({ personId })
+      assert.throws(() => createIdentity({ personId }), /UNIQUE/i)
+
+      // Partial index: retiring the first frees the slot.
+      softDeleteIdentity(first.id)
+      const replacement = createIdentity({ personId })
+      assert.notStrictEqual(replacement.id, first.id)
     })
   })
 
   describe("setFaceIdentity / mediaWithFaces", () => {
     it("links and unlinks a face to an identity", () => {
-      const guestId = makeGuest()
+      const personId = makePerson()
       const mediaId = makeMedia()
       const face = insertBasicFace(mediaId, "cli")
-      const identity = createIdentity({ guestId })
+      const identity = createIdentity({ personId })
 
       assert.ok(setFaceIdentity(face.id, identity.id))
       assert.strictEqual(getFaceById(face.id)?.face_identity_id, identity.id)
@@ -221,22 +263,48 @@ describe("db/media-faces + media_faces/face_identities schema", () => {
       assert.strictEqual(getFaceById(face.id), undefined)
     })
 
-    it("deleting a guest cascades to face_identities, and nulls out media_faces.face_identity_id", () => {
+    it("deleting a guest unlinks the person but keeps the naming intact", () => {
+      // This CHANGED with the people table, and the change is the point. Under
+      // the old schema face_identities referenced guests ON DELETE CASCADE, so
+      // removing an invitation silently destroyed every face named against it.
+      // Now the person is the thing faces belong to; the guest link is
+      // ON DELETE SET NULL, so deleting the invitation leaves the person, their
+      // identity and their faces exactly where they were — off-roster, which is
+      // a state the model can now express.
       const guestId = makeGuest()
+      const personId = makePerson(guestId)
       const mediaId = makeMedia()
       const face = insertBasicFace(mediaId, "cli")
-      const identity = createIdentity({ guestId })
+      const identity = createIdentity({ personId })
       setFaceIdentity(face.id, identity.id)
 
       getDb().prepare("DELETE FROM guests WHERE id = ?").run(guestId)
 
-      const identityRow = getDb().prepare("SELECT * FROM face_identities WHERE id = ?").get(identity.id)
-      assert.strictEqual(identityRow, undefined, "face_identities row should be cascade-deleted")
+      const personRow = /** @type {{ guest_id: number | null } | undefined} */ (
+        getDb().prepare("SELECT guest_id FROM people WHERE id = ?").get(personId)
+      )
+      assert.ok(personRow, "the person survives their invitation being deleted")
+      assert.strictEqual(personRow.guest_id, null, "people.guest_id should be SET NULL")
+
+      assert.ok(getIdentityById(identity.id), "the identity is untouched")
+      assert.strictEqual(getFaceById(face.id)?.face_identity_id, identity.id)
+    })
+
+    it("deleting a person's identity nulls out media_faces.face_identity_id", () => {
+      // media_faces -> face_identities is still ON DELETE SET NULL, which is
+      // exactly the action D1 warns about firing during a table rebuild.
+      const personId = makePerson()
+      const mediaId = makeMedia()
+      const face = insertBasicFace(mediaId, "cli")
+      const identity = createIdentity({ personId })
+      setFaceIdentity(face.id, identity.id)
+
+      getDb().prepare("DELETE FROM face_identities WHERE id = ?").run(identity.id)
 
       const faceRow = /** @type {{ face_identity_id: number | null }} */ (
         getDb().prepare("SELECT face_identity_id FROM media_faces WHERE id = ?").get(face.id)
       )
-      assert.strictEqual(faceRow.face_identity_id, null, "media_faces.face_identity_id should be SET NULL")
+      assert.strictEqual(faceRow.face_identity_id, null)
     })
   })
 
@@ -309,16 +377,16 @@ describe("db/media-faces + media_faces/face_identities schema", () => {
     })
 
     it("rejects an invalid face_identities.provenance on insert", () => {
-      const guestId = makeGuest()
+      const personId = makePerson()
       assert.throws(
-        () => createIdentity({ guestId, provenance: /** @type {"confirmed"} */ ("bogus") }),
+        () => createIdentity({ personId, provenance: /** @type {"confirmed"} */ ("bogus") }),
         (/** @type {Error} */ err) => err.message.includes("Invalid identity provenance"),
       )
     })
 
     it("rejects an invalid face_identities.provenance on update", () => {
-      const guestId = makeGuest()
-      const identity = createIdentity({ guestId })
+      const personId = makePerson()
+      const identity = createIdentity({ personId })
       assert.throws(
         () => {
           getDb()

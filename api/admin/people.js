@@ -175,7 +175,9 @@ export async function update(req, res, { session, params }) {
     ip: getClientIp(req),
     resourceType: "person",
     resourceId: idResult.value,
-    details: patch,
+    // Spread, not `patch` itself: an interface has no implicit index signature,
+    // so it is not assignable to AuditEvent's `Record<string, unknown>`.
+    details: { ...patch },
   })
 
   const updated = /** @type {import('../../types.js').Person} */ (getPersonById(idResult.value))
@@ -198,7 +200,7 @@ export async function merge(req, res, { session }) {
   const into = getPersonById(intoResult.value)
   if (!into) throw new NotFoundError("Person (intoPersonId)")
 
-  const { movedFaces, movedIdentities } = withTransaction(() => {
+  const { movedFaces, movedIdentities, carriedGuestLink } = withTransaction(() => {
     let faces = 0
     let identities = 0
     // Per provenance: if the target person already has a live identity of that
@@ -217,8 +219,26 @@ export async function merge(req, res, { session }) {
         identities++
       }
     }
+
+    // A merge must not quietly discard the roster link. If the source is linked
+    // to a guest and the target is not, the link travels; an existing link on
+    // the target is NEVER overwritten, because that would silently reassign who
+    // an invitation belongs to. Notes ride along on the same rule, appended so
+    // neither side's text is lost.
+    const carried = from.guest_id !== null && into.guest_id === null
+    if (carried || from.notes) {
+      updatePerson(intoResult.value, {
+        guestId: carried ? from.guest_id : undefined,
+        notes: from.notes
+          ? into.notes
+            ? `${into.notes}\n\n(merged from “${from.display_name}”)\n${from.notes}`
+            : from.notes
+          : undefined,
+      })
+    }
+
     softDeletePerson(fromResult.value)
-    return { movedFaces: faces, movedIdentities: identities }
+    return { movedFaces: faces, movedIdentities: identities, carriedGuestLink: carried }
   })
 
   // Prototypes are computed on demand from live rows (api/admin/faces.js's
@@ -231,10 +251,16 @@ export async function merge(req, res, { session }) {
     ip: getClientIp(req),
     resourceType: "person",
     resourceId: intoResult.value,
-    details: { fromPersonId: fromResult.value, intoPersonId: intoResult.value, movedFaces, movedIdentities },
+    details: {
+      fromPersonId: fromResult.value,
+      intoPersonId: intoResult.value,
+      movedFaces,
+      movedIdentities,
+      carriedGuestLink,
+    },
   })
 
-  return sendJson(res, 200, { success: true, movedFaces, movedIdentities })
+  return sendJson(res, 200, { success: true, movedFaces, movedIdentities, carriedGuestLink })
 }
 
 /** @type {Types.personDeleteHandler} */

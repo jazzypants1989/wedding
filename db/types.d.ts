@@ -1108,8 +1108,14 @@ export interface PersonListRow {
  *  datalist + management list. */
 export function listPeople(): PersonListRow[]
 
-/** Case-insensitive exact display-name matches among live people. Duplicate
- *  names are legal; creation surfaces these rather than silently picking one. */
+/** Fold a display name to its comparison key (NFC, then lower-cased) — the one
+ *  definition of "the same name", shared by duplicate detection and the admin
+ *  UI's name resolution. */
+export function nameKey(displayName: string): string
+
+/** Case-insensitive exact display-name matches among live people, compared via
+ *  `nameKey`. Duplicate names are legal; creation surfaces these rather than
+ *  silently picking one. */
 export function findLivePeopleByName(displayName: string): Person[]
 
 export interface UpdatePersonInput {
