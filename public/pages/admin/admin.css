@@ -2414,6 +2414,26 @@ tr:hover td {
   font-size: var(--text-xs);
 }
 
+/* Quality routing (plan §8). The weld warning sits ABOVE the chips, not beside
+   the confirm button: it is a reason to look at the faces again, and it is
+   useless once the eye has already travelled past them to the name field. */
+.face-group-weld {
+  margin: 0;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-left: 3px solid var(--color-status-pending-text);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-alt, transparent);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+.face-group-setaside {
+  margin: 0;
+  font-size: var(--text-xs);
+}
+.faces-count-muted {
+  opacity: 0.75;
+}
+
 /* Ask queue */
 .faces-ask-list {
   list-style: none;

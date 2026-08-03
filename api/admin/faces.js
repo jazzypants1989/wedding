@@ -42,6 +42,9 @@ import {
   createIdentity,
   identitiesForPerson,
   blobToDescriptor,
+  routeStatesOf,
+  routeStateCounts,
+  facesWithSignals,
 } from "../../db/media-faces.js"
 import { now } from "../../db/utils.js"
 import { groupFaces, distanceMatrix, centroid } from "../../public/vision/group.js"
@@ -67,6 +70,56 @@ const FACE_BATCH_MAX = 500
 
 /** The ask queue never returns more than this many items in one response. */
 const QUEUE_MAX_ITEMS = 200
+
+/**
+ * The route states a BULK action may touch.
+ *
+ * `set_aside` is absent on purpose — that is the whole enforcement. `null` is
+ * present because it means "not yet graded" rather than "graded and rejected":
+ * every row written before the `add_face_routing` migration has it, and
+ * treating ungraded as forbidden would make the Faces tab refuse to work on
+ * exactly the rows that exist today.
+ * @type {ReadonlySet<string | null>}
+ */
+const BULK_ASSIGNABLE = new Set([null, "accept", "ask"])
+
+/**
+ * Refuse a bulk mutation that touches a face the admin was never shown.
+ *
+ * The Faces tab filters `set_aside` out of what it displays, so a request
+ * carrying one did not come from a group the admin looked at — it came from a
+ * stale page, a hand-made request, or a bug. Enforcing it here rather than in
+ * the UI is what makes "a bulk action can never assign a face the admin did not
+ * see" a property of the system instead of a property of one client.
+ *
+ * The single-face escape hatch (`assignOne`) deliberately does NOT go through
+ * this: the per-photograph view shows every face in a photograph including the
+ * set-aside ones, and without a way to name them the set-aside state would be a
+ * one-way door rather than a queue filter.
+ * @param {number[]} faceIds
+ */
+function assertBulkAssignable(faceIds) {
+  const states = routeStatesOf(faceIds)
+  /** @type {number[]} */
+  const blocked = []
+  /** @type {number[]} */
+  const missing = []
+  for (const id of faceIds) {
+    // `validateFaceIds` has already refused anything missing or soft-deleted,
+    // so `missing` should stay empty — but "the row vanished between two
+    // queries" is reported as its own thing rather than mislabelled as set
+    // aside, because the two want different answers from whoever reads it.
+    if (!states.has(id)) missing.push(id)
+    else if (!BULK_ASSIGNABLE.has(states.get(id) ?? null)) blocked.push(id)
+  }
+  if (missing.length > 0) throw new NotFoundError(`Face ${missing[0]}`)
+  if (blocked.length > 0) {
+    throw new ValidationError(
+      `${blocked.length} face(s) are set aside and cannot be changed in bulk: ${blocked.join(", ")}. ` +
+        "Open the photograph and assign them one at a time.",
+    )
+  }
+}
 
 /**
  * A face row + its Float32Array descriptor, sharing one DescriptorSet's
@@ -177,33 +230,95 @@ function boxOf(face) {
   return { x: face.bbox_x, y: face.bbox_y, w: face.bbox_w, h: face.bbox_h }
 }
 
+/** Whether a face is one the queue and the group chips will show. Null
+ *  (ungraded) shows: "not yet graded" is not "held back".
+ *  @param {{ route_state: import('../../types.js').RouteState | null }} face */
+function isShown(face) {
+  return face.route_state !== "set_aside"
+}
+
+/**
+ * How likely this group is to be two people welded into one.
+ *
+ * **Why the Faces tab needs this at all.** The Phase 2 comparison established
+ * that on this cast, in BOTH descriptor spaces tried, no grouping cutoff
+ * separates everyone without welding two people together. Welding is therefore
+ * not a hypothetical this UI should be relaxed about — it is a thing that is
+ * definitely happening in some group on the page, and the admin's fast path is
+ * a button that names a whole group at once.
+ *
+ * **What the number is.** The group's DIAMETER — its widest internal pair —
+ * divided by the grouping cutoff. Meaningful because the clustering is
+ * average-linkage (public/vision/group.js): a merge needs the MEAN distance
+ * below the cutoff, so individual pairs inside an accepted group are free to
+ * sit well beyond it. A ratio above 1 says, in one number, "this group contains
+ * two faces further apart than the threshold that was supposed to separate
+ * people" — which is what a weld looks like from the inside.
+ *
+ * No new tunable: the comparison is against `group.cutoff`, the constant that
+ * built the group in the first place.
+ * @param {import('../../public/vision/types.js').DescriptorSet} set
+ * @param {readonly number[]} members row indices into `set`
+ * @param {{ n: number, d: Float64Array | Float32Array | number[] }} raw un-mutated distance matrix
+ * @param {number} cutoff
+ * @returns {{ diameter: number, ratio: number } | null}
+ */
+function weldRisk(set, members, raw, cutoff) {
+  if (members.length < 2) return null
+  let diameter = 0
+  for (let a = 0; a < members.length; a++) {
+    for (let b = a + 1; b < members.length; b++) {
+      const dist = raw.d[members[a] * raw.n + members[b]]
+      if (dist > diameter) diameter = dist
+    }
+  }
+  return { diameter, ratio: cutoff > 0 ? diameter / cutoff : 0 }
+}
+
 /** @type {Types.faceOverviewHandler} */
 export async function overview(req, res) {
   const counts = getFaceCounts()
+  const routeCounts = routeStateCounts()
   const groupDefaults = getDefaults("group")
+  const cutoff = /** @type {number} */ (groupDefaults.cutoff)
   const byVersion = loadUnidentifiedByModelVersion()
 
-  /** @type {Array<{ faceIds: number[], media: Array<ReturnType<typeof chipOf>>, suggestion: { personId: number, personName: string, margin: number } | null, size: number }>} */
+  /** @type {Array<{ faceIds: number[], media: Array<ReturnType<typeof chipOf>>, suggestion: { personId: number, personName: string, margin: number } | null, size: number, shown: number, setAside: number, weld: { diameter: number, ratio: number } | null }>} */
   const rawGroups = []
 
   for (const [modelVersion, { faces, set }] of byVersion) {
     if (faces.length === 0) continue
     const chips = mediaChipInfo([...new Set(faces.map((f) => f.media_id))])
     const photoIds = faces.map((f) => f.media_id)
+    // A SECOND, un-mutated distance matrix, for the weld measurement below.
+    // groupFaces runs Lance-Williams in place over the matrix it uses, so the
+    // one it works on is not a table of pairwise distances by the time it is
+    // done — reading a group's diameter out of it would read merged-cluster
+    // distances instead. Computed before, so it is untouched.
+    const raw = distanceMatrix(set)
     const clusters = groupFaces(set, {
-      cutoff: /** @type {number} */ (groupDefaults.cutoff),
+      cutoff,
       photoIds,
       cannotLinkWithinPhoto: /** @type {boolean} */ (groupDefaults.cannotLinkWithinPhoto),
     })
     const { prototypes, meta } = loadPrototypesByModelVersion(modelVersion)
 
     for (const cluster of clusters) {
-      const faceIds = cluster.members.map((i) => faces[i].id)
-      const media = cluster.members.map((i) => chipOf(faces[i], chips))
+      // The group was CLUSTERED over every face, including the set-aside ones —
+      // that is the rule, routing filters the display and never the input. What
+      // is filtered is what leaves this function: the chips the admin sees, and
+      // `faceIds`, which is what the bulk-confirm button posts back. So a bulk
+      // confirm cannot carry a face that was not on screen, by construction and
+      // not only by the server-side check that also refuses it.
+      const shownMembers = cluster.members.filter((i) => isShown(faces[i]))
+      if (shownMembers.length === 0) continue
 
       /** @type {{ personId: number, personName: string, margin: number } | null} */
       let suggestion = null
       if (prototypes.length > 0) {
+        // The centroid is over the FULL cluster, not the shown subset: the
+        // suggestion is about who this group is, and a face being too small to
+        // show is not a reason to drop its evidence.
         const vec = centroid(set, cluster.members)
         const match = matchFace(vec, prototypes)
         if (match.best) {
@@ -212,7 +327,15 @@ export async function overview(req, res) {
         }
       }
 
-      rawGroups.push({ faceIds, media, suggestion, size: cluster.size })
+      rawGroups.push({
+        faceIds: shownMembers.map((i) => faces[i].id),
+        media: shownMembers.map((i) => chipOf(faces[i], chips)),
+        suggestion,
+        size: cluster.size,
+        shown: shownMembers.length,
+        setAside: cluster.members.length - shownMembers.length,
+        weld: weldRisk(set, cluster.members, raw, cutoff),
+      })
     }
   }
 
@@ -224,9 +347,15 @@ export async function overview(req, res) {
     faceIds: g.faceIds,
     media: g.media,
     suggestion: g.suggestion,
+    /** Total cluster size, INCLUDING faces not shown — so the UI can say
+     *  "3 more too small to show" rather than silently disagreeing with
+     *  itself about how big the group is. */
+    size: g.size,
+    setAside: g.setAside,
+    weld: g.weld,
   }))
 
-  return sendJson(res, 200, { counts, groups })
+  return sendJson(res, 200, { counts, routeCounts, groups })
 }
 
 /**
@@ -265,7 +394,7 @@ export async function queue(req, res) {
   const byVersion = loadUnidentifiedByModelVersion()
   const scoreCooccurrence = cooccurrenceScorer(confirmedCooccurrence())
 
-  /** @type {Array<ReturnType<typeof chipOf> & { candidates: Array<{ personId: number | null, personName: string | null, distance: number, margin: number, cooccurrence: number }>, unlocks: number }>} */
+  /** @type {Array<ReturnType<typeof chipOf> & { candidates: Array<{ personId: number | null, personName: string | null, distance: number, margin: number, cooccurrence: number }>, unlocks: number, routeState: import('../../types.js').RouteState | null, routeReason: string | null }>} */
   const items = []
 
   for (const [modelVersion, { faces, set }] of byVersion) {
@@ -291,6 +420,13 @@ export async function queue(req, res) {
 
     for (let i = 0; i < faces.length; i++) {
       const face = faces[i]
+      // The display filter. Note WHERE it is: after the distance matrix and
+      // after `frameKey`, both of which are computed over every face in the
+      // bucket. A set-aside face still counts toward another face's `unlocks`,
+      // because confirming that other face really would resolve this one too —
+      // dropping it earlier would make the queue's ordering signal quietly
+      // wrong as well as shorter.
+      if (!isShown(face)) continue
       const descriptor = set.data.subarray(i * set.dim, (i + 1) * set.dim)
       const match = matchFace(descriptor, prototypes)
       const present = confirmedInPhoto.get(face.media_id) ?? new Set()
@@ -316,7 +452,13 @@ export async function queue(req, res) {
         if (d[row + j] < sameBandCutoff) frameSet.add(frameKey.get(faces[j].media_id) ?? `media:${faces[j].media_id}`)
       }
 
-      items.push({ ...chipOf(face, chips), candidates: top3, unlocks: frameSet.size })
+      items.push({
+        ...chipOf(face, chips),
+        candidates: top3,
+        unlocks: frameSet.size,
+        routeState: face.route_state,
+        routeReason: face.route_reason,
+      })
     }
   }
 
@@ -345,10 +487,14 @@ function validateFaceIds(rawFaceIds) {
   return result.value
 }
 
-/** @type {Types.faceAssignHandler} */
+/**
+ * Bulk assign. Every face id must be one the queue would have shown.
+ * @type {Types.faceAssignHandler}
+ */
 export async function assign(req, res, { session }) {
   const body = await parseBody(req)
   const faceIds = validateFaceIds(body.faceIds)
+  assertBulkAssignable(faceIds)
 
   const personIdResult = validateId(body.personId, "personId")
   if (!personIdResult.valid) throw new ValidationError(personIdResult.error)
@@ -390,6 +536,7 @@ export async function assign(req, res, { session }) {
 export async function unassign(req, res, { session }) {
   const body = await parseBody(req)
   const faceIds = validateFaceIds(body.faceIds)
+  assertBulkAssignable(faceIds)
 
   const changed = withTransaction(() => {
     let n = 0
@@ -414,6 +561,13 @@ export async function unassign(req, res, { session }) {
 export async function notAFace(req, res, { session }) {
   const body = await parseBody(req)
   const faceIds = validateFaceIds(body.faceIds)
+  // Enforced here too, and it is not obvious that it should be: a set-aside
+  // face is exactly the kind you would want to sweep away in bulk. But "not a
+  // face" is a judgement, the admin cannot have made it about a face the queue
+  // never showed them, and this is a destructive write. A deliberate
+  // "dismiss everything set aside" is a legitimate feature — as its own
+  // endpoint, named for what it does, not as a side effect of this one.
+  assertBulkAssignable(faceIds)
 
   const changed = withTransaction(() => {
     let n = 0
@@ -432,6 +586,100 @@ export async function notAFace(req, res, { session }) {
   })
 
   return sendJson(res, 200, { success: true, changed })
+}
+
+/**
+ * The single-face escape hatch, for the per-photograph view.
+ *
+ * Exists because routing is enforced on the bulk paths, and without a way in,
+ * `set_aside` would be a one-way door: a face the gate held back could never be
+ * named even when the admin is looking straight at it and can see perfectly
+ * well who it is. The queue is a filter on attention, not a verdict on the
+ * photograph.
+ *
+ * Three things make this safe to exempt where the bulk paths are not:
+ *
+ *  - **Exactly one face.** Not "a small batch" — one. The blast radius of a
+ *    client bug or a stale page is a single row.
+ *  - **The face id is the whole request.** There is no group, no filter and no
+ *    server-side selection to be wrong about; the admin named the row.
+ *  - **The per-photograph view shows every face in the photograph**, set aside
+ *    or not, so a face reaching here is one that was on screen.
+ *
+ * `personId: null` clears the assignment, so the same route is the undo.
+ * @type {Types.faceAssignOneHandler}
+ */
+export async function assignOne(req, res, { session }) {
+  const body = await parseBody(req)
+
+  // ⚠ Checked BEFORE validateId, and it has to be. `validateId` is
+  // `parseInt(String(value), 10)`, and `String([12, 13])` is `"12,13"`, which
+  // parses to 12 — so an array reaches it and comes back as its FIRST element,
+  // valid and silent. Everywhere else that is merely untidy; here it would turn
+  // the one route exempt from the routing check into a bulk path that quietly
+  // operates on one arbitrary member of whatever it was sent. "Exactly one
+  // face" is the property this exemption rests on, so it is enforced on the
+  // raw body rather than inferred from a validator that does not promise it.
+  if (typeof body.faceId !== "number" && typeof body.faceId !== "string") {
+    throw new ValidationError("faceId must be a single id — this route assigns exactly one face")
+  }
+
+  const faceIdResult = validateId(body.faceId, "faceId")
+  if (!faceIdResult.valid) throw new ValidationError(faceIdResult.error)
+  const face = getFaceById(faceIdResult.value)
+  if (!face || face.deleted_at) throw new NotFoundError(`Face ${faceIdResult.value}`)
+
+  // Clearing is always allowed and needs no person to exist.
+  if (body.personId === null || body.personId === undefined) {
+    const changed = setFaceIdentity(face.id, null)
+    log({
+      action: FACE_AUDIT_ACTIONS.UNASSIGN,
+      adminId: session?.token,
+      ip: getClientIp(req),
+      resourceType: "media_face",
+      resourceId: face.id,
+      details: { faceIds: [face.id], changed: changed ? 1 : 0, single: true },
+    })
+    return sendJson(res, 200, { success: true, personId: null, identityId: null, changed: changed ? 1 : 0 })
+  }
+
+  const personIdResult = validateId(body.personId, "personId")
+  if (!personIdResult.valid) throw new ValidationError(personIdResult.error)
+  const person = getPersonById(personIdResult.value)
+  if (!person) throw new NotFoundError("Person")
+
+  const { identityId, changed } = withTransaction(() => {
+    const existing = identitiesForPerson(personIdResult.value).find((i) => i.provenance === "confirmed")
+    const identity =
+      existing ??
+      createIdentity({
+        personId: personIdResult.value,
+        confirmedBy: actorId(session?.token),
+        confirmedAt: now(),
+        provenance: "confirmed",
+      })
+    return { identityId: identity.id, changed: setFaceIdentity(face.id, identity.id) ? 1 : 0 }
+  })
+
+  log({
+    action: FACE_AUDIT_ACTIONS.ASSIGN,
+    adminId: session?.token,
+    ip: getClientIp(req),
+    resourceType: "face_identity",
+    resourceId: identityId,
+    // `routeState` is recorded because this is the path that can name a face
+    // the queue held back, and "which ones did we override" is a question the
+    // Phase 4 tuning pass will want to ask of the log rather than guess at.
+    details: {
+      faceIds: [face.id],
+      personId: personIdResult.value,
+      changed,
+      single: true,
+      routeState: face.route_state,
+    },
+  })
+
+  return sendJson(res, 200, { success: true, personId: personIdResult.value, identityId, changed })
 }
 
 /**

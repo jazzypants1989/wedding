@@ -701,10 +701,29 @@ export interface MediaFace {
   model_version: string
   source: FaceSource
   face_identity_id: number | null
+  /**
+   * Quality routing (schema.js `add_face_routing`). **NULL means NOT YET
+   * GRADED** — a row written before routing existed, or by a path that did not
+   * grade it — and it is a fourth case every consumer handles rather than
+   * folds into a state. Never "rejected": a `set_aside` face is still stored,
+   * still grouped and still nameable through the single-face escape hatch.
+   */
+  route_state: RouteState | null
+  /** Which check decided. Null for `accept` and for ungraded rows. */
+  route_reason: string | null
+  /** Which cutoff table produced the grade (public/vision/route.js PROFILE).
+   *  Without it a revised cutoff silently re-means every stored grade. */
+  route_profile: string | null
   created_at: string
   updated_at: string
   deleted_at: string | null
 }
+
+/** What the Faces tab does with a face. Mirrors public/vision/types.d.ts's
+ *  RouteState — duplicated rather than imported because that file is the pure
+ *  pipeline's and this one is the entity layer's, and neither may depend on
+ *  the other. The trigger in schema.js `add_face_routing` is the enforcement. */
+export type RouteState = "accept" | "ask" | "set_aside"
 
 /**
  * A person in the photographed cast (schema.js `add_people` migration). NOT an

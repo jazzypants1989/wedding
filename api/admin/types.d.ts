@@ -828,7 +828,12 @@ export function faceQueueHandler(
 
 /** POST /api/admin/faces/assign — { faceIds: number[], personId } → find-or-create
  *  a CONFIRMED identity for the person and point every face at it, one txn.
- *  Assigning by name is not an API shape. */
+ *  Assigning by name is not an API shape.
+ *
+ *  BULK: refuses any face id whose `route_state` is `set_aside`, so an action
+ *  over a group can never touch a face the queue did not show. Ungraded
+ *  (`route_state IS NULL`) rows are allowed — that means "not yet graded", not
+ *  "rejected". Use `assign-one` for a face the routing held back. */
 export function faceAssignHandler(
   req: IncomingMessage,
   res: ServerResponse,
@@ -844,6 +849,20 @@ export function faceUnassignHandler(
 
 /** POST /api/admin/faces/not-a-face — { faceIds: number[] } → soft-delete the rows. */
 export function faceNotAFaceHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** POST /api/admin/faces/assign-one — { faceId, personId | null } → the
+ *  single-face escape hatch from the per-photograph view.
+ *
+ *  The ONE path that may name a `set_aside` face, and deliberately so: without
+ *  it the routing filter would be a one-way door rather than a filter on
+ *  attention, and a face the admin is looking straight at could not be named.
+ *  Exactly one id, no group and no server-side selection, so a client bug costs
+ *  one row. `personId: null` clears, making this its own undo. */
+export function faceAssignOneHandler(
   req: IncomingMessage,
   res: ServerResponse,
   routeInfo: AuthenticatedRouteInfo,

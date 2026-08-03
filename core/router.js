@@ -323,6 +323,11 @@ route("DELETE", "/api/admin/media/:id", adminMedia.remove, { admin: true })
 route("GET", "/api/admin/faces/overview", adminFaces.overview, { admin: true })
 route("GET", "/api/admin/faces/queue", adminFaces.queue, { admin: true })
 route("POST", "/api/admin/faces/assign", adminFaces.assign, { admin: true })
+// Separate from `assign` on purpose, not a convenience alias: this is the one
+// path allowed to name a face the quality routing set aside, and it is a
+// distinct route so that exemption is visible here rather than hidden behind a
+// flag on the bulk shape. See api/admin/faces.js's assignOne.
+route("POST", "/api/admin/faces/assign-one", adminFaces.assignOne, { admin: true })
 route("POST", "/api/admin/faces/unassign", adminFaces.unassign, { admin: true })
 route("POST", "/api/admin/faces/not-a-face", adminFaces.notAFace, { admin: true })
 route("GET", "/api/admin/faces/propagations", adminFaces.propagations, { admin: true })

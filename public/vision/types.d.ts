@@ -21,6 +21,7 @@ export interface VisionDefaults {
   detect: Record<string, number>
   align: Record<string, number>
   gate: Record<string, number>
+  route: Record<string, number>
   group: { cutoff: number; cannotLinkWithinPhoto: boolean }
   describe: { mirrorAverage: boolean }
   assign: { sameBandCutoff: number }
@@ -217,6 +218,39 @@ export function sharpness(crop: RgbImage): number
 export function gateSignals(input: GateInput): GateSignals
 
 export function applyGate(signals: GateSignals, cutoffs: Record<string, number>): GateVerdict
+
+// --- route.js ---
+
+/**
+ * What the Faces tab does with a face. Not a quality score and not a verdict on
+ * the person — `set_aside` means "not worth your attention", never "not a face"
+ * and never "deleted". Every state is still grouped and still nameable.
+ */
+export type RouteState = "accept" | "ask" | "set_aside"
+
+export interface RouteVerdict {
+  state: RouteState
+  /**
+   * Which check decided. The failing gate check for `set_aside`, the weakest
+   * accept condition for `ask`, and null for `accept` — nothing held it back.
+   */
+  reason: string | null
+  /**
+   * Absolute ordering score in [0, 1], for ranking WITHIN `ask`: how close the
+   * face came to `accept`. Never a percentile and never population-relative, so
+   * it is comparable across ingests. 1 for `accept`, 0 for `set_aside`.
+   */
+  score: number
+  /** The cutoff set this grade was computed under. See route.js PROFILE. */
+  profile: string
+}
+
+export function routeFace(signals: GateSignals, cutoffs: Record<string, number>): RouteVerdict
+
+/** `defaults.gate` and `defaults.route` flattened into one table. */
+export function routeCutoffs(overrides?: Record<string, number>): Record<string, number>
+
+export function isRouteState(value: unknown): value is RouteState
 
 export function gateCheckKeys(): string[]
 

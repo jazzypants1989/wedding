@@ -36,20 +36,23 @@ export function insertFace({
   descriptor,
   modelVersion,
   source,
+  route = null,
 }) {
   const s = signals ?? {}
   const result = sql`INSERT INTO media_faces (
       media_id, bbox_x, bbox_y, bbox_w, bbox_h, landmarks,
       signal_score, signal_boxPx, signal_borderPx, signal_eyeRatio, signal_eyeAngle,
       signal_alignScale, signal_residual, signal_outsideFraction, signal_sharpness,
-      descriptor, model_version, source
+      descriptor, model_version, source,
+      route_state, route_reason, route_profile
     ) VALUES (
       ${mediaId}, ${bbox.x}, ${bbox.y}, ${bbox.w}, ${bbox.h},
       ${landmarks ? JSON.stringify(landmarks) : null},
       ${s.score ?? null}, ${s.boxPx ?? null}, ${s.borderPx ?? null}, ${s.eyeRatio ?? null},
       ${s.eyeAngle ?? null}, ${s.alignScale ?? null}, ${s.residual ?? null},
       ${s.outsideFraction ?? null}, ${s.sharpness ?? null},
-      ${descriptor ?? null}, ${modelVersion}, ${source}
+      ${descriptor ?? null}, ${modelVersion}, ${source},
+      ${route?.state ?? null}, ${route?.reason ?? null}, ${route?.profile ?? null}
     )`.run()
   return /** @type {import('../types.js').MediaFace} */ (
     getFaceById(Number(result.lastInsertRowid))
@@ -153,9 +156,112 @@ export function getFaceCounts() {
   }
 }
 
-/** @type {Types.unidentifiedFacesWithDescriptors} */
+// --- Quality routing (plan §8) -----------------------------------------------
+
+/**
+ * The nine gate signals plus the route columns, for a set of face ids.
+ *
+ * This function exists because D8 said nothing did: `media_faces` has carried
+ * nine `signal_*` columns since it was created and **no query in this file
+ * selected one**, so the Faces tab showed every detection including everything
+ * the quality gate exists to catch. Anything that wants to grade, re-grade or
+ * explain a face's routing reads it here.
+ *
+ * Never selects `descriptor` — this shape goes to the admin UI as JSON, and a
+ * biometric vector must not ride along with a payload nobody asked to carry it.
+ * @type {Types.facesWithSignals}
+ */
+export function facesWithSignals(faceIds) {
+  if (faceIds.length === 0) return []
+  return sql`SELECT id, media_id, model_version,
+      signal_score, signal_boxPx, signal_borderPx, signal_eyeRatio, signal_eyeAngle,
+      signal_alignScale, signal_residual, signal_outsideFraction, signal_sharpness,
+      route_state, route_reason, route_profile
+    FROM media_faces
+    WHERE id IN ${sql.list(faceIds)} AND deleted_at IS NULL
+    ORDER BY id`.all()
+}
+
+/**
+ * face id -> route_state, for the ids that exist and are live.
+ *
+ * Deliberately a Map with MISSING entries for missing rows rather than a
+ * defaulted one: a caller enforcing routing has to be able to tell "this face
+ * is set_aside" from "this face id is not a live face", and those two want
+ * different errors. `null` in the map is the third case — the row exists and
+ * has not been graded.
+ * @type {Types.routeStatesOf}
+ */
+export function routeStatesOf(faceIds) {
+  /** @type {Map<number, import('../types.js').RouteState | null>} */
+  const map = new Map()
+  if (faceIds.length === 0) return map
+  // The column is TEXT; the `check_media_faces_route_state_*` triggers are what
+  // make the narrowing true, so this is a cast to what the schema enforces
+  // rather than to what the query hopes for.
+  /** @type {Array<{ id: number, route_state: import('../types.js').RouteState | null }>} */
+  const rows = sql`SELECT id, route_state FROM media_faces
+    WHERE id IN ${sql.list(faceIds)} AND deleted_at IS NULL`.all()
+  for (const row of rows) map.set(row.id, row.route_state)
+  return map
+}
+
+/**
+ * Record a routing grade. `profile` travels with it so a later revision of the
+ * cutoff table is an explicit re-grade of the rows whose profile is stale,
+ * rather than a silent change to what an old grade meant.
+ * @type {Types.setFaceRoute}
+ */
+export function setFaceRoute(id, verdict) {
+  const result = sql`UPDATE media_faces
+    SET route_state = ${verdict.state},
+        route_reason = ${verdict.reason},
+        route_profile = ${verdict.profile},
+        updated_at = ${now()}
+    WHERE id = ${id} AND deleted_at IS NULL`.run()
+  return result.changes > 0
+}
+
+/**
+ * How many live faces sit in each route state, INCLUDING the ungraded ones.
+ *
+ * `ungraded` is a first-class count and not an omission: `route_state IS NULL`
+ * means the row predates routing or was written by a path that did not grade
+ * it, and a summary that silently leaves those out is the same shape of bug as
+ * D8 — a number that looks complete and is not.
+ * @type {Types.routeStateCounts}
+ */
+export function routeStateCounts() {
+  /** @type {{ accept: number, ask: number, setAside: number, ungraded: number } | undefined} */
+  const row = sql`SELECT
+      SUM(CASE WHEN route_state = 'accept' THEN 1 ELSE 0 END) AS accept,
+      SUM(CASE WHEN route_state = 'ask' THEN 1 ELSE 0 END) AS ask,
+      SUM(CASE WHEN route_state = 'set_aside' THEN 1 ELSE 0 END) AS setAside,
+      SUM(CASE WHEN route_state IS NULL THEN 1 ELSE 0 END) AS ungraded
+    FROM media_faces WHERE deleted_at IS NULL`.get()
+  // SUM() over an empty table is NULL, not 0.
+  return {
+    accept: row?.accept ?? 0,
+    ask: row?.ask ?? 0,
+    setAside: row?.setAside ?? 0,
+    ungraded: row?.ungraded ?? 0,
+  }
+}
+
+/**
+ * Every live, undecided, descriptor-bearing face.
+ *
+ * ⚠ **Carries `route_state` but does NOT filter on it, deliberately.** Routing
+ * decides what an admin is SHOWN; it must not decide what the clustering sees.
+ * A poor-quality face inside an otherwise clean group still constrains that
+ * group and still occupies its photograph — drop it here and the groups change
+ * shape, the suggestions change order, and the faces that *were* worth naming
+ * get worse answers. The filter belongs at the display, one layer up.
+ * @type {Types.unidentifiedFacesWithDescriptors}
+ */
 export function unidentifiedFacesWithDescriptors() {
-  return sql`SELECT id, media_id, bbox_x, bbox_y, bbox_w, bbox_h, model_version, descriptor
+  return sql`SELECT id, media_id, bbox_x, bbox_y, bbox_w, bbox_h, model_version, descriptor,
+      route_state, route_reason
     FROM media_faces
     WHERE deleted_at IS NULL AND face_identity_id IS NULL AND descriptor IS NOT NULL
     ORDER BY id`.all()

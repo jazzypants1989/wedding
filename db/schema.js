@@ -1433,6 +1433,81 @@ export function runMigrations(db) {
     record.run("add_media_frame_root")
   }
 
+  // Quality routing (plan §8). `media_faces` already carries the nine gate
+  // signals; nothing read them, so the Faces tab would have shown every
+  // detection including everything the gate exists to catch (D8).
+  //
+  // Three columns rather than one, and all three nullable:
+  //
+  //  - `route_state`  accept | ask | set_aside. NULL means NOT YET GRADED, and
+  //    that is a fourth case every query has to handle rather than drop. Rows
+  //    written before this migration have it, and so does any row a future
+  //    write path forgets to grade; a query that filters `route_state = 'ask'`
+  //    silently loses them, which is the same class of bug as D8 itself.
+  //  - `route_reason` which check decided, for the UI to explain itself.
+  //  - `route_profile` WHICH CUTOFF TABLE the grade was computed under
+  //    (`PROFILE` in public/vision/route.js). Without it, revising a cutoff
+  //    silently re-means every stored grade and an old queue page becomes
+  //    unreadable — you cannot tell whether a row says "ask" because it was
+  //    graded that way or because the table moved underneath it. With it, a
+  //    revision is an explicit re-grade of rows whose profile is stale.
+  //
+  // Plain ADD COLUMNs, so this is NOT a table rebuild and D1 is not in play —
+  // no DROP, no implicit delete, no ON DELETE SET NULL firing across
+  // media_faces.face_identity_id. Kept that way deliberately: a nullable
+  // column is the cheap, safe shape here and a NOT NULL default would have
+  // forced the rebuild for no gain.
+  if (!applied.get("add_face_routing")) {
+    const tableExists = db
+      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
+      .get("media_faces")
+
+    // Guarded like `truncate_durable_actor_tokens` above: a test may pin an
+    // earlier ledger state to exercise one migration in isolation, and a
+    // migration that hard-depends on another's table turns that into a boot
+    // failure (D3 — a throwing migration stops the server starting).
+    if (tableExists) {
+      const have = new Set(
+        /** @type {Array<{ name: string }>} */ (
+          db.prepare("PRAGMA table_info(media_faces)").all()
+        ).map((c) => c.name),
+      )
+      for (const [col, decl] of [
+        ["route_state", "TEXT"],
+        ["route_reason", "TEXT"],
+        ["route_profile", "TEXT"],
+      ]) {
+        if (!have.has(col)) db.exec(`ALTER TABLE media_faces ADD COLUMN ${col} ${decl}`)
+      }
+
+      db.exec(`
+        CREATE TRIGGER IF NOT EXISTS check_media_faces_route_state_insert
+        BEFORE INSERT ON media_faces
+        FOR EACH ROW
+        WHEN NEW.route_state IS NOT NULL
+             AND NEW.route_state NOT IN ('accept', 'ask', 'set_aside')
+        BEGIN
+          SELECT RAISE(ABORT, 'Invalid face route_state. Must be: accept, ask or set_aside');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS check_media_faces_route_state_update
+        BEFORE UPDATE ON media_faces
+        FOR EACH ROW
+        WHEN NEW.route_state IS NOT NULL
+             AND NEW.route_state NOT IN ('accept', 'ask', 'set_aside')
+        BEGIN
+          SELECT RAISE(ABORT, 'Invalid face route_state. Must be: accept, ask or set_aside');
+        END;
+
+        -- The queue's own index. Partial on the live rows, because every
+        -- routing query is also a "not deleted" query.
+        CREATE INDEX IF NOT EXISTS idx_media_faces_route
+          ON media_faces(route_state) WHERE deleted_at IS NULL;
+      `)
+    }
+    record.run("add_face_routing")
+  }
+
   // `people.created_by` and `face_identities.confirmed_by` stored the full
   // 64-char sessions-table key while the audit log stored an 8-char prefix of
   // the same value, so "which admin did this" was two different strings

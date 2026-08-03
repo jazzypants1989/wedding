@@ -1138,7 +1138,13 @@ export function liveIdentityCountForPerson(personId: number): number
 /** @file media-faces.js - Types for face pipeline database operations
  *  (docs/post-wedding/SPEC-vision-lab.md §10) */
 
-import type { MediaFace, FaceIdentity, FaceSource, FaceIdentityProvenance } from "../types.js"
+import type {
+  MediaFace,
+  FaceIdentity,
+  FaceSource,
+  FaceIdentityProvenance,
+  RouteState,
+} from "../types.js"
 
 /** Pixel-space bounding box in the source image. */
 export interface FaceBBox {
@@ -1174,6 +1180,19 @@ export interface InsertFaceInput {
   descriptor?: Buffer | Uint8Array | null
   modelVersion: string
   source: FaceSource
+  /** The routing grade, if the caller computed one. Null leaves the row
+   *  ungraded, which is a legitimate state (detection-only rows, and any
+   *  path that has no signals to grade from) rather than an omission. */
+  route?: FaceRouteVerdict | null
+}
+
+/** What `setFaceRoute`/`insertFace` persist. Structurally the pipeline's
+ *  RouteVerdict minus its ordering score — the score orders a live queue and
+ *  is recomputed, so storing it would be a second copy to keep true. */
+export interface FaceRouteVerdict {
+  state: RouteState
+  reason: string | null
+  profile: string
 }
 
 /** Insert a face row and return the full row. Subject to the schema's §10
@@ -1267,12 +1286,65 @@ export interface UnidentifiedFaceRow {
   bbox_h: number
   model_version: string
   descriptor: Uint8Array
+  /** Carried so the DISPLAY can filter on it. Null = not yet graded. */
+  route_state: RouteState | null
+  route_reason: string | null
 }
 
 /** Every live, undecided face with a descriptor, id ascending. Grouping and
  *  matching are computed on demand from this — nothing about a group is
- *  persisted (see the admin routes' module comment). */
+ *  persisted (see the admin routes' module comment).
+ *
+ *  Returns every such face REGARDLESS of route state, on purpose: routing
+ *  filters what an admin sees, never what the clustering sees. */
 export function unidentifiedFacesWithDescriptors(): UnidentifiedFaceRow[]
+
+/** One face's nine gate signals and its routing grade. The function D8 said
+ *  was missing: nothing in db/media-faces.js selected a signal column, so the
+ *  Faces tab could not tell a good detection from a bad one. Never carries a
+ *  descriptor — this shape is returned to the admin UI as JSON. */
+export interface FaceSignalRow {
+  id: number
+  media_id: number
+  model_version: string
+  signal_score: number | null
+  signal_boxPx: number | null
+  signal_borderPx: number | null
+  signal_eyeRatio: number | null
+  signal_eyeAngle: number | null
+  signal_alignScale: number | null
+  signal_residual: number | null
+  signal_outsideFraction: number | null
+  signal_sharpness: number | null
+  route_state: RouteState | null
+  route_reason: string | null
+  route_profile: string | null
+}
+
+/** Signals + routing for a set of live face ids, id ascending. Empty input
+ *  returns an empty array without touching the database. */
+export function facesWithSignals(faceIds: number[]): FaceSignalRow[]
+
+/** face id -> route_state, for the ids that are live rows. An id absent from
+ *  the map is not a live face; an id mapping to null is a live face that has
+ *  not been graded. Those are different failures and callers distinguish
+ *  them. */
+export function routeStatesOf(faceIds: number[]): Map<number, RouteState | null>
+
+/** Record a routing grade, carrying the profile it was computed under.
+ *  Returns true if a live row changed. */
+export function setFaceRoute(id: number, verdict: FaceRouteVerdict): boolean
+
+/** Live faces per route state. `ungraded` counts `route_state IS NULL` as a
+ *  first-class bucket — a summary that drops them looks complete and is not. */
+export interface RouteStateCounts {
+  accept: number
+  ask: number
+  setAside: number
+  ungraded: number
+}
+
+export function routeStateCounts(): RouteStateCounts
 
 /** One face belonging to a CONFIRMED (never 'propagated') identity, restricted
  *  to a single descriptor model version. `person_name` is always present;

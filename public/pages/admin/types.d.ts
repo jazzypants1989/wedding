@@ -1418,12 +1418,37 @@ export interface FaceGroupSuggestion {
   margin: number
 }
 
+/**
+ * How likely a group is to be two people welded together: its widest internal
+ * pair, over the grouping cutoff. Above 1 means the group contains two faces
+ * further apart than the threshold that is supposed to separate people —
+ * possible because the clustering is average-linkage, so a merge only needs the
+ * MEAN below the cutoff.
+ *
+ * Present because the Phase 2 comparison established that on this cast, in both
+ * descriptor spaces tried, no cutoff separates everyone without welding two
+ * people. Welding is not a hypothetical here, and the fast path is a button
+ * that names a whole group at once.
+ */
+export interface FaceGroupWeld {
+  diameter: number
+  ratio: number
+}
+
 /** One unnamed cluster from GET /api/admin/faces/overview, largest first. */
 export interface FaceGroup {
   key: string
+  /** Only the faces the admin can SEE — set-aside members are absent, so a
+   *  bulk confirm cannot carry a face that was never on screen. */
   faceIds: number[]
   media: FaceChipEntry[]
   suggestion: FaceGroupSuggestion | null
+  /** The FULL cluster size, including faces filtered out of the chips. */
+  size: number
+  /** How many of `size` were withheld by routing. */
+  setAside: number
+  /** Null for a single-face group — one face cannot be two people. */
+  weld: FaceGroupWeld | null
 }
 
 export interface FaceOverviewCounts {
@@ -1433,9 +1458,20 @@ export interface FaceOverviewCounts {
   notAFace: number
 }
 
+/** Live faces per routing state. `ungraded` is `route_state IS NULL` — rows
+ *  written before routing existed. Not an omission and not a fourth quality
+ *  band: they are shown and fully assignable. */
+export interface FaceRouteCounts {
+  accept: number
+  ask: number
+  setAside: number
+  ungraded: number
+}
+
 /** GET /api/admin/faces/overview. */
 export interface FacesOverviewResponse {
   counts: FaceOverviewCounts
+  routeCounts: FaceRouteCounts
   groups: FaceGroup[]
 }
 
@@ -1454,6 +1490,10 @@ export interface FaceCandidate {
 export interface FaceQueueItem extends FaceChipEntry {
   candidates: FaceCandidate[]
   unlocks: number
+  /** Never `set_aside` — those do not reach the queue. Null = ungraded. */
+  routeState: "accept" | "ask" | null
+  /** Which accept condition held it back, for an `ask`. Null otherwise. */
+  routeReason: string | null
 }
 
 /** GET /api/admin/faces/queue. */

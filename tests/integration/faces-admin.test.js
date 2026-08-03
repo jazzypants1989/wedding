@@ -69,19 +69,25 @@ const MODEL_VERSION = "v-test"
 /**
  * @param {number} mediaId
  * @param {number[]} vector
- * @param {{ box?: { x: number, y: number, w: number, h: number }, modelVersion?: string }} [opts]
+ * @param {{ box?: { x: number, y: number, w: number, h: number }, modelVersion?: string, route?: string | null }} [opts]
  * @returns {number}
  */
 function seedFace(mediaId, vector, opts = {}) {
   const blob = descriptorToBlob(Float32Array.from(vector))
   const box = opts.box ?? { x: 10, y: 20, w: 50, h: 50 }
   const modelVersion = opts.modelVersion ?? MODEL_VERSION
+  // `route` defaults to undefined -> NULL, which is the state every row written
+  // before the add_face_routing migration is in. Most tests below leave it that
+  // way on purpose: ungraded must keep working, or the Faces tab breaks on
+  // exactly the rows that exist today.
+  const route = opts.route ?? null
   const r = db
     .prepare(
-      `INSERT INTO media_faces (media_id, bbox_x, bbox_y, bbox_w, bbox_h, descriptor, model_version, source)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'cli')`,
+      `INSERT INTO media_faces (media_id, bbox_x, bbox_y, bbox_w, bbox_h, descriptor, model_version, source,
+                                route_state, route_profile)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'cli', ?, ?)`,
     )
-    .run(mediaId, box.x, box.y, box.w, box.h, blob, modelVersion)
+    .run(mediaId, box.x, box.y, box.w, box.h, blob, modelVersion, route, route === null ? null : "route-test")
   return Number(r.lastInsertRowid)
 }
 
@@ -942,5 +948,220 @@ describe("people: delete", () => {
   it("404s deleting a person who does not exist", async (t) => {
     if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
     assert.strictEqual((await asAdmin("/api/admin/people/999999", { method: "DELETE" })).status, 404)
+  })
+})
+
+describe("quality routing (plan §8)", () => {
+  it("hides a set-aside face from the group chips but still clusters on it", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const m1 = seedMedia()
+    const m2 = seedMedia()
+    const m3 = seedMedia()
+    const shownA = seedFace(m1, CLUSTER_A1, { route: "accept" })
+    const shownB = seedFace(m2, CLUSTER_A2, { route: "ask" })
+    const hidden = seedFace(m3, CLUSTER_A1, { route: "set_aside" })
+
+    const body = await json(await asAdmin("/api/admin/faces/overview"))
+    const group = body.groups.find((/** @type {any} */ g) => g.faceIds.includes(shownA))
+    assert.ok(group, "the accept face is in a group")
+
+    // The display filter: the hidden face is not offered.
+    assert.deepStrictEqual(group.faceIds.sort((/** @type {number} */ a, /** @type {number} */ b) => a - b), [shownA, shownB].sort((a, b) => a - b))
+    assert.ok(!group.media.some((/** @type {any} */ m) => m.faceId === hidden))
+
+    // ...but the clustering still saw it. `size` is the full cluster, and
+    // `setAside` says how many are missing from the chips — the alternative is
+    // a UI that silently disagrees with itself about how big a group is.
+    assert.strictEqual(group.size, 3)
+    assert.strictEqual(group.setAside, 1)
+  })
+
+  it("reports weld risk against the grouping cutoff", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const tight = [seedMedia(), seedMedia()].map((m, i) =>
+      seedFace(m, i === 0 ? CLUSTER_A1 : CLUSTER_A2),
+    )
+    const body = await json(await asAdmin("/api/admin/faces/overview"))
+    const group = body.groups.find((/** @type {any} */ g) => g.faceIds.includes(tight[0]))
+
+    assert.ok(group.weld, "a group of two or more carries a weld measurement")
+    assert.ok(group.weld.diameter >= 0)
+    // These two are near-identical, so the widest internal pair is far inside
+    // the cutoff: nothing to warn about.
+    assert.ok(group.weld.ratio < 1, "a genuinely tight group is not flagged")
+  })
+
+  it("counts ungraded faces as their own bucket, not as an omission", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    seedFace(seedMedia(), CLUSTER_A1, { route: "accept" })
+    seedFace(seedMedia(), CLUSTER_A2, { route: "ask" })
+    seedFace(seedMedia(), CLUSTER_B1, { route: "set_aside" })
+    seedFace(seedMedia(), CLUSTER_B2) // ungraded
+
+    const body = await json(await asAdmin("/api/admin/faces/overview"))
+    assert.deepStrictEqual(body.routeCounts, { accept: 1, ask: 1, setAside: 1, ungraded: 1 })
+  })
+
+  it("keeps an ungraded face fully usable — that is not the same as rejected", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const face = seedFace(seedMedia(), CLUSTER_A1) // route_state IS NULL
+    const person = seedPerson({ display_name: "Ungraded Is Fine" })
+
+    const res = await asAdmin("/api/admin/faces/assign", {
+      method: "POST",
+      body: JSON.stringify({ faceIds: [face], personId: person }),
+    })
+    assert.strictEqual(res.status, 200, "every row that exists today is ungraded; bulk must work on them")
+  })
+
+  it("refuses a bulk assign that reaches a face the queue never showed", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const ok = seedFace(seedMedia(), CLUSTER_A1, { route: "ask" })
+    const hidden = seedFace(seedMedia(), CLUSTER_A2, { route: "set_aside" })
+    const person = seedPerson({ display_name: "Should Not Get These" })
+
+    const res = await asAdmin("/api/admin/faces/assign", {
+      method: "POST",
+      body: JSON.stringify({ faceIds: [ok, hidden], personId: person }),
+    })
+    assert.strictEqual(res.status, 400)
+    assert.ok((await json(res)).error.includes("set aside"))
+
+    // ATOMIC: the whole batch is refused, so the assignable face in it is
+    // untouched too. A partial apply would leave the admin with no way to know
+    // which half landed.
+    const row = /** @type {any} */ (
+      db.prepare(`SELECT face_identity_id FROM media_faces WHERE id = ?`).get(ok)
+    )
+    assert.strictEqual(row.face_identity_id, null)
+  })
+
+  it("refuses bulk unassign and not-a-face on a set-aside face too", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const hidden = seedFace(seedMedia(), CLUSTER_A1, { route: "set_aside" })
+
+    for (const path of ["/api/admin/faces/unassign", "/api/admin/faces/not-a-face"]) {
+      const res = await asAdmin(path, {
+        method: "POST",
+        body: JSON.stringify({ faceIds: [hidden] }),
+      })
+      assert.strictEqual(res.status, 400, `${path} must refuse a face the admin was not shown`)
+    }
+
+    const row = /** @type {any} */ (
+      db.prepare(`SELECT deleted_at FROM media_faces WHERE id = ?`).get(hidden)
+    )
+    assert.strictEqual(row.deleted_at, null, "not-a-face must not have soft-deleted it")
+  })
+
+  it("names a set-aside face through the single-face escape hatch", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    // The whole point: set_aside filters attention, it is not a one-way door.
+    // An admin looking at the photograph can see who this is.
+    const hidden = seedFace(seedMedia(), CLUSTER_A1, { route: "set_aside" })
+    const person = seedPerson({ display_name: "Recognisable Anyway" })
+
+    const res = await asAdmin("/api/admin/faces/assign-one", {
+      method: "POST",
+      body: JSON.stringify({ faceId: hidden, personId: person }),
+    })
+    assert.strictEqual(res.status, 200)
+    assert.strictEqual((await json(res)).changed, 1)
+
+    const row = /** @type {any} */ (
+      db.prepare(`SELECT face_identity_id FROM media_faces WHERE id = ?`).get(hidden)
+    )
+    assert.ok(row.face_identity_id, "the face is now named")
+  })
+
+  it("the escape hatch clears an assignment too, so it is its own undo", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const face = seedFace(seedMedia(), CLUSTER_A1, { route: "set_aside" })
+    const person = seedPerson({ display_name: "Assigned Then Cleared" })
+    await asAdmin("/api/admin/faces/assign-one", {
+      method: "POST",
+      body: JSON.stringify({ faceId: face, personId: person }),
+    })
+
+    const res = await asAdmin("/api/admin/faces/assign-one", {
+      method: "POST",
+      body: JSON.stringify({ faceId: face, personId: null }),
+    })
+    assert.strictEqual(res.status, 200)
+    const row = /** @type {any} */ (
+      db.prepare(`SELECT face_identity_id FROM media_faces WHERE id = ?`).get(face)
+    )
+    assert.strictEqual(row.face_identity_id, null)
+  })
+
+  it("the escape hatch takes exactly one face, never a list", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const a = seedFace(seedMedia(), CLUSTER_A1, { route: "set_aside" })
+    const b = seedFace(seedMedia(), CLUSTER_A2, { route: "set_aside" })
+    const person = seedPerson({ display_name: "Not Via A List" })
+
+    // An array where a single id belongs is refused rather than coerced —
+    // otherwise the exemption quietly becomes a bulk path with no routing check.
+    const res = await asAdmin("/api/admin/faces/assign-one", {
+      method: "POST",
+      body: JSON.stringify({ faceId: [a, b], personId: person }),
+    })
+    assert.strictEqual(res.status, 400)
+
+    for (const id of [a, b]) {
+      const row = /** @type {any} */ (
+        db.prepare(`SELECT face_identity_id FROM media_faces WHERE id = ?`).get(id)
+      )
+      assert.strictEqual(row.face_identity_id, null)
+    }
+  })
+
+  it("404s the escape hatch on a face that does not exist", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const person = seedPerson({ display_name: "Nobody" })
+    const res = await asAdmin("/api/admin/faces/assign-one", {
+      method: "POST",
+      body: JSON.stringify({ faceId: 999999, personId: person }),
+    })
+    assert.strictEqual(res.status, 404)
+  })
+
+  it("401s the escape hatch with no session", async () => {
+    const res = await fetch(`${BASE_URL}/api/admin/faces/assign-one`, {
+      method: "POST",
+      body: JSON.stringify({ faceId: 1, personId: 1 }),
+    })
+    assert.strictEqual(res.status, 401)
+  })
+
+  it("still never leaks a descriptor, routing payloads included", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    seedFace(seedMedia(), CLUSTER_A1, { route: "accept" })
+    seedFace(seedMedia(), CLUSTER_A2, { route: "set_aside" })
+    assertNoDescriptor(await json(await asAdmin("/api/admin/faces/overview")))
+    assertNoDescriptor(await json(await asAdmin("/api/admin/faces/queue")))
+  })
+
+  it("refuses an invalid route_state at the database, not just in code", async () => {
+    // The trigger is the enforcement; public/vision/route.js's vocabulary is
+    // only a promise until something refuses a row that breaks it.
+    const media = seedMedia()
+    assert.throws(() =>
+      db
+        .prepare(
+          `INSERT INTO media_faces (media_id, bbox_x, bbox_y, bbox_w, bbox_h, model_version, source, route_state)
+           VALUES (?, 0, 0, 10, 10, 'v', 'cli', 'maybe')`,
+        )
+        .run(media),
+    )
   })
 })

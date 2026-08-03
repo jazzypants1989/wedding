@@ -100,6 +100,31 @@ const VISION_CONFIG = {
     minSharpness: 0.004,
   },
 
+  route: {
+    /**
+     * The two bars a face must clear, ON TOP of passing every gate check, to be
+     * routed `accept` rather than `ask`. Failing either is not a rejection —
+     * `set_aside` is the gate's job, and these faces are still shown, still
+     * grouped, still nameable. It is only the difference between "here, name
+     * this" and "here, is this nameable at all?"
+     *
+     * Two constants rather than nine because a face that reaches this decision
+     * has already cleared all nine gate cutoffs, so the question left is not
+     * "is it a face" but "can a human put a name to it" — and size and
+     * sharpness are what that turns on.
+     *
+     * ⚠ **NEITHER OF THESE IS TUNED.** They are placed deliberately
+     * conservatively — erring toward `ask`, which costs a question, over
+     * `accept`, which costs a wrong name — and they are the reference values
+     * this ships with, not values derived from anything. See the tuning note
+     * below. Changing either means bumping `PROFILE` in route.js.
+     */
+    /** Minimum shorter box edge, in SOURCE pixels, to be worth auto-accepting. */
+    acceptMinBoxPx: 96,
+    /** Normalised Laplacian energy, same scale as `gate.minSharpness`. */
+    acceptMinSharpness: 0.01,
+  },
+
   group: {
     /**
      * Cosine DISTANCE (1 - cosine similarity), not similarity. Deliberately
@@ -164,6 +189,47 @@ const VISION_CONFIG = {
     corroborationCutoff: 0.64,
   },
 }
+
+/**
+ * ## The tuning pass — deferred deliberately, and to be done in ONE sitting
+ *
+ * Almost every number above is a reference default: published constants from
+ * OpenCV and a model card, plus conservative placeholders. Nothing here has
+ * been fitted to event photography, and event photography is what this runs on.
+ *
+ * **Owner ruling (2026-08-03): do not tune piecemeal.** Nothing is shipped yet,
+ * so there is no live behaviour to protect, and tuning one section at a time
+ * means re-deriving the same distributions repeatedly and re-grading against a
+ * moving target. It happens once, after the pipeline has run end to end against
+ * real input and the failure modes are visible rather than guessed at.
+ *
+ * When that pass happens, the order that makes sense — each stage's output is
+ * the next one's input, so tuning downstream first means tuning it twice:
+ *
+ * 1. `detect` and `dedup`, against the independent oracle.
+ * 2. `gate`, against faces the oracle also found. The floor question is "is
+ *    this a face at all", so a signal's cutoff belongs where it stops
+ *    discarding real detections.
+ * 3. `group.cutoff`, from the same/different distance distributions.
+ * 4. `route`, last, because it is defined relative to the gate. **The 22
+ *    skipped pool-A faces are the calibration set**: they are faces a careful
+ *    human looked at and declined to name, so any of them this table would
+ *    route `accept` is a threshold that needs moving. `route.acceptMinBoxPx`
+ *    and `route.acceptMinSharpness` are the two to move; the leading candidate
+ *    for a third is a pose bar above `gate.minEyeRatio`, since a face turned
+ *    far enough is unnameable long before it stops being detectable.
+ * 5. `propagate` and `assign` last of all — both are vetoes and priority
+ *    signals rather than identity decisions, so they are the least sensitive.
+ *
+ * **Then bump `PROFILE` in route.js**, and re-grade. `media_faces.route_profile`
+ * exists exactly so that old rows say which table they were graded under
+ * instead of silently re-meaning.
+ *
+ * ⚠ And per CLAUDE.md's fourth photograph rule: replace the NUMBER and nothing
+ * else. What was measured to arrive at it does not go in this repository, in a
+ * comment or anywhere else. This note names which distribution to derive each
+ * one from, which is the pattern that rule prescribes.
+ */
 
 /**
  * The published verification threshold for SFace, as cosine SIMILARITY, from

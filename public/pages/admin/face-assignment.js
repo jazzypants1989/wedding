@@ -178,11 +178,24 @@ function renderCounts() {
     return
   }
   const c = overview.counts
+  const r = overview.routeCounts
   el.innerHTML = html`
     <span class="faces-count"><strong>${c.faces}</strong> faces</span>
     <span class="faces-count"><strong>${c.identified}</strong> identified</span>
     <span class="faces-count"><strong>${c.unidentified}</strong> unidentified</span>
     <span class="faces-count"><strong>${c.notAFace}</strong> not a face</span>
+    ${r && r.setAside > 0
+      ? html`<span class="faces-count faces-count-muted"
+          title="Too small or too soft to be worth naming from the queue. Still stored, still grouped — open the photograph to name one."
+          ><strong>${r.setAside}</strong> set aside</span
+        >`
+      : ""}
+    ${r && r.ungraded > 0
+      ? html`<span class="faces-count faces-count-muted"
+          title="Ingested before quality routing existed, so never graded. Shown and assignable exactly as before."
+          ><strong>${r.ungraded}</strong> ungraded</span
+        >`
+      : ""}
   `
 }
 
@@ -240,6 +253,27 @@ function groupsMarkup() {
   return html`<div class="faces-groups-grid">${groups.map(groupCardMarkup)}</div>`
 }
 
+/**
+ * Whether to warn that this group may be two people.
+ *
+ * The threshold is 1 — the group's widest internal pair against the grouping
+ * cutoff itself — so this introduces no new tunable. Above it, the group holds
+ * two faces further apart than the constant that was supposed to keep different
+ * people in different groups.
+ * @param {Types.FaceGroupWeld | null} weld
+ */
+function weldWarningMarkup(weld) {
+  if (!weld || weld.ratio <= 1) return ""
+  return html`
+    <p class="face-group-weld" role="note">
+      <strong>Check before naming the whole group.</strong>
+      Its two most different faces are further apart than the grouping threshold,
+      so this may be two people. Deselect anyone who does not belong, or name
+      them one at a time.
+    </p>
+  `
+}
+
 /** @param {Types.FaceGroup} group */
 function groupCardMarkup(group) {
   const groupKey = String(group.key)
@@ -247,11 +281,22 @@ function groupCardMarkup(group) {
   const suggestion = group.suggestion
   return html`
     <div class="face-group-card" data-group-key="${groupKey}">
+      ${weldWarningMarkup(group.weld)}
       <div class="face-group-chips">
         ${group.media.map((m) =>
           renderFaceChip(m, { dimmed: excluded.has(m.faceId), toggleable: true }),
         )}
       </div>
+      <!-- Said out loud, because a group whose chip count disagrees with its
+           size is a UI that looks broken. The withheld faces are still in the
+           group and still shaped it; they are just not worth naming from here. -->
+      ${group.setAside > 0
+        ? html`<p class="face-group-setaside text-muted">
+            ${group.setAside} more face${group.setAside === 1 ? "" : "s"} in this group
+            ${group.setAside === 1 ? "was" : "were"} set aside as too small or too soft to name
+            from here. Open the photograph to name ${group.setAside === 1 ? "it" : "them"}.
+          </p>`
+        : ""}
       <div class="face-group-controls">
         <input type="text" class="face-group-name-input" list="faces-people-roster"
           placeholder="Who is this?" value="${suggestion ? suggestion.personName : ""}"
