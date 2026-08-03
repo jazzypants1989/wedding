@@ -526,13 +526,19 @@ export function pickHeadline(strata) {
  * default so the shipped value is always on the plot.
  * @param {readonly number[]} same
  * @param {readonly number[]} diff
+ * @param {{ includeShippedDefault?: boolean }} [options]
  * @returns {number[]}
  */
-export function sweepCutoffs(same, diff) {
+export function sweepCutoffs(same, diff, options = {}) {
   const s = same.slice().sort((a, b) => a - b)
   const d = diff.slice().sort((a, b) => a - b)
+  // The shipped default is on the plot so the recommendation has something to
+  // be better than — but it is a constant hand-tuned for ONE descriptor space,
+  // so a model comparison drops it. Handing the incumbent a candidate the
+  // challenger has no counterpart to is a home-field advantage inside the one
+  // procedure that is supposed to be identical for both.
   /** @type {number[]} */
-  const raw = [allDefaults().group.cutoff]
+  const raw = options.includeShippedDefault === false ? [] : [allDefaults().group.cutoff]
   if (s.length > 0) for (const p of [0.5, 0.75, 0.9, 0.95, 0.99]) raw.push(percentile(s, p))
   if (d.length > 0) for (const p of [0.001, 0.01, 0.05, 0.1, 0.25]) raw.push(percentile(d, p))
   if (s.length === 0 && d.length === 0) {
@@ -888,7 +894,18 @@ function selectGate(run, stratumKey, base, total, population) {
  * @returns {Array<Set<number>>} face ids per fold
  */
 export function personFolds(run, k) {
-  const view = buildView(run, { requireLabel: true })
+  return personFoldsOf(buildView(run, { requireLabel: true }), k)
+}
+
+/**
+ * The same fold rule over a view the caller already built — so a caller that
+ * needs the folds restricted to one pool can say so, rather than getting the
+ * whole labelled set. `personFolds` is this function over every labelled face.
+ * @param {Types.FaceView} view
+ * @param {number} k
+ * @returns {Array<Set<number>>} face ids per fold
+ */
+export function personFoldsOf(view, k) {
   /** @type {Map<string, number[]>} */
   const byPerson = new Map()
   view.labels.forEach((label, row) => {
@@ -898,7 +915,15 @@ export function personFolds(run, k) {
     else byPerson.set(label, [view.faceIds[row]])
   })
 
-  const people = [...byPerson.entries()].sort((a, b) => b[1].length - a[1].length || (a[0] < b[0] ? -1 : 1))
+  // ⚠ The tiebreak is the person's LOWEST FACE ID, not the person key. Keys are
+  // re-scrambled on every export of the labelling (D4), so a key tiebreak means
+  // two exports of the same labelling produce different folds — the held-out
+  // numbers below would then move for a reason that has nothing to do with the
+  // data. Face ids are stable for as long as the detection is.
+  const lowestFaceId = (/** @type {number[]} */ faceIds) => Math.min(...faceIds)
+  const people = [...byPerson.entries()].sort(
+    (a, b) => b[1].length - a[1].length || lowestFaceId(a[1]) - lowestFaceId(b[1]),
+  )
   const folds = Math.max(2, Math.min(k, people.length))
   /** @type {Array<Set<number>>} */
   const out = []
