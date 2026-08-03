@@ -156,6 +156,22 @@ export const REACTION_EMOJI_VALUES = Object.values(REACTION_EMOJI)
 export const THANK_YOU_CARD_STATUS_VALUES = Object.values(THANK_YOU_CARD_STATUS)
 export const THANK_YOU_SENT_VIA_VALUES = Object.values(THANK_YOU_SENT_VIA)
 
+// What one event in the face-assignment ledger can do (schema.js
+// `add_vision_provenance`). A frozen array rather than the NAME: "value" shape
+// above, because these values have no useful constant names —
+// FACE_ASSIGNMENT_OPS.NOT_A_FACE would say nothing "not_a_face" does not.
+//
+// `negative` ("this face is NOT that person") is a constraint, not a state:
+// replay skips it, and it feeds suggestion ranking instead. There is
+// deliberately no `merge` op — a merge is a fact about identities, recorded
+// once on face_identities.merged_into.
+export const FACE_ASSIGNMENT_OPS = Object.freeze([
+  "assign",
+  "clear",
+  "not_a_face",
+  "negative",
+])
+
 // Moderation digest cadence (owner decision 2026-07-06: digest-only). ~daily,
 // generous of the hourly-tick drift so a run is never skipped by a few minutes.
 export const MODERATION_NOTIFY = Object.freeze({
@@ -352,6 +368,11 @@ export function isThankYouCardStatus(value) {
 /** @type {Types.isThankYouSentVia} */
 export function isThankYouSentVia(value) {
   return typeof value === "string" && /** @type {readonly string[]} */ (THANK_YOU_SENT_VIA_VALUES).includes(value)
+}
+
+/** @type {Types.isFaceAssignmentOp} */
+export function isFaceAssignmentOp(value) {
+  return typeof value === "string" && /** @type {readonly string[]} */ (FACE_ASSIGNMENT_OPS).includes(value)
 }
 
 const SERVER_PORT = process.env.PORT || 3000

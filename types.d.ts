@@ -212,6 +212,17 @@ export const REACTION_EMOJI_VALUES: readonly [
 ]
 export const THANK_YOU_CARD_STATUS_VALUES: readonly ["draft", "sent", "viewed"]
 export const THANK_YOU_SENT_VIA_VALUES: readonly ["email", "sms", "manual", "link"]
+/** Every op the assignment ledger accepts. A frozen array rather than the
+ *  NAME: "value" object the older enums use, because these values have no
+ *  useful constant names — `FACE_ASSIGNMENT_OPS.NOT_A_FACE` would say nothing
+ *  `"not_a_face"` does not. The schema trigger is the enforcement; this is for
+ *  validating input that arrives as an unknown string. */
+export const FACE_ASSIGNMENT_OPS: readonly [
+  "assign",
+  "clear",
+  "not_a_face",
+  "negative",
+]
 
 export type GuestStatus = "pending" | "invited" | "responded"
 export type PetitionStatus = "pending" | "approved" | "denied"
@@ -254,6 +265,7 @@ export function isTargetType(value: unknown): value is TargetType
 export function isReactionEmoji(value: unknown): value is ReactionEmoji
 export function isThankYouCardStatus(value: unknown): value is ThankYouCardStatus
 export function isThankYouSentVia(value: unknown): value is ThankYouSentVia
+export function isFaceAssignmentOp(value: unknown): value is FaceAssignmentOp
 
 /** One rung of the content-image responsive width ladder. */
 export interface ContentLadderVariant {
@@ -702,6 +714,14 @@ export interface MediaFace {
   source: FaceSource
   face_identity_id: number | null
   /**
+   * Which ingest run produced this row (schema.js `add_vision_provenance`).
+   * NULL for every row written before ingest provenance existed, and for
+   * upload-time detections, which have no run behind them. `model_version`
+   * above names only the DESCRIPTOR SPACE; this names the detector, the engine
+   * build, the thresholds and the route profile that drew the box.
+   */
+  ingest_id: number | null
+  /**
    * Quality routing (schema.js `add_face_routing`). **NULL means NOT YET
    * GRADED** — a row written before routing existed, or by a path that did not
    * grade it — and it is a fourth case every consumer handles rather than
@@ -757,9 +777,156 @@ export interface FaceIdentity {
   confirmed_by: string | null
   confirmed_at: string | null
   provenance: FaceIdentityProvenance
+  /**
+   * The merge redirect (schema.js `add_vision_provenance`). NULL = a live
+   * identity. Non-null = this identity was folded into another one and every
+   * reader resolves through it (db/face-assignments.js `resolveIdentity`).
+   *
+   * A merge is a fact about IDENTITIES, not about faces — which is why it is
+   * this one column rather than a per-face event. Assignment events keep
+   * naming the identity they actually named, and stay true forever.
+   */
+  merged_into: number | null
   created_at: string
   updated_at: string
   deleted_at: string | null
+}
+
+/**
+ * One ingest run (schema.js `add_vision_provenance`) — the answer to "what
+ * produced this face row". `media_faces.model_version` names the descriptor
+ * space only; nothing recorded which detector, engine build, thresholds or
+ * route profile drew the box, so a row from a superseded run was
+ * indistinguishable from a current one.
+ *
+ * Immutable: a trigger blocks UPDATE. Re-running the pipeline writes a NEW
+ * row, because editing this one would silently re-mean every face pointing at
+ * it. DELETE is deliberately left open.
+ */
+export interface VisionIngest {
+  id: number
+  dataset_id: string
+  /** Descriptor space only — embedder, output width, normalisation, mirror.
+   *  Never the detector; detection provenance is what this whole row is. */
+  model_version: string
+  detector_sha256: string
+  embedder_sha256: string
+  engine_sha256: string
+  /** 0 | 1 (trigger-enforced). SQLite has no boolean. */
+  mirror_applied: number
+  normalisation: string
+  /** Which cutoff table the run graded under (public/vision/route.js PROFILE). */
+  route_profile: string
+  /** JSON-encoded ALLOWLISTED object — see VisionIngestConfig. */
+  config_json: string
+  created_at: string
+}
+
+/**
+ * A JSON value as it may appear inside `VisionIngest.config_json`. Spelled out
+ * rather than reached for as `any`, so a value that cannot survive a
+ * JSON round-trip (undefined, a function, a Date) is a compile error at the
+ * call site instead of a silently dropped key on disk.
+ */
+export type VisionIngestConfigValue =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly VisionIngestConfigValue[]
+  | { readonly [key: string]: VisionIngestConfigValue }
+
+/**
+ * What goes in `config_json`: an ALLOWLIST, never a dump of a run's state.
+ *
+ * **Include:** engine version, onnxruntime version, detector/embedder/engine
+ * sha256, detector and embedder channel order, detection resolution,
+ * thresholds, top-K stage, normalisation mode, mirror setting, schema version.
+ *
+ * **Exclude, without exception:** filesystem paths, `$PHOTOS`, argv,
+ * environment variables, person names, labels, and any count or distribution
+ * measured from the photographs. This object travels to production, and this
+ * repository is public — the same rule the vision reports already carry.
+ *
+ * The shape is open because the run's own config is the thing being recorded;
+ * what is closed is the list above, and that is enforced by the caller
+ * assembling this object field by field rather than spreading its config into
+ * it.
+ */
+export interface VisionIngestConfig {
+  readonly [key: string]: VisionIngestConfigValue
+}
+
+/**
+ * What one assignment event does (schema.js `add_vision_provenance`).
+ *
+ *  - `assign` — this face is that identity. `identity_id` NOT NULL.
+ *  - `clear` — this face is nobody (yet). `identity_id` NULL.
+ *  - `not_a_face` — the box is not a face at all. `identity_id` NULL.
+ *  - `negative` — this face is *not* that identity. `identity_id` NOT NULL.
+ *
+ * `negative` is a CONSTRAINT, not a state: replay skips it entirely, and it
+ * feeds suggestion ranking instead (db/face-assignments.js `negativesForFace`).
+ *
+ * There is deliberately no `merge` op — a merge is a fact about identities,
+ * recorded once on `face_identities.merged_into`.
+ */
+export type FaceAssignmentOp = "assign" | "clear" | "not_a_face" | "negative"
+
+/** Why a batch of assignment events exists. The four the Phase 5 contract
+ *  names; nothing at the database layer enforces this, so it is a compile-time
+ *  agreement between the writers rather than a stored constraint. */
+export type FaceAssignmentBatchKind =
+  | "label-import"
+  | "propagate"
+  | "manual"
+  | "merge-repair"
+
+/**
+ * A revocable batch of assignment events (schema.js `add_vision_provenance`).
+ *
+ * NOT append-only, unlike the events themselves: revocation is the one
+ * legitimate update, and it is a FLAG rather than a compensating event
+ * precisely so it stays reversible and so a later manual correction outranks
+ * the bulk pass it corrected instead of disappearing with it.
+ */
+export interface FaceAssignmentBatch {
+  batch_id: string
+  kind: FaceAssignmentBatchKind
+  /** core/utils.js `actorId()` — derived server-side, never client-supplied. */
+  actor: string
+  note: string | null
+  created_at: string
+  revoked_at: string | null
+  revoked_by: string | null
+}
+
+/**
+ * One event in the append-only ledger behind `media_faces.face_identity_id`
+ * (schema.js `add_vision_provenance`).
+ *
+ * The column alone is a value with no history — a bulk propagate pass and a
+ * human's deliberate correction look identical in it. Here they do not, so
+ * revoking the pass is a filter over history rather than a destructive edit.
+ *
+ * **Ordering is by `id`, never by `created_at`**: the timestamp has one-second
+ * resolution and a batch writes many events inside it, so "latest wins" by
+ * time would be a coin toss. UPDATE is trigger-blocked; DELETE is not, because
+ * hard-deleting a photo must be able to cascade through `media_faces` to here.
+ */
+export interface FaceAssignment {
+  id: number
+  face_id: number
+  op: FaceAssignmentOp
+  /** NOT NULL for `assign`/`negative`, NULL for `clear`/`not_a_face` —
+   *  trigger-enforced on INSERT. */
+  identity_id: number | null
+  actor: string
+  /** NULL for a one-off event that belongs to no batch, and therefore cannot
+   *  be revoked in bulk. */
+  batch_id: string | null
+  reason: string | null
+  created_at: string
 }
 
 export interface Communication {
