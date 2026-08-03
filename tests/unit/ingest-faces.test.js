@@ -28,6 +28,15 @@ import {
 import { blobToDescriptor } from "../../db/media-faces.js"
 import { PROFILE, routeCutoffs } from "../../public/vision/route.js"
 
+/** An `assert.throws` matcher built from string methods. The no-regex rule
+ *  covers the second argument to `assert.throws` too — a `/pattern/` there is
+ *  still a regex literal in this repository's source.
+ *  @param {string} needle */
+function messageIncludes(needle) {
+  /** @param {unknown} err @returns {boolean} */
+  return (err) => err instanceof Error && err.message.includes(needle)
+}
+
 /** @type {string} */
 let workDir
 
@@ -566,7 +575,7 @@ describe("buildIngestInput — fail closed, never guess", () => {
     delete (/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (bare))).provenance
     assert.throws(
       () => buildIngestInput({ timing: bare, faces, modelVersion: "v1" }),
-      /provenance/,
+      messageIncludes("provenance"),
     )
   })
 
@@ -581,7 +590,7 @@ describe("buildIngestInput — fail closed, never guess", () => {
 
     assert.throws(
       () => buildIngestInput({ timing: redescribed, faces, modelVersion: "v1" }),
-      /redescribe-crops/,
+      messageIncludes("redescribe-crops"),
     )
   })
 
@@ -590,7 +599,7 @@ describe("buildIngestInput — fail closed, never guess", () => {
     delete (/** @type {Record<string, unknown>} */ (noMirror.config)).mirrorTta
     assert.throws(
       () => buildIngestInput({ timing: noMirror, faces, modelVersion: "v1" }),
-      /mirrorTta/,
+      messageIncludes("mirrorTta"),
     )
   })
 
@@ -603,7 +612,7 @@ describe("buildIngestInput — fail closed, never guess", () => {
             faces,
             modelVersion: "v1",
           }),
-        /path or an environment reference/,
+        messageIncludes("path or an environment reference"),
         `"${runtime}" must be refused`,
       )
     }
@@ -739,7 +748,7 @@ describe("buildIngestInput — fail closed, never guess", () => {
   it("readTiming refuses a run directory with no timing.json", () => {
     const dir = path.join(workDir, "run-no-timing-read")
     fs.mkdirSync(dir, { recursive: true })
-    assert.throws(() => readTiming(dir), /not found/)
+    assert.throws(() => readTiming(dir), messageIncludes("not found"))
   })
 })
 
@@ -917,7 +926,7 @@ describe("ingestRun — provenance, grading and atomicity", () => {
       ingestRun({ db, runDir: runOne, modelVersion: "shared", replace: false, dryRun: false })
       assert.throws(
         () => ingestRun({ db, runDir: runTwo, modelVersion: "shared", replace: false, dryRun: false }),
-        /embedder_sha256/,
+        messageIncludes("embedder_sha256"),
       )
 
       const ingestCount = /** @type {{ n: number }} */ (
@@ -964,7 +973,7 @@ describe("ingestRun — provenance, grading and atomicity", () => {
 
       assert.throws(
         () => ingestRun({ db, runDir, modelVersion: "v1", replace: false, dryRun: false }),
-        /timing.json/,
+        messageIncludes("timing.json"),
       )
       const faceCount = /** @type {{ n: number }} */ (
         db.prepare(`SELECT COUNT(*) AS n FROM media_faces`).get()

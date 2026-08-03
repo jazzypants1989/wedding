@@ -39,6 +39,15 @@ import {
 } from "../../../db/media-faces.js"
 import { projectFace, recordAssignment, resolveIdentity } from "../../../db/face-assignments.js"
 
+/** An `assert.throws` matcher built from string methods. The no-regex rule
+ *  covers the second argument to `assert.throws` too — a `/pattern/` there is
+ *  still a regex literal in this repository's source.
+ *  @param {string} needle */
+function messageIncludes(needle) {
+  /** @param {unknown} err @returns {boolean} */
+  return (err) => err instanceof Error && err.message.includes(needle)
+}
+
 /** Point a face at an identity (or clear it) the ONLY way there now is: append
  *  a ledger event, which projects the column in the same call. `setFaceIdentity`
  *  used to do this and is deleted — see db/media-faces.js's header.
@@ -248,7 +257,7 @@ describe("db/media-faces + media_faces/face_identities schema", () => {
       // an accident of insertion history.
       const personId = makePerson()
       const first = createIdentity({ personId })
-      assert.throws(() => createIdentity({ personId }), /UNIQUE/i)
+      assert.throws(() => createIdentity({ personId }), messageIncludes("UNIQUE constraint failed"))
 
       // Partial index: retiring the first frees the slot.
       softDeleteIdentity(first.id)
