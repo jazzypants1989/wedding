@@ -33,9 +33,14 @@
  *  a person that nothing here needs.
  *
  *  **No actor.** `face_assignments.actor` is `core/utils.js`'s `actorId()` — the
- *  first eight characters of a live admin session token. That is a credential
- *  fragment and it names a person; it stays on the machine that minted it. The
- *  import writes its own actor.
+ *  first eight characters of `session.token`. Note what that column actually
+ *  holds: `withAdmin` passes the sessions ROW through, and `db/sessions.js`
+ *  stores the SHA-256 HASH there, never the bearer token (`createSession`
+ *  returns the plaintext to the client and writes `hashToken(token)`). So this
+ *  is eight hex characters of a digest — it authenticates nobody, and calling
+ *  it a leaked credential is a false alarm this project has raised before.
+ *  It is omitted for the duller reason: it identifies one session on one
+ *  machine and means nothing on the target. The import writes its own actor.
  *
  *  ## Projected state, plus enough ledger to be honest
  *
