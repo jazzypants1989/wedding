@@ -1799,7 +1799,7 @@ export function applyFaceWorkImport({ db, plan, actor, note }) {
       peopleCreated++
     }
 
-    /** @type {Map<string, number>} `<ref> <provenance>` -> face_identities.id */
+    /** @type {Map<string, number>} `<ref>\u0000<provenance>` -> face_identities.id */
     const identityIdByRef = new Map()
     let identitiesCreated = 0
     const stamp = now()
@@ -1818,7 +1818,7 @@ export function applyFaceWorkImport({ db, plan, actor, note }) {
      * @returns {number | null}
      */
     const identityFor = (ref, provenance) => {
-      const cacheKey = `${ref} ${provenance}`
+      const cacheKey = `${ref}\u0000${provenance}`
       const cached = identityIdByRef.get(cacheKey)
       if (cached !== undefined) return cached
       const personId = personIdByRef.get(ref)
