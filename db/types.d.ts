@@ -1184,6 +1184,10 @@ export interface InsertFaceInput {
    *  ungraded, which is a legitimate state (detection-only rows, and any
    *  path that has no signals to grade from) rather than an omission. */
   route?: FaceRouteVerdict | null
+  /** The `vision_ingests` row this face came out of. Null for an upload-time
+   *  detection, which has no ingest run behind it, and for every row written
+   *  before the `add_vision_provenance` migration. */
+  ingestId?: number | null
 }
 
 /** What `setFaceRoute`/`insertFace` persist. Structurally the pipeline's
@@ -1205,10 +1209,6 @@ export function getFaceById(id: number): MediaFace | undefined
 
 /** Live (non-deleted) faces for one media row, id ascending. */
 export function facesForMedia(mediaId: number): MediaFace[]
-
-/** Point a face at a confirmed/propagated identity (or clear it with null).
- *  Returns true if a row changed. */
-export function setFaceIdentity(id: number, identityId: number | null): boolean
 
 /** Soft-delete a face row. Returns true if a row changed. */
 export function softDeleteFace(id: number): boolean
@@ -1232,9 +1232,22 @@ export function getIdentityById(id: number): FaceIdentity | undefined
  *  provenance, which is what makes `.find(...)` over this deterministic. */
 export function identitiesForPerson(personId: number): FaceIdentity[]
 
-/** Person-merge primitive: point every media_faces row (live or soft-deleted)
- *  at a different identity. Returns the number of rows moved. */
-export function repointFaces(fromIdentityId: number, toIdentityId: number): number
+/** Person-merge primitive, and the whole of what a merge writes: set
+ *  `face_identities.merged_into` so the source redirects to the target.
+ *  Returns true if a row changed.
+ *
+ *  Replaced `repointFaces`, which rewrote `media_faces.face_identity_id` on
+ *  every affected row — a direct write to a column the ledger now owns, and a
+ *  rewrite of history besides (an event that named A would afterwards sit
+ *  beside a column saying B). No face row is touched here; `resolveIdentity`
+ *  reads through the redirect instead. */
+export function mergeIdentityInto(fromIdentityId: number, toIdentityId: number): boolean
+
+/** Every face row — live OR soft-deleted — whose `face_identity_id` currently
+ *  names one identity, ascending. Soft-deleted rows are included for the same
+ *  reason `repointFaces` included them: a superseded row that resurfaces must
+ *  not carry a reference nobody has re-resolved. */
+export function faceIdsForIdentity(identityId: number): number[]
 
 /** Person-merge primitive: move a live identity to another person. Subject to
  *  idx_face_identities_person — throws if the target person already has a live
@@ -1243,8 +1256,9 @@ export function setIdentityPerson(identityId: number, personId: number): boolean
 
 /** Soft-delete an identity row (its media_faces.face_identity_id references
  *  are NOT cleared by this — only a hard delete/cascade does that; callers
- *  that want faces detached should also call setFaceIdentity(id, null)).
- *  Returns true if a row changed. */
+ *  that want faces detached record a `clear` event through
+ *  db/face-assignments.js's `recordAssignment`, which is the only writer of
+ *  that column). Returns true if a row changed. */
 export function softDeleteIdentity(id: number): boolean
 
 /** Which of the given media ids have at least one live (non-deleted) face

@@ -23,14 +23,34 @@ import {
   insertFace,
   getFaceById,
   facesForMedia,
-  setFaceIdentity,
   softDeleteFace,
   createIdentity,
   getIdentityById,
   identitiesForPerson,
   softDeleteIdentity,
   mediaWithFaces,
+  mergeIdentityInto,
+  faceIdsForIdentity,
+  confirmedIdentityFaces,
+  confirmedIdentitiesPerMedia,
+  confirmedCooccurrence,
+  facesForMediaWithNames,
+  descriptorToBlob,
 } from "../../../db/media-faces.js"
+import { projectFace, recordAssignment } from "../../../db/face-assignments.js"
+
+/** Point a face at an identity (or clear it) the ONLY way there now is: append
+ *  a ledger event, which projects the column in the same call. `setFaceIdentity`
+ *  used to do this and is deleted — see db/media-faces.js's header.
+ *  @param {number} faceId @param {number | null} identityId */
+function assignFace(faceId, identityId) {
+  recordAssignment({
+    faceId,
+    op: identityId === null ? "clear" : "assign",
+    identityId,
+    actor: "test",
+  })
+}
 
 let guestSeq = 0
 let personSeq = 0
@@ -103,8 +123,26 @@ function insertBasicFace(mediaId, source) {
   })
 }
 
+/** A face carrying a descriptor, so it is visible to the queries that require
+ *  one (confirmedIdentityFaces and friends). The vector is invented — nothing
+ *  in tests/ ever describes a photograph.
+ *  @param {number} mediaId */
+function insertDescribedFace(mediaId) {
+  return insertFace({
+    mediaId,
+    bbox: { x: 1, y: 2, w: 100, h: 120 },
+    landmarks: null,
+    signals: null,
+    descriptor: descriptorToBlob(Float32Array.from([1, 0, 0, 0])),
+    modelVersion: "test-v1",
+    source: "cli",
+  })
+}
+
 function clearData() {
   const db = getDb()
+  db.prepare("DELETE FROM face_assignments").run()
+  db.prepare("DELETE FROM face_assignment_batches").run()
   db.prepare("DELETE FROM media_faces").run()
   db.prepare("DELETE FROM face_identities").run()
   db.prepare("DELETE FROM media").run()
@@ -219,17 +257,17 @@ describe("db/media-faces + media_faces/face_identities schema", () => {
     })
   })
 
-  describe("setFaceIdentity / mediaWithFaces", () => {
+  describe("assignment projection / mediaWithFaces", () => {
     it("links and unlinks a face to an identity", () => {
       const personId = makePerson()
       const mediaId = makeMedia()
       const face = insertBasicFace(mediaId, "cli")
       const identity = createIdentity({ personId })
 
-      assert.ok(setFaceIdentity(face.id, identity.id))
+      assignFace(face.id, identity.id)
       assert.strictEqual(getFaceById(face.id)?.face_identity_id, identity.id)
 
-      assert.ok(setFaceIdentity(face.id, null))
+      assignFace(face.id, null)
       assert.strictEqual(getFaceById(face.id)?.face_identity_id, null)
     })
 
@@ -276,7 +314,7 @@ describe("db/media-faces + media_faces/face_identities schema", () => {
       const mediaId = makeMedia()
       const face = insertBasicFace(mediaId, "cli")
       const identity = createIdentity({ personId })
-      setFaceIdentity(face.id, identity.id)
+      assignFace(face.id, identity.id)
 
       getDb().prepare("DELETE FROM guests WHERE id = ?").run(guestId)
 
@@ -290,14 +328,37 @@ describe("db/media-faces + media_faces/face_identities schema", () => {
       assert.strictEqual(getFaceById(face.id)?.face_identity_id, identity.id)
     })
 
+    it("a ledger event REFUSES to let its identity be hard-deleted out from under it", () => {
+      // New since the assignment ledger: face_assignments.identity_id
+      // references face_identities with no ON DELETE action, so an identity
+      // some event named cannot simply vanish. That is the right way round — an
+      // event is the record of a decision about that identity, and the app
+      // soft-deletes identities anyway (softDeleteIdentity), which this does
+      // not touch.
+      const face = insertBasicFace(makeMedia(), "cli")
+      const identity = createIdentity({ personId: makePerson() })
+      assignFace(face.id, identity.id)
+
+      assert.throws(() =>
+        getDb().prepare("DELETE FROM face_identities WHERE id = ?").run(identity.id),
+      )
+    })
+
     it("deleting a person's identity nulls out media_faces.face_identity_id", () => {
       // media_faces -> face_identities is still ON DELETE SET NULL, which is
       // exactly the action D1 warns about firing during a table rebuild.
+      //
+      // Shown on a PRE-LEDGER row — a column value with no events behind it —
+      // because that is the only shape a hard delete can still reach (see the
+      // test above), and because it is the shape every row written before the
+      // ledger landed is in.
       const personId = makePerson()
       const mediaId = makeMedia()
       const face = insertBasicFace(mediaId, "cli")
       const identity = createIdentity({ personId })
-      setFaceIdentity(face.id, identity.id)
+      getDb()
+        .prepare("UPDATE media_faces SET face_identity_id = ? WHERE id = ?")
+        .run(identity.id, face.id)
 
       getDb().prepare("DELETE FROM face_identities WHERE id = ?").run(identity.id)
 
@@ -413,6 +474,141 @@ describe("db/media-faces + media_faces/face_identities schema", () => {
         .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?")
         .get("idx_media_source_sha256")
       assert.ok(row)
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // The merge redirect (Phase 5).
+  //
+  // A merge sets `face_identities.merged_into` and retires the source; it moves
+  // no face row. That makes every historical assignment event still correct —
+  // but it also soft-deletes an identity that faces still name, and half the
+  // read path joins `face_identities ... AND deleted_at IS NULL`. So the merge
+  // re-projects the affected faces, and what is asserted here is that the read
+  // path comes out the far side seeing the TARGET rather than seeing nobody.
+  // -------------------------------------------------------------------------
+  describe("merge redirect", () => {
+    /** The whole of what a merge does to the data, in the order people.js does
+     *  it: redirect, retire, re-project.
+     *  @param {number} fromIdentityId @param {number} toIdentityId */
+    function mergeIdentities(fromIdentityId, toIdentityId) {
+      const faces = faceIdsForIdentity(fromIdentityId)
+      mergeIdentityInto(fromIdentityId, toIdentityId)
+      softDeleteIdentity(fromIdentityId)
+      for (const faceId of faces) projectFace(faceId)
+      return faces.length
+    }
+
+    it("identitiesForPerson drops a merged-away identity, so it is never a merge target", () => {
+      const personA = makePerson()
+      const personB = makePerson()
+      const identityA = createIdentity({ personId: personA })
+      const identityB = createIdentity({ personId: personB })
+
+      assert.strictEqual(identitiesForPerson(personA).length, 1)
+      mergeIdentities(identityA.id, identityB.id)
+
+      assert.strictEqual(identitiesForPerson(personA).length, 0, "merged away means not live")
+      assert.strictEqual(getIdentityById(identityA.id), undefined)
+      assert.strictEqual(identitiesForPerson(personB).length, 1)
+    })
+
+    it("confirmedIdentityFaces credits the TARGET with the source's faces", () => {
+      const personA = makePerson()
+      const personB = makePerson()
+      const identityA = createIdentity({ personId: personA })
+      const identityB = createIdentity({ personId: personB })
+
+      const faceA = insertDescribedFace(makeMedia())
+      const faceB = insertDescribedFace(makeMedia())
+      assignFace(faceA.id, identityA.id)
+      assignFace(faceB.id, identityB.id)
+      assert.strictEqual(confirmedIdentityFaces("test-v1").length, 2)
+
+      mergeIdentities(identityA.id, identityB.id)
+
+      const rows = confirmedIdentityFaces("test-v1")
+      assert.strictEqual(rows.length, 2, "the source's face is NOT lost to a soft-deleted identity")
+      for (const row of rows) {
+        assert.strictEqual(row.identity_id, identityB.id)
+        assert.strictEqual(row.person_id, personB)
+      }
+    })
+
+    it("facesForMediaWithNames names the target, not nobody", () => {
+      const personA = makePerson()
+      const personB = makePerson()
+      const identityA = createIdentity({ personId: personA })
+      const identityB = createIdentity({ personId: personB })
+      const mediaId = makeMedia()
+      const face = insertDescribedFace(mediaId)
+      assignFace(face.id, identityA.id)
+
+      mergeIdentities(identityA.id, identityB.id)
+
+      const [row] = facesForMediaWithNames(mediaId)
+      assert.strictEqual(row.person_id, personB)
+      assert.ok(row.person_name, "a merged face keeps a name")
+    })
+
+    it("co-occurrence collapses onto the surviving identity instead of vanishing", () => {
+      // Three people photographed together. Merging one into another must leave
+      // the pair counts describing the people who are LEFT — not drop the pair
+      // entirely because one side points at a retired row.
+      const personA = makePerson()
+      const personB = makePerson()
+      const personC = makePerson()
+      const identityA = createIdentity({ personId: personA })
+      const identityB = createIdentity({ personId: personB })
+      const identityC = createIdentity({ personId: personC })
+
+      const mediaId = makeMedia()
+      const faceA = insertDescribedFace(mediaId)
+      const faceB = insertDescribedFace(mediaId)
+      const faceC = insertDescribedFace(mediaId)
+      assignFace(faceA.id, identityA.id)
+      assignFace(faceB.id, identityB.id)
+      assignFace(faceC.id, identityC.id)
+
+      assert.strictEqual(confirmedCooccurrence().length, 3, "three pairs among three identities")
+      assert.strictEqual(confirmedIdentitiesPerMedia().get(mediaId)?.size, 3)
+
+      mergeIdentities(identityA.id, identityB.id)
+
+      // A and B are now one person, so two identities remain in the frame and
+      // exactly one pair between them.
+      const present = confirmedIdentitiesPerMedia().get(mediaId)
+      assert.strictEqual(present?.size, 2)
+      assert.ok(present?.has(identityB.id))
+      assert.ok(present?.has(identityC.id))
+      assert.ok(!present?.has(identityA.id), "the retired identity is not still counted as present")
+
+      const pairs = confirmedCooccurrence()
+      assert.strictEqual(pairs.length, 1)
+      assert.strictEqual(pairs[0].identity_a, Math.min(identityB.id, identityC.id))
+      assert.strictEqual(pairs[0].identity_b, Math.max(identityB.id, identityC.id))
+    })
+
+    it("faceIdsForIdentity includes soft-deleted face rows", () => {
+      // The reason repointFaces included them, and the reason this does: a
+      // superseded row that resurfaces must not carry a reference nobody has
+      // re-resolved.
+      const personId = makePerson()
+      const identity = createIdentity({ personId })
+      const live = insertBasicFace(makeMedia(), "cli")
+      const dead = insertBasicFace(makeMedia(), "cli")
+      assignFace(live.id, identity.id)
+      assignFace(dead.id, identity.id)
+      softDeleteFace(dead.id)
+
+      assert.deepStrictEqual(faceIdsForIdentity(identity.id), [live.id, dead.id].sort((a, b) => a - b))
+    })
+
+    it("mergeIdentityInto refuses to redirect an already-retired identity", () => {
+      const identity = createIdentity({ personId: makePerson() })
+      const target = createIdentity({ personId: makePerson() })
+      softDeleteIdentity(identity.id)
+      assert.strictEqual(mergeIdentityInto(identity.id, target.id), false)
     })
   })
 })

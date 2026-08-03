@@ -9,6 +9,7 @@
  */
 import type { DatabaseSync } from "node:sqlite"
 import type { ImageBackend, ImportManifest, MediaBackends, RgbImage } from "../lib/types.js"
+import type { CreateIngestInput, FaceRouteVerdict } from "../../db/types.js"
 import type {
   DescriptorSet,
   Detection,
@@ -1390,11 +1391,51 @@ export interface IngestRunResult {
   /** No sha256 match against any imported media row — likely not imported yet. */
   unmatched: number
   facesInserted: number
+  /** Faces given a `route_state`. Lower than `facesInserted` only when a record
+   *  is missing one of the nine gate signals, which leaves it ungraded rather
+   *  than graded against an absent number. */
+  facesGraded: number
   /** `media` rows given a `frame_root_sha256`. Zero on a dry run. */
   framesWritten: number
   /** `media` rows given a `captured_at`. Photos with no EXIF time are skipped. */
   capturedAtWritten: number
+  /** The `vision_ingests` row every inserted face points at. Null on a dry run,
+   *  where nothing was written to point at. */
+  ingestId: number | null
 }
+
+/** What `buildIngestInput` reads: the run's timing block, its faces (for the
+ *  content-addressed dataset id) and the model version the operator named. */
+export interface BuildIngestInputOptions {
+  timing: Session1Timing
+  faces: readonly Session1FaceRecord[]
+  modelVersion: string
+}
+
+/**
+ * Assemble the `vision_ingests` row for one run from its own timing.json.
+ *
+ * Pure: no database, no filesystem, so every refusal is testable against a
+ * hand-built timing object. THROWS rather than defaulting when the provenance
+ * block is missing, when the mirror setting is absent, or when any string bound
+ * for `config_json` looks like a path or an environment reference.
+ */
+export function buildIngestInput(options: BuildIngestInputOptions): CreateIngestInput
+
+/** `<run-dir>/timing.json`. THROWS when it is missing: the batch always writes
+ *  one, so its absence means this is not a run directory this script
+ *  understands, and there is nothing to fall back on that would not be a guess
+ *  about which model produced the descriptors. */
+export function readTiming(runDir: string): Session1Timing
+
+/** Route one face record for the admin queue, or `null` to leave it ungraded.
+ *  A record missing any of the nine gate signals is left ungraded on purpose —
+ *  `null` means "not yet graded" downstream and is shown, where grading against
+ *  an absent signal would route the face `set_aside`. */
+export function gradeFace(
+  face: Session1FaceRecord,
+  cutoffs: Record<string, number>,
+): FaceRouteVerdict | null
 
 /**
  * Per-photo frame identity and capture time for the `media` columns. Pure — no

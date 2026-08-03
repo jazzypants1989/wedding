@@ -13,8 +13,17 @@
  *    puts a deliberate confirm step in front of it.
  *  - `created_by` and every actor field derive from the authenticated admin
  *    session, never from the client.
+ *
+ *  MERGE IS A REDIRECT (Phase 5). Folding one person into another sets
+ *  `face_identities.merged_into` on the source and retires it; it writes no
+ *  per-face assignment events, because a merge is a fact about identities and
+ *  every event that named the source still correctly names what it named.
+ *  `resolveIdentity` reads through the chain. See the merge handler for the
+ *  one back-fill case, and why it is the exception that proves the rule.
  */
 /** @import * as Types from './types.js' */
+
+import { randomUUID } from "node:crypto"
 
 import { sendJson, parseBody } from "../../core/http.js"
 import { log, actorId } from "../../core/utils.js"
@@ -39,10 +48,17 @@ import {
 } from "../../db/people.js"
 import {
   identitiesForPerson,
-  repointFaces,
+  faceIdsForIdentity,
+  mergeIdentityInto,
   setIdentityPerson,
   softDeleteIdentity,
 } from "../../db/media-faces.js"
+import {
+  assignmentsForFace,
+  createBatch,
+  projectFace,
+  recordAssignment,
+} from "../../db/face-assignments.js"
 import { getGuestById } from "../guests/data.js"
 
 /** Same local-literal pattern as api/admin/faces.js's FACE_AUDIT_ACTIONS. */
@@ -202,23 +218,80 @@ export async function merge(req, res, { session }) {
   const into = getPersonById(intoResult.value)
   if (!into) throw new NotFoundError("Person (intoPersonId)")
 
-  const { movedFaces, movedIdentities, carriedGuestLink } = withTransaction(() => {
+  const actor = actorId(session?.token) ?? "unattributed"
+  const { movedFaces, movedIdentities, carriedGuestLink, repairedFaces } = withTransaction(() => {
     let faces = 0
     let identities = 0
+    let repaired = 0
+    /** @type {string | null} Opened lazily — most merges never need it. */
+    let repairBatch = null
+
     // Per provenance: if the target person already has a live identity of that
-    // provenance, fold the source identity's faces into it and retire the
-    // source identity (idx_face_identities_person allows only one live row per
+    // provenance, REDIRECT the source identity at it and retire the source
+    // (idx_face_identities_person allows only one live row per
     // (person, provenance)); otherwise the identity itself moves across.
     const fromIdentities = identitiesForPerson(fromResult.value)
     const intoIdentities = identitiesForPerson(intoResult.value)
     for (const source of fromIdentities) {
       const target = intoIdentities.find((i) => i.provenance === source.provenance)
-      if (target) {
-        faces += repointFaces(source.id, target.id)
-        softDeleteIdentity(source.id)
-      } else {
+      if (!target) {
         setIdentityPerson(source.id, intoResult.value)
         identities++
+        continue
+      }
+
+      // ⚠ A merge is a fact about IDENTITIES, not about faces (owner ruling,
+      // Phase 5). One column update — `merged_into` — and NO per-face events:
+      // every historical event still names the identity it actually named, and
+      // `resolveIdentity` reads through the redirect, so the record stays true
+      // instead of being rewritten. The old `repointFaces` did the opposite: it
+      // overwrote each face's column, leaving events that said A beside a
+      // column that said B, with nothing recording that A had ever existed.
+      const affected = faceIdsForIdentity(source.id)
+      mergeIdentityInto(source.id, target.id)
+      softDeleteIdentity(source.id)
+      faces += affected.length
+
+      for (const faceId of affected) {
+        // Re-materialise the column. This writes no event — `projectFace` IS
+        // the projection, replaying what the ledger already says, which after
+        // the redirect resolves to the target. It is needed because half the
+        // read path joins `face_identities ... AND deleted_at IS NULL`
+        // (confirmedIdentityFaces, confirmedIdentitiesPerMedia,
+        // confirmedCooccurrence, facesForMediaWithNames), so a column still
+        // naming the now-soft-deleted source would make those faces silently
+        // nameless rather than merged.
+        if (assignmentsForFace(faceId).length > 0) {
+          projectFace(faceId)
+          continue
+        }
+
+        // The one case the ruling's premise does not cover: a face with NO
+        // events at all — assigned before the ledger existed, so there is no
+        // historical event for the redirect to keep true, and replaying it
+        // would clear the assignment outright. `merge-repair` is the batch kind
+        // the Phase 5 contract reserved for exactly this. Writing the missing
+        // history is strictly better than the alternatives (leave the column
+        // dangling at a deleted identity, or silently lose the assignment), and
+        // being a batch, it is revocable like anything else.
+        if (repairBatch === null) {
+          repairBatch = randomUUID()
+          createBatch({
+            batchId: repairBatch,
+            kind: "merge-repair",
+            actor,
+            note: `identities merged into ${intoResult.value}; faces with no ledger history back-filled`,
+          })
+        }
+        recordAssignment({
+          faceId,
+          op: "assign",
+          identityId: target.id,
+          actor,
+          batchId: repairBatch,
+          reason: "pre-ledger assignment, back-filled during a person merge",
+        })
+        repaired++
       }
     }
 
@@ -240,13 +313,17 @@ export async function merge(req, res, { session }) {
     }
 
     softDeletePerson(fromResult.value)
-    return { movedFaces: faces, movedIdentities: identities, carriedGuestLink: carried }
+    return {
+      movedFaces: faces,
+      movedIdentities: identities,
+      carriedGuestLink: carried,
+      repairedFaces: repaired,
+    }
   })
 
   // Prototypes are computed on demand from live rows (api/admin/faces.js's
-  // module comment) — re-pointing the identities IS the prototype rebuild.
-  // The Phase-5 assignment ledger records the merge's face moves when it
-  // lands; until then the audit log below is the durable record.
+  // module comment), so the redirect plus the re-projection above IS the
+  // prototype rebuild — nothing is cached to invalidate.
   log({
     action: PEOPLE_AUDIT_ACTIONS.MERGE,
     adminId: session?.token,
@@ -259,10 +336,21 @@ export async function merge(req, res, { session }) {
       movedFaces,
       movedIdentities,
       carriedGuestLink,
+      repairedFaces,
     },
   })
 
-  return sendJson(res, 200, { success: true, movedFaces, movedIdentities, carriedGuestLink })
+  // `movedFaces` keeps its name and its meaning to a reader — "this many face
+  // rows now answer to the target" — even though no face row moved. What
+  // changed is that they resolve through a redirect instead of having been
+  // rewritten.
+  return sendJson(res, 200, {
+    success: true,
+    movedFaces,
+    movedIdentities,
+    carriedGuestLink,
+    repairedFaces,
+  })
 }
 
 /** @type {Types.personDeleteHandler} */

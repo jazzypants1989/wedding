@@ -18,6 +18,23 @@
  *      live 'cli' rows is refused unless `--replace` is passed, which
  *      soft-deletes the old rows first.
  *
+ *  PROVENANCE, and why it is one invocation and not two (plan §9a). Every face
+ *  this writes carries `ingest_id`, and that `vision_ingests` row is created
+ *  inside the SAME transaction as the face inserts. A two-step "record the
+ *  provenance, then ingest against it" would leave a window in which the row
+ *  exists and describes nothing, or faces exist describing a row that was
+ *  rolled back — and every later fail-closed check ("which faces are stale?",
+ *  "was this model_version ever used for another descriptor space?") is only
+ *  answerable if that pairing is atomic.
+ *
+ *  The provenance itself is READ, never assembled from what this script
+ *  believes: it comes from the run's own `timing.json` `provenance` block,
+ *  which the batch writes from the engine that actually ran. If that block is
+ *  absent the ingest REFUSES. That is not defensive padding — `redescribe-crops.js`
+ *  deliberately DELETES a stale `provenance` key rather than updating it, so
+ *  that a consumer of a re-describe output gets `undefined` and stops, instead
+ *  of silently recording one model's digests against another model's vectors.
+ *
  *  §15 (no photo snooping): this script's <run-dir>/manifest path is its own
  *  explicit argv, which is the one thing the rule permits — it is not
  *  searching a photo library. It never reads a photograph; only JSONL records
@@ -31,8 +48,8 @@
  *  unit tests can point this exact logic at a disposable temp DB. Mirrors
  *  scripts/seed-preview.js / scripts/export-archive.js, which do the same with
  *  raw `db.prepare()` calls; this file additionally binds sql.js so it can
- *  reuse db/media-faces.js's insertFace()/softDeleteFace() rather than
- *  duplicating that INSERT statement.
+ *  reuse db/media-faces.js's insertFace() and db/vision-ingests.js's
+ *  createIngest() rather than duplicating those statements.
  */
 /** @import * as Types from './types.js' */
 
@@ -44,8 +61,37 @@ import { createTables, runMigrations } from "../../db/schema.js"
 import { bindExecutor, sql } from "../../db/sql.js"
 import { now } from "../../db/utils.js"
 import { insertFace, descriptorToBlob } from "../../db/media-faces.js"
+import { createIngest, assertModelVersionInvariant } from "../../db/vision-ingests.js"
+import { routeFace, routeCutoffs, PROFILE } from "../../public/vision/route.js"
 import { loadManifest } from "../lib/import-manifest.js"
+import { computeDatasetId } from "./dataset-id.js"
 import { frameRoots } from "./session1-report.js"
+
+/**
+ * Bumped whenever the SHAPE of `config_json` changes, so a reader can tell a
+ * missing field from a field this version never wrote. Not the database schema
+ * version and not the model version — just this object's.
+ */
+const CONFIG_SCHEMA_VERSION = 1
+
+/**
+ * The nine signals `routeFace` grades against. Named here rather than inferred
+ * from whatever the record happens to carry: a face missing one of them must be
+ * left UNGRADED, not graded against an undefined that compares false and quietly
+ * routes it `set_aside`.
+ * @type {ReadonlyArray<keyof import('../../public/vision/types.js').GateSignals>}
+ */
+const GATE_SIGNAL_KEYS = [
+  "score",
+  "boxPx",
+  "borderPx",
+  "eyeRatio",
+  "eyeAngle",
+  "alignScale",
+  "residual",
+  "outsideFraction",
+  "sharpness",
+]
 
 const USAGE = `Usage: node scripts/vision/ingest-faces.js <run-dir> [options]
 
@@ -286,6 +332,209 @@ export function frameMetadataForPhotos(photos) {
   return out
 }
 
+// --- Ingest provenance (plan §9a, contract §4) --------------------------------
+
+/**
+ * `<run-dir>/timing.json`, or a refusal.
+ *
+ * Missing is fatal rather than "no provenance recorded": the batch always
+ * writes one, so its absence means this is not a run directory this script
+ * understands, and guessing what produced the descriptors is the one thing the
+ * whole provenance mechanism exists to stop.
+ * @type {Types.readTiming}
+ */
+export function readTiming(runDir) {
+  const file = path.join(runDir, "timing.json")
+  if (!fs.existsSync(file)) {
+    throw new Error(
+      `${file}: not found. An ingest records which engine, which weights and which ` +
+        `settings produced its faces, and that comes from the run's own timing.json — ` +
+        `there is nothing to fall back on that would not be a guess.`,
+    )
+  }
+  return /** @type {import('./types.js').Session1Timing} */ (
+    JSON.parse(fs.readFileSync(file, "utf8"))
+  )
+}
+
+/**
+ * §4's "never a filesystem path, never argv, never an environment variable",
+ * enforced instead of promised.
+ *
+ * Every string that reaches `config_json` goes through here. A path contains a
+ * separator, an unexpanded env reference contains `$`, and neither belongs in
+ * an object that travels to production out of a public repository — so rather
+ * than trusting the assembly below to stay careful, the check is mechanical and
+ * a violation is a loud failure at ingest time.
+ * @param {unknown} value
+ * @param {string} field
+ * @returns {string}
+ */
+function safeString(value, field) {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`timing.json: provenance.${field} is missing or not a string`)
+  }
+  if (value.includes("/") || value.includes("\\") || value.includes("$")) {
+    throw new Error(
+      `timing.json: provenance.${field} looks like a path or an environment reference. ` +
+        `config_json is an allowlist of versions, digests and thresholds; it never carries ` +
+        `a path, argv or an environment variable.`,
+    )
+  }
+  return value
+}
+
+/** A finite number, or null. Anything else — a path, a flag, an object — cannot
+ *  be one, so this is the other half of the allowlist's mechanical enforcement.
+ *  @param {unknown} value @returns {number | null} */
+function numberOrNull(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null
+}
+
+/** Copy only the finite numbers under `keys` out of an unknown object. Used for
+ *  the detector/align/gate blocks timing.json carries, so that a knob added to
+ *  `defaults.js` as a string or a path can never ride into config_json on the
+ *  back of a spread.
+ *  @param {unknown} source
+ *  @param {ReadonlyArray<string>} keys
+ *  @returns {Record<string, number | null>} */
+function numericFields(source, keys) {
+  const from = /** @type {Record<string, unknown>} */ (
+    source && typeof source === "object" ? source : {}
+  )
+  /** @type {Record<string, number | null>} */
+  const out = {}
+  for (const key of keys) out[key] = numberOrNull(from[key])
+  return out
+}
+
+/**
+ * The `vision_ingests` row this run will be recorded under, assembled from the
+ * run's own timing.json and its faces. Pure — no database, no filesystem — so
+ * every refusal below is unit-testable against a hand-built timing object.
+ * @type {Types.buildIngestInput}
+ */
+export function buildIngestInput({ timing, faces, modelVersion }) {
+  const provenance = timing.provenance
+  if (!provenance) {
+    // Named explicitly, because this is the case an operator will actually hit
+    // and "provenance missing" alone would send them looking for a bug.
+    const hint = timing.describeProvenance
+      ? " This directory has `describeProvenance` instead, which means it came from " +
+        "redescribe-crops.js: its boxes and its descriptors were made by different engines, " +
+        "so no single provenance block describes it. Ingest the run that DETECTED and " +
+        "DESCRIBED with one engine."
+      : " Runs written before provenance existed have none, and it cannot be reconstructed."
+    throw new Error(`timing.json carries no \`provenance\` block, so this run cannot be ingested.${hint}`)
+  }
+
+  // The mirror setting is the caller's, not the engine's, so it lives in
+  // `config` — and it is one of the three facts `model_version` is a name for,
+  // which is why an absent one is a refusal rather than a default of false.
+  const mirrorTta = timing.config ? timing.config.mirrorTta : undefined
+  if (typeof mirrorTta !== "boolean") {
+    throw new Error(
+      "timing.json: config.mirrorTta is missing or not a boolean. Mirror-averaging is one of " +
+        "the three things a model_version names (embedder, normalisation, mirror), so it " +
+        "cannot be assumed — a wrong guess makes two descriptor spaces share one name.",
+    )
+  }
+
+  const detectorSha256 = safeString(provenance.detectorSha256, "detectorSha256")
+  const embedderSha256 = safeString(provenance.embedderSha256, "embedderSha256")
+  const engineSha256 = safeString(provenance.engineSha256, "engineSha256")
+  const normalisation = safeString(provenance.embedNorm, "embedNorm")
+
+  /** @type {import('../../types.js').VisionIngestConfig} */
+  const config = {
+    schemaVersion: CONFIG_SCHEMA_VERSION,
+    runtime: safeString(provenance.runtime, "runtime"),
+    detectorSha256,
+    embedderSha256,
+    engineSha256,
+    detectChannels: safeString(provenance.detectChannels, "detectChannels"),
+    embedChannels: safeString(provenance.embedChannels, "embedChannels"),
+    topKStage: safeString(provenance.topKStage, "topKStage"),
+    normalisation,
+    normalisationSource: safeString(provenance.embedNormSource, "embedNormSource"),
+    mirrorApplied: mirrorTta,
+    // The resolutions and thresholds the boxes were actually drawn at. Numbers
+    // only, by construction (`numericFields`), so the surrounding config object
+    // — which also holds an output directory and a `--limit` — cannot leak.
+    detectEdge: numberOrNull(timing.config.detectEdge),
+    sourceEdge: numberOrNull(timing.config.sourceEdge),
+    nearDuplicateBits: numberOrNull(timing.config.nearDuplicateBits),
+    detect: numericFields(timing.config.detect, [
+      "longEdge",
+      "sourceEdge",
+      "scoreThreshold",
+      "nmsIou",
+      "topK",
+      "divisor",
+      "duplicateIou",
+    ]),
+    align: numericFields(timing.config.align, ["size"]),
+    // The cutoff table every `route_state` on this run's rows was graded
+    // against. `route_profile` names it; these are the values, so a later
+    // revision of defaults.js can be diffed against what actually ran rather
+    // than against what the file says today.
+    routeProfile: PROFILE,
+    routeCutoffs: numericFields(routeCutoffs(), [
+      "minBoxPx",
+      "minBorderPx",
+      "minEyeRatio",
+      "maxEyeRatio",
+      "maxResidual",
+      "maxAlignScale",
+      "maxOutside",
+      "minSharpness",
+      "acceptMinBoxPx",
+      "acceptMinSharpness",
+    ]),
+  }
+
+  return {
+    // Content-addressed over every face's id, photo id and box — the same
+    // digest labels.json carries, so an ingest and a labelling session can be
+    // shown to be about the same data. Sixteen hex characters: not a path, not
+    // a name, and not a measurement anyone can read a photograph out of.
+    datasetId: computeDatasetId(faces),
+    modelVersion,
+    detectorSha256,
+    embedderSha256,
+    engineSha256,
+    mirrorApplied: mirrorTta,
+    normalisation,
+    routeProfile: PROFILE,
+    config,
+  }
+}
+
+/**
+ * Grade one face for the admin queue, or leave it ungraded.
+ *
+ * This closes a live gap rather than adding a feature: `route_state` was
+ * NULL on every row a real ingest would ever have written, so Phase 4 built the
+ * queue's filter and nothing ever filled the column it filters on.
+ *
+ * A record missing any of the nine signals is left UNGRADED on purpose. `null`
+ * means "not yet graded" everywhere downstream and is treated as showable;
+ * grading against an absent signal would compare `undefined` and route the face
+ * `set_aside`, which is the same value with the opposite meaning.
+ * @type {Types.gradeFace}
+ */
+export function gradeFace(face, cutoffs) {
+  const signals = face.signals
+  if (!signals) return null
+  for (const key of GATE_SIGNAL_KEYS) {
+    if (!Number.isFinite(signals[key])) return null
+  }
+  const verdict = routeFace(signals, cutoffs)
+  // The ordering score is deliberately dropped: it orders a live queue and is
+  // recomputed, so persisting it would be a second copy to keep true.
+  return { state: verdict.state, reason: verdict.reason, profile: verdict.profile }
+}
+
 /** @param {number} mediaId @param {string} modelVersion */
 function existingCliFaceCount(mediaId, modelVersion) {
   /** @type {{ n: number } | undefined} */
@@ -304,9 +553,35 @@ function retireCliFaces(mediaId, modelVersion) {
 }
 
 /**
+ * Refuse a re-ingest that would leave two live 'cli' generations for the same
+ * (media_id, model_version).
+ *
+ * ⚠ Called from INSIDE the transaction. It used to run before it, which was a
+ * plain time-of-check/time-of-use hole: a concurrent ingest could insert
+ * between the check and the writes, and both runs would then believe they were
+ * the only one — the second silently doubling every face on the photos they
+ * shared. BEGIN IMMEDIATE serialises writers, so checking within it makes the
+ * refusal mean what it says.
+ * @param {number[]} matchedMediaIds
+ * @param {string} modelVersion
+ */
+function assertNoLiveCliFaces(matchedMediaIds, modelVersion) {
+  const conflicts = matchedMediaIds.filter((id) => existingCliFaceCount(id, modelVersion) > 0)
+  if (conflicts.length > 0) {
+    throw new Error(
+      `${conflicts.length} matched photo(s) already have live 'cli' rows for model_version ` +
+        `"${modelVersion}". Pass --replace to soft-delete them and re-ingest, or use a ` +
+        `different --model-version.`,
+    )
+  }
+}
+
+/**
  * The main pass: read the run's JSONL, join to media by sha256, refuse (or
  * --replace) a (media_id, model_version) re-run, and insert one media_faces
- * row per face of every matched photo, all in one transaction.
+ * row per face of every matched photo — with its routing grade and its
+ * `ingest_id` — all in one transaction, alongside the `vision_ingests` row
+ * itself.
  * @type {Types.ingestRun}
  */
 export function ingestRun({ db, runDir, modelVersion, replace, dryRun }) {
@@ -323,6 +598,11 @@ export function ingestRun({ db, runDir, modelVersion, replace, dryRun }) {
   const photos = /** @type {Types.Session1PhotoRecord[]} */ (photosRead.records)
   const faces = /** @type {Types.Session1FaceRecord[]} */ (facesRead.records)
 
+  // Read and validated BEFORE anything is queried, let alone written: a run
+  // with no usable provenance is not ingestable at all, and finding that out
+  // after half a join has run only makes the message arrive later.
+  const ingestInput = buildIngestInput({ timing: readTiming(runDir), faces, modelVersion })
+
   const mediaBySha = loadMediaShaMap()
   const { matched, unmatchedCount } = joinPhotosToMedia(photos, mediaBySha)
 
@@ -331,23 +611,37 @@ export function ingestRun({ db, runDir, modelVersion, replace, dryRun }) {
   const mediaIdByPhotoId = new Map(matched.map((m) => [m.photo.id, m.mediaId]))
   const facesToInsert = faces.filter((f) => mediaIdByPhotoId.has(f.photoId))
 
-  if (!replace) {
-    const conflicts = matchedMediaIds.filter((id) => existingCliFaceCount(id, modelVersion) > 0)
-    if (conflicts.length > 0) {
-      throw new Error(
-        `${conflicts.length} matched photo(s) already have live 'cli' rows for model_version ` +
-          `"${modelVersion}". Pass --replace to soft-delete them and re-ingest, or use a ` +
-          `different --model-version.`,
-      )
-    }
-  }
-
   const frameMeta = frameMetadataForPhotos(photos)
+  const cutoffs = routeCutoffs()
 
   let framesWritten = 0
   let capturedAtWritten = 0
-  if (!dryRun) {
+  let facesGraded = 0
+  /** @type {number | null} */
+  let ingestId = null
+
+  if (dryRun) {
+    // Both refusals are reads, so a dry run can and should answer them — the
+    // point of --dry-run is to find out whether the real one would work.
+    assertModelVersionInvariant(modelVersion, ingestInput)
+    if (!replace) assertNoLiveCliFaces(matchedMediaIds, modelVersion)
+    for (const face of facesToInsert) if (gradeFace(face, cutoffs)) facesGraded++
+  } else {
     withTransaction(db, () => {
+      // §9a's invariant, and it comes first: a model_version already recorded
+      // against a different (embedder, normalisation, mirror) triple means this
+      // run's descriptors would be compared against another space's under one
+      // name. That failure looks like a slightly worse recogniser rather than a
+      // bug, so it is refused at the only moment refusing is cheap.
+      assertModelVersionInvariant(modelVersion, ingestInput)
+      if (!replace) assertNoLiveCliFaces(matchedMediaIds, modelVersion)
+
+      // Inside the transaction, in the same invocation, before the faces that
+      // point at it — so provenance and faces are one atomic fact. A row here
+      // with no faces, or faces pointing at a row that rolled back, is a state
+      // no later "which faces are stale" query could interpret.
+      ingestId = createIngest(ingestInput).id
+
       if (replace) {
         for (const mediaId of matchedMediaIds) retireCliFaces(mediaId, modelVersion)
       }
@@ -373,6 +667,8 @@ export function ingestRun({ db, runDir, modelVersion, replace, dryRun }) {
       }
       for (const face of facesToInsert) {
         const mediaId = /** @type {number} */ (mediaIdByPhotoId.get(face.photoId))
+        const route = gradeFace(face, cutoffs)
+        if (route) facesGraded++
         insertFace({
           mediaId,
           bbox: face.box,
@@ -384,6 +680,8 @@ export function ingestRun({ db, runDir, modelVersion, replace, dryRun }) {
               : null,
           modelVersion,
           source: "cli",
+          route,
+          ingestId,
         })
       }
     })
@@ -394,8 +692,10 @@ export function ingestRun({ db, runDir, modelVersion, replace, dryRun }) {
     matched: matched.length,
     unmatched: unmatchedCount,
     facesInserted: facesToInsert.length,
+    facesGraded,
     framesWritten,
     capturedAtWritten,
+    ingestId,
   }
 }
 
@@ -484,7 +784,9 @@ async function main() {
       console.log(`matched to media: ${result.matched}`)
       console.log(`unmatched (no sha match): ${result.unmatched}`)
       console.log(`faces inserted: ${result.facesInserted}` + (args.dryRun ? " (dry run — nothing written)" : ""))
+      console.log(`faces graded for the queue: ${result.facesGraded}`)
       if (!args.dryRun) {
+        console.log(`ingest id: ${result.ingestId}`)
         console.log(`frame roots written: ${result.framesWritten}`)
         console.log(`capture times written: ${result.capturedAtWritten}`)
       }

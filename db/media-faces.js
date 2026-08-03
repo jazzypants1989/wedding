@@ -1,4 +1,19 @@
-/** @file Face pipeline database operations (docs/post-wedding/SPEC-vision-lab.md §10) */
+/** @file Face pipeline database operations (docs/post-wedding/SPEC-vision-lab.md §10)
+ *
+ *  ⚠ **Nothing in this file writes `media_faces.face_identity_id`, and nothing
+ *  new may.** That column is a PROJECTION of the append-only ledger in
+ *  db/face-assignments.js, and `projectFace` there is its only writer. Two
+ *  functions here used to write it directly — `setFaceIdentity` and
+ *  `repointFaces` — and they are deleted rather than renamed: an unused export
+ *  is an invitation, and the point is that a future contributor reaching for
+ *  "just set the column" finds nothing to reach for. Assign through
+ *  `recordAssignment`, which appends the event and materialises the column in
+ *  one call; merge through `mergeIdentityInto` below, which moves the redirect
+ *  and never touches a face row.
+ *
+ *  `tests/unit/db/face-identity-single-writer.test.js` scans the source tree
+ *  for this and fails if a second writer appears.
+ */
 /** @import * as Types from './types.js' */
 
 import { sql } from "./sql.js"
@@ -37,6 +52,7 @@ export function insertFace({
   modelVersion,
   source,
   route = null,
+  ingestId = null,
 }) {
   const s = signals ?? {}
   const result = sql`INSERT INTO media_faces (
@@ -44,7 +60,7 @@ export function insertFace({
       signal_score, signal_boxPx, signal_borderPx, signal_eyeRatio, signal_eyeAngle,
       signal_alignScale, signal_residual, signal_outsideFraction, signal_sharpness,
       descriptor, model_version, source,
-      route_state, route_reason, route_profile
+      route_state, route_reason, route_profile, ingest_id
     ) VALUES (
       ${mediaId}, ${bbox.x}, ${bbox.y}, ${bbox.w}, ${bbox.h},
       ${landmarks ? JSON.stringify(landmarks) : null},
@@ -52,7 +68,8 @@ export function insertFace({
       ${s.eyeAngle ?? null}, ${s.alignScale ?? null}, ${s.residual ?? null},
       ${s.outsideFraction ?? null}, ${s.sharpness ?? null},
       ${descriptor ?? null}, ${modelVersion}, ${source},
-      ${route?.state ?? null}, ${route?.reason ?? null}, ${route?.profile ?? null}
+      ${route?.state ?? null}, ${route?.reason ?? null}, ${route?.profile ?? null},
+      ${ingestId}
     )`.run()
   return /** @type {import('../types.js').MediaFace} */ (
     getFaceById(Number(result.lastInsertRowid))
@@ -71,14 +88,19 @@ export function facesForMedia(mediaId) {
     ORDER BY id`.all()
 }
 
-/** @type {Types.setFaceIdentity} */
-export function setFaceIdentity(id, identityId) {
-  const result = sql`UPDATE media_faces SET face_identity_id = ${identityId}
-    WHERE id = ${id} AND deleted_at IS NULL`.run()
-  return result.changes > 0
-}
-
-/** @type {Types.softDeleteFace} */
+/**
+ * ⚠ NOT the way to record "this box is not a face". That is a judgement, and a
+ * judgement is a ledger event — `recordAssignment({ op: 'not_a_face' })`, whose
+ * projection sets `deleted_at` here and un-sets it if the event is ever
+ * revoked. Calling this instead would soft-delete the row with no record that
+ * anybody decided anything, and nothing could undo it.
+ *
+ * It survives as a primitive because `deleted_at` on this table has a second,
+ * legitimate author — schema.js's §10 precedence triggers retire an
+ * upload-sourced row the CLI has superseded — and that is not a judgement about
+ * a face at all.
+ * @type {Types.softDeleteFace}
+ */
 export function softDeleteFace(id) {
   const result = sql`UPDATE media_faces SET deleted_at = ${now()}
     WHERE id = ${id} AND deleted_at IS NULL`.run()
@@ -112,16 +134,44 @@ export function identitiesForPerson(personId) {
 }
 
 /**
- * Point every media_faces row (live or not) at a different identity — the
- * person-merge primitive. Includes soft-deleted face rows on purpose: a
- * superseded row that resurfaces must not resurrect a reference to a
- * soft-deleted identity of a soft-deleted person.
- * @type {Types.repointFaces}
+ * The person-merge primitive, and the whole of what a merge does to the data:
+ * one identity now redirects to another.
+ *
+ * This replaced `repointFaces`, which rewrote `face_identity_id` on every
+ * affected face row. That was wrong twice over. It wrote the projection column
+ * directly, which is now the ledger's alone; and, worse, it made a merge look
+ * retroactive — an assignment event that named identity A would afterwards sit
+ * beside a column saying B, with nothing recording that A had ever been named.
+ * A merge is a fact about IDENTITIES, so it is recorded once, here, and
+ * `resolveIdentity` makes every historical event still correct.
+ *
+ * No cycle can form through this path: the source is soft-deleted immediately
+ * afterwards by the caller, and `identitiesForPerson` — where every merge
+ * target comes from — returns live rows only, so a merged-away identity can
+ * never be chosen as a target. (`resolveIdentity` still carries a hop bound,
+ * for the hand-edited case.)
+ * @type {Types.mergeIdentityInto}
  */
-export function repointFaces(fromIdentityId, toIdentityId) {
-  const result = sql`UPDATE media_faces SET face_identity_id = ${toIdentityId}
-    WHERE face_identity_id = ${fromIdentityId}`.run()
-  return Number(result.changes)
+export function mergeIdentityInto(fromIdentityId, toIdentityId) {
+  const result = sql`UPDATE face_identities SET merged_into = ${toIdentityId}
+    WHERE id = ${fromIdentityId} AND deleted_at IS NULL`.run()
+  return result.changes > 0
+}
+
+/**
+ * Every face row (live OR soft-deleted) whose column currently names one
+ * identity, ascending.
+ *
+ * Soft-deleted rows are included for the same reason `repointFaces` included
+ * them: a superseded row that resurfaces must not resurrect a reference to an
+ * identity that has since been merged away.
+ * @type {Types.faceIdsForIdentity}
+ */
+export function faceIdsForIdentity(identityId) {
+  /** @type {Array<{ id: number }>} */
+  const rows = sql`SELECT id FROM media_faces
+    WHERE face_identity_id = ${identityId} ORDER BY id`.all()
+  return rows.map((r) => r.id)
 }
 
 /** @type {Types.setIdentityPerson} */

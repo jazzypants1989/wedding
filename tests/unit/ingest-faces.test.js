@@ -14,15 +14,19 @@ import { after, before, describe, it } from "node:test"
 
 import {
   backfillFromManifest,
+  buildIngestInput,
   frameMetadataForPhotos,
+  gradeFace,
   ingestRun,
   joinPhotosToMedia,
   openDatabase,
   parseArgs,
   readJsonl,
+  readTiming,
   requireModelVersion,
 } from "../../scripts/vision/ingest-faces.js"
 import { blobToDescriptor } from "../../db/media-faces.js"
+import { PROFILE, routeCutoffs } from "../../public/vision/route.js"
 
 /** @type {string} */
 let workDir
@@ -86,11 +90,64 @@ function face(descriptor, over = {}) {
   }
 }
 
-/** @param {string} dir @param {unknown[]} photos @param {unknown[]} faces */
-function writeRun(dir, photos, faces) {
+/**
+ * The `provenance` block session1.js writes from the engine that actually ran.
+ * Digest-shaped strings, invented here — nothing in tests/ ever loads a model.
+ * @param {Partial<import('../../scripts/vision/types.js').EngineProvenance>} [over]
+ * @returns {import('../../scripts/vision/types.js').EngineProvenance}
+ */
+function provenance(over = {}) {
+  return {
+    runtime: "onnxruntime-node 1.20.0",
+    detectChannels: "bgr",
+    embedChannels: "bgr",
+    topKStage: "pre",
+    embedNorm: "arcface",
+    embedNormSource: "digest-table",
+    detectorSha256: "d".repeat(64),
+    embedderSha256: "e".repeat(64),
+    engineSha256: "a".repeat(64),
+    ...over,
+  }
+}
+
+/** @param {Partial<import('../../scripts/vision/types.js').Session1Timing>} [over]
+ *  @returns {import('../../scripts/vision/types.js').Session1Timing} */
+function timing(over = {}) {
+  return {
+    photos: 1,
+    faces: 1,
+    stages: {},
+    environment: { node: "v22.0.0" },
+    provenance: provenance(),
+    config: {
+      detectEdge: 1280,
+      sourceEdge: 2000,
+      mirrorTta: false,
+      nearDuplicateBits: 12,
+      detect: { longEdge: 1280, scoreThreshold: 0.6, nmsIou: 0.3, topK: 5000, divisor: 32, duplicateIou: 0.55 },
+      align: { size: 112 },
+      // Two keys the real batch writes that must NEVER reach config_json: an
+      // output path and a run-shaping flag. Their presence in the fixture is the
+      // point — the allowlist is only worth anything if something is there to
+      // leak.
+      outDir: "/Users/someone/tmp/session1",
+      limit: 50,
+    },
+    ...over,
+  }
+}
+
+/** @param {string} dir @param {unknown[]} photos @param {unknown[]} faces
+ *  @param {unknown} [timingOverride] `null` writes no timing.json at all. */
+function writeRun(dir, photos, faces, timingOverride) {
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(path.join(dir, "photos.jsonl"), photos.map((p) => JSON.stringify(p)).join("\n") + "\n")
   fs.writeFileSync(path.join(dir, "faces.jsonl"), faces.map((f) => JSON.stringify(f)).join("\n") + "\n")
+  const timingValue = timingOverride === undefined ? timing() : timingOverride
+  if (timingValue !== null) {
+    fs.writeFileSync(path.join(dir, "timing.json"), JSON.stringify(timingValue, null, 2) + "\n")
+  }
 }
 
 /** @param {import('node:sqlite').DatabaseSync} db @param {string | null} sha */
@@ -478,6 +535,382 @@ describe("backfillFromManifest", () => {
         db.prepare(`SELECT source_sha256 FROM media WHERE id = ?`).get(mediaId)
       )
       assert.equal(row.source_sha256, null, "dry run must not write")
+    } finally {
+      db.close()
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Ingest provenance (plan §9a, Phase 5 contract §4)
+// ---------------------------------------------------------------------------
+
+describe("buildIngestInput — fail closed, never guess", () => {
+  const faces = [face([1, 2, 3], { id: 0, photoId: 0 })]
+
+  it("reads the engine's digests and settings out of timing.json", () => {
+    const input = buildIngestInput({ timing: timing(), faces, modelVersion: "v1" })
+    assert.equal(input.detectorSha256, "d".repeat(64))
+    assert.equal(input.embedderSha256, "e".repeat(64))
+    assert.equal(input.engineSha256, "a".repeat(64))
+    assert.equal(input.normalisation, "arcface")
+    assert.equal(input.mirrorApplied, false)
+    assert.equal(input.routeProfile, PROFILE)
+    assert.equal(input.modelVersion, "v1")
+    assert.equal(typeof input.datasetId, "string")
+    assert.ok(input.datasetId.length > 0)
+  })
+
+  it("REFUSES a run whose timing.json carries no provenance block", () => {
+    const bare = timing()
+    delete (/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (bare))).provenance
+    assert.throws(
+      () => buildIngestInput({ timing: bare, faces, modelVersion: "v1" }),
+      /provenance/,
+    )
+  })
+
+  it("REFUSES a redescribe output, and says why", () => {
+    // redescribe-crops.js DELETES `provenance` and writes `describeProvenance`
+    // instead, precisely so a consumer stops rather than recording one model's
+    // digests against another model's vectors. This is that stop.
+    const redescribed = timing()
+    const block = redescribed.provenance
+    delete (/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (redescribed))).provenance
+    ;(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (redescribed))).describeProvenance = block
+
+    assert.throws(
+      () => buildIngestInput({ timing: redescribed, faces, modelVersion: "v1" }),
+      /redescribe-crops/,
+    )
+  })
+
+  it("REFUSES a run that does not record its mirror setting", () => {
+    const noMirror = timing()
+    delete (/** @type {Record<string, unknown>} */ (noMirror.config)).mirrorTta
+    assert.throws(
+      () => buildIngestInput({ timing: noMirror, faces, modelVersion: "v1" }),
+      /mirrorTta/,
+    )
+  })
+
+  it("REFUSES a provenance string that looks like a path or an env reference", () => {
+    for (const runtime of ["/opt/onnxruntime/1.20.0", "C:\\ort\\1.20.0", "$ORT_VERSION"]) {
+      assert.throws(
+        () =>
+          buildIngestInput({
+            timing: timing({ provenance: provenance({ runtime }) }),
+            faces,
+            modelVersion: "v1",
+          }),
+        /path or an environment reference/,
+        `"${runtime}" must be refused`,
+      )
+    }
+  })
+
+  it("config_json carries no path, no argv and no environment variable", () => {
+    // The fixture's timing.config deliberately contains `outDir` (an absolute
+    // path) and `limit` (a run-shaping argument). Neither may survive, and
+    // nothing that merely LOOKS like a path may either.
+    const input = buildIngestInput({ timing: timing(), faces, modelVersion: "v1" })
+    const serialised = JSON.stringify(input.config)
+
+    assert.ok(!serialised.includes("outDir"), "an output directory must never reach config_json")
+    assert.ok(!serialised.includes("/Users/"), "no filesystem path")
+    assert.ok(!serialised.includes("limit"), "no run-shaping argv")
+    assert.ok(!serialised.includes("$"), "no environment reference")
+    assert.ok(!serialised.includes("\\\\"), "no windows path separator")
+
+    // Walk every value, so the checks above cannot be satisfied by a nested
+    // object nobody stringified into the top level.
+    /** @param {unknown} value */
+    const assertInert = (value) => {
+      if (typeof value === "string") {
+        assert.ok(!value.includes("/"), `config value "${value}" contains a path separator`)
+        assert.ok(!value.includes("$"), `config value "${value}" contains an env reference`)
+      } else if (value && typeof value === "object") {
+        for (const inner of Object.values(value)) assertInert(inner)
+      } else if (value !== null) {
+        assert.ok(
+          typeof value === "number" || typeof value === "boolean",
+          "config values are strings, numbers, booleans, nulls and nested objects only",
+        )
+      }
+    }
+    assertInert(input.config)
+  })
+
+  it("config_json records the thresholds and the cutoff table that actually ran", () => {
+    const input = buildIngestInput({ timing: timing(), faces, modelVersion: "v1" })
+    const config = /** @type {any} */ (input.config)
+    assert.equal(config.schemaVersion, 1)
+    assert.equal(config.routeProfile, PROFILE)
+    assert.equal(config.detectEdge, 1280)
+    assert.equal(config.detect.scoreThreshold, 0.6)
+    assert.equal(config.align.size, 112)
+    assert.equal(config.embedChannels, "bgr")
+    assert.equal(config.topKStage, "pre")
+    // The values the stored route_state was graded against, not just their name.
+    const cutoffs = routeCutoffs()
+    assert.equal(config.routeCutoffs.minBoxPx, cutoffs.minBoxPx)
+    assert.equal(config.routeCutoffs.acceptMinSharpness, cutoffs.acceptMinSharpness)
+  })
+
+  it("readTiming refuses a run directory with no timing.json", () => {
+    const dir = path.join(workDir, "run-no-timing-read")
+    fs.mkdirSync(dir, { recursive: true })
+    assert.throws(() => readTiming(dir), /not found/)
+  })
+})
+
+describe("gradeFace", () => {
+  it("grades a face from its nine stored signals, and stamps the profile", () => {
+    const verdict = gradeFace(face([1, 2, 3]), routeCutoffs())
+    assert.ok(verdict)
+    assert.equal(verdict.profile, PROFILE)
+    assert.ok(["accept", "ask", "set_aside"].includes(verdict.state))
+  })
+
+  it("leaves a record with NO signals ungraded rather than grading it as rejected", () => {
+    assert.equal(gradeFace(face([1, 2, 3], { signals: undefined }), routeCutoffs()), null)
+  })
+
+  it("leaves a record missing ONE signal ungraded — a partial grade is a wrong grade", () => {
+    const partial = face([1, 2, 3])
+    delete (/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (partial.signals))).sharpness
+    assert.equal(gradeFace(partial, routeCutoffs()), null)
+  })
+})
+
+describe("ingestRun — provenance, grading and atomicity", () => {
+  it("writes one vision_ingests row and points every face at it", () => {
+    const db = freshDb()
+    try {
+      seedMedia(db, "sha-a")
+      const runDir = path.join(workDir, "run-provenance")
+      writeRun(
+        runDir,
+        [photo({ id: 0, sha256: "sha-a" })],
+        [face([1, 2, 3], { id: 0, photoId: 0 }), face([4, 5, 6], { id: 1, photoId: 0 })],
+      )
+
+      const result = ingestRun({ db, runDir, modelVersion: "v1", replace: false, dryRun: false })
+      assert.ok(result.ingestId)
+
+      const ingests = /** @type {any[]} */ (db.prepare(`SELECT * FROM vision_ingests`).all())
+      assert.equal(ingests.length, 1)
+      assert.equal(ingests[0].id, result.ingestId)
+      assert.equal(ingests[0].model_version, "v1")
+      assert.equal(ingests[0].embedder_sha256, "e".repeat(64))
+      assert.equal(ingests[0].mirror_applied, 0)
+      assert.equal(ingests[0].route_profile, PROFILE)
+
+      const rows = /** @type {any[]} */ (db.prepare(`SELECT ingest_id FROM media_faces`).all())
+      assert.equal(rows.length, 2)
+      for (const row of rows) assert.equal(row.ingest_id, result.ingestId)
+    } finally {
+      db.close()
+    }
+  })
+
+  it("grades EVERY inserted row — route_state is no longer null on a real ingest", () => {
+    const db = freshDb()
+    try {
+      seedMedia(db, "sha-a")
+      const runDir = path.join(workDir, "run-graded")
+      writeRun(
+        runDir,
+        [photo({ id: 0, sha256: "sha-a" })],
+        [face([1, 2, 3], { id: 0, photoId: 0 }), face([4, 5, 6], { id: 1, photoId: 0 })],
+      )
+
+      const result = ingestRun({ db, runDir, modelVersion: "v1", replace: false, dryRun: false })
+      assert.equal(result.facesGraded, 2)
+
+      const rows = /** @type {any[]} */ (
+        db.prepare(`SELECT route_state, route_profile FROM media_faces`).all()
+      )
+      assert.equal(rows.length, 2)
+      for (const row of rows) {
+        assert.ok(row.route_state, "every ingested row carries a grade")
+        assert.equal(row.route_profile, PROFILE, "and the cutoff set it was graded under")
+      }
+    } finally {
+      db.close()
+    }
+  })
+
+  it("leaves a signal-less face ungraded without refusing the ingest", () => {
+    const db = freshDb()
+    try {
+      seedMedia(db, "sha-a")
+      const runDir = path.join(workDir, "run-ungraded")
+      writeRun(
+        runDir,
+        [photo({ id: 0, sha256: "sha-a" })],
+        [face([1, 2, 3], { id: 0, photoId: 0, signals: undefined })],
+      )
+
+      const result = ingestRun({ db, runDir, modelVersion: "v1", replace: false, dryRun: false })
+      assert.equal(result.facesInserted, 1)
+      assert.equal(result.facesGraded, 0)
+      const row = /** @type {any} */ (db.prepare(`SELECT route_state FROM media_faces`).get())
+      assert.equal(row.route_state, null, "ungraded, which downstream treats as showable")
+    } finally {
+      db.close()
+    }
+  })
+
+  it("THE INGEST ROW AND ITS FACES COMMIT ATOMICALLY — neither survives a mid-ingest throw", () => {
+    const db = freshDb()
+    try {
+      seedMedia(db, "sha-a")
+      const runDir = path.join(workDir, "run-atomic")
+      // The second face's box is missing an x, and media_faces.bbox_x is
+      // NOT NULL — a genuine constraint failure half way through the inserts,
+      // rather than a seam opened in the code to let a test push it over.
+      writeRun(
+        runDir,
+        [photo({ id: 0, sha256: "sha-a" })],
+        [
+          face([1, 2, 3], { id: 0, photoId: 0 }),
+          face([4, 5, 6], { id: 1, photoId: 0, box: /** @type {any} */ ({ x: null, y: 0, w: 10, h: 10 }) }),
+        ],
+      )
+
+      assert.throws(() => ingestRun({ db, runDir, modelVersion: "v1", replace: false, dryRun: false }))
+
+      const faceCount = /** @type {{ n: number }} */ (
+        db.prepare(`SELECT COUNT(*) AS n FROM media_faces`).get()
+      ).n
+      const ingestCount = /** @type {{ n: number }} */ (
+        db.prepare(`SELECT COUNT(*) AS n FROM vision_ingests`).get()
+      ).n
+      assert.equal(faceCount, 0, "the face that DID insert was rolled back with the rest")
+      assert.equal(ingestCount, 0, "and so was the provenance row it pointed at")
+    } finally {
+      db.close()
+    }
+  })
+
+  it("rolls the ingest row back when the conflict check refuses inside the transaction", () => {
+    // The conflict check used to sit OUTSIDE the transaction. Now that it is
+    // inside — and after createIngest — a refusal must take the ingest row with
+    // it, or every refused re-run would leave a provenance row describing
+    // nothing.
+    const db = freshDb()
+    try {
+      seedMedia(db, "sha-a")
+      const runDir = path.join(workDir, "run-conflict-rollback")
+      writeRun(runDir, [photo({ id: 0, sha256: "sha-a" })], [face([1, 2, 3], { id: 0, photoId: 0 })])
+
+      ingestRun({ db, runDir, modelVersion: "v1", replace: false, dryRun: false })
+      assert.throws(() => ingestRun({ db, runDir, modelVersion: "v1", replace: false, dryRun: false }))
+
+      const ingestCount = /** @type {{ n: number }} */ (
+        db.prepare(`SELECT COUNT(*) AS n FROM vision_ingests`).get()
+      ).n
+      assert.equal(ingestCount, 1, "the refused run left no provenance row behind")
+    } finally {
+      db.close()
+    }
+  })
+
+  it("REFUSES a model_version already recorded against a different descriptor space", () => {
+    const db = freshDb()
+    try {
+      seedMedia(db, "sha-a")
+      seedMedia(db, "sha-b")
+      const runOne = path.join(workDir, "run-invariant-1")
+      const runTwo = path.join(workDir, "run-invariant-2")
+      writeRun(runOne, [photo({ id: 0, sha256: "sha-a" })], [face([1, 2, 3], { id: 0, photoId: 0 })])
+      // Same model_version, DIFFERENT embedder. That is the whole failure: the
+      // string would name two descriptor spaces, and every distance comparison
+      // would quietly mix them.
+      writeRun(
+        runTwo,
+        [photo({ id: 0, sha256: "sha-b" })],
+        [face([1, 2, 3], { id: 0, photoId: 0 })],
+        timing({ provenance: provenance({ embedderSha256: "f".repeat(64) }) }),
+      )
+
+      ingestRun({ db, runDir: runOne, modelVersion: "shared", replace: false, dryRun: false })
+      assert.throws(
+        () => ingestRun({ db, runDir: runTwo, modelVersion: "shared", replace: false, dryRun: false }),
+        /embedder_sha256/,
+      )
+
+      const ingestCount = /** @type {{ n: number }} */ (
+        db.prepare(`SELECT COUNT(*) AS n FROM vision_ingests`).get()
+      ).n
+      assert.equal(ingestCount, 1, "the refusal wrote nothing")
+      const faceCount = /** @type {{ n: number }} */ (
+        db.prepare(`SELECT COUNT(*) AS n FROM media_faces`).get()
+      ).n
+      assert.equal(faceCount, 1, "and inserted no faces")
+    } finally {
+      db.close()
+    }
+  })
+
+  it("PERMITS an identical reuse — a second run of the same models is expected", () => {
+    const db = freshDb()
+    try {
+      seedMedia(db, "sha-a")
+      seedMedia(db, "sha-b")
+      const runOne = path.join(workDir, "run-same-1")
+      const runTwo = path.join(workDir, "run-same-2")
+      writeRun(runOne, [photo({ id: 0, sha256: "sha-a" })], [face([1, 2, 3], { id: 0, photoId: 0 })])
+      writeRun(runTwo, [photo({ id: 0, sha256: "sha-b" })], [face([4, 5, 6], { id: 0, photoId: 0 })])
+
+      ingestRun({ db, runDir: runOne, modelVersion: "shared", replace: false, dryRun: false })
+      ingestRun({ db, runDir: runTwo, modelVersion: "shared", replace: false, dryRun: false })
+
+      const ingests = /** @type {any[]} */ (
+        db.prepare(`SELECT id FROM vision_ingests ORDER BY id`).all()
+      )
+      assert.equal(ingests.length, 2, "one row per run, both under one model_version")
+    } finally {
+      db.close()
+    }
+  })
+
+  it("refuses a run directory with no timing.json before touching the database", () => {
+    const db = freshDb()
+    try {
+      seedMedia(db, "sha-a")
+      const runDir = path.join(workDir, "run-no-timing")
+      writeRun(runDir, [photo({ id: 0, sha256: "sha-a" })], [face([1, 2, 3], { id: 0, photoId: 0 })], null)
+
+      assert.throws(
+        () => ingestRun({ db, runDir, modelVersion: "v1", replace: false, dryRun: false }),
+        /timing.json/,
+      )
+      const faceCount = /** @type {{ n: number }} */ (
+        db.prepare(`SELECT COUNT(*) AS n FROM media_faces`).get()
+      ).n
+      assert.equal(faceCount, 0)
+    } finally {
+      db.close()
+    }
+  })
+
+  it("--dry-run answers both refusals without writing a provenance row", () => {
+    const db = freshDb()
+    try {
+      seedMedia(db, "sha-a")
+      const runDir = path.join(workDir, "run-dry-provenance")
+      writeRun(runDir, [photo({ id: 0, sha256: "sha-a" })], [face([1, 2, 3], { id: 0, photoId: 0 })])
+
+      const result = ingestRun({ db, runDir, modelVersion: "v1", replace: false, dryRun: true })
+      assert.equal(result.ingestId, null)
+      assert.equal(result.facesGraded, 1, "a dry run still reports what would be graded")
+
+      const ingestCount = /** @type {{ n: number }} */ (
+        db.prepare(`SELECT COUNT(*) AS n FROM vision_ingests`).get()
+      ).n
+      assert.equal(ingestCount, 0)
     } finally {
       db.close()
     }

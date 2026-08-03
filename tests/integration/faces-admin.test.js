@@ -24,6 +24,13 @@ import {
   BASE_URL,
 } from "../helpers.js"
 import { descriptorToBlob } from "../../db/media-faces.js"
+// The ledger, loaded into THIS process against the same database file the
+// server is using — see _faces-admin-port.js for how that path is arranged, and
+// why it has to happen there rather than here. Only its read/replay side and
+// `revokeBatch` are used; every mutation below still goes through the HTTP API,
+// which is the point of asserting any of it.
+import { init as initDb, close as closeDb } from "../../db/connection.js"
+import { replayFace, resolveIdentity, revokeBatch } from "../../db/face-assignments.js"
 
 /** @type {DatabaseSync} */
 let db
@@ -48,6 +55,11 @@ function asAdmin(path, options = {}) {
  *  process — see helpers.js's TEST_DB_PATH), so a blanket wipe between tests
  *  is safe and simpler than filtering by a marker. */
 function resetFaceTestData() {
+  // Ledger first: face_assignments references media_faces ON DELETE CASCADE,
+  // so it would go anyway — but batches would not, and a batch surviving into
+  // the next test is a revoked/unrevoked flag nobody set.
+  db.prepare(`DELETE FROM face_assignments`).run()
+  db.prepare(`DELETE FROM face_assignment_batches`).run()
   db.prepare(`DELETE FROM media_faces`).run()
   db.prepare(`DELETE FROM face_identities`).run()
   db.prepare(`DELETE FROM media`).run()
@@ -118,6 +130,7 @@ function assertNoDescriptor(body) {
 before(async () => {
   await startServer()
   db = getTestDb()
+  initDb()
   if (hasAdmin) {
     const a = await adminLogin(process.env.TEST_ADMIN_PASSWORD)
     admin = { cookieHeader: a.cookieHeader, csrfToken: a.csrfToken }
@@ -125,6 +138,7 @@ before(async () => {
 })
 
 after(async () => {
+  closeDb()
   await stopServer()
 })
 
@@ -1163,5 +1177,410 @@ describe("quality routing (plan §8)", () => {
         )
         .run(media),
     )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The assignment ledger (Phase 5, plan §9b).
+//
+// `media_faces.face_identity_id` is now a PROJECTION of an append-only event
+// log, not a value anybody sets. What is asserted below is that every write
+// path through the HTTP API produces the events it should, that the column
+// agrees with replaying them, and — the promise the whole thing was built for —
+// that revoking a bulk pass leaves a later human correction where the human
+// left it.
+// ---------------------------------------------------------------------------
+
+/** Every ledger event for one face, oldest first.
+ *  @param {number} faceId @returns {any[]} */
+function eventsFor(faceId) {
+  return /** @type {any[]} */ (
+    db.prepare(`SELECT * FROM face_assignments WHERE face_id = ? ORDER BY id`).all(faceId)
+  )
+}
+
+/** @param {string} batchId @returns {any} */
+function batchRow(batchId) {
+  return /** @type {any} */ (
+    db.prepare(`SELECT * FROM face_assignment_batches WHERE batch_id = ?`).get(batchId)
+  )
+}
+
+/**
+ * The actor string the server derives for the logged-in admin: the first 8
+ * characters of the sessions row's token, which is the sha256 of the cookie
+ * value (db/sessions.js `hashToken`). Recomputed here from the cookie rather
+ * than read back out of a row, so the assertion is against an independently
+ * derived value and not against whatever the server happened to store.
+ */
+function adminActor() {
+  const cookieToken = /** @type {{ cookieHeader: string }} */ (admin).cookieHeader
+    .split("session=")[1]
+    .split(";")[0]
+  return crypto.createHash("sha256").update(cookieToken).digest("hex").slice(0, 8)
+}
+
+/** @param {number} faceId @returns {number | null} */
+function columnIdentity(faceId) {
+  return /** @type {any} */ (
+    db.prepare(`SELECT face_identity_id FROM media_faces WHERE id = ?`).get(faceId)
+  ).face_identity_id
+}
+
+/** @param {number} faceId @returns {number} */
+function mediaOfFace(faceId) {
+  return /** @type {any} */ (
+    db.prepare(`SELECT media_id FROM media_faces WHERE id = ?`).get(faceId)
+  ).media_id
+}
+
+/** The column and the ledger must never disagree — that is the invariant the
+ *  "append and project are one call" rule exists to keep.
+ *  @param {number} faceId */
+function assertColumnMatchesReplay(faceId) {
+  assert.strictEqual(
+    columnIdentity(faceId),
+    replayFace(faceId).identityId,
+    "media_faces.face_identity_id must equal what replaying the ledger says",
+  )
+}
+
+describe("the assignment ledger: every write path appends", () => {
+  it("bulk assign writes exactly one assign event per face, in one revocable manual batch", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const personId = seedPerson({ display_name: "Ledger Assign" })
+    const faceA = seedFace(seedMedia(), CLUSTER_A1)
+    const faceB = seedFace(seedMedia(), CLUSTER_A2)
+
+    const body = await json(
+      await asAdmin("/api/admin/faces/assign", {
+        method: "POST",
+        body: JSON.stringify({ faceIds: [faceA, faceB], personId }),
+      }),
+    )
+
+    for (const faceId of [faceA, faceB]) {
+      const events = eventsFor(faceId)
+      assert.strictEqual(events.length, 1, "exactly one event, never a clear-then-assign pair")
+      assert.strictEqual(events[0].op, "assign")
+      assert.strictEqual(events[0].identity_id, body.identityId)
+      assert.strictEqual(events[0].actor, adminActor(), "the actor is derived from the session")
+      assert.strictEqual(events[0].batch_id, body.batchId)
+      assert.strictEqual(columnIdentity(faceId), body.identityId)
+      assertColumnMatchesReplay(faceId)
+    }
+
+    const batch = batchRow(body.batchId)
+    assert.strictEqual(batch.kind, "manual")
+    assert.strictEqual(batch.actor, adminActor())
+    assert.strictEqual(batch.revoked_at, null)
+  })
+
+  it("bulk unassign appends a clear rather than overwriting the assign", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const personId = seedPerson({ display_name: "Ledger Clear" })
+    const faceId = seedFace(seedMedia(), CLUSTER_A1)
+    await asAdmin("/api/admin/faces/assign", {
+      method: "POST",
+      body: JSON.stringify({ faceIds: [faceId], personId }),
+    })
+
+    const body = await json(
+      await asAdmin("/api/admin/faces/unassign", {
+        method: "POST",
+        body: JSON.stringify({ faceIds: [faceId] }),
+      }),
+    )
+
+    const events = eventsFor(faceId)
+    assert.strictEqual(events.length, 2, "the assign stays on record; the clear is appended after it")
+    assert.strictEqual(events[1].op, "clear")
+    assert.strictEqual(events[1].identity_id, null)
+    assert.strictEqual(events[1].actor, adminActor())
+    assert.strictEqual(batchRow(body.batchId).kind, "manual")
+    assert.strictEqual(columnIdentity(faceId), null)
+    assertColumnMatchesReplay(faceId)
+  })
+
+  it("bulk not-a-face writes a not_a_face, and the soft delete is its projection", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const faceId = seedFace(seedMedia(), CLUSTER_A1)
+    const body = await json(
+      await asAdmin("/api/admin/faces/not-a-face", {
+        method: "POST",
+        body: JSON.stringify({ faceIds: [faceId] }),
+      }),
+    )
+
+    const events = eventsFor(faceId)
+    assert.strictEqual(events.length, 1)
+    assert.strictEqual(events[0].op, "not_a_face")
+    assert.strictEqual(events[0].identity_id, null)
+    assert.strictEqual(events[0].batch_id, body.batchId)
+
+    const row = /** @type {any} */ (
+      db.prepare(`SELECT deleted_at FROM media_faces WHERE id = ?`).get(faceId)
+    )
+    assert.ok(row.deleted_at, "the soft delete came from projecting the event")
+    assert.strictEqual(replayFace(faceId).notAFace, true)
+  })
+
+  it("the single-face escape hatch appends UNBATCHED events, assign and clear alike", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const personId = seedPerson({ display_name: "Ledger One" })
+    const faceId = seedFace(seedMedia(), CLUSTER_A1, { route: "set_aside" })
+
+    const assigned = await json(
+      await asAdmin("/api/admin/faces/assign-one", {
+        method: "POST",
+        body: JSON.stringify({ faceId, personId }),
+      }),
+    )
+    assert.strictEqual(eventsFor(faceId).length, 1)
+    assert.strictEqual(eventsFor(faceId)[0].op, "assign")
+    assert.strictEqual(eventsFor(faceId)[0].batch_id, null, "one face is one decision, not a batch")
+    assert.strictEqual(columnIdentity(faceId), assigned.identityId)
+
+    await asAdmin("/api/admin/faces/assign-one", {
+      method: "POST",
+      body: JSON.stringify({ faceId, personId: null }),
+    })
+    const events = eventsFor(faceId)
+    assert.strictEqual(events.length, 2)
+    assert.strictEqual(events[1].op, "clear")
+    assert.strictEqual(events[1].batch_id, null)
+    assert.strictEqual(events[1].actor, adminActor())
+    assertColumnMatchesReplay(faceId)
+  })
+
+  it("takes the actor from the session and IGNORES anything the client sends", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const personId = seedPerson({ display_name: "Not The Actor" })
+    const faceId = seedFace(seedMedia(), CLUSTER_A1)
+    await asAdmin("/api/admin/faces/assign", {
+      method: "POST",
+      // Both spellings a client might try. Neither is read.
+      body: JSON.stringify({ faceIds: [faceId], personId, actor: "somebody-else", batchId: "mine" }),
+    })
+
+    const event = eventsFor(faceId)[0]
+    assert.strictEqual(event.actor, adminActor())
+    assert.notStrictEqual(event.actor, "somebody-else")
+    assert.notStrictEqual(event.batch_id, "mine", "the batch id is a primary key the server owns")
+  })
+})
+
+describe("the assignment ledger: revoking a propagate pass (plan §9b)", () => {
+  /** Two media rows in one frame class, a confirmed face and an undecided face
+   *  on nearly the same box — the shape must-link.js proposes on. */
+  function seedPropagatable() {
+    const a = seedMedia()
+    const b = seedMedia()
+    db.prepare(`UPDATE media SET frame_root_sha256 = 'frame-ledger' WHERE id IN (?, ?)`).run(a, b)
+    const source = seedFace(a, CLUSTER_A1, { box: { x: 10, y: 10, w: 100, h: 100 } })
+    const target = seedFace(b, CLUSTER_A2, { box: { x: 12, y: 12, w: 100, h: 100 } })
+    return { source, target }
+  }
+
+  it("writes one propagate batch of assign events and returns its id", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const { source, target } = seedPropagatable()
+    const personId = seedPerson({ display_name: "Propagated" })
+    await asAdmin("/api/admin/faces/assign", {
+      method: "POST",
+      body: JSON.stringify({ faceIds: [source], personId }),
+    })
+
+    const body = await json(
+      await asAdmin("/api/admin/faces/propagate", {
+        method: "POST",
+        body: JSON.stringify({ toFaceIds: [target] }),
+      }),
+    )
+    assert.strictEqual(body.changed, 1)
+    assert.ok(body.batchId, "the pass returns the name of the batch it wrote")
+    assert.strictEqual(batchRow(body.batchId).kind, "propagate")
+    assert.strictEqual(batchRow(body.batchId).actor, adminActor())
+
+    const events = eventsFor(target)
+    assert.strictEqual(events.length, 1)
+    assert.strictEqual(events[0].op, "assign")
+    assert.strictEqual(events[0].batch_id, body.batchId)
+    assertColumnMatchesReplay(target)
+  })
+
+  it("REVOKING THE PASS LEAVES A LATER MANUAL CORRECTION STANDING", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    // The face the pass named is corrected by hand afterwards. Revoking the
+    // pass must leave that correction exactly where the human left it — which
+    // is only possible because revocation FILTERS history rather than writing a
+    // compensating event over it.
+    const { source, target } = seedPropagatable()
+    const untouched = seedFace(seedMedia(), CLUSTER_A2)
+
+    const rightPerson = seedPerson({ display_name: "Right Person" })
+    await asAdmin("/api/admin/faces/assign", {
+      method: "POST",
+      body: JSON.stringify({ faceIds: [source], personId: rightPerson }),
+    })
+
+    const pass = await json(
+      await asAdmin("/api/admin/faces/propagate", {
+        method: "POST",
+        body: JSON.stringify({ toFaceIds: [target] }),
+      }),
+    )
+    const propagatedIdentity = columnIdentity(target)
+    assert.ok(propagatedIdentity, "the pass named the target")
+
+    const correctedPerson = seedPerson({ display_name: "Actually This Person" })
+    await asAdmin("/api/admin/faces/assign-one", {
+      method: "POST",
+      body: JSON.stringify({ faceId: target, personId: correctedPerson }),
+    })
+    const correctedIdentity = columnIdentity(target)
+    assert.notStrictEqual(correctedIdentity, propagatedIdentity)
+
+    await asAdmin("/api/admin/faces/assign", {
+      method: "POST",
+      body: JSON.stringify({ faceIds: [untouched], personId: correctedPerson }),
+    })
+    const untouchedIdentity = columnIdentity(untouched)
+
+    const revoked = revokeBatch(pass.batchId, "test-revoker")
+    assert.strictEqual(revoked, 1, "only the faces the batch touched are re-projected")
+
+    assert.strictEqual(
+      columnIdentity(target),
+      correctedIdentity,
+      "the human correction outranks the revoked pass and SURVIVES it",
+    )
+    assert.strictEqual(columnIdentity(untouched), untouchedIdentity, "an unrelated face is untouched")
+    assertColumnMatchesReplay(target)
+
+    // The batch is flagged, not deleted: its events are still on record.
+    assert.ok(batchRow(pass.batchId).revoked_at)
+    assert.strictEqual(batchRow(pass.batchId).revoked_by, "test-revoker")
+    assert.strictEqual(eventsFor(target).length, 2, "revocation removes no rows")
+  })
+
+  it("restores the prior state on a face nobody corrected", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const { source, target } = seedPropagatable()
+    const personId = seedPerson({ display_name: "Only Propagated" })
+    await asAdmin("/api/admin/faces/assign", {
+      method: "POST",
+      body: JSON.stringify({ faceIds: [source], personId }),
+    })
+    const pass = await json(
+      await asAdmin("/api/admin/faces/propagate", {
+        method: "POST",
+        body: JSON.stringify({ toFaceIds: [target] }),
+      }),
+    )
+    assert.ok(columnIdentity(target))
+
+    revokeBatch(pass.batchId, "test-revoker")
+    assert.strictEqual(columnIdentity(target), null, "back to undecided, which is what it was")
+    assertColumnMatchesReplay(target)
+  })
+})
+
+describe("merge is a redirect on identities, never a rewrite of faces", () => {
+  it("a face assigned to A resolves to B after A is merged into B — and replay agrees", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const personA = seedPerson({ display_name: "Person A" })
+    const personB = seedPerson({ display_name: "Person B" })
+    const faceA = seedFace(seedMedia(), CLUSTER_A1)
+    const faceB = seedFace(seedMedia(), CLUSTER_B1)
+
+    const assignedA = await json(
+      await asAdmin("/api/admin/faces/assign", {
+        method: "POST",
+        body: JSON.stringify({ faceIds: [faceA], personId: personA }),
+      }),
+    )
+    const assignedB = await json(
+      await asAdmin("/api/admin/faces/assign", {
+        method: "POST",
+        body: JSON.stringify({ faceIds: [faceB], personId: personB }),
+      }),
+    )
+
+    const merged = await json(await mergePeople(personA, personB))
+    assert.strictEqual(merged.movedFaces, 1)
+    assert.strictEqual(merged.repairedFaces, 0, "a face with history needs no back-fill")
+
+    // The EVENT still names identity A — that is the whole point. A merge does
+    // not make a past decision have been about somebody else.
+    const events = eventsFor(faceA)
+    assert.strictEqual(events.length, 1, "a merge writes no per-face event")
+    assert.strictEqual(events[0].identity_id, assignedA.identityId)
+
+    // The redirect is on the identity row, and the source is retired.
+    const sourceIdentity = /** @type {any} */ (
+      db
+        .prepare(`SELECT merged_into, deleted_at FROM face_identities WHERE id = ?`)
+        .get(assignedA.identityId)
+    )
+    assert.strictEqual(sourceIdentity.merged_into, assignedB.identityId)
+    assert.ok(sourceIdentity.deleted_at, "the source identity is retired, not left live")
+
+    // Resolution and replay both land on B, not on a dangling reference.
+    assert.strictEqual(resolveIdentity(assignedA.identityId), assignedB.identityId)
+    assert.strictEqual(replayFace(faceA).identityId, assignedB.identityId)
+    assert.strictEqual(columnIdentity(faceA), assignedB.identityId)
+
+    // And the read path agrees: the face is named, not silently nameless.
+    const perPhoto = await json(await asAdmin(`/api/admin/media/${mediaOfFace(faceA)}/faces`))
+    assert.strictEqual(perPhoto.faces[0].personId, personB)
+    assert.strictEqual(perPhoto.faces[0].personName, "Person B")
+  })
+
+  it("back-fills a PRE-LEDGER assignment rather than losing it", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    // A face row assigned before the ledger existed: a column value with no
+    // events behind it. Replaying it would say "nobody", so the merge writes
+    // the missing history under a `merge-repair` batch instead of clearing it.
+    const personA = seedPerson({ display_name: "Legacy A" })
+    const personB = seedPerson({ display_name: "Legacy B" })
+    const faceLegacy = seedFace(seedMedia(), CLUSTER_A1)
+    const faceB = seedFace(seedMedia(), CLUSTER_B1)
+
+    const identityA = Number(
+      db
+        .prepare(`INSERT INTO face_identities (person_id, provenance) VALUES (?, 'confirmed')`)
+        .run(personA).lastInsertRowid,
+    )
+    db.prepare(`UPDATE media_faces SET face_identity_id = ? WHERE id = ?`).run(identityA, faceLegacy)
+    assert.strictEqual(eventsFor(faceLegacy).length, 0, "the premise: no ledger history")
+
+    const assignedB = await json(
+      await asAdmin("/api/admin/faces/assign", {
+        method: "POST",
+        body: JSON.stringify({ faceIds: [faceB], personId: personB }),
+      }),
+    )
+
+    const merged = await json(await mergePeople(personA, personB))
+    assert.strictEqual(merged.repairedFaces, 1)
+
+    const events = eventsFor(faceLegacy)
+    assert.strictEqual(events.length, 1)
+    assert.strictEqual(events[0].op, "assign")
+    assert.strictEqual(events[0].identity_id, assignedB.identityId)
+    assert.strictEqual(batchRow(events[0].batch_id).kind, "merge-repair")
+    assert.strictEqual(columnIdentity(faceLegacy), assignedB.identityId)
+    assertColumnMatchesReplay(faceLegacy)
   })
 })

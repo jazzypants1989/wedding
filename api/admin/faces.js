@@ -13,9 +13,38 @@
  *  otherwise — every JSON payload below is hand-built field by field, never a
  *  spread of a raw DB row, specifically so a `descriptor` column can never ride
  *  along by accident. Nothing here auto-publishes anything; assigning a face to
- *  a guest only ever sets `face_identity_id` on `media_faces`.
+ *  a guest only ever records an assignment event against `media_faces`.
+ *
+ *  THE LEDGER (Phase 5). No handler here writes `media_faces.face_identity_id`.
+ *  Every mutation appends an event via `recordAssignment`, which materialises
+ *  the column in the same call — see db/face-assignments.js for why append and
+ *  project are one call and never two. `revokeBatch` is deliberately NOT
+ *  imported: it owns a `withTransaction`, every write path below is already
+ *  inside one, and db/utils.js's `withTransaction` is a bare BEGIN IMMEDIATE
+ *  with no savepoints, so nesting it would throw.
+ *
+ *  BATCH POLICY, and the judgement in it. A batch exists to make a *decision*
+ *  revocable as one thing, so the question for each route is "is there one
+ *  decision here, or several?".
+ *
+ *   - `propagate` — one batch, kind `propagate`. Unarguable: it is a bulk pass
+ *     over machine proposals whose entire value is being undoable wholesale.
+ *   - bulk `assign` / `unassign` / `not-a-face` — one batch each, kind
+ *     `manual`, and this is the arguable one. These are a human's deliberate
+ *     judgement, so batching them looks like over-application. It is not,
+ *     because of what the Faces tab actually does: the fast path is "name this
+ *     whole group at once", and the Phase 2 comparison established that on this
+ *     cast SOME group on the page is two people welded together. Naming a
+ *     welded group is one click, one mistake, and — without a batch — thirty
+ *     rows to unpick by hand. One batch row per click is a rounding error next
+ *     to that.
+ *   - `assign-one` — no batch. One face, one event; the undo is the same route
+ *     with `personId: null`, and a batch of one is a row that says nothing the
+ *     event does not.
  */
 /** @import * as Types from './types.js' */
+
+import { randomUUID } from "node:crypto"
 
 import { sendJson, parseBody } from "../../core/http.js"
 import { log, actorId } from "../../core/utils.js"
@@ -37,8 +66,6 @@ import {
   mediaChipInfo,
   getFaceById,
   getIdentityById,
-  setFaceIdentity,
-  softDeleteFace,
   createIdentity,
   identitiesForPerson,
   blobToDescriptor,
@@ -46,6 +73,7 @@ import {
   routeStateCounts,
   facesWithSignals,
 } from "../../db/media-faces.js"
+import { createBatch, recordAssignment } from "../../db/face-assignments.js"
 import { now } from "../../db/utils.js"
 import { groupFaces, distanceMatrix, centroid } from "../../public/vision/group.js"
 import { buildPrototypes, matchFace } from "../../public/vision/assign.js"
@@ -70,6 +98,41 @@ const FACE_BATCH_MAX = 500
 
 /** The ask queue never returns more than this many items in one response. */
 const QUEUE_MAX_ITEMS = 200
+
+/**
+ * The actor string every ledger event and batch row carries.
+ *
+ * Server-derived, always — the request body never contributes to it, which is
+ * the same rule `created_by` and `confirmed_by` already follow. `withAdmin`
+ * guarantees a session, so the fallback is unreachable in practice; it exists
+ * because `actorId` returns null for an empty token and `face_assignments.actor`
+ * is NOT NULL. It deliberately does not say "admin": in the one column whose
+ * whole job is attribution, a plausible-looking default is worse than an
+ * obviously unattributed one.
+ * @param {import('../../types.js').Session} [session]
+ * @returns {string}
+ */
+function ledgerActor(session) {
+  return actorId(session?.token) ?? "unattributed"
+}
+
+/**
+ * A fresh batch, created inside the caller's transaction (`createBatch` is a
+ * plain statement and opens none of its own).
+ *
+ * The batch id is generated HERE and returned to the client rather than
+ * accepted from it: it is a primary key, so a client-chosen one is both a
+ * collision and a way to append into somebody else's batch.
+ * @param {import('../../types.js').FaceAssignmentBatchKind} kind
+ * @param {string} actor
+ * @param {string} note
+ * @returns {string}
+ */
+function openBatch(kind, actor, note) {
+  const batchId = randomUUID()
+  createBatch({ batchId, kind, actor, note })
+  return batchId
+}
 
 /**
  * The route states a BULK action may touch.
@@ -501,7 +564,8 @@ export async function assign(req, res, { session }) {
   const person = getPersonById(personIdResult.value)
   if (!person) throw new NotFoundError("Person")
 
-  const { identityId, changed } = withTransaction(() => {
+  const actor = ledgerActor(session)
+  const { identityId, changed, batchId } = withTransaction(() => {
     const existing = identitiesForPerson(personIdResult.value).find((i) => i.provenance === "confirmed")
     const identity =
       existing ??
@@ -513,11 +577,17 @@ export async function assign(req, res, { session }) {
         provenance: "confirmed",
       })
 
+    const batch = openBatch("manual", actor, `bulk assign of ${faceIds.length} face(s)`)
     let n = 0
     for (const faceId of faceIds) {
-      if (setFaceIdentity(faceId, identity.id)) n++
+      // Appends AND projects. `changed` counts events appended, which is every
+      // face: `validateFaceIds` already refused anything missing or deleted, so
+      // this is the same number the old `setFaceIdentity` row count produced —
+      // both were really "faces acted on", never "faces whose value differed".
+      recordAssignment({ faceId, op: "assign", identityId: identity.id, actor, batchId: batch })
+      n++
     }
-    return { identityId: identity.id, changed: n }
+    return { identityId: identity.id, changed: n, batchId: batch }
   })
 
   log({
@@ -526,10 +596,16 @@ export async function assign(req, res, { session }) {
     ip: getClientIp(req),
     resourceType: "face_identity",
     resourceId: identityId,
-    details: { personId: personIdResult.value, faceIds, changed },
+    details: { personId: personIdResult.value, faceIds, changed, batchId },
   })
 
-  return sendJson(res, 200, { success: true, personId: personIdResult.value, identityId, changed })
+  return sendJson(res, 200, {
+    success: true,
+    personId: personIdResult.value,
+    identityId,
+    changed,
+    batchId,
+  })
 }
 
 /** @type {Types.faceUnassignHandler} */
@@ -538,12 +614,15 @@ export async function unassign(req, res, { session }) {
   const faceIds = validateFaceIds(body.faceIds)
   assertBulkAssignable(faceIds)
 
-  const changed = withTransaction(() => {
+  const actor = ledgerActor(session)
+  const { changed, batchId } = withTransaction(() => {
+    const batch = openBatch("manual", actor, `bulk unassign of ${faceIds.length} face(s)`)
     let n = 0
     for (const faceId of faceIds) {
-      if (setFaceIdentity(faceId, null)) n++
+      recordAssignment({ faceId, op: "clear", actor, batchId: batch })
+      n++
     }
-    return n
+    return { changed: n, batchId: batch }
   })
 
   log({
@@ -551,10 +630,10 @@ export async function unassign(req, res, { session }) {
     adminId: session?.token,
     ip: getClientIp(req),
     resourceType: "media_face",
-    details: { faceIds, changed },
+    details: { faceIds, changed, batchId },
   })
 
-  return sendJson(res, 200, { success: true, changed })
+  return sendJson(res, 200, { success: true, changed, batchId })
 }
 
 /** @type {Types.faceNotAFaceHandler} */
@@ -569,12 +648,20 @@ export async function notAFace(req, res, { session }) {
   // endpoint, named for what it does, not as a side effect of this one.
   assertBulkAssignable(faceIds)
 
-  const changed = withTransaction(() => {
+  const actor = ledgerActor(session)
+  const { changed, batchId } = withTransaction(() => {
+    const batch = openBatch("manual", actor, `bulk not-a-face of ${faceIds.length} face(s)`)
     let n = 0
     for (const faceId of faceIds) {
-      if (softDeleteFace(faceId)) n++
+      // The soft delete is the PROJECTION of this event, not a second call:
+      // `projectFace` sets `deleted_at` when the surviving event is
+      // `not_a_face`, and un-sets it if that event is ever revoked. That is
+      // what makes a mistaken bulk dismissal recoverable, where the old direct
+      // `softDeleteFace` left no record that it had been a judgement at all.
+      recordAssignment({ faceId, op: "not_a_face", actor, batchId: batch })
+      n++
     }
-    return n
+    return { changed: n, batchId: batch }
   })
 
   log({
@@ -582,10 +669,10 @@ export async function notAFace(req, res, { session }) {
     adminId: session?.token,
     ip: getClientIp(req),
     resourceType: "media_face",
-    details: { faceIds, changed },
+    details: { faceIds, changed, batchId },
   })
 
-  return sendJson(res, 200, { success: true, changed })
+  return sendJson(res, 200, { success: true, changed, batchId })
 }
 
 /**
@@ -629,9 +716,20 @@ export async function assignOne(req, res, { session }) {
   const face = getFaceById(faceIdResult.value)
   if (!face || face.deleted_at) throw new NotFoundError(`Face ${faceIdResult.value}`)
 
+  const actor = ledgerActor(session)
+
   // Clearing is always allowed and needs no person to exist.
   if (body.personId === null || body.personId === undefined) {
-    const changed = setFaceIdentity(face.id, null)
+    // ⚠ In a transaction, where it used to be a bare statement. That was a real
+    // inconsistency and not a harmless one: `recordAssignment` writes two rows
+    // (the event, then the projection), and an unwrapped pair can be
+    // interrupted between them — leaving the ledger and the column disagreeing,
+    // which is the exact failure the ledger exists to prevent. Every other
+    // write path here was already wrapped; this one now is too.
+    const changed = withTransaction(() => {
+      recordAssignment({ faceId: face.id, op: "clear", actor, batchId: null })
+      return true
+    })
     log({
       action: FACE_AUDIT_ACTIONS.UNASSIGN,
       adminId: session?.token,
@@ -658,7 +756,11 @@ export async function assignOne(req, res, { session }) {
         confirmedAt: now(),
         provenance: "confirmed",
       })
-    return { identityId: identity.id, changed: setFaceIdentity(face.id, identity.id) ? 1 : 0 }
+    // No batch: one face, one event. The undo is this same route with
+    // `personId: null`, so a batch of one would be a row saying nothing the
+    // event does not already say.
+    recordAssignment({ faceId: face.id, op: "assign", identityId: identity.id, actor, batchId: null })
+    return { identityId: identity.id, changed: 1 }
   })
 
   log({
@@ -806,7 +908,16 @@ export async function propagate(req, res, { session }) {
     )
   }
 
-  const { changed, identities } = withTransaction(() => {
+  const actor = ledgerActor(session)
+  const { changed, identities, batchId } = withTransaction(() => {
+    // The clearest case for a batch in the whole module: a propagation is a
+    // bulk pass over MACHINE proposals, and the reason it is safe to offer at
+    // all is that the whole pass can be taken back in one move if the
+    // corroboration turns out to have been optimistic. Revoking it later leaves
+    // any face an admin has since corrected by hand exactly as they left it —
+    // plan §9b — because revocation is a filter over history, not an undo of
+    // the rows.
+    const batch = openBatch("propagate", actor, `propagate onto ${faceIds.length} face(s)`)
     /** @type {Map<number, number>} propagated-identity id, by source confirmed identity */
     const propagatedFor = new Map()
     let n = 0
@@ -834,9 +945,10 @@ export async function propagate(req, res, { session }) {
         target = identity.id
         propagatedFor.set(sourceIdentityId, target)
       }
-      if (setFaceIdentity(faceId, target)) n++
+      recordAssignment({ faceId, op: "assign", identityId: target, actor, batchId: batch })
+      n++
     }
-    return { changed: n, identities: [...propagatedFor.values()] }
+    return { changed: n, identities: [...propagatedFor.values()], batchId: batch }
   })
 
   log({
@@ -844,10 +956,12 @@ export async function propagate(req, res, { session }) {
     adminId: session?.token,
     ip: getClientIp(req),
     resourceType: "media_face",
-    details: { faceIds, changed, identities },
+    details: { faceIds, changed, identities, batchId },
   })
 
-  return sendJson(res, 200, { success: true, changed })
+  // `batchId` travels back so the pass is revocable by whoever applied it —
+  // without it the batch exists but nothing outside the database knows its name.
+  return sendJson(res, 200, { success: true, changed, batchId })
 }
 
 /** @type {Types.faceForMediaHandler} */
