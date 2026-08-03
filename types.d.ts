@@ -736,7 +736,24 @@ export interface MediaFace {
   route_profile: string | null
   created_at: string
   updated_at: string
+  /**
+   * ⚠ THREE authors, not one (schema.js `add_face_ledger_integrity`):
+   * db/face-assignments.js's `not_a_face` projection, the §10 precedence
+   * triggers in `add_media_faces`, and `retireCliFaces` in
+   * scripts/vision/ingest-faces.js. Anything that wants to UN-set it has to
+   * establish which one wrote the value it is looking at.
+   */
   deleted_at: string | null
+  /**
+   * The ledger's receipt for a retirement IT wrote: `projectFace` puts the same
+   * timestamp in both columns, and may clear `deleted_at` only while the two
+   * still match. NULL means the ledger holds no claim — every live row, every
+   * row somebody else retired, and every row a later CLI generation has
+   * superseded since (`media_faces_supersession_releases_ledger_claim`).
+   *
+   * Written by db/face-assignments.js and that trigger, and by nothing else.
+   */
+  ledger_retired_at: string | null
 }
 
 /** What the Faces tab does with a face. Mirrors public/vision/types.d.ts's

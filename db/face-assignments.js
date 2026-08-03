@@ -31,11 +31,21 @@ import { now, withTransaction } from "./utils.js"
 
 /**
  * How far `resolveIdentity` will follow `merged_into` before deciding the
- * chain is corrupt. Real merges chain a handful of times at most (a merge
- * points at a LIVE identity, so chains only lengthen when a target is itself
- * merged later); a cycle is impossible to create through the merge path and
- * only reachable by hand-editing rows. Bounded so that corruption is an error
- * inside one request rather than a hang.
+ * chain is corrupt.
+ *
+ * This is a CORRUPTION detector, not a depth limit, and it can only be one of
+ * those. It used to be both: chains lengthen when a TARGET is merged later, so
+ * thirty-three ordinary merges of one lineage — each folding the surviving
+ * person into a new one — built a thirty-three-hop chain, and the thirty-third
+ * told the operator their database contained a cycle. It did not. The merge
+ * then 500'd, the lineage was permanently un-mergeable, every ledger write on
+ * any face resolving through it threw, and `revokeBatch` aborted wholesale on
+ * any batch containing one.
+ *
+ * `mergeIdentityInto` now compresses at merge time and this function
+ * compresses what it walks, so no chain a merge produces exceeds ONE hop.
+ * Anything that reaches this bound is a hand-edited cycle, and an error inside
+ * one request is strictly better than a hang.
  */
 const MAX_MERGE_HOPS = 32
 
@@ -85,6 +95,10 @@ export function resolveIdentity(identityId) {
   if (identityId === null || identityId === undefined) return null
 
   let current = identityId
+  /** Every id walked that redirects somewhere — the chain behind us.
+   *  @type {number[]} */
+  const walked = []
+
   for (let hop = 0; hop <= MAX_MERGE_HOPS; hop++) {
     /** @type {{ id: number, merged_into: number | null, deleted_at: string | null } | undefined} */
     const row = sql`SELECT id, merged_into, deleted_at FROM face_identities
@@ -93,7 +107,24 @@ export function resolveIdentity(identityId) {
     // it named is genuinely gone, and an event naming a deleted identity is a
     // true record of a decision about someone who no longer has an identity.
     if (!row) return null
-    if (row.merged_into === null) return row.deleted_at === null ? row.id : null
+
+    if (row.merged_into === null) {
+      // Opportunistic compression. Nothing a merge produces is longer than one
+      // hop any more, so this fires only for a chain built before that was true
+      // or written by hand — and it heals it on first read rather than leaving
+      // it to grow towards the bound. The last entry already points here.
+      //
+      // Semantics are unchanged: `merged_into` names the end of the chain
+      // either way, and the redirect is not the historical record — the ledger
+      // is, and every event still names the identity it actually named.
+      if (walked.length > 1) {
+        sql`UPDATE face_identities SET merged_into = ${row.id}
+          WHERE id IN ${sql.list(walked.slice(0, -1))}`.run()
+      }
+      return row.deleted_at === null ? row.id : null
+    }
+
+    walked.push(row.id)
     current = row.merged_into
   }
 
@@ -141,21 +172,40 @@ export function projectFace(faceId, opts = {}) {
     WHERE id = ${faceId}`.run()
 
   if (verdict.notAFace) {
-    sql`UPDATE media_faces SET deleted_at = ${now()}
+    // The same timestamp into both columns: `ledger_retired_at` is the RECEIPT
+    // for this retirement, and `deleted_at = ledger_retired_at` is the proof
+    // that it is still the one in force. `AND deleted_at IS NULL` means the
+    // ledger never claims a retirement somebody else already wrote — it simply
+    // agrees with it, and leaves the row to its author.
+    const retiredAt = now()
+    sql`UPDATE media_faces SET deleted_at = ${retiredAt}, ledger_retired_at = ${retiredAt}
       WHERE id = ${faceId} AND deleted_at IS NULL`.run()
   } else {
-    // ⚠ Only ever UN-delete a face the ledger itself deleted. `deleted_at` on
-    // media_faces has a second author — schema.js's §10 precedence triggers
-    // soft-delete an upload-sourced row the CLI has superseded — and clearing
-    // it unconditionally here would resurrect superseded rows every time an
-    // unrelated event was projected. So: revive only if a `not_a_face` event
-    // exists in this face's history at all, revoked or not.
-    const everMarked = sql`SELECT 1 FROM face_assignments
-      WHERE face_id = ${faceId} AND op = 'not_a_face' LIMIT 1`.get()
-    if (everMarked) {
-      sql`UPDATE media_faces SET deleted_at = NULL
-        WHERE id = ${faceId} AND deleted_at IS NOT NULL`.run()
-    }
+    // ⚠ Only ever UN-delete a retirement THIS PROJECTION WROTE and still holds.
+    //
+    // `media_faces.deleted_at` has three authors: this projection, schema.js's
+    // §10 precedence triggers (an upload-sourced row the CLI has superseded),
+    // and `retireCliFaces` in scripts/vision/ingest-faces.js (the `--replace`
+    // path). The old test here — "does a `not_a_face` event exist in this
+    // face's history at all, revoked or not" — asked whether the LEDGER EVER
+    // SPOKE, which is a different question from who wrote the value currently
+    // in the column, and answered yes for rows the other two had retired.
+    //
+    // Keying on the receipt answers the right one. Any later write to
+    // `deleted_at` by anybody breaks the match and ends the claim, without that
+    // writer needing to know this column exists.
+    //
+    // The one thing a receipt cannot see by itself is that a ledger retirement
+    // MASKS the other authors: they all retire live rows only, so a face this
+    // projection has already retired is invisible to them and the receipt is
+    // never overwritten. schema.js's `media_faces_supersession_releases_ledger_claim`
+    // closes that — it clears `ledger_retired_at` at the moment a CLI row
+    // supersedes the photo, whether the retired row is live or already dead.
+    sql`UPDATE media_faces SET deleted_at = NULL, ledger_retired_at = NULL
+      WHERE id = ${faceId}
+        AND deleted_at IS NOT NULL
+        AND ledger_retired_at IS NOT NULL
+        AND deleted_at = ledger_retired_at`.run()
   }
 
   return verdict

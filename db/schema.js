@@ -1567,11 +1567,24 @@ export function runMigrations(db) {
   // readers resolve through the redirect (db/face-assignments.js
   // `resolveIdentity`).
   //
-  // Append-only is spelled UPDATE-blocked, never DELETE-blocked. `media_faces`
-  // carries `media(id) ON DELETE CASCADE`, so hard-deleting a photo cascades
-  // into these rows; a delete-blocking trigger would turn a legitimate media
-  // deletion into a hard failure. Immutability that fights the cascade is
-  // worse than no immutability.
+  // Append-only on `face_assignments` is spelled UPDATE-blocked and NOT
+  // DELETE-blocked. `media_faces` carries `media(id) ON DELETE CASCADE` and
+  // `face_assignments` carries `media_faces(id) ON DELETE CASCADE`, so
+  // hard-deleting a photo cascades all the way into the ledger; a
+  // delete-blocking trigger there would turn a legitimate media deletion into
+  // a hard failure. Immutability that fights the cascade is worse than no
+  // immutability.
+  //
+  // ⚠ `vision_ingests` is the exception, and it is enforced by a foreign key
+  // rather than by a trigger: `media_faces.ingest_id REFERENCES
+  // vision_ingests(id)` carries no ON DELETE clause, so SQLite RESTRICTs —
+  // deleting an ingest fails while any face row still points at it, live or
+  // soft-deleted. That is deliberate and correct (an ingest is the provenance
+  // of the rows it produced, and a face whose ingest_id dangles cannot say what
+  // drew its box), and it fights no cascade: deleting a photo removes the
+  // FACES, never the ingest. This paragraph once claimed the opposite, which is
+  // worse than either choice — `tests/unit/db/vision-provenance-migration.test.js`
+  // now pins the behaviour so the two cannot drift apart again.
   //
   // Plain CREATE TABLEs and plain ADD COLUMNs — NOT a table rebuild, so D1
   // (an implicit delete firing `ON DELETE SET NULL` across every existing
@@ -1741,5 +1754,191 @@ export function runMigrations(db) {
     }
 
     record.run("add_vision_provenance")
+  }
+
+  // The three rules `add_vision_provenance` described and did not enforce.
+  //
+  // A. `face_assignment_batches.kind` is typed `FaceAssignmentBatchKind` and
+  //    commented with its four values, and — alone among the enums in that
+  //    migration — was checked by nothing. `createBatch({ kind: 'nonsense' })`
+  //    was accepted, and a batch is the unit revocation acts on: a kind nobody
+  //    can interpret is a revocable unit nobody can explain.
+  //
+  // B. That table is deliberately NOT append-only — revocation is a legitimate
+  //    update, and a flag rather than a compensating event precisely so it stays
+  //    reversible in the ledger's sense. But nothing narrowed WHICH update.
+  //    `SET revoked_at = NULL` un-revoked a batch in one statement and left
+  //    every `media_faces.face_identity_id` derived from it stale, with nothing
+  //    to say which of the two stories was current; and `actor` — the
+  //    attribution on the revocable unit, and the more useful one to forge —
+  //    was freely rewritable while `face_assignments.actor` beside it was frozen
+  //    by the append-only trigger. So: updates are revocations, revocations are
+  //    one-way, and everything else about a batch is fixed at insert.
+  //
+  // C. `media_faces.deleted_at` has THREE authors, not the two anybody had
+  //    written down: db/face-assignments.js's `not_a_face` projection, the §10
+  //    precedence triggers in `add_media_faces` above, and `retireCliFaces` in
+  //    scripts/vision/ingest-faces.js (the `--replace` path). The projection
+  //    needs to undo its own retirement when a `not_a_face` event is revoked,
+  //    and asking "does a not_a_face event exist in this face's history at all"
+  //    answers a different question — whether the ledger ever spoke, not who
+  //    wrote the value now in the column — so it handed every other author's
+  //    row back to the live pool.
+  //
+  //    `ledger_retired_at` is the ledger's RECEIPT: it writes the same timestamp
+  //    into both columns when it retires a face, and may clear `deleted_at` only
+  //    while the two still match. Authorship as a receipt rather than a flag
+  //    means any later write to `deleted_at` by anyone silently invalidates the
+  //    claim, with no need for that writer to know this column exists.
+  //
+  //    One case the receipt cannot see on its own, and the trigger below is
+  //    for: the ledger's own retirement MASKS the other authors, because all of
+  //    them retire live rows only (`WHERE deleted_at IS NULL`). A face the
+  //    ledger has already retired is invisible to the §10 trigger and to
+  //    `--replace`, so nobody overwrites the receipt — and revoking would then
+  //    conclude the row was only ever the ledger's, when in truth it would have
+  //    been superseded anyway. The trigger releases the claim at the moment
+  //    supersession happens, whether the row is live or already retired.
+  //
+  // Plain ADD COLUMN and CREATE TRIGGER, guarded on `sqlite_master` / `PRAGMA
+  // table_info`: a test may pin an earlier ledger state to exercise one
+  // migration alone, and a throwing migration stops the server booting (D3).
+  if (!applied.get("add_face_ledger_integrity")) {
+    const tableExists = db.prepare(
+      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+    )
+
+    if (tableExists.get("face_assignment_batches")) {
+      db.exec(`
+        -- Enum by trigger, matching check_vision_ingests_mirror_insert and
+        -- check_face_assignments_op_insert rather than introducing an inline
+        -- CHECK as a second convention. INSERT only: the update trigger below
+        -- freezes 'kind' outright, so an update-side enum check would be
+        -- unreachable code pretending to be a rule.
+        CREATE TRIGGER IF NOT EXISTS check_face_assignment_batches_kind_insert
+        BEFORE INSERT ON face_assignment_batches
+        FOR EACH ROW
+        WHEN NEW.kind NOT IN ('label-import', 'propagate', 'manual', 'merge-repair')
+        BEGIN
+          SELECT RAISE(ABORT, 'Invalid batch kind. Must be: label-import, propagate, manual or merge-repair');
+        END;
+
+        -- What a batch IS cannot change; only whether it still counts. Every
+        -- comparison is NULL-safe (IS NOT, not <>) so that setting a column to
+        -- NULL is caught rather than silently passing the WHEN clause.
+        CREATE TRIGGER IF NOT EXISTS face_assignment_batches_revocation_only
+        BEFORE UPDATE ON face_assignment_batches
+        FOR EACH ROW
+        WHEN NEW.batch_id IS NOT OLD.batch_id
+          OR NEW.kind IS NOT OLD.kind
+          OR NEW.actor IS NOT OLD.actor
+          OR NEW.note IS NOT OLD.note
+          OR NEW.created_at IS NOT OLD.created_at
+        BEGIN
+          SELECT RAISE(ABORT, 'face_assignment_batches: only revoked_at/revoked_by may be updated');
+        END;
+
+        -- Revocation is one-way. Un-revoking is not the undo it looks like: the
+        -- projections were re-derived when the batch was revoked, and nothing
+        -- re-derives them on the way back, so the column and the ledger would
+        -- disagree with no record of which is current. Re-instating a batch
+        -- means appending its events again under a new batch_id.
+        CREATE TRIGGER IF NOT EXISTS face_assignment_batches_revocation_is_permanent
+        BEFORE UPDATE ON face_assignment_batches
+        FOR EACH ROW
+        WHEN OLD.revoked_at IS NOT NULL
+          AND (NEW.revoked_at IS NOT OLD.revoked_at OR NEW.revoked_by IS NOT OLD.revoked_by)
+        BEGIN
+          SELECT RAISE(ABORT, 'face_assignment_batches: a revocation is not reversible');
+        END;
+      `)
+    }
+
+    if (tableExists.get("media_faces")) {
+      const faceCols = new Set(
+        /** @type {Array<{ name: string }>} */ (
+          db.prepare("PRAGMA table_info(media_faces)").all()
+        ).map((c) => c.name),
+      )
+      // Nullable and permanently so: NULL means "the ledger holds no claim on
+      // this row's deleted_at", which is the state of every live row and of
+      // every row somebody else retired.
+      if (!faceCols.has("ledger_retired_at")) {
+        db.exec(`ALTER TABLE media_faces ADD COLUMN ledger_retired_at TEXT`)
+
+        // Back-fill, once, in the same breath as creating the column — so a
+        // database that already carries revocable not_a_face verdicts does not
+        // silently lose the ability to undo them. Deliberately conservative:
+        // a claim is reconstructed only where the row is retired, the ledger
+        // has a not_a_face event on it, AND no other author had cause to retire
+        // it. Where the two are indistinguishable the row keeps NO claim and
+        // stays retired, because the failure this column exists to prevent is
+        // reviving something, not leaving something dead.
+        if (tableExists.get("face_assignments")) {
+          db.exec(`
+            UPDATE media_faces SET ledger_retired_at = deleted_at
+            WHERE deleted_at IS NOT NULL
+              AND EXISTS (
+                SELECT 1 FROM face_assignments fa
+                WHERE fa.face_id = media_faces.id AND fa.op = 'not_a_face'
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM media_faces other
+                WHERE other.media_id = media_faces.media_id
+                  AND other.id <> media_faces.id
+                  AND other.source = 'cli'
+                  AND other.deleted_at IS NULL
+                  AND (
+                    media_faces.source = 'upload'
+                    OR (media_faces.source = 'cli'
+                        AND other.model_version = media_faces.model_version
+                        AND other.ingest_id IS NOT media_faces.ingest_id)
+                  )
+              )
+          `)
+        }
+      }
+
+      // §10's precedence rule, stated for the rows the §10 triggers cannot
+      // reach. Those two retire LIVE rows; this one takes the ledger's claim
+      // off rows that are already retired, so that revoking a not_a_face on a
+      // row the CLI has since superseded leaves it superseded instead of
+      // handing it back to the live pool. It writes no `deleted_at` and revives
+      // nothing — the row it touches is already dead, and stays dead.
+      //
+      // The cli-vs-cli half is `--replace`: `retireCliFaces` retires every live
+      // cli row for a (media_id, model_version) and the run then inserts its
+      // own, so a DIFFERENT ingest_id on the same photo and descriptor space is
+      // a later generation. `IS NOT` is NULL-safe, so two rows from one run
+      // (equal ingest_id) — or two rows that both predate ingest provenance —
+      // are not each other's supersession, which is what keeps a not_a_face on
+      // one box in a photograph undoable.
+      //
+      // ⚠ Guarded on `ingest_id` EXISTING, and that guard is load-bearing in a
+      // way `CREATE TRIGGER` does not advertise: SQLite compiles a trigger BODY
+      // lazily, at fire time, so creating one over a missing column succeeds
+      // quietly and then breaks every INSERT into the table it watches. A test
+      // that pins an earlier ledger state (D3) is exactly that database.
+      if (faceCols.has("ingest_id")) db.exec(`
+        CREATE TRIGGER IF NOT EXISTS media_faces_supersession_releases_ledger_claim
+        AFTER INSERT ON media_faces
+        FOR EACH ROW
+        WHEN NEW.source = 'cli' AND NEW.deleted_at IS NULL
+        BEGIN
+          UPDATE media_faces SET ledger_retired_at = NULL
+          WHERE media_id = NEW.media_id
+            AND id <> NEW.id
+            AND ledger_retired_at IS NOT NULL
+            AND (
+              source = 'upload'
+              OR (source = 'cli'
+                  AND model_version = NEW.model_version
+                  AND ingest_id IS NOT NEW.ingest_id)
+            );
+        END;
+      `)
+    }
+
+    record.run("add_face_ledger_integrity")
   }
 }

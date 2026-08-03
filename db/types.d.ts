@@ -1234,7 +1234,18 @@ export function identitiesForPerson(personId: number): FaceIdentity[]
 
 /** Person-merge primitive, and the whole of what a merge writes: set
  *  `face_identities.merged_into` so the source redirects to the target.
- *  Returns true if a row changed.
+ *
+ *  Returns true if the merge was recorded. **False means it was REFUSED** and
+ *  nothing changed — the source is not live, or the target resolves to nobody
+ *  or back to the source, which would close a cycle and make `resolveIdentity`
+ *  throw for every identity in it, permanently.
+ *
+ *  Redirects stay ONE HOP DEEP: the source is pointed at
+ *  `resolveIdentity(target)`, and everything that pointed at the source is
+ *  repointed at the same survivor. That second half is what bounds the depth —
+ *  a chain grows when a target is merged LATER, which is the ordinary case of
+ *  folding one person into another repeatedly — and it is what leaves
+ *  `resolveIdentity`'s hop bound free to mean "corrupt" rather than "deep".
  *
  *  Replaced `repointFaces`, which rewrote `media_faces.face_identity_id` on
  *  every affected row — a direct write to a column the ledger now owns, and a
@@ -1541,6 +1552,11 @@ export interface CreateBatchInput {
   note?: string | null
 }
 
+/** Insert one revocable batch. `kind` is enum-checked by
+ *  `check_face_assignment_batches_kind_insert` (schema.js
+ *  `add_face_ledger_integrity`), so an unrecognised one throws rather than
+ *  becoming a revocable unit nobody can explain. Everything except
+ *  `revoked_at`/`revoked_by` is frozen from here on. */
 export function createBatch(input: CreateBatchInput): FaceAssignmentBatch
 
 export function getBatch(batchId: string): FaceAssignmentBatch | undefined
@@ -1574,8 +1590,14 @@ export function assignmentsForFace(faceId: number): FaceAssignment[]
  *  chain. Returns null for a null input, for an identity that does not exist,
  *  and for a chain that ends at a soft-deleted row.
  *
- *  **Throws rather than looping** if the chain exceeds its hop bound — a cycle
- *  is corrupt data, and an infinite loop inside a request is worse than an
+ *  Compresses what it walks: a chain longer than one hop is collapsed onto its
+ *  endpoint on the way out, so reading heals it. `mergeIdentityInto` keeps new
+ *  ones one hop deep in the first place; this is for what came before that and
+ *  for anything written by hand.
+ *
+ *  **Throws rather than looping** if the chain exceeds its hop bound. With both
+ *  compressions in place that bound is only reachable by a cycle, which is
+ *  corrupt data — and an infinite loop inside a request is worse than an
  *  error. */
 export function resolveIdentity(identityId: number | null): number | null
 
@@ -1605,7 +1627,12 @@ export function replayFace(faceId: number, opts?: ReplayOptions): FaceReplayResu
 /** Materialise `replayFace` onto `media_faces` (`face_identity_id` and
  *  `deleted_at`), and return what it wrote. The SINGLE definition of
  *  "materialise" — a trigger was considered and rejected, because it cannot
- *  express "replay excluding batch X" and the logic would then exist twice. */
+ *  express "replay excluding batch X" and the logic would then exist twice.
+ *
+ *  `deleted_at` has three authors (this projection, schema.js's §10 precedence
+ *  triggers, and `retireCliFaces`'s `--replace` path), so a retirement written
+ *  here leaves a receipt in `media_faces.ledger_retired_at` and only a
+ *  retirement whose receipt still matches is ever undone. */
 export function projectFace(faceId: number, opts?: ReplayOptions): FaceReplayResult
 
 /** Flag a batch revoked and re-project every face it touched. Returns how many
