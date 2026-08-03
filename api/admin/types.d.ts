@@ -887,8 +887,16 @@ export function facePropagateHandler(
   routeInfo: AuthenticatedRouteInfo,
 ): Promise<void>
 
-/** GET /api/admin/media/:id/faces — live faces for one photo, box + guest name
- *  (null when unidentified). */
+/** GET /api/admin/media/:id/faces — EVERY live face in one photograph: the
+ *  `chipOf` shape (faceId, mediaId, fileKey, original-pixel width/height, box)
+ *  plus `personId`/`personName` (null when unidentified), `identityId`,
+ *  `provenance` and `routeState`.
+ *
+ *  The only face list here that routing does not filter. `set_aside` faces and
+ *  ungraded ones (`routeState: null`) both come back, because this is the view
+ *  that makes them nameable through `assignOne` — filtering here would close
+ *  the escape hatch the exemption exists for. `provenance` separates a name a
+ *  human confirmed from one propagation carried across a near-duplicate frame. */
 export function faceForMediaHandler(
   req: IncomingMessage,
   res: ServerResponse,

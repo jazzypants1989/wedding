@@ -296,12 +296,21 @@ export function confirmedIdentityFaces(modelVersion) {
  * Live faces for one photo, each with the person's display name if identified
  * (LEFT JOIN through face_identities → people). NEVER selects the descriptor
  * column — this is the shape the per-photo admin view returns straight to JSON.
+ *
+ * `route_state` and the identity's `provenance` come along because this is the
+ * ONE view that shows every face in a photograph, set aside or not. Both are
+ * NULLABLE and neither null means "excluded": a null `route_state` is a row
+ * ingested before quality routing existed (ungraded, fully assignable), and a
+ * null `provenance` is simply an unidentified face. Nothing here filters on
+ * either — the WHERE clause is `deleted_at IS NULL` and nothing else, so a
+ * face that reached this query is a face the admin will see on the photograph.
  * @type {Types.facesForMediaWithNames}
  */
 export function facesForMediaWithNames(mediaId) {
   return sql`SELECT mf.id AS id, mf.media_id AS media_id,
       mf.bbox_x AS bbox_x, mf.bbox_y AS bbox_y, mf.bbox_w AS bbox_w, mf.bbox_h AS bbox_h,
-      mf.face_identity_id AS face_identity_id,
+      mf.face_identity_id AS face_identity_id, mf.route_state AS route_state,
+      fi.provenance AS provenance,
       p.id AS person_id, p.display_name AS person_name
     FROM media_faces mf
     LEFT JOIN face_identities fi ON fi.id = mf.face_identity_id AND fi.deleted_at IS NULL

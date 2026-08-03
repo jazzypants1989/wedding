@@ -1415,7 +1415,10 @@ export interface FaceChipEntry {
 export interface FaceGroupSuggestion {
   personId: number
   personName: string
-  margin: number
+  /** NULL when the match was unopposed — matchFace reports `Infinity` for a
+   *  face with exactly one prototype to compare against, and JSON has no
+   *  Infinity. Which is the state right after the FIRST person is named. */
+  margin: number | null
 }
 
 /**
@@ -1480,7 +1483,8 @@ export interface FaceCandidate {
   personId: number | null
   personName: string | null
   distance: number
-  margin: number
+  /** Null when unopposed — see FaceGroupSuggestion.margin. */
+  margin: number | null
   /** How often this person already appears alongside the others in this photo. */
   cooccurrence: number
 }
@@ -1533,6 +1537,43 @@ export interface FaceAssignResponse {
   personId: number
   identityId: number
   changed: number
+}
+
+/** POST /api/admin/faces/assign-one response. Same shape as the bulk assign,
+ *  except `personId`/`identityId` are null when the call CLEARED the face
+ *  (`personId: null` in the request is its own undo). */
+export interface FaceAssignOneResponse {
+  success: boolean
+  personId: number | null
+  identityId: number | null
+  changed: number
+}
+
+/**
+ * One face in GET /api/admin/media/:id/faces — every live face in one
+ * photograph, whatever its routing state.
+ *
+ * The extra fields over `FaceChipEntry` are what this view needs and no other
+ * does. `routeState` because a `set_aside` face is drawn differently and is the
+ * reason the view exists; `provenance` because a `propagated` name is a
+ * machine's inference and must not look like a human's; `identityId` because a
+ * name can be attached without a live person row behind it.
+ */
+export interface MediaFaceEntry extends FaceChipEntry {
+  personId: number | null
+  personName: string | null
+  identityId: number | null
+  /** Null when unidentified. `propagated` = carried across a near-duplicate
+   *  frame by must-link, never confirmed by a human. */
+  provenance: "confirmed" | "propagated" | null
+  /** Null = ungraded (ingested before quality routing existed). NOT a reason
+   *  to hide or disable the face — treat it exactly like `accept`. */
+  routeState: "accept" | "ask" | "set_aside" | null
+}
+
+/** GET /api/admin/media/:id/faces. */
+export interface MediaFacesResponse {
+  faces: MediaFaceEntry[]
 }
 
 /** A person in the photographed cast — who a face belongs to. Distinct from a
@@ -1592,6 +1633,8 @@ export interface PersonMergeResponse {
 /** Load the Faces tab's overview + ask queue + people list, then render. */
 export function loadFaceAssignment(): Promise<void>
 
-/** Wire up the Faces tab (refresh button, delegated click/keydown/input on
- *  the tab body — groups, ask queue, and the name-input autocomplete). */
+/** Wire up the Faces tab: the refresh button, the delegated
+ *  click/keydown/input on the tab body (groups, ask queue, name-input
+ *  autocomplete), and the per-photograph dialog's own listeners — that dialog
+ *  lives OUTSIDE `#faces-body` and so inherits none of its delegation. */
 export function initFaceAssignment(): void

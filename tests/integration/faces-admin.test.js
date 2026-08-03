@@ -55,12 +55,19 @@ function resetFaceTestData() {
   db.prepare(`DELETE FROM guests`).run()
 }
 
-/** @returns {number} */
-function seedMedia() {
+/** `width`/`height` default to NULL, which is the real shape of a row imported
+ *  before dimensions were recorded — and the case the per-photograph view has to
+ *  degrade for, since a box is in ORIGINAL source pixels and without them there
+ *  is no scale to place it against.
+ *  @param {{ width?: number, height?: number }} [opts] @returns {number} */
+function seedMedia(opts = {}) {
   const fileKey = crypto.randomBytes(16).toString("hex")
   const r = db
-    .prepare(`INSERT INTO media (file_key, kind, section, status) VALUES (?, 'image', 'guest', 'approved')`)
-    .run(fileKey)
+    .prepare(
+      `INSERT INTO media (file_key, kind, section, status, width, height)
+       VALUES (?, 'image', 'guest', 'approved', ?, ?)`,
+    )
+    .run(fileKey, opts.width ?? null, opts.height ?? null)
   return Number(r.lastInsertRowid)
 }
 
@@ -97,6 +104,20 @@ function seedFace(mediaId, vector, opts = {}) {
  *  @param {Record<string, unknown>} [overrides] @returns {number} */
 function seedPerson(overrides = {}) {
   return createTestPerson(db, overrides).id
+}
+
+/** Attach a face to a person through an identity of a given provenance. Raw SQL
+ *  rather than the db/ helpers because those would open a second connection to
+ *  the server's database from the test process.
+ *  @param {number} faceId @param {number} personId
+ *  @param {'confirmed' | 'propagated'} provenance @returns {number} */
+function seedIdentityFor(faceId, personId, provenance) {
+  const r = db
+    .prepare(`INSERT INTO face_identities (person_id, provenance) VALUES (?, ?)`)
+    .run(personId, provenance)
+  const identityId = Number(r.lastInsertRowid)
+  db.prepare(`UPDATE media_faces SET face_identity_id = ? WHERE id = ?`).run(identityId, faceId)
+  return identityId
 }
 
 // Two tight clusters, well separated: cluster A hugs the x-axis, cluster B the
@@ -574,6 +595,12 @@ describe("assign / unassign / not-a-face mutations", () => {
   })
 })
 
+// ---------------------------------------------------------------------------
+// The per-photograph view. Every OTHER face list in this API is filtered by
+// quality routing; this one is not, and must not be — it is what the
+// single-face escape hatch is operated from, so a face missing from this
+// payload is a face that cannot be named at all.
+// ---------------------------------------------------------------------------
 describe("GET /api/admin/media/:id/faces", () => {
   it("404s for a missing or deleted media row", async (t) => {
     if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
@@ -586,6 +613,120 @@ describe("GET /api/admin/media/:id/faces", () => {
     const media = seedMedia()
     const body = await json(await asAdmin(`/api/admin/media/${media}/faces`))
     assert.deepStrictEqual(body.faces, [])
+  })
+
+  it("carries the file key and the ORIGINAL dimensions each box is scaled against", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const media = seedMedia({ width: 4000, height: 3000 })
+    const faceId = seedFace(media, CLUSTER_A1, { box: { x: 400, y: 300, w: 200, h: 200 } })
+    const fileKey = /** @type {any} */ (
+      db.prepare(`SELECT file_key FROM media WHERE id = ?`).get(media)
+    ).file_key
+
+    const body = await json(await asAdmin(`/api/admin/media/${media}/faces`))
+    assert.strictEqual(body.faces.length, 1)
+    const face = body.faces[0]
+    assert.strictEqual(face.faceId, faceId)
+    assert.strictEqual(face.mediaId, media)
+    // Without all three the client cannot place a box: the box is in original
+    // source pixels, and `x / width` is the only scale-free way to express it.
+    assert.strictEqual(face.fileKey, fileKey)
+    assert.strictEqual(face.width, 4000)
+    assert.strictEqual(face.height, 3000)
+    assert.deepStrictEqual(face.box, { x: 400, y: 300, w: 200, h: 200 })
+    assert.strictEqual(face.personId, null)
+    assert.strictEqual(face.personName, null)
+    assert.strictEqual(face.identityId, null)
+    assert.strictEqual(face.provenance, null)
+  })
+
+  it("returns a set-aside face — this view is the only way to name one", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const media = seedMedia({ width: 1200, height: 800 })
+    const shown = seedFace(media, CLUSTER_A1, { route: "accept" })
+    const asked = seedFace(media, CLUSTER_A2, { route: "ask" })
+    const hidden = seedFace(media, CLUSTER_B1, { route: "set_aside" })
+
+    const body = await json(await asAdmin(`/api/admin/media/${media}/faces`))
+    /** @type {Map<number, any>} */
+    const byId = new Map(body.faces.map((/** @type {any} */ f) => [f.faceId, f]))
+    assert.strictEqual(byId.size, 3, "every face in the photograph is shown, whatever its grade")
+    assert.strictEqual(byId.get(shown).routeState, "accept")
+    assert.strictEqual(byId.get(asked).routeState, "ask")
+    assert.strictEqual(byId.get(hidden).routeState, "set_aside")
+
+    // The queue, by contrast, holds the set-aside one back — which is exactly
+    // why this payload must not.
+    const queue = await json(await asAdmin("/api/admin/faces/queue"))
+    assert.ok(
+      !queue.items.some((/** @type {any} */ i) => i.faceId === hidden),
+      "the ask queue still filters set-aside faces",
+    )
+  })
+
+  it("treats an ungraded face as shown, not as held back", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    // route_state IS NULL is every row written before quality routing existed.
+    // "Not yet graded" is not "withheld", and a query that drops NULL would
+    // make the entire pre-routing library invisible in this view.
+    const media = seedMedia({ width: 1000, height: 1000 })
+    const ungraded = seedFace(media, CLUSTER_A1)
+    const hidden = seedFace(media, CLUSTER_B1, { route: "set_aside" })
+
+    const body = await json(await asAdmin(`/api/admin/media/${media}/faces`))
+    assert.strictEqual(body.faces.length, 2)
+    const first = body.faces.find((/** @type {any} */ f) => f.faceId === ungraded)
+    assert.strictEqual(first.routeState, null)
+    assert.ok(body.faces.some((/** @type {any} */ f) => f.faceId === hidden))
+  })
+
+  it("distinguishes a propagated guess from a confirmed name", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const media = seedMedia({ width: 900, height: 600 })
+    const confirmedFace = seedFace(media, CLUSTER_A1)
+    const propagatedFace = seedFace(media, CLUSTER_A2)
+    const person = seedPerson({ display_name: "Two Ways In" })
+    const confirmedId = seedIdentityFor(confirmedFace, person, "confirmed")
+    const propagatedId = seedIdentityFor(propagatedFace, person, "propagated")
+
+    const body = await json(await asAdmin(`/api/admin/media/${media}/faces`))
+    /** @type {Map<number, any>} */
+    const byId = new Map(body.faces.map((/** @type {any} */ f) => [f.faceId, f]))
+
+    // Both read as "Two Ways In". Without provenance the view would present a
+    // machine's inference and a human's decision as the same settled fact.
+    assert.strictEqual(byId.get(confirmedFace).personName, "Two Ways In")
+    assert.strictEqual(byId.get(propagatedFace).personName, "Two Ways In")
+    assert.strictEqual(byId.get(confirmedFace).provenance, "confirmed")
+    assert.strictEqual(byId.get(propagatedFace).provenance, "propagated")
+    assert.strictEqual(byId.get(confirmedFace).identityId, confirmedId)
+    assert.strictEqual(byId.get(propagatedFace).identityId, propagatedId)
+    assert.strictEqual(byId.get(confirmedFace).personId, person)
+  })
+
+  it("reports null dimensions rather than inventing a scale", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    // The client degrades to a list when these are missing. A box placed on a
+    // guessed scale looks authoritative while pointing at the wrong person.
+    const media = seedMedia()
+    seedFace(media, CLUSTER_A1, { route: "set_aside" })
+    const body = await json(await asAdmin(`/api/admin/media/${media}/faces`))
+    assert.strictEqual(body.faces[0].width, null)
+    assert.strictEqual(body.faces[0].height, null)
+    assert.ok(body.faces[0].fileKey, "the file key survives — the photo still renders")
+    assert.strictEqual(body.faces[0].routeState, "set_aside")
+  })
+
+  it("still never leaks a descriptor", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const media = seedMedia({ width: 800, height: 600 })
+    seedFace(media, CLUSTER_A1, { route: "set_aside" })
+    assertNoDescriptor(await json(await asAdmin(`/api/admin/media/${media}/faces`)))
+  })
+
+  it("401s with no session", async () => {
+    const res = await fetch(`${BASE_URL}/api/admin/media/1/faces`)
+    assert.strictEqual(res.status, 401)
   })
 })
 

@@ -2601,3 +2601,151 @@ tr:hover td {
   font-size: var(--text-xs);
   margin-top: var(--spacing-sm);
 }
+
+/* Per-photograph face view (#faces-photo-modal) — the one view of a PHOTOGRAPH
+   rather than a list of faces, and so the only place a `set_aside` face can be
+   named. Geometry is expressed in percentages of the rendered image (set from
+   JS through the CSSOM, since style-src carries no 'unsafe-inline'), which is
+   what makes it scale-free: the stage shrinks with the dialog and every box
+   follows without a resize hook. */
+.faces-photo-stage {
+  position: relative;
+  /* inline-block, so the stage SHRINK-WRAPS the image. That is what keeps the
+     percentages honest: the boxes are positioned against the stage, so the
+     stage's rectangle has to be the image's rectangle exactly — a block stage
+     with a letterboxed image inside it would put every box in the wrong place
+     the moment the aspect ratios diverged. */
+  display: inline-block;
+  max-width: 100%;
+  line-height: 0; /* kills the inline-image baseline gap that would offset every box */
+  background: var(--color-primary-faint);
+  border-radius: var(--radius-sm);
+}
+.faces-photo-img {
+  display: block;
+  /* Capped so the naming control stays on screen with the photograph rather
+     than a scroll away — a tall portrait would otherwise fill the dialog. */
+  max-width: 100%;
+  max-height: 55vh;
+  width: auto;
+  height: auto;
+}
+.faces-photo-boxes {
+  position: absolute;
+  inset: 0;
+}
+
+.faces-photo-box {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: var(--border-width-thick) solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  /* A box sits over a photograph, so its own outline has to survive whatever is
+     behind it — a light rim on the outside, the colour on the inside. */
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.45);
+  min-width: 0;
+  min-height: 0;
+}
+.faces-photo-box:focus-visible {
+  outline: var(--border-width-thick) solid var(--color-primary);
+  outline-offset: 2px;
+}
+/* Held back by quality routing. Dashed, not just recoloured: the distinction
+   has to read for someone who cannot tell the two colours apart, because this
+   is the state the whole dialog exists to rescue. */
+.faces-photo-box.is-setaside {
+  border-style: dashed;
+  border-color: var(--color-status-pending-text);
+}
+.faces-photo-box.is-named {
+  border-color: var(--color-success);
+}
+/* Propagated: a machine's inference, not a human's. Dotted, so it never looks
+   as settled as a confirmed name. */
+.faces-photo-box.is-propagated {
+  border-style: dotted;
+}
+/* Selection deliberately does NOT recolour the border — that colour is carrying
+   the routing/naming state, and losing it on click would hide exactly the thing
+   the admin clicked in to deal with. It adds a ring and a wash instead, both of
+   which read over any photograph. */
+.faces-photo-box.is-selected {
+  background: rgb(255 255 255 / 0.22);
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 0 5px var(--color-primary);
+}
+.faces-photo-box-num {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 0 var(--spacing-2xs);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  /* Fixed, not themed, and deliberately so: what is behind this badge is a
+     photograph, not a theme surface, so it does not change with the theme. Same
+     reason the scrims above are literal rgb() rather than tokens. */
+  color: #fff;
+  background: rgb(0 0 0 / 0.6);
+  border-radius: var(--radius-sm) 0 var(--radius-sm) 0;
+}
+
+/* Unboxed fallback: `media.width`/`height` are nullable and the box is in
+   ORIGINAL source pixels, so with no dimensions there is no scale. The faces
+   become a plain list rather than a set of confidently misplaced rectangles. */
+.faces-photo-list {
+  list-style: none;
+  margin: var(--spacing-sm) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2xs);
+}
+.faces-photo-list .faces-photo-box {
+  position: static;
+  width: 100%;
+  text-align: left;
+  box-shadow: none;
+}
+
+.faces-photo-detail {
+  margin-top: var(--spacing-md);
+}
+.faces-photo-face-title {
+  margin: 0 0 var(--spacing-xs);
+  font-size: var(--text-base);
+}
+.faces-photo-note {
+  margin: 0 0 var(--spacing-xs);
+  font-size: var(--text-sm);
+  color: var(--color-status-pending-text);
+}
+.faces-photo-hint {
+  font-size: var(--text-sm);
+}
+.faces-photo-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+.faces-photo-name-input {
+  flex: 1 1 14rem;
+  min-width: 10ch;
+}
+.faces-photo-input-error {
+  display: block;
+  margin-top: var(--spacing-2xs);
+  font-size: var(--text-xs);
+  color: var(--color-status-pending-text);
+}
+.faces-photo-input-error[hidden],
+.faces-photo-create-person[hidden] {
+  display: none;
+}
+.faces-photo-create-person {
+  margin-top: var(--spacing-xs);
+}

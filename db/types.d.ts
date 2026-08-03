@@ -1430,6 +1430,14 @@ export interface FaceWithNameRow {
   bbox_w: number
   bbox_h: number
   face_identity_id: number | null
+  /** Null = ungraded (ingested before quality routing). NOT a filter — the
+   *  per-photograph view shows every state, `set_aside` included, because it
+   *  is the one place a held-back face can be named. */
+  route_state: RouteState | null
+  /** The identity's provenance, or null when the face is unidentified. A
+   *  `propagated` name is a machine's inference carried across a
+   *  near-duplicate frame; a `confirmed` one is a human's. */
+  provenance: FaceIdentityProvenance | null
   person_id: number | null
   person_name: string | null
 }

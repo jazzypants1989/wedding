@@ -28,10 +28,20 @@
  *  positionFaceChipImage rather than breaking the row — but it is now the
  *  fallback it was meant to be rather than the normal case.
  *
- *  GET /api/admin/media/:id/faces and POST .../unassign are part of the
- *  contract but unused here: nothing in the UI shape this was built to calls
- *  for a per-photo face list or an "undo an assignment" action. Left for a
- *  later pass rather than building UI the spec didn't ask for. */
+ *  THE PER-PHOTOGRAPH VIEW (bottom of this file) closes what used to be a hole
+ *  in the above. Quality routing withholds low-grade faces from Groups and the
+ *  Ask queue, and bulk assign REFUSES them by design — so `set_aside` was a
+ *  state the UI could put a face into and never get it out of. The sections
+ *  above are all lists of FACES; `#faces-photo-modal` is the one view of a
+ *  PHOTOGRAPH, showing every face in it whatever its routing state, each
+ *  nameable one at a time through POST /api/admin/faces/assign-one (the
+ *  deliberate single-face exemption). `personId: null` on that route is its own
+ *  undo, which is where "clear this name" comes from too.
+ *
+ *  It is a `<dialog>` declared in index.html rather than markup rendered into
+ *  #faces-body, because #faces-body is replaced wholesale on every render and
+ *  initModals() sweeps the document once at startup. That also means it
+ *  inherits NONE of the delegation below — see initFaceAssignment. */
 /** @import * as Types from "./types.js" */
 
 import {
@@ -40,6 +50,7 @@ import {
   showSuccess,
   showLoading,
   showLoadError,
+  openModal,
 } from "./utils.js"
 import {
   html,
@@ -85,6 +96,23 @@ let guestsLoaded = false
  */
 function nameKey(name) {
   return name.normalize("NFC").toLowerCase()
+}
+
+/**
+ * A match margin, for display.
+ *
+ * `null` is a real value here, not a defensive guard: matchFace reports
+ * `Infinity` when a face has exactly ONE prototype to compare against ("no
+ * second-best" — an unopposed match), and `JSON.stringify(Infinity)` is `null`.
+ * So the moment the first person is named — including through the
+ * per-photograph view — every suggestion and every ask candidate arrives with a
+ * null margin, and calling `.toFixed` on it threw, taking the whole tab's render
+ * down with it. That is exactly the state a first-time admin is in.
+ * @param {number | null | undefined} margin
+ */
+function formatMargin(margin) {
+  if (typeof margin !== "number" || !Number.isFinite(margin)) return "unopposed"
+  return margin.toFixed(2)
 }
 
 /** Faces excluded ("reject from this action") per group, keyed by
@@ -186,7 +214,7 @@ function renderCounts() {
     <span class="faces-count"><strong>${c.notAFace}</strong> not a face</span>
     ${r && r.setAside > 0
       ? html`<span class="faces-count faces-count-muted"
-          title="Too small or too soft to be worth naming from the queue. Still stored, still grouped — open the photograph to name one."
+          title="Too small or too soft to be worth naming from the queue. Still stored, still grouped — use “Open photo” on any group or queue row to see every face in that photograph, set aside included, and name one there."
           ><strong>${r.setAside}</strong> set aside</span
         >`
       : ""}
@@ -274,11 +302,34 @@ function weldWarningMarkup(weld) {
   `
 }
 
+/**
+ * "Open photo" for a card/row that holds face chips. The per-photograph view is
+ * the ONLY place a `set_aside` face can be named, so every list section here
+ * needs a labelled, keyboard-reachable way into it — a hover affordance or a
+ * bare chip click would leave the escape hatch undiscoverable, which is the
+ * state this whole view exists to fix.
+ * @param {number | null | undefined} mediaId
+ * @param {string} label the accessible name — say WHICH photograph, since a
+ *   group spans several and the button can only open one.
+ */
+function openPhotoButtonMarkup(mediaId, label) {
+  if (mediaId === null || mediaId === undefined) return ""
+  return html`<button type="button" class="btn btn-secondary btn-sm faces-open-photo"
+    data-media-id="${mediaId}" aria-label="${label}"
+    title="Shows every face in that photograph — including any set aside from the queue">
+    Open photo
+  </button>`
+}
+
 /** @param {Types.FaceGroup} group */
 function groupCardMarkup(group) {
   const groupKey = String(group.key)
   const excluded = excludedByGroup.get(groupKey) || new Set()
   const suggestion = group.suggestion
+  // A group spans photographs, so one button cannot cover all of them. It opens
+  // the first chip's, and says so — from there every face in that photograph,
+  // set aside or not, is on screen and nameable.
+  const firstMediaId = group.media.find((m) => m.mediaId !== null)?.mediaId ?? null
   return html`
     <div class="face-group-card" data-group-key="${groupKey}">
       ${weldWarningMarkup(group.weld)}
@@ -294,10 +345,15 @@ function groupCardMarkup(group) {
         ? html`<p class="face-group-setaside text-muted">
             ${group.setAside} more face${group.setAside === 1 ? "" : "s"} in this group
             ${group.setAside === 1 ? "was" : "were"} set aside as too small or too soft to name
-            from here. Open the photograph to name ${group.setAside === 1 ? "it" : "them"}.
+            from here. “Open photo” below shows every face in a photograph, set aside included,
+            and names them one at a time.
           </p>`
         : ""}
       <div class="face-group-controls">
+        ${openPhotoButtonMarkup(
+          firstMediaId,
+          "Open the photograph behind this group's first face",
+        )}
         <input type="text" class="face-group-name-input" list="faces-people-roster"
           placeholder="Who is this?" value="${suggestion ? suggestion.personName : ""}"
           aria-label="Person name for this group" data-group-key="${groupKey}" maxlength="200" />
@@ -307,7 +363,7 @@ function groupCardMarkup(group) {
         </button>
         ${suggestion
           ? html`<span class="face-group-suggestion text-muted"
-              >suggested: ${suggestion.personName} · margin ${suggestion.margin.toFixed(2)}</span
+              >suggested: ${suggestion.personName} · margin ${formatMargin(suggestion.margin)}</span
             >`
           : ""}
         <span class="face-group-input-error" role="alert" hidden></span>
@@ -563,7 +619,7 @@ function askRowMarkup(item) {
             (c, i) => html`
               <button type="button" class="btn btn-secondary btn-sm face-ask-candidate"
                 data-index="${i}">
-                <kbd>${i + 1}</kbd> ${c.personName} · margin ${c.margin.toFixed(2)}
+                <kbd>${i + 1}</kbd> ${c.personName} · margin ${formatMargin(c.margin)}
               </button>
             `,
           )}
@@ -576,6 +632,7 @@ function askRowMarkup(item) {
             title="Confirming this would identify this many photo appearances"
             >unlocks ${item.unlocks}</span
           >
+          ${openPhotoButtonMarkup(item.mediaId, "Open the photograph this face is in")}
           <button type="button" class="btn btn-secondary btn-sm face-ask-skip">
             <kbd>s</kbd> Skip
           </button>
@@ -745,6 +802,7 @@ function propagationRowMarkup(item) {
         >
       </div>
       <div class="face-propagation-actions">
+        ${openPhotoButtonMarkup(item.mediaId, "Open the photograph this face is in")}
         <button type="button" class="btn btn-secondary btn-sm face-propagation-accept">
           Yes, same person
         </button>
@@ -1151,12 +1209,512 @@ function positionFaceChipImage(img) {
   img.style.top = `${offsetY}px`
 }
 
+// ---- per-photograph view (#faces-photo-modal) -----------------------------
+
+/**
+ * The faces of the photograph currently on screen, in the order the server
+ * returned them (`mf.id` ascending) — which is what "face 3 of 7" counts, so
+ * the number an admin reads out loud is stable between refreshes.
+ * @type {Types.MediaFaceEntry[]}
+ */
+let photoFaces = []
+/** @type {number | null} */
+let photoMediaId = null
+/** @type {number | null} */
+let photoSelectedFaceId = null
+/** Set by any successful assign/clear in the dialog. The Faces tab behind it is
+ *  then stale — counts, groups and the queue all move — but reloading it while
+ *  the dialog is open would rip out the very element focus returns to on close,
+ *  so the reload is deferred to the `close` event. */
+let photoDirty = false
+
+/** @returns {HTMLDialogElement | null} */
+function photoDialog() {
+  const el = document.getElementById("faces-photo-modal")
+  return el instanceof HTMLDialogElement ? el : null
+}
+
+/** @returns {Types.MediaFaceEntry | undefined} */
+function selectedPhotoFace() {
+  return photoFaces.find((f) => f.faceId === photoSelectedFaceId)
+}
+
+/** @returns {HTMLInputElement | null} */
+function photoNameInput() {
+  const el = document.getElementById("faces-photo-name")
+  return el instanceof HTMLInputElement ? el : null
+}
+
+/** @param {string} msg */
+function showPhotoError(msg) {
+  const el = document.getElementById("faces-photo-error")
+  if (!(el instanceof HTMLElement)) return
+  el.textContent = msg
+  el.hidden = false
+}
+
+function hidePhotoError() {
+  const el = document.getElementById("faces-photo-error")
+  if (el instanceof HTMLElement) el.hidden = true
+}
+
+/** The per-face error, next to the name input — a bad name is about THIS face,
+ *  not about the photograph. Falls back to the dialog-level alert when no face
+ *  is selected, so a message is never swallowed. @param {string} msg */
+function showPhotoInputError(msg) {
+  const el = document.querySelector(".faces-photo-input-error")
+  if (!(el instanceof HTMLElement)) {
+    showPhotoError(msg)
+    return
+  }
+  el.textContent = msg
+  el.hidden = false
+}
+
+function hidePhotoInputError() {
+  const el = document.querySelector(".faces-photo-input-error")
+  if (el instanceof HTMLElement) el.hidden = true
+  const createBtn = document.querySelector(".faces-photo-create-person")
+  if (createBtn instanceof HTMLButtonElement) createBtn.hidden = true
+  hidePhotoError()
+}
+
+/**
+ * Open the per-photograph view. The one path to a `set_aside` face.
+ * @param {number} mediaId
+ * @param {HTMLElement} [trigger] focus returns here on close
+ */
+async function openFacesPhoto(mediaId, trigger) {
+  const dialog = photoDialog()
+  if (!dialog) return
+  photoMediaId = mediaId
+  photoFaces = []
+  photoSelectedFaceId = null
+  photoDirty = false
+  hidePhotoError()
+  showLoading(getElement("faces-photo-body"))
+  openModal(dialog, trigger)
+  await refreshPhotoFaces()
+}
+
+/** Refetch and re-render. Always a refetch rather than a local patch: naming a
+ *  face can promote a propagated identity to a confirmed one, which changes
+ *  rows other than the one that was clicked. */
+async function refreshPhotoFaces() {
+  if (photoMediaId === null) return
+  const body = getElement("faces-photo-body")
+  try {
+    const data = /** @type {Types.MediaFacesResponse} */ (
+      await api(`/api/admin/media/${photoMediaId}/faces`)
+    )
+    photoFaces = data.faces
+    if (!photoFaces.some((f) => f.faceId === photoSelectedFaceId)) photoSelectedFaceId = null
+    renderPhotoBody()
+  } catch (err) {
+    console.error("Failed to load faces for photograph:", err)
+    showLoadError(body, 1, "Couldn't load this photograph's faces.", () =>
+      void refreshPhotoFaces(),
+    )
+  }
+}
+
+/** How many of the faces on screen the queue held back. Said out loud, because
+ *  "why is that one outlined differently" is the first question the view asks. */
+function photoSetAsideCount() {
+  return photoFaces.filter((f) => f.routeState === "set_aside").length
+}
+
+function renderPhotoBody() {
+  const body = getElement("faces-photo-body")
+  if (photoFaces.length === 0) {
+    body.innerHTML = html`<p class="faces-empty text-muted">
+      No faces are recorded in this photograph.
+    </p>`
+    return
+  }
+
+  // Every row came from one media row, so they all carry the same file key and
+  // the same original dimensions — face 0 speaks for the photograph.
+  const first = photoFaces[0]
+  const fileKey = first.fileKey ?? ""
+  // `media.width`/`height` are nullable, and a box is in ORIGINAL source pixels,
+  // so without them there is no scale to express the box against. Degrade to a
+  // list — a box drawn on a guessed scale is worse than no box, because it looks
+  // authoritative while pointing at the wrong person.
+  const canBox = !!(first.width && first.height)
+
+  body.innerHTML = html`
+    <div class="faces-photo-stage">
+      <img class="faces-photo-img" src="/media/${fileKey}/display" alt=""
+        data-fallback="/media/${fileKey}/thumb" />
+      ${canBox
+        ? html`<div class="faces-photo-boxes" role="group"
+            aria-label="Faces in this photograph">
+            ${photoFaces.map(photoBoxMarkup)}
+          </div>`
+        : ""}
+    </div>
+    ${canBox
+      ? ""
+      : html`<p class="faces-photo-note" role="note">
+            This photograph's stored dimensions are missing, so the faces can't be placed on it.
+            They are all listed below and every one of them can still be named.
+          </p>
+          <ul class="faces-photo-list">
+            ${photoFaces.map(photoListRowMarkup)}
+          </ul>`}
+    <div class="faces-photo-detail">${photoDetailMarkup()}</div>
+  `
+  if (canBox) positionPhotoBoxes(body)
+  wirePhotoImageFallback(body)
+}
+
+/**
+ * An accessible name for one face box.
+ *
+ * It says WHICH face and WHAT STATE, and nothing else — never anything about
+ * what the photograph shows or who the person appears to be (CLAUDE.md,
+ * "Photographs Are Input To Code, Not To A Reader"). A name in here is only ever
+ * one an admin typed; nothing describes a face.
+ * @param {Types.MediaFaceEntry} face
+ * @param {number} index
+ */
+function photoFaceLabel(face, index) {
+  const parts = [`Face ${index + 1} of ${photoFaces.length}`]
+  parts.push(face.personName ? `named ${face.personName}` : "not named yet")
+  if (face.provenance === "propagated") parts.push("carried across, not confirmed")
+  if (face.routeState === "set_aside") parts.push("set aside from the queue")
+  return parts.join(", ")
+}
+
+/** @param {Types.MediaFaceEntry} face */
+function photoFaceClasses(face) {
+  const classes = []
+  if (face.faceId === photoSelectedFaceId) classes.push("is-selected")
+  if (face.routeState === "set_aside") classes.push("is-setaside")
+  if (face.personId !== null) classes.push("is-named")
+  if (face.provenance === "propagated") classes.push("is-propagated")
+  return classes.join(" ")
+}
+
+/**
+ * One face box. Its geometry is carried as data-* percentages and applied by
+ * positionPhotoBoxes rather than written as a `style` attribute — the admin CSP
+ * is `style-src 'self' '<hash>'` with no 'unsafe-inline', so an inline style
+ * attribute would be dropped and every box would stack in the corner. Setting
+ * `.style` through the CSSOM is not covered by that restriction.
+ *
+ * Percentages, not pixels: the box is in ORIGINAL source pixels and the image is
+ * rendered at whatever width the dialog gives it, so `x / media.width` is the
+ * one ratio that survives every scale — no reflow hook, no load-order dance.
+ * @param {Types.MediaFaceEntry} face
+ * @param {number} index
+ */
+function photoBoxMarkup(face, index) {
+  const pct = boxPercent(face)
+  const selected = face.faceId === photoSelectedFaceId
+  return html`<button type="button" class="faces-photo-box ${photoFaceClasses(face)}"
+    data-face-id="${face.faceId}" aria-pressed="${selected ? "true" : "false"}"
+    aria-label="${photoFaceLabel(face, index)}"
+    data-left="${pct.left}" data-top="${pct.top}"
+    data-width="${pct.width}" data-height="${pct.height}">
+    <span class="faces-photo-box-num" aria-hidden="true">${index + 1}</span>
+  </button>`
+}
+
+/** The unboxed fallback row — same selection, same naming, no geometry.
+ *  @param {Types.MediaFaceEntry} face @param {number} index */
+function photoListRowMarkup(face, index) {
+  const selected = face.faceId === photoSelectedFaceId
+  return html`<li>
+    <button type="button" class="btn btn-secondary btn-sm faces-photo-box ${photoFaceClasses(face)}"
+      data-face-id="${face.faceId}" aria-pressed="${selected ? "true" : "false"}">
+      ${photoFaceLabel(face, index)}
+    </button>
+  </li>`
+}
+
+/** @param {number} value @param {number} max */
+function clampPct(value, max) {
+  if (!Number.isFinite(value)) return 0
+  if (value < 0) return 0
+  return value > max ? max : value
+}
+
+/**
+ * A face's box as percentages of the ORIGINAL photograph's dimensions, clamped
+ * into the frame. A detector box can hang off an edge (a face at the margin),
+ * and an overlay that spills outside its stage would be clipped or would widen
+ * the dialog, so the visible rectangle is trimmed rather than allowed to escape.
+ * @param {Types.MediaFaceEntry} face
+ */
+function boxPercent(face) {
+  const w = photoFaces[0]?.width ?? 0
+  const h = photoFaces[0]?.height ?? 0
+  const box = face.box
+  if (!w || !h || !box) return { left: 0, top: 0, width: 0, height: 0 }
+  const left = clampPct((box.x / w) * 100, 100)
+  const top = clampPct((box.y / h) * 100, 100)
+  return {
+    left,
+    top,
+    width: clampPct((box.w / w) * 100, 100 - left),
+    height: clampPct((box.h / h) * 100, 100 - top),
+  }
+}
+
+/** @param {ParentNode} container */
+function positionPhotoBoxes(container) {
+  container.querySelectorAll(".faces-photo-box").forEach((el) => {
+    if (!(el instanceof HTMLElement)) return
+    const { left, top, width, height } = el.dataset
+    if (left === undefined || top === undefined) return
+    el.style.left = `${left}%`
+    el.style.top = `${top}%`
+    el.style.width = `${width}%`
+    el.style.height = `${height}%`
+  })
+}
+
+/** A `display` variant is not guaranteed: an image the browser couldn't decode
+ *  at upload time is stored original-only, and `original` is served as an
+ *  attachment so it must not be used here. Fall back to `thumb` once — a small
+ *  image still places every box correctly, because the boxes are percentages.
+ *  @param {ParentNode} container */
+function wirePhotoImageFallback(container) {
+  const img = container.querySelector(".faces-photo-img")
+  if (!(img instanceof HTMLImageElement)) return
+  img.addEventListener(
+    "error",
+    () => {
+      const fallback = img.dataset.fallback
+      if (fallback) img.src = fallback
+    },
+    { once: true },
+  )
+}
+
+function photoDetailMarkup() {
+  const index = photoFaces.findIndex((f) => f.faceId === photoSelectedFaceId)
+  if (index === -1) {
+    const setAside = photoSetAsideCount()
+    return html`<p class="faces-photo-hint text-muted">
+      Choose a face to name it.
+      ${setAside > 0
+        ? html`${setAside} of them ${setAside === 1 ? "was" : "were"} set aside as too small or too
+            soft for the Ask queue — ${setAside === 1 ? "it is" : "they are"} marked with a dashed
+            outline, and this is where ${setAside === 1 ? "it" : "they"} can be named.`
+        : ""}
+    </p>`
+  }
+
+  const face = photoFaces[index]
+  return html`
+    <div class="faces-photo-face" data-face-id="${face.faceId}">
+      <h4 class="faces-photo-face-title">Face ${index + 1} of ${photoFaces.length}</h4>
+      ${face.routeState === "set_aside"
+        ? html`<p class="faces-photo-note" role="note">
+            Held back from the Ask queue as too small or too soft to name off a list. Naming it
+            here is the way in — this is the only place that can.
+          </p>`
+        : ""}
+      ${face.provenance === "propagated"
+        ? html`<p class="faces-photo-note" role="note">
+            This name was carried across from a near-duplicate frame, not confirmed by anyone.
+            Entering it again here records it as confirmed.
+          </p>`
+        : ""}
+      <div class="faces-photo-controls">
+        <input type="text" id="faces-photo-name" class="faces-photo-name-input"
+          list="faces-people-roster" placeholder="Who is this?" autocomplete="off"
+          value="${face.personName ?? ""}" aria-label="Person name for this face" maxlength="200" />
+        <button type="button" class="btn btn-primary btn-sm faces-photo-save">Name this face</button>
+        ${face.identityId !== null
+          ? html`<button type="button" class="btn btn-secondary btn-sm faces-photo-clear">
+              Clear name
+            </button>`
+          : ""}
+      </div>
+      <span class="faces-photo-input-error" role="alert" hidden></span>
+      <!-- Same explicit-create step as a group's name input: a person is never
+           created as a side effect of typing an unrecognised name. -->
+      <button type="button" class="btn btn-secondary btn-sm faces-photo-create-person" hidden></button>
+    </div>
+  `
+}
+
+/** @param {number} faceId */
+function selectPhotoFace(faceId) {
+  photoSelectedFaceId = faceId
+  renderPhotoBody()
+  photoNameInput()?.focus()
+}
+
+/**
+ * The single-face escape hatch. `personId: null` clears — the same route, which
+ * is why "Clear name" needs nothing else.
+ * @param {number} faceId
+ * @param {number | null} personId
+ * @param {string} name for the confirmation message only
+ */
+async function assignOnePhotoFace(faceId, personId, name) {
+  if (pending.has(faceId)) return
+  pending.add(faceId)
+  hidePhotoError()
+  try {
+    await api("/api/admin/faces/assign-one", {
+      method: "POST",
+      body: JSON.stringify({ faceId, personId }),
+    })
+    showSuccess(personId === null ? "Name cleared" : `Named ${name}`)
+    photoDirty = true
+    await refreshPhotoFaces()
+    photoNameInput()?.focus()
+  } catch (err) {
+    showPhotoInputError(getErrorMessage(err))
+  } finally {
+    pending.delete(faceId)
+  }
+}
+
+/** Enter or "Name this face": resolve the typed name to exactly one person and
+ *  assign, or reveal the explicit create step. Mirrors handleGroupNameEnter. */
+async function handlePhotoSave() {
+  const face = selectedPhotoFace()
+  const input = photoNameInput()
+  if (!face || !input) return
+  const name = input.value.trim()
+  if (!name) {
+    showPhotoInputError(
+      face.identityId === null
+        ? "Type a name first."
+        : "Type a name, or use “Clear name” to remove the one it has.",
+    )
+    return
+  }
+
+  const resolved = resolvePersonByName(name)
+  if (resolved.status === "ambiguous") {
+    showPhotoInputError(
+      "Multiple people share that name — rename one in the People section, then retry.",
+    )
+    return
+  }
+  if (resolved.status === "none") {
+    const createBtn = document.querySelector(".faces-photo-create-person")
+    if (createBtn instanceof HTMLButtonElement) {
+      createBtn.textContent = `Create person “${name}” & name this face`
+      createBtn.hidden = false
+      showPhotoInputError("No person has that name yet. Create them?")
+    }
+    return
+  }
+
+  await assignOnePhotoFace(face.faceId, resolved.id, name)
+}
+
+/** @param {HTMLButtonElement} btn */
+async function handlePhotoCreatePerson(btn) {
+  const face = selectedPhotoFace()
+  const input = photoNameInput()
+  if (!face || !input) return
+  const name = input.value.trim()
+  if (!name) return
+
+  btn.disabled = true
+  try {
+    const created = /** @type {Types.PersonCreateResponse} */ (
+      await api("/api/admin/people", {
+        method: "POST",
+        body: JSON.stringify({ displayName: name }),
+      })
+    )
+    // Before assigning, so the new person is resolvable (and in the datalist)
+    // for the next face in this same photograph without closing the dialog.
+    await refreshPeople()
+    await assignOnePhotoFace(face.faceId, created.person.id, name)
+  } catch (err) {
+    btn.disabled = false
+    showPhotoInputError(getErrorMessage(err))
+  }
+}
+
+function handlePhotoClear() {
+  const face = selectedPhotoFace()
+  if (!face) return
+  void assignOnePhotoFace(face.faceId, null, "")
+}
+
+/** @param {MouseEvent} e */
+function handlePhotoDialogClick(e) {
+  const target = e.target
+  if (!(target instanceof Element)) return
+
+  const box = target.closest(".faces-photo-box")
+  if (box instanceof HTMLElement) {
+    const faceId = parseInt(box.dataset.faceId || "", 10)
+    if (!Number.isNaN(faceId)) selectPhotoFace(faceId)
+    return
+  }
+  if (target.closest(".faces-photo-save")) {
+    void handlePhotoSave()
+    return
+  }
+  if (target.closest(".faces-photo-clear")) {
+    handlePhotoClear()
+    return
+  }
+  const createBtn = target.closest(".faces-photo-create-person")
+  if (createBtn instanceof HTMLButtonElement) void handlePhotoCreatePerson(createBtn)
+}
+
+/** @param {KeyboardEvent} e */
+function handlePhotoDialogKeydown(e) {
+  const target = e.target
+  if (target instanceof HTMLInputElement && target.classList.contains("faces-photo-name-input")) {
+    if (e.key === "Enter") {
+      e.preventDefault()
+      void handlePhotoSave()
+    }
+  }
+}
+
+/** @param {Event} e */
+function handlePhotoDialogInput(e) {
+  const target = e.target
+  if (target instanceof HTMLInputElement && target.classList.contains("faces-photo-name-input")) {
+    hidePhotoInputError()
+  }
+}
+
+/** Deferred reload: naming a face here changes the groups, the ask queue and
+ *  every count behind the dialog, but doing it while the dialog is open would
+ *  destroy the trigger element that closeModal focuses on the way out. */
+function handlePhotoDialogClose() {
+  photoMediaId = null
+  photoFaces = []
+  photoSelectedFaceId = null
+  if (photoDirty) {
+    photoDirty = false
+    void loadFaceAssignment()
+  }
+}
+
 // ---- event delegation -------------------------------------------------
 
 /** @param {MouseEvent} e */
 function handleFacesBodyClick(e) {
   const target = e.target
   if (!(target instanceof Element)) return
+
+  // FIRST, before the row branches below: an "Open photo" button sits inside an
+  // ask row and a propagation row, and both of those branches return early.
+  const openPhoto = target.closest(".faces-open-photo")
+  if (openPhoto instanceof HTMLElement) {
+    const mediaId = parseInt(openPhoto.dataset.mediaId || "", 10)
+    if (!Number.isNaN(mediaId)) void openFacesPhoto(mediaId, openPhoto)
+    return
+  }
 
   const askRow = target.closest(".face-ask-row")
   if (askRow instanceof HTMLElement) {
@@ -1255,6 +1813,9 @@ function handleFacesBodyKeydown(e) {
       void confirmAskCandidate(faceId, Number(e.key) - 1)
     } else if (e.key === "s" || e.key === "S") {
       focusAdjacentAskRow(faceId, 1)
+    } else if (e.key === "o" || e.key === "O") {
+      const item = queueData?.items.find((i) => i.faceId === faceId)
+      if (item && item.mediaId !== null) void openFacesPhoto(item.mediaId, askRow)
     } else if (e.key === "x" || e.key === "X") {
       void handleAskNotAFace(faceId)
     }
@@ -1304,4 +1865,16 @@ export function initFaceAssignment() {
   body.addEventListener("input", handleFacesBodyInput)
   // focusout, not blur: blur does not bubble, so it cannot be delegated here.
   body.addEventListener("focusout", handleFacesBodyFocusOut)
+
+  // The per-photograph dialog is declared in index.html, OUTSIDE #faces-body, so
+  // none of the delegation above reaches it — it needs its own listeners. Only
+  // `data-close-modal`, backdrop dismissal and focus restore come for free, from
+  // initModals()'s one-time sweep of every <dialog> in the document.
+  const dialog = photoDialog()
+  if (dialog) {
+    dialog.addEventListener("click", handlePhotoDialogClick)
+    dialog.addEventListener("keydown", handlePhotoDialogKeydown)
+    dialog.addEventListener("input", handlePhotoDialogInput)
+    dialog.addEventListener("close", handlePhotoDialogClose)
+  }
 }
