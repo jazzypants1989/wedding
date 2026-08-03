@@ -410,31 +410,38 @@ reports no error. Two consequences for anything built here:
    is the instrument: run both orders against an independent detector on the
    same frames. See [`SESSION-4-vision.md`](./SESSION-4-vision.md) §3.
 
-   **⚠ Status 2026-07-31: the experiment has been run; the decision has not been
-   made.** Two complete batch runs over an identical photograph set exist, one
-   fed RGB and one fed BGR, and both were scored against the same macOS Vision
-   oracle file using the report's own `oracleSummary`. The result is not a tie
-   and not a landslide:
+   **⚠ Decided 2026-08-03: the reference order, BGR.** The binding record is
+   [`DECISIONS-vision.md`](./DECISIONS-vision.md) §7. One of the two reasons is
+   not a measurement at all and can be written here: the network was trained on
+   what the reference implementation feeds it. The other is a comparison of two
+   complete batch runs over an identical photograph set — one fed RGB, one fed
+   BGR — scored against the same macOS Vision oracle file with the report's own
+   `oracleSummary`. That is a measurement of the photographs, so what it
+   returned is not recorded in this repository.
 
-   - **BGR — the reference order — recovers materially more of the faces the
-     independent detector also found.** That is the number closest to "did we
-     miss someone", and it favours BGR.
-   - **BGR also produces more detections the oracle does not confirm**, so its
-     agreement rate is lower. That is ambiguous rather than damning: Vision is
-     conservative and its non-confirmation is not the same as a false positive.
-   - Landmark placement is very slightly better under BGR.
+   > **⚠ This entry previously summarised what that comparison found**, in
+   > words rather than figures — which order recovered more of the faces the
+   > oracle also found, which had the lower confirmation rate, which placed
+   > landmarks better. It even said, in the next paragraph, that the
+   > measurements stay out of this repository. They did not: a comparative
+   > conclusion drawn from photographs of identifiable people is a measurement
+   > of those people whether or not a number is attached. A ledger records the
+   > **decision** and the **method**; the finding is re-derived locally or not
+   > at all.
 
-   Evidence and the training-convention prior both point the same way, and no
-   measurement contradicts it. **This ledger records the finding, not a
-   decision** — because adopting BGR means re-detecting, which renumbers every
-   face and orphans every existing label. It is a labelling decision wearing a
-   configuration decision's clothes. The trade-off, and what would have to be
-   built first to make it cheap, are in
-   [`VISION-STATUS.md`](./VISION-STATUS.md).
+   **To re-derive it:** `oracleSummary()` from `session1-report.js`, against
+   each of the two run directories and the shared oracle file. Read recall
+   against the independent detector first (it is the comparison closest to "did
+   we miss someone"), confirmation rate second and sceptically (Vision is
+   conservative; a detection it declines to confirm is not thereby a false
+   positive), landmark placement as a tie-breaker. The full argument for that
+   reading order is in [`DECISIONS-vision.md`](./DECISIONS-vision.md) §7.
 
-   The measurements themselves stay in `tmp/` and out of this repository, per
-   the fourth photograph rule — they are counts of faces of identifiable people.
-   Re-derive them locally with the comparison described in `VISION-STATUS.md`.
+   Adopting BGR means re-detecting, which renumbers every face and orphans a
+   labelling keyed to the old detection set — a labelling decision wearing a
+   configuration decision's clothes. `scripts/vision/rekey-labels.js`, built
+   since, carries a labelling across by content hash and box overlap, which is
+   what made this decision affordable.
 
 **The alignment template**, from `getSimilarityTransformMatrix` in
 `modules/objdetect/src/face_recognize.cpp`:
