@@ -52,7 +52,18 @@
  *  count is now a button that lists those PHOTOGRAPHS (GET
  *  /api/admin/faces/set-aside), each opening the same dialog through the same
  *  `.faces-open-photo` delegation. No second modal and no second assignment
- *  path: the only new thing is a way to arrive. */
+ *  path: the only new thing is a way to arrive.
+ *
+ *  RECENT BULK PASSES (last section, collapsed) is the undo. Every bulk
+ *  mutation here posts back a `batchId` and, until this section existed,
+ *  nothing on the page ever used one — so the ledger's central promise (revoke
+ *  a pass, keep the corrections made after it) was reachable only from a test.
+ *  It is a short newest-first list with a Revoke button, not a history browser:
+ *  the case it serves is "that group was two people and I just named thirty
+ *  faces", which is minutes old. The button is NOT styled destructive, and the
+ *  copy says twice that nothing is deleted and that later hand corrections
+ *  survive — an admin who thinks revoking is destructive will not use it, and
+ *  will redo work that was never lost. */
 /** @import * as Types from "./types.js" */
 
 import {
@@ -69,6 +80,7 @@ import {
   getButtonElement,
   getErrorMessage,
 } from "../utils.js"
+import { openConfirm } from "./confirm.js"
 
 /** CSS-pixel size of a face chip — keep in sync with `.face-chip` in admin.css. */
 const CHIP_SIZE = 96
@@ -95,6 +107,16 @@ let setAsideError = null
 /** Photographs per page of the set-aside list. Small on purpose — this is a
  *  "work through them" list, not a browse, and the rest of the tab is below it. */
 const SET_ASIDE_PAGE = 20
+
+/** The batch history behind the undo affordance, and whether its panel is open.
+ *  Lazily fetched on first open and refetched with every reload while open —
+ *  a revocation changes a row's own state, and a stale row would offer to undo
+ *  something already undone. Non-fatal on failure, like the set-aside list.
+ *  @type {Types.FacesBatchesResponse | null} */
+let batchesData = null
+let batchesOpen = false
+/** @type {string | null} */
+let batchesError = null
 
 /** People cache for the name-input autocomplete and the People section (a
  *  per-module cache, not shared admin state). A person is who a face belongs
@@ -180,6 +202,10 @@ export async function loadFaceAssignment() {
     // for. Once open it is refetched with everything else: naming a face there
     // changes `unnamedSetAside`, and a stale row would claim work already done.
     if (setAsideOpen) await refreshSetAside()
+    // Same rule, same reason: only when open, and then every time — a revoked
+    // batch that still renders a Revoke button is an offer to undo something
+    // already undone.
+    if (batchesOpen) await refreshBatches()
     renderCounts()
     renderBody()
   } catch (err) {
@@ -306,6 +332,7 @@ function renderBody() {
       <h3 id="faces-people-heading">People</h3>
       ${peopleMarkup()}
     </section>
+    ${batchesPanelMarkup()}
   `
   wireFaceChipImages(body)
 }
@@ -1182,6 +1209,225 @@ function personRowMarkup(person) {
   `
 }
 
+// ---- Recent bulk passes: the undo -----------------------------------------
+
+/**
+ * The undo affordance, and it is small on purpose.
+ *
+ * Every bulk mutation in this tab — naming a group, clearing one, dismissing
+ * one as not-a-face, applying a propagation pass — is recorded as one BATCH,
+ * and each of those responses already carried a `batchId` that nothing on this
+ * page ever used. So the ledger was revocable and the product was not: the only
+ * way to spend a batch id was to import `revokeBatch` into a test process.
+ *
+ * This is a list of bulk passes with a Revoke button, not a history browser.
+ * The case it is for is "that group was two people and I just named all thirty
+ * faces" — which is minutes old, so newest-first and a short ceiling is the
+ * whole ordering story. It is collapsed by default and fetched only when
+ * opened: an admin who never makes a mistake never pays for the query.
+ *
+ * THE COPY IS THE FEATURE. Revoking does not delete anything and does not
+ * clobber later work, and an admin who believes otherwise will not touch it —
+ * so both facts are stated in the panel and again in the confirm dialog, and
+ * the button is not styled as destructive, because it is not.
+ */
+function batchesPanelMarkup() {
+  return html`
+    <section class="faces-section faces-batches" aria-labelledby="faces-batches-heading">
+      <h3 id="faces-batches-heading">
+        <button type="button" class="faces-batches-toggle"
+          aria-expanded="${batchesOpen ? "true" : "false"}" aria-controls="faces-batches-body">
+          Recent bulk passes
+        </button>
+      </h3>
+      <div id="faces-batches-body" ${batchesOpen ? "" : "hidden"}>
+        <p class="faces-batches-note text-muted">
+          Every bulk action here — naming a group, clearing one, dismissing one, applying a
+          propagation pass — is one revocable pass. Revoking a pass stops its decisions counting
+          and re-derives the faces it touched. Nothing is deleted: the decisions stay on record,
+          and any face you have since corrected by hand keeps your correction. Reinstating a pass
+          means running it again.
+        </p>
+        ${batchesBodyMarkup()}
+      </div>
+    </section>
+  `
+}
+
+function batchesBodyMarkup() {
+  const problem =
+    batchesError === null
+      ? ""
+      : html`<p class="faces-batches-error" role="alert">
+          ${batchesError}
+          <button type="button" class="btn btn-secondary btn-sm faces-batches-retry">
+            Try again
+          </button>
+        </p>`
+  if (!batchesData) {
+    return html`${problem}${batchesError === null
+      ? html`<p class="faces-empty text-muted">Loading…</p>`
+      : ""}`
+  }
+  if (batchesData.batches.length === 0) {
+    return html`${problem}<p class="faces-empty text-muted">
+      No bulk passes yet. One is recorded the first time you name a whole group at once.
+    </p>`
+  }
+  return html`${problem}
+    <ul class="faces-batches-list">
+      ${batchesData.batches.map(batchRowMarkup)}
+    </ul>`
+}
+
+/** What each `face_assignment_batches.kind` was, in the words of the button
+ *  that made it. The raw enum value is a schema detail and says nothing to the
+ *  person who clicked "Name everyone in this group".
+ *  @param {string} kind */
+function batchKindLabel(kind) {
+  if (kind === "propagate") return "Same-moment propagation"
+  if (kind === "manual") return "Bulk change"
+  if (kind === "label-import") return "Imported naming work"
+  if (kind === "merge-repair") return "Merge repair"
+  return kind
+}
+
+/**
+ * A ledger timestamp, local and readable.
+ *
+ * Two formats reach here and only one of them says which zone it is in:
+ * `created_at` defaults to SQLite's CURRENT_TIMESTAMP ("YYYY-MM-DD HH:MM:SS",
+ * UTC, unmarked), while `revoked_at` is written by db/utils.js's `now()` and is
+ * a proper ISO string. Parsing the first as-is makes the browser read it as
+ * LOCAL time and a pass made an hour ago claims to be from the future, so the
+ * unmarked form is completed into UTC before parsing. String methods only.
+ * @param {string | null} value
+ */
+function ledgerTime(value) {
+  if (!value) return ""
+  const iso = value.includes("T") ? value : value.split(" ").join("T") + "Z"
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  })
+}
+
+/**
+ * One pass.
+ *
+ * `faces` rather than `events` is what the row leads with: an admin thinks in
+ * faces, and the two differ only when a pass touched one face twice. The batch
+ * id is shown small and in full because it is what the CLI's `revoke --batch`
+ * takes, and this list is the only place outside a database client to read it.
+ * @param {Types.FaceBatchEntry} batch
+ */
+function batchRowMarkup(batch) {
+  const revoked = batch.revokedAt !== null
+  return html`
+    <li class="faces-batch-row ${revoked ? "is-revoked" : ""}" data-batch-id="${batch.batchId}">
+      <div class="faces-batch-main">
+        <p class="faces-batch-summary">
+          <strong>${batchKindLabel(batch.kind)}</strong> ·
+          ${batch.faces} face${batch.faces === 1 ? "" : "s"} ·
+          ${ledgerTime(batch.createdAt)}
+        </p>
+        ${batch.note ? html`<p class="faces-batch-note text-muted">${batch.note}</p>` : ""}
+        <p class="faces-batch-id text-muted">
+          ${batch.batchId}
+          ${revoked
+            ? html` · revoked ${ledgerTime(batch.revokedAt)} by ${batch.revokedBy ?? "unattributed"}`
+            : ""}
+        </p>
+      </div>
+      ${revoked
+        ? html`<span class="faces-batch-state text-muted">Revoked</span>`
+        : html`<button type="button" class="btn btn-secondary btn-sm faces-batch-revoke">
+            Revoke
+          </button>`}
+    </li>
+  `
+}
+
+/** Load the list, replacing whatever was held. Non-fatal like the set-aside
+ *  panel: the rest of the tab renders regardless and the panel offers a retry. */
+async function refreshBatches() {
+  try {
+    batchesData = /** @type {Types.FacesBatchesResponse} */ (
+      await api("/api/admin/faces/batches")
+    )
+    batchesError = null
+  } catch (err) {
+    console.error("Failed to load the batch history:", err)
+    batchesError = "Couldn't load the recent bulk passes."
+  }
+}
+
+/** Open or close the panel, lazily loading on first open. Focus is put back on
+ *  the toggle because renderBody replaces the element that was clicked. */
+async function toggleBatches() {
+  batchesOpen = !batchesOpen
+  renderBody()
+  if (batchesOpen && batchesData === null) {
+    await refreshBatches()
+    renderBody()
+  }
+  focusBatchesToggle()
+}
+
+function focusBatchesToggle() {
+  const toggle = document.querySelector(".faces-batches-toggle")
+  if (toggle instanceof HTMLElement) toggle.focus()
+}
+
+/**
+ * Confirm, then revoke.
+ *
+ * The confirm dialog is the shared destructive-action one, deliberately NOT in
+ * its danger styling: this action destroys nothing, and dressing it in red
+ * would teach the admin to avoid the one control that gets them out of a bad
+ * bulk pass. What the copy has to carry instead is the property most likely to
+ * be misunderstood — a later hand correction survives the revocation — because
+ * an admin who assumes otherwise will re-do work that was never lost.
+ * @param {string} batchId
+ */
+function handleRevokeBatch(batchId) {
+  const batch = batchesData?.batches.find((b) => b.batchId === batchId)
+  if (!batch) return
+  const faces = `${batch.faces} face${batch.faces === 1 ? "" : "s"}`
+  openConfirm({
+    title: `Revoke this ${batchKindLabel(batch.kind).toLowerCase()}?`,
+    desc:
+      `The decisions this pass made about ${faces} stop counting, and those faces go back to ` +
+      `whatever they were before it. Nothing is deleted — the decisions stay on record — and ` +
+      `any of those faces you have corrected by hand since the pass keeps your correction. ` +
+      `Reinstating the pass means running it again.`,
+    confirmLabel: "Revoke pass",
+    danger: false,
+    run: async () => {
+      const result = /** @type {Types.FaceRevokeResponse} */ (
+        await api("/api/admin/faces/revoke", {
+          method: "POST",
+          body: JSON.stringify({ batchId }),
+        })
+      )
+      showSuccess(
+        result.alreadyRevoked
+          ? "That pass was already revoked — the faces it touched were re-derived again."
+          : `Pass revoked. ${result.reprojected} face${result.reprojected === 1 ? "" : "s"} re-derived.`,
+      )
+      // The whole tab, not just this list: revoking changes which faces are
+      // identified, so the groups, the queue and the counts above are all
+      // stale. The panel is open, so the reload refetches this list too — with
+      // the revoked row now showing who revoked it and when.
+      await loadFaceAssignment()
+    },
+  })
+}
+
 /** @param {number} personId */
 function findPersonRow(personId) {
   const row = getElement("faces-body").querySelector(
@@ -1953,6 +2199,24 @@ function handleFacesBodyClick(e) {
       await refreshSetAside()
       renderBody()
     })()
+    return
+  }
+
+  if (target.closest(".faces-batches-toggle")) {
+    void toggleBatches()
+    return
+  }
+  if (target.closest(".faces-batches-retry")) {
+    void (async () => {
+      await refreshBatches()
+      renderBody()
+    })()
+    return
+  }
+  if (target.closest(".faces-batch-revoke")) {
+    const row = target.closest(".faces-batch-row")
+    const batchId = row instanceof HTMLElement ? row.dataset.batchId : undefined
+    if (batchId) handleRevokeBatch(batchId)
     return
   }
 

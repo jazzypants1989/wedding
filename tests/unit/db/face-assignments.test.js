@@ -25,6 +25,7 @@ import {
   replayFace,
   projectFace,
   revokeBatch,
+  recentBatches,
   negativesForFace,
 } from "../../../db/face-assignments.js"
 import {
@@ -791,6 +792,78 @@ describe("db/face-assignments + db/vision-ingests", () => {
       const face = makeFace()
       recordAssignment({ faceId: face, op: "assign", identityId: makeIdentity(), actor: "a" })
       assert.deepStrictEqual(negativesForFace(face), [])
+    })
+  })
+
+  describe("recentBatches", () => {
+    it("counts a batch's events and the distinct faces they touch", () => {
+      const faces = [makeFace(), makeFace()]
+      const identity = makeIdentity()
+      createBatch({ batchId: "b1", kind: "manual", actor: "admin1", note: "bulk assign of 2" })
+      for (const face of faces) {
+        recordAssignment({ faceId: face, op: "assign", identityId: identity, actor: "admin1", batchId: "b1" })
+      }
+      // A second event on a face already in the batch: the two counts diverge,
+      // which is why both are reported rather than one standing in for the other.
+      recordAssignment({ faceId: faces[0], op: "clear", actor: "admin1", batchId: "b1" })
+
+      const rows = recentBatches(10)
+      assert.strictEqual(rows.length, 1)
+      assert.strictEqual(rows[0].batch_id, "b1")
+      assert.strictEqual(rows[0].kind, "manual")
+      assert.strictEqual(rows[0].actor, "admin1")
+      assert.strictEqual(rows[0].note, "bulk assign of 2")
+      assert.strictEqual(rows[0].events, 3)
+      assert.strictEqual(rows[0].faces, 2)
+      assert.strictEqual(rows[0].revoked_at, null)
+    })
+
+    it("keeps listing a batch after it is revoked, and says who did it", () => {
+      // A revoked batch that vanished from the list would look like an offer to
+      // revoke it again — and there would be nothing on screen saying it had
+      // already happened, or by whom.
+      const face = makeFace()
+      createBatch({ batchId: "b1", kind: "propagate", actor: "pipeline" })
+      recordAssignment({ faceId: face, op: "assign", identityId: makeIdentity(), actor: "pipeline", batchId: "b1" })
+      revokeBatch("b1", "admin2")
+
+      const rows = recentBatches(10)
+      assert.strictEqual(rows.length, 1)
+      assert.ok(rows[0].revoked_at)
+      assert.strictEqual(rows[0].revoked_by, "admin2")
+      assert.strictEqual(rows[0].events, 1, "revocation removes no events")
+    })
+
+    it("lists a batch whose events are all gone — zero, not absent", () => {
+      // face_assignments.face_id is ON DELETE CASCADE, so hard-deleting the
+      // faces empties a batch without removing it. The row still exists and is
+      // still revocable; a list that silently dropped it would be lying.
+      const face = makeFace()
+      createBatch({ batchId: "b1", kind: "manual", actor: "admin1" })
+      recordAssignment({ faceId: face, op: "assign", identityId: makeIdentity(), actor: "admin1", batchId: "b1" })
+      getDb().prepare("DELETE FROM media_faces WHERE id = ?").run(face)
+
+      const rows = recentBatches(10)
+      assert.strictEqual(rows.length, 1)
+      assert.strictEqual(rows[0].events, 0)
+      assert.strictEqual(rows[0].faces, 0)
+    })
+
+    it("is newest first and honours the limit", () => {
+      for (const id of ["b1", "b2", "b3"]) {
+        createBatch({ batchId: id, kind: "manual", actor: "admin1" })
+      }
+      // created_at is CURRENT_TIMESTAMP at one-second resolution, so all three
+      // share a timestamp here — the rowid tiebreak is what makes the order
+      // deterministic rather than a coin toss, exactly as replay orders by id.
+      assert.deepStrictEqual(
+        recentBatches(10).map((b) => b.batch_id),
+        ["b3", "b2", "b1"],
+      )
+      assert.deepStrictEqual(
+        recentBatches(2).map((b) => b.batch_id),
+        ["b3", "b2"],
+      )
     })
   })
 })

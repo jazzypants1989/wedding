@@ -337,6 +337,13 @@ route("POST", "/api/admin/faces/propagate", adminFaces.propagate, { admin: true 
 // filter `set_aside` out, so a photograph whose faces are all set aside reached
 // none of them and `assign-one` could not be got at for its faces.
 route("GET", "/api/admin/faces/set-aside", adminFaces.setAside, { admin: true })
+// The undo. Every mutation above returns a `batchId`, and until these two the
+// only way to spend one was to import `revokeBatch` into a test process — a
+// revocable ledger with no route to revoke it. `batches` is the history the UI
+// picks from; `revoke` flags one and re-projects the faces it touched, leaving
+// any later manual correction on those faces exactly where it was.
+route("GET", "/api/admin/faces/batches", adminFaces.batches, { admin: true })
+route("POST", "/api/admin/faces/revoke", adminFaces.revoke, { admin: true })
 // Per-photo face view, alongside the curated-gallery /api/admin/media/:id/* routes.
 route("GET", "/api/admin/media/:id/faces", adminFaces.forMedia, { admin: true })
 

@@ -1921,7 +1921,7 @@ export interface FaceWorkPlan {
 }
 
 export interface FaceWorkArgs {
-  command: "export" | "import" | "preflight" | null
+  command: "export" | "import" | "preflight" | "revoke" | null
   artifact: string | null
   database: string | null
   ingestId: number | null
@@ -1934,6 +1934,9 @@ export interface FaceWorkArgs {
   force: boolean
   actor: string
   note: string | null
+  /** `revoke --batch ID`: the batch to take back. Null for every other
+   *  command, required for that one. */
+  batch: string | null
   dryRun: boolean
 }
 

@@ -1606,6 +1606,54 @@ export interface FacesSetAsideResponse {
   offset: number
 }
 
+/** One row of GET /api/admin/faces/batches — a bulk pass, and enough about it
+ *  to decide whether to take it back.
+ *
+ *  Ids, kinds, an actor, timestamps and counts. Nothing here names a person or
+ *  a photograph: the list is about DECISIONS, not about who they were about. */
+export interface FaceBatchEntry {
+  batchId: string
+  /** `manual` | `propagate` | `label-import` | `merge-repair`. Rendered through
+   *  a label function — the enum value is a schema detail. */
+  kind: string
+  /** core/utils.js `actorId()` — eight hex characters of a session-token
+   *  digest, which identifies a session and authenticates nobody. */
+  actor: string
+  note: string | null
+  /** SQLite CURRENT_TIMESTAMP: "YYYY-MM-DD HH:MM:SS", UTC, and unmarked as
+   *  such — see `ledgerTime` for why that matters when parsing it. */
+  createdAt: string
+  /** Null while the pass still counts. Set once and permanently. */
+  revokedAt: string | null
+  revokedBy: string | null
+  /** Events on the pass. Zero is legitimate — the faces may since have been
+   *  hard-deleted, which cascades their events away but not the batch. */
+  events: number
+  /** Distinct faces the pass touched: what revoking would re-derive. */
+  faces: number
+}
+
+/** GET /api/admin/faces/batches. `limit` echoes what the server APPLIED. */
+export interface FacesBatchesResponse {
+  batches: FaceBatchEntry[]
+  limit: number
+}
+
+/** POST /api/admin/faces/revoke. `reprojected` is every face the pass touched,
+ *  not how many changed value — a face corrected by hand after the pass is
+ *  re-derived and comes out exactly as it was left, which is the promise being
+ *  kept rather than a shortfall. `alreadyRevoked` distinguishes a fresh undo
+ *  from a second click on one that already happened. */
+export interface FaceRevokeResponse {
+  success: boolean
+  batchId: string
+  kind: string
+  reprojected: number
+  revokedAt: string | null
+  revokedBy: string | null
+  alreadyRevoked: boolean
+}
+
 /** A person in the photographed cast — who a face belongs to. Distinct from a
  *  guest, which is an INVITATION: one row per party, and much of the cast
  *  (partners under someone else's row, children, the photographer, vendors) is

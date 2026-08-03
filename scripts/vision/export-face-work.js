@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /** @file CLI: carry face-tagging work from the machine that did the naming to
- *  the machine that serves the site (plan §13). Three subcommands behind one
- *  entry point — `export`, `import`, `preflight`.
+ *  the machine that serves the site (plan §13). Four subcommands behind one
+ *  entry point — `export`, `import`, `preflight`, `revoke`.
  *
  *  ⚠ **OPERATIONAL ORDER: deploy the schema change BEFORE moving any data.**
  *  `add_vision_provenance` runs wherever the new code first starts. Pushing a
@@ -156,8 +156,15 @@
  *  owns one. So this file opens exactly one transaction of its own around the
  *  whole import, calls only the non-transactional primitives inside it
  *  (`createBatch`, `createPerson`, `createIdentity`, `recordAssignment`), and
- *  never calls `revokeBatch`. Undoing an import is
- *  `revokeBatch(<the id this tool printed>)`, run separately.
+ *  never calls `revokeBatch` from inside that transaction.
+ *
+ *  Undoing an import is the `revoke` subcommand, which opens the same database
+ *  and calls `revokeBatch` with no transaction of its own around it. That is
+ *  only possible because `revokeBatch` now opens its transaction through the
+ *  BOUND executor (`db/utils.js`'s `withBoundTransaction`) rather than through
+ *  `db/connection.js`'s singleton — this file never calls `init()`, so the old
+ *  version threw "Database not initialized" here, and the undo the import
+ *  printed was not a thing an operator could run.
  *
  *  §15 (no photo snooping): nothing here opens a photograph. The database path,
  *  the artifact path, the weights directory and the engine are all explicit
@@ -178,6 +185,7 @@ import {
   getBatch,
   recordAssignment,
   resolveIdentity,
+  revokeBatch,
 } from "../../db/face-assignments.js"
 import { createIdentity, identitiesForPerson } from "../../db/media-faces.js"
 import { createPerson, findLivePeopleByName, nameKey } from "../../db/people.js"
@@ -206,6 +214,12 @@ Commands:
                               after ingesting the rest and the remainder is
                               appended to the SAME batch.
   preflight                  Check weights + engine only, and stop.
+  revoke --batch ID          Take an applied batch back: flag it revoked and
+                              re-project every face it touched. Nothing is
+                              deleted — the events stay in the ledger and stop
+                              counting — and a face somebody corrected by hand
+                              AFTER the batch keeps that correction. One-way:
+                              reinstating a batch means importing it again.
 
 Common options:
 
@@ -259,6 +273,13 @@ preflight options:
   --expect-engine SHA256     Engine digest to require. Or pass an artifact with
                               --artifact PATH and take it from there.
   --artifact PATH            Read the expected engine digest from an artifact.
+
+revoke options:
+
+  --batch ID                 The batch to revoke. Required. Printed by import,
+                              and listed in the admin Faces tab.
+  --actor NAME               Recorded as face_assignment_batches.revoked_by.
+                              Same character rules as --actor above.
 `
 
 /** The artifact's format tag and version. Both are checked on import. */
@@ -275,6 +296,13 @@ export const IMPORT_BATCH_KIND = "label-import"
 
 /** Default `actor` for the batch and the identities an import creates. */
 export const IMPORT_ACTOR = "face-work-import"
+
+/** Default `revoked_by` for the `revoke` subcommand. A separate default from
+ *  IMPORT_ACTOR because the two are different acts by possibly different
+ *  people, and `revoked_by` reading "face-work-import" would attribute the undo
+ *  to whoever did the thing being undone. Neither names a person: both say
+ *  which tool ran, which is all an unattended CLI honestly knows. */
+export const REVOKE_ACTOR = "face-work-revoke"
 
 /** How many hex characters of the payload digest name the batch. 128 bits. */
 const BATCH_ID_CHARS = 32
@@ -2056,9 +2084,14 @@ export function parseFaceWorkArgs(argv) {
     force: false,
     actor: IMPORT_ACTOR,
     note: null,
+    batch: null,
     dryRun: false,
   }
   let help = false
+  // Whether `--actor` was GIVEN, not what it holds: `revoke` wants a different
+  // default from `import`, and comparing against IMPORT_ACTOR would silently
+  // rewrite an operator who typed that value out in full.
+  let actorGiven = false
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
@@ -2113,6 +2146,12 @@ export function parseFaceWorkArgs(argv) {
       const refusal = batchActorRefusal(argv[i])
       if (refusal) return { valid: false, error: `--actor ${refusal}` }
       args.actor = argv[i]
+      actorGiven = true
+    } else if (arg === "--batch") {
+      i++
+      if (i >= argv.length) return { valid: false, error: "--batch needs a value" }
+      if (argv[i].length === 0) return { valid: false, error: "--batch needs a batch id" }
+      args.batch = argv[i]
     } else if (arg === "--note") {
       i++
       if (i >= argv.length) return { valid: false, error: "--note needs a value" }
@@ -2129,7 +2168,12 @@ export function parseFaceWorkArgs(argv) {
   if (help) return { valid: false, error: USAGE }
 
   const command = positionals[0] ?? null
-  if (command !== "export" && command !== "import" && command !== "preflight") {
+  if (
+    command !== "export" &&
+    command !== "import" &&
+    command !== "preflight" &&
+    command !== "revoke"
+  ) {
     return {
       valid: false,
       error:
@@ -2140,12 +2184,21 @@ export function parseFaceWorkArgs(argv) {
   }
   args.command = command
 
-  if (command !== "preflight") {
+  // The two commands that MOVE an artifact. `preflight` checks the machine and
+  // `revoke` names a batch already in the database; neither has a file to read.
+  if (command === "export" || command === "import") {
     const artifact = positionals[1] ?? args.artifact
     if (!artifact) {
       return { valid: false, error: `${command} needs an artifact path.\n\n${USAGE}` }
     }
     args.artifact = artifact
+  }
+
+  if (command === "revoke") {
+    if (!args.batch) {
+      return { valid: false, error: `revoke needs --batch ID (import prints it).\n\n${USAGE}` }
+    }
+    if (!actorGiven) args.actor = REVOKE_ACTOR
   }
 
   if (command === "import") {
@@ -2281,7 +2334,18 @@ async function runImport(args) {
       `\napplied: ${result.events} event(s), ${result.peopleCreated} person(s) created, ` +
         `${result.identitiesCreated} identity/identities created.`,
     )
-    console.log(`undo with: revokeBatch("${result.batchId}", "<actor>")`)
+    // A command line, not a function call. This used to print
+    // `revokeBatch("<id>", "<actor>")`, which was not runnable from anywhere an
+    // operator stands: it is a JS function, and until `withBoundTransaction` it
+    // could not even run in THIS process, because `revokeBatch` opened its
+    // transaction on a `db/connection.js` singleton this file never
+    // initialises. `--database` is echoed only when it was given, so the line
+    // stays copy-pasteable in the ordinary case.
+    const databaseFlag = args.database ? ` --database ${args.database}` : ""
+    console.log(
+      `undo with: node scripts/vision/export-face-work.js revoke ` +
+        `--batch ${result.batchId}${databaseFlag}`,
+    )
     return 0
   } finally {
     db.close()
@@ -2316,6 +2380,61 @@ async function runPreflight(args) {
   return result.ok ? 0 : 1
 }
 
+/**
+ * `revoke` — the undo the import prints, run for real.
+ *
+ * Deliberately thin: it opens the database, checks the batch exists, and calls
+ * `revokeBatch`. It opens NO transaction of its own, because `revokeBatch` owns
+ * one, and it can call it at all only because that transaction is now opened on
+ * the bound executor rather than on `db/connection.js`'s singleton — see the
+ * Transactions note at the top of this file.
+ *
+ * It refuses nothing beyond "no such batch". A revocation is not destructive:
+ * the events stay in the ledger and stop counting, a face corrected by hand
+ * after the batch keeps that correction, and re-revoking is a bare
+ * re-projection that leaves the original `revoked_at`/`revoked_by` standing.
+ * @param {Types.FaceWorkArgs} args
+ * @returns {Promise<number>}
+ */
+async function runRevoke(args) {
+  const batchId = /** @type {string} */ (args.batch)
+  const dbPath = resolveDbPath(args.database)
+  const db = openDatabase(dbPath)
+  try {
+    const batch = getBatch(batchId)
+    if (!batch) {
+      console.error(`no such batch: ${batchId}`)
+      return 1
+    }
+
+    /** @type {{ events: number, faces: number } | undefined} */
+    const counts = sql`SELECT COUNT(*) AS events, COUNT(DISTINCT face_id) AS faces
+      FROM face_assignments WHERE batch_id = ${batchId}`.get()
+    const events = counts ? counts.events : 0
+    const faces = counts ? counts.faces : 0
+
+    console.log(`batch ${batchId}: kind ${batch.kind}, actor ${batch.actor}, created ${batch.created_at}`)
+    console.log(`${events} event(s) across ${faces} face(s)`)
+    if (batch.revoked_at !== null) {
+      console.log(`already revoked at ${batch.revoked_at} by ${batch.revoked_by}`)
+    }
+
+    if (args.dryRun) {
+      console.log("\ndry run — nothing written.")
+      return 0
+    }
+
+    const reprojected = revokeBatch(batchId, args.actor)
+    console.log(
+      `\nrevoked: ${reprojected} face(s) re-projected. Events are still on record and stop ` +
+        `counting; any face corrected by hand after this batch keeps that correction.`,
+    )
+    return 0
+  } finally {
+    db.close()
+  }
+}
+
 async function main() {
   const parsed = parseFaceWorkArgs(process.argv.slice(2))
   if (!parsed.valid) {
@@ -2330,6 +2449,10 @@ async function main() {
   }
   if (args.command === "import") {
     process.exitCode = await runImport(args)
+    return
+  }
+  if (args.command === "revoke") {
+    process.exitCode = await runRevoke(args)
     return
   }
   process.exitCode = await runPreflight(args)

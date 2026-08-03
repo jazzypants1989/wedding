@@ -340,6 +340,20 @@ export function levenshteinDistance(
 export function withTransaction<T>(fn: (db: DatabaseSync) => T): T
 
 /**
+ * The same transaction, opened on whichever connection `sql``` is bound to
+ * rather than on `db/connection.js`'s singleton — so the identical code works
+ * in the server and in a vision CLI that opened its own `DatabaseSync` and
+ * called `bindExecutor` without ever calling `init()`.
+ *
+ * Same semantics as `withTransaction` otherwise: a bare BEGIN IMMEDIATE, no
+ * savepoints, DOES NOT NEST. The callback takes no `db` argument, precisely
+ * because "which connection" is the question this helper exists to stop asking.
+ * @example
+ * const faces = withBoundTransaction(() => { ...sql`` statements...; return n })
+ */
+export function withBoundTransaction<T>(fn: () => T): T
+
+/**
  * Result from COUNT(*) query.
  * @example
  * const result: CountResult = { count: 5 };
@@ -1679,6 +1693,35 @@ export function projectFace(faceId: number, opts?: ReplayOptions): FaceReplayRes
  *  Re-revoking an already-revoked batch re-projects without overwriting who
  *  revoked it and when. */
 export function revokeBatch(batchId: string, actor: string): number
+
+/** One row of `recentBatches` — a batch plus how much of the ledger hangs off
+ *  it. Nothing here describes a photograph or a person: an id, a kind, an
+ *  eight-hex-character actor, two timestamps and two counts. */
+export interface FaceBatchSummary {
+  batch_id: string
+  kind: FaceAssignmentBatchKind
+  /** core/utils.js `actorId()` — eight hex characters of a session-token
+   *  digest, which identifies a session and authenticates nobody. */
+  actor: string
+  note: string | null
+  created_at: string
+  /** Null while the batch still counts. Set once, permanently — schema.js's
+   *  `face_assignment_batches_revocation_is_permanent` refuses to clear it. */
+  revoked_at: string | null
+  revoked_by: string | null
+  /** Events still on the batch. Zero is legitimate: `face_assignments.face_id`
+   *  is ON DELETE CASCADE, so hard-deleting the faces empties a batch without
+   *  removing it. */
+  events: number
+  /** Distinct faces those events touch — what revoking would re-project. */
+  faces: number
+}
+
+/** The most recent batches, newest first, for the Faces tab's undo affordance
+ *  and for anyone auditing what a bulk pass did. Revoked batches are INCLUDED:
+ *  the list is a history, and "this was already taken back, by whom and when"
+ *  is the answer that stops a second attempt. */
+export function recentBatches(limit: number): FaceBatchSummary[]
 
 /** Identity ids this face has been declared NOT to be, ascending — for
  *  suggestion ranking. Resolved through merges (a negative against an identity

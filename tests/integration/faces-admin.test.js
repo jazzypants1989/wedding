@@ -228,6 +228,23 @@ describe("admin auth is required on every route", () => {
     })
     assert.strictEqual(res.status, 401)
   })
+
+  it("401s GET /api/admin/faces/batches with no session", async () => {
+    const res = await fetch(`${BASE_URL}/api/admin/faces/batches`)
+    assert.strictEqual(res.status, 401)
+  })
+
+  it("401s POST /api/admin/faces/revoke with no session", async () => {
+    // The undo is a mutation over every face a bulk pass touched. An
+    // unauthenticated caller who knew a batch id could otherwise unpick an
+    // afternoon's naming.
+    const res = await fetch(`${BASE_URL}/api/admin/faces/revoke`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ batchId: "anything" }),
+    })
+    assert.strictEqual(res.status, 401)
+  })
 })
 
 describe("face chips carry what a client-side crop needs", () => {
@@ -1835,6 +1852,251 @@ describe("the assignment ledger: revoking a propagate pass (plan §9b)", () => {
     revokeBatch(pass.batchId, "test-revoker")
     assert.strictEqual(columnIdentity(target), null, "back to undecided, which is what it was")
     assertColumnMatchesReplay(target)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The same properties, through the route an admin can actually reach.
+//
+// Everything above this line calls `revokeBatch` in this process. That proved
+// the ledger revocable and proved nothing about the product: there was no
+// route, so the only way to spend the `batchId` every mutation returns was to
+// import the function into a test. The tests below never import it — they post
+// to /api/admin/faces/revoke, which is the whole difference.
+// ---------------------------------------------------------------------------
+
+describe("revoking through the endpoint", () => {
+  /** One `manual` batch over two faces, plus the person it named them as.
+   *  @returns {Promise<{ batchId: string, identityId: number, faces: number[], personId: number }>} */
+  async function seedBulkPass() {
+    const personId = seedPerson({ display_name: "Named In Bulk" })
+    const faces = [seedFace(seedMedia(), CLUSTER_A1), seedFace(seedMedia(), CLUSTER_A2)]
+    const body = await json(
+      await asAdmin("/api/admin/faces/assign", {
+        method: "POST",
+        body: JSON.stringify({ faceIds: faces, personId }),
+      }),
+    )
+    return { batchId: body.batchId, identityId: body.identityId, faces, personId }
+  }
+
+  /** @param {string} batchId */
+  function revokeViaApi(batchId) {
+    return asAdmin("/api/admin/faces/revoke", {
+      method: "POST",
+      body: JSON.stringify({ batchId }),
+    })
+  }
+
+  it("takes a bulk pass back and reports how many faces it re-projected", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const pass = await seedBulkPass()
+    for (const faceId of pass.faces) assert.strictEqual(columnIdentity(faceId), pass.identityId)
+
+    const body = await json(await revokeViaApi(pass.batchId))
+
+    assert.strictEqual(body.success, true)
+    assert.strictEqual(body.reprojected, 2)
+    assert.strictEqual(body.kind, "manual")
+    assert.strictEqual(body.alreadyRevoked, false)
+    assert.ok(body.revokedAt)
+    assert.strictEqual(body.revokedBy, adminActor(), "the revoker comes from the session")
+
+    for (const faceId of pass.faces) {
+      assert.strictEqual(columnIdentity(faceId), null, "back to undecided, which is what it was")
+      assertColumnMatchesReplay(faceId)
+    }
+    // Flagged, not deleted: the events are still on record.
+    assert.strictEqual(eventsFor(pass.faces[0]).length, 1)
+  })
+
+  it("THE PROMISE, OVER HTTP: a later hand correction survives the revoke", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    // The reason revocation is a FLAG on the batch and not a compensating
+    // event: replay skips the revoked batch's events and the human's later one
+    // is still there to win. If this ever fails, the undo has become the thing
+    // it was designed not to be — a bulk overwrite of somebody's work.
+    const pass = await seedBulkPass()
+    const [wrong, alsoWrong] = pass.faces
+
+    const correctPerson = seedPerson({ display_name: "Actually This Person" })
+    await asAdmin("/api/admin/faces/assign-one", {
+      method: "POST",
+      body: JSON.stringify({ faceId: wrong, personId: correctPerson }),
+    })
+    const correctedIdentity = columnIdentity(wrong)
+    assert.notStrictEqual(correctedIdentity, pass.identityId)
+
+    const body = await json(await revokeViaApi(pass.batchId))
+    assert.strictEqual(body.reprojected, 2, "both faces the pass touched are re-derived")
+
+    assert.strictEqual(
+      columnIdentity(wrong),
+      correctedIdentity,
+      "the hand correction outranks the revoked bulk event and SURVIVES it",
+    )
+    assert.strictEqual(columnIdentity(alsoWrong), null, "the uncorrected face goes back")
+    assertColumnMatchesReplay(wrong)
+    assertColumnMatchesReplay(alsoWrong)
+  })
+
+  it("is idempotent: a second revoke re-projects and re-dates nothing", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const pass = await seedBulkPass()
+    const first = await json(await revokeViaApi(pass.batchId))
+
+    const second = await json(await revokeViaApi(pass.batchId))
+
+    assert.strictEqual(second.success, true)
+    assert.strictEqual(second.alreadyRevoked, true, "the response says which of the two it was")
+    assert.strictEqual(second.reprojected, 2, "it is a re-projection, not a no-op")
+    assert.strictEqual(second.revokedAt, first.revokedAt, "the original revocation is not re-dated")
+    assert.strictEqual(second.revokedBy, first.revokedBy)
+    assert.strictEqual(batchRow(pass.batchId).revoked_at, first.revokedAt)
+    for (const faceId of pass.faces) assertColumnMatchesReplay(faceId)
+  })
+
+  it("revokes a propagation pass, which is what batches exist for", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const a = seedMedia()
+    const b = seedMedia()
+    db.prepare(`UPDATE media SET frame_root_sha256 = 'frame-endpoint' WHERE id IN (?, ?)`).run(a, b)
+    const source = seedFace(a, CLUSTER_A1, { box: { x: 10, y: 10, w: 100, h: 100 } })
+    const target = seedFace(b, CLUSTER_A2, { box: { x: 12, y: 12, w: 100, h: 100 } })
+    const personId = seedPerson({ display_name: "Propagated By Endpoint" })
+    await asAdmin("/api/admin/faces/assign", {
+      method: "POST",
+      body: JSON.stringify({ faceIds: [source], personId }),
+    })
+    const pass = await json(
+      await asAdmin("/api/admin/faces/propagate", {
+        method: "POST",
+        body: JSON.stringify({ toFaceIds: [target] }),
+      }),
+    )
+    assert.ok(columnIdentity(target))
+
+    const body = await json(await revokeViaApi(pass.batchId))
+
+    assert.strictEqual(body.kind, "propagate")
+    assert.strictEqual(body.reprojected, 1)
+    assert.strictEqual(columnIdentity(target), null)
+    assert.ok(
+      columnIdentity(source),
+      "the source was never in the batch and keeps the name it was given by hand",
+    )
+  })
+
+  it("brings back the faces a bulk not-a-face dismissed", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    // The soft delete is the PROJECTION of the event, so revoking un-deletes —
+    // a mistaken bulk dismissal is recoverable, which is the property the old
+    // direct `softDeleteFace` could not offer.
+    const faceId = seedFace(seedMedia(), CLUSTER_A1)
+    const dismissal = await json(
+      await asAdmin("/api/admin/faces/not-a-face", {
+        method: "POST",
+        body: JSON.stringify({ faceIds: [faceId] }),
+      }),
+    )
+    assert.ok(
+      /** @type {any} */ (db.prepare(`SELECT deleted_at FROM media_faces WHERE id = ?`).get(faceId))
+        .deleted_at,
+    )
+
+    await revokeViaApi(dismissal.batchId)
+
+    assert.strictEqual(
+      /** @type {any} */ (db.prepare(`SELECT deleted_at FROM media_faces WHERE id = ?`).get(faceId))
+        .deleted_at,
+      null,
+      "the row is live again",
+    )
+  })
+
+  it("takes the revoker from the session and IGNORES anything the client sends", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const pass = await seedBulkPass()
+    await asAdmin("/api/admin/faces/revoke", {
+      method: "POST",
+      body: JSON.stringify({ batchId: pass.batchId, actor: "somebody-else", revokedBy: "nobody" }),
+    })
+
+    assert.strictEqual(batchRow(pass.batchId).revoked_by, adminActor())
+  })
+
+  it("404s an unknown batch and 400s a missing one", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    assert.strictEqual((await revokeViaApi("no-such-batch")).status, 404)
+
+    const noId = await asAdmin("/api/admin/faces/revoke", { method: "POST", body: JSON.stringify({}) })
+    assert.strictEqual(noId.status, 400)
+
+    const wrongType = await asAdmin("/api/admin/faces/revoke", {
+      method: "POST",
+      body: JSON.stringify({ batchId: 17 }),
+    })
+    assert.strictEqual(wrongType.status, 400)
+  })
+
+  it("lists the pass to revoke, with its counts, and shows it revoked afterwards", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    const pass = await seedBulkPass()
+
+    const before = await json(await asAdmin("/api/admin/faces/batches"))
+    const listed = before.batches.find(
+      (/** @type {any} */ b) => b.batchId === pass.batchId,
+    )
+    assert.ok(listed, "the batch the UI would revoke is in the list")
+    assert.strictEqual(listed.kind, "manual")
+    assert.strictEqual(listed.actor, adminActor())
+    assert.strictEqual(listed.events, 2)
+    assert.strictEqual(listed.faces, 2)
+    assert.strictEqual(listed.revokedAt, null)
+    assert.strictEqual(listed.revokedBy, null)
+    // Nothing about a photograph or a person rides along in this list.
+    assert.deepStrictEqual(
+      Object.keys(listed).sort(),
+      [
+        "actor",
+        "batchId",
+        "createdAt",
+        "events",
+        "faces",
+        "kind",
+        "note",
+        "revokedAt",
+        "revokedBy",
+      ],
+    )
+
+    await revokeViaApi(pass.batchId)
+
+    const after = await json(await asAdmin("/api/admin/faces/batches"))
+    const revoked = after.batches.find((/** @type {any} */ b) => b.batchId === pass.batchId)
+    assert.ok(revoked.revokedAt, "a revoked pass stays listed, saying so")
+    assert.strictEqual(revoked.revokedBy, adminActor())
+    assert.strictEqual(revoked.events, 2, "revocation removes no events")
+  })
+
+  it("clamps ?limit to the server's ceiling and echoes what it applied", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    await seedBulkPass()
+    const clamped = await json(await asAdmin("/api/admin/faces/batches?limit=5000"))
+    assert.strictEqual(clamped.limit, 50)
+
+    const one = await json(await asAdmin("/api/admin/faces/batches?limit=1"))
+    assert.strictEqual(one.limit, 1)
+    assert.ok(one.batches.length <= 1)
   })
 })
 
