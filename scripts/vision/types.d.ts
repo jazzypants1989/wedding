@@ -8,7 +8,7 @@
  * usable in both venues.
  */
 import type { DatabaseSync } from "node:sqlite"
-import type { FaceAssignmentOp, VisionIngest } from "../../types.js"
+import type { FaceAssignmentOp, FaceIdentityProvenance, VisionIngest } from "../../types.js"
 import type { ImageBackend, ImportManifest, MediaBackends, RgbImage } from "../lib/types.js"
 import type { CreateIngestInput, FaceRouteVerdict } from "../../db/types.js"
 import type {
@@ -1794,15 +1794,30 @@ export interface FaceWorkLedgerSummary {
   decidedAt: string
 }
 
-/** One decision about one `(photo content hash, box)`. */
+/**
+ * One decision about one `(photo content hash, box)`.
+ *
+ * `op` is NARROWER than `FaceAssignmentOp` on purpose, and the narrowing is
+ * CHECKED — `parseFaceWorkArtifact` refuses anything else rather than casting an
+ * unvalidated file into this shape. The ledger's `negative` ("this face is NOT
+ * that person") and `clear` ("nobody") have no meaning keyed by content on
+ * another machine, and treating a `negative` as an `assign` would import the
+ * exact inversion of the decision it records.
+ */
 export interface FaceWorkConfirmation {
   /** `<sha256>:<x>,<y>,<w>,<h>` at two decimal places. Content, not a row id. */
   key: string
   op: "assign" | "not_a_face"
   /** `p1..pN` into `FaceWorkPayload.people`; null for `not_a_face`. */
   personRef: string | null
-  /** `face_identities.provenance` on the source; null for `not_a_face`. */
-  provenance: string | null
+  /**
+   * `face_identities.provenance` on the source; null for `not_a_face`.
+   *
+   * READ on import, not decoration: a `propagated` confirmation is the model's
+   * own guess and arrives under a second-class `propagated` identity, so it
+   * cannot be selected by `confirmedIdentityFaces` and fed back as ground truth.
+   */
+  provenance: FaceIdentityProvenance | null
   ledger: FaceWorkLedgerSummary | null
 }
 
@@ -1857,6 +1872,9 @@ export interface FaceWorkAction {
   faceId: number
   op: "assign" | "not_a_face"
   personRef: string | null
+  /** Which of the person's identities this event writes to. Carried from the
+   *  confirmation, never assumed — see `FaceWorkConfirmation.provenance`. */
+  provenance: FaceIdentityProvenance | null
   identityId: number | null
 }
 
@@ -1868,14 +1886,31 @@ export interface FaceWorkConflict {
 /** Everything the import would do, and every reason it should not. */
 export interface FaceWorkPlan {
   batchId: string
-  /** This artifact is already on this machine: a no-op, not a refusal. */
+  /**
+   * This artifact is already on this machine AND everything it carries is
+   * satisfied here: a no-op, not a refusal.
+   *
+   * Deliberately not "a batch of this id exists". The id is a function of the
+   * artifact alone and production carries a curated SUBSET of the photographs,
+   * so a first import that could only place some of the confirmations is the
+   * ordinary case — and the batch id alone would then seal the rest away
+   * forever.
+   */
   alreadyApplied: boolean
+  /** A batch of this id is on this machine. The apply path appends to it rather
+   *  than creating a second one, so a completed import is one revocable batch. */
+  batchExists: boolean
+  /** Events already carrying this batch id — the optimistic-concurrency token
+   *  `applyFaceWorkImport` re-reads inside its transaction. */
+  existingBatchEvents: number
   /** Non-empty means nothing is written. */
   refusals: string[]
   advisories: string[]
   actions: FaceWorkAction[]
   unmatched: Record<FaceWorkMatchFailure, number>
-  /** Refs with no content match — a new person on the target. */
+  /** Refs an applied action needs and this machine does not have. Derived from
+   *  the ACTIONS, never from `payload.people`: a person whose photographs are
+   *  not here gets no row and no identity. */
   peopleToCreate: string[]
   peopleMatched: number
   /** Confirmations the target already agrees with. No event is appended. */
@@ -1948,10 +1983,33 @@ export function buildFaceWorkExport(options: {
   }
 }
 
-/** Parse, structurally validate, and check the declared content digest. */
+/**
+ * Parse, validate every field the import acts on, and check the declared
+ * content digest.
+ *
+ * The digest is UNKEYED — re-sealing a hand-edited artifact costs one line — so
+ * it proves the file survived transit and proves nothing about what it says.
+ * Every claim is therefore checked structurally: an `op` outside
+ * `assign | not_a_face`, a provenance outside `confirmed | propagated`, a
+ * duplicate person ref, a key that is not a box key, a `null` in either array.
+ * A corrupt artifact is a message, never a `TypeError` from four frames down.
+ */
 export function parseFaceWorkArtifact(
   text: string,
 ): { valid: true; value: FaceWorkArtifact } | { valid: false; error: string }
+
+/** The first reason a payload's interior is not one this build may act on, or
+ *  null. Exported so the refusals are testable without a file. */
+export function faceWorkPayloadError(body: Record<string, unknown>): string | null
+
+/**
+ * Why this export destination may not be written, or null.
+ *
+ * An artifact carries real display names, a content hash per photograph and a
+ * box per face, and this repository is public — so a destination inside it is
+ * refused unless `.gitignore` already covers it. Enforced, not warned about.
+ */
+export function exportDestinationRefusal(outPath: string): string | null
 
 /** Resolve incoming keys onto target face rows. Exact by default; mutual-best
  *  IoU with a margin under `overlap`, which is a reviewed exception. */

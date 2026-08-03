@@ -657,6 +657,85 @@ describe("buildIngestInput — fail closed, never guess", () => {
     assert.equal(config.routeCutoffs.acceptMinSharpness, cutoffs.acceptMinSharpness)
   })
 
+  it("REFUSES a bare filename or a directory segment, which a blocklist let through", () => {
+    // `safeString` rejected only "/", "\\" and "$", so anything without one
+    // passed — a model filename, a photo-directory name, an environment
+    // variable's NAME. config_json travels to production and this repository is
+    // public, so every field now has to fit its own declared value space.
+    /** @type {Array<[string, string]>} */
+    const cases = [
+      ["runtime", "det_10g.onnx"],
+      ["runtime", "wedding-photos-raw"],
+      ["detectChannels", "wedding-photos-raw"],
+      ["embedChannels", "det_10g.onnx"],
+      ["topKStage", "somewhere-else"],
+      ["embedNorm", "guest-photos"],
+      ["embedNormSource", "IMG_4821"],
+      ["detectorSha256", "det_10g.onnx"],
+      ["embedderSha256", "sface"],
+      ["engineSha256", "engine.mjs"],
+    ]
+    for (const [field, value] of cases) {
+      assert.throws(
+        () =>
+          buildIngestInput({
+            timing: timing({ provenance: provenance({ [field]: value }) }),
+            faces,
+            modelVersion: "v1",
+          }),
+        (err) => err instanceof Error && err.message.includes(field),
+        `provenance.${field} = "${value}" must be refused`,
+      )
+    }
+  })
+
+  it("accepts the values the engine that actually runs reports", () => {
+    // The real tmp/rig/engine.mjs reports "sha256-table" or the NAME of the
+    // override variable, and either an in-graph or an arcface normalisation.
+    for (const over of [
+      { embedNormSource: "sha256-table" },
+      { embedNormSource: "RIG_EMBED_NORM" },
+      { embedNorm: "in-graph" },
+      { detectChannels: /** @type {const} */ ("rgb"), embedChannels: /** @type {const} */ ("rgb") },
+      { topKStage: /** @type {const} */ ("post") },
+      { runtime: "onnxruntime-node unknown" },
+      { runtime: "onnxruntime-node 1.22.0-rc.1" },
+    ]) {
+      const input = buildIngestInput({
+        timing: timing({ provenance: provenance(over) }),
+        faces,
+        modelVersion: "v1",
+      })
+      assert.ok(input.config, `${JSON.stringify(over)} must be accepted`)
+    }
+  })
+
+  it("REFUSES a model_version that is a path, an env reference or free text", () => {
+    for (const bad of [
+      "/Users/someone/models/sface",
+      "$MODEL",
+      "sface 128",
+      "sface\nnomirror",
+      "m".repeat(200),
+      "",
+    ]) {
+      assert.throws(
+        () => buildIngestInput({ timing: timing(), faces, modelVersion: bad }),
+        (err) => err instanceof Error && err.message.includes("model-version"),
+        `model_version "${bad}" must be refused`,
+      )
+    }
+  })
+
+  it("accepts this project's own model_version tag", () => {
+    const input = buildIngestInput({
+      timing: timing(),
+      faces,
+      modelVersion: "sface128-n127.5d128-nomirror",
+    })
+    assert.equal(input.modelVersion, "sface128-n127.5d128-nomirror")
+  })
+
   it("readTiming refuses a run directory with no timing.json", () => {
     const dir = path.join(workDir, "run-no-timing-read")
     fs.mkdirSync(dir, { recursive: true })
