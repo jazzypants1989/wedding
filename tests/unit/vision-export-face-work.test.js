@@ -389,6 +389,35 @@ describe("parseFaceWorkArgs", () => {
     assert.equal(ok.valid, true)
     if (ok.valid) assert.equal(ok.value.facesFrom, "model-version")
   })
+
+  it("parses a revoke invocation, which needs a batch and no artifact", () => {
+    // The undo the import prints. It names a batch already in the database, so
+    // requiring an artifact path for it would be requiring a file that has
+    // nothing to do with the operation.
+    const ok = parseFaceWorkArgs(["revoke", "--batch", "face-work-abc", "--database", "x.db"])
+    assert.equal(ok.valid, true)
+    if (!ok.valid) return
+    assert.equal(ok.value.command, "revoke")
+    assert.equal(ok.value.batch, "face-work-abc")
+    assert.equal(ok.value.artifact, null)
+
+    const noBatch = parseFaceWorkArgs(["revoke"])
+    assert.equal(noBatch.valid, false)
+    if (!noBatch.valid) assert.ok(noBatch.error.includes("--batch"))
+  })
+
+  it("defaults revoke's actor to the revoker, not to the importer", () => {
+    // `revoked_by` reading "face-work-import" would attribute the undo to
+    // whoever did the thing being undone.
+    const dflt = parseFaceWorkArgs(["revoke", "--batch", "b1"])
+    assert.equal(dflt.valid, true)
+    if (dflt.valid) assert.equal(dflt.value.actor, "face-work-revoke")
+
+    // And an operator who types the import's default out in full keeps it.
+    const explicit = parseFaceWorkArgs(["revoke", "--batch", "b1", "--actor", "face-work-import"])
+    assert.equal(explicit.valid, true)
+    if (explicit.valid) assert.equal(explicit.value.actor, "face-work-import")
+  })
 })
 
 describe("the exported artifact", () => {

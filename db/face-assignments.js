@@ -27,7 +27,7 @@
 /** @import * as Types from './types.js' */
 
 import { sql } from "./sql.js"
-import { now, withTransaction } from "./utils.js"
+import { now, withBoundTransaction } from "./utils.js"
 
 /**
  * How far `resolveIdentity` will follow `merged_into` before deciding the
@@ -222,8 +222,20 @@ export function revokeBatch(batchId, actor) {
   // and re-projecting its faces have to land together, or a crash between them
   // leaves the column disagreeing with the ledger. Callers that already hold a
   // transaction should call the two halves themselves rather than nest this
-  // one (db/utils.js's withTransaction is a bare BEGIN IMMEDIATE).
-  return withTransaction(() => {
+  // one (neither db/utils.js transaction helper has savepoints).
+  //
+  // ⚠ `withBoundTransaction`, NOT `withTransaction`. Every other statement in
+  // this module runs through `sql``` — i.e. through whatever connection
+  // `bindExecutor` last named — while `withTransaction` opens its BEGIN on
+  // db/connection.js's singleton. In the server those are the same connection
+  // and the difference is invisible; in a vision CLI, which opens its own
+  // `DatabaseSync` and binds it without ever calling `init()`, the singleton
+  // does not exist and this function threw "Database not initialized" before
+  // it could revoke anything. Worse if the singleton HAD been initialised: the
+  // BEGIN would have been held on one connection while the re-projections
+  // below were written through another, so the two halves this transaction
+  // exists to keep together would not have been in it at all.
+  return withBoundTransaction(() => {
     // Already-revoked batches keep their original revoked_at/revoked_by — a
     // second revocation is a no-op re-projection, not a re-dating of the first.
     if (batch.revoked_at === null) {
@@ -240,6 +252,28 @@ export function revokeBatch(batchId, actor) {
     for (const face of faces) projectFace(face.face_id)
     return faces.length
   })
+}
+
+/** @type {Types.recentBatches} */
+export function recentBatches(limit) {
+  // LEFT JOIN, not INNER: a batch whose faces have since been hard-deleted
+  // (`face_assignments.face_id` is ON DELETE CASCADE) has no events left and
+  // must still be listed — it exists, it may still be revoked, and a row that
+  // silently disappears from a history list is worse than one reading zero.
+  //
+  // Ordered by `created_at` DESC with `rowid` as the tiebreak, for the same
+  // reason replay orders by id: the column is CURRENT_TIMESTAMP at one-second
+  // resolution, and several batches inside one second is an ordinary Tuesday
+  // for someone working through the Faces tab.
+  return sql`SELECT b.batch_id AS batch_id, b.kind AS kind, b.actor AS actor, b.note AS note,
+      b.created_at AS created_at, b.revoked_at AS revoked_at, b.revoked_by AS revoked_by,
+      COUNT(fa.id) AS events,
+      COUNT(DISTINCT fa.face_id) AS faces
+    FROM face_assignment_batches b
+    LEFT JOIN face_assignments fa ON fa.batch_id = b.batch_id
+    GROUP BY b.batch_id
+    ORDER BY b.created_at DESC, b.rowid DESC
+    LIMIT ${limit}`.all()
 }
 
 /** @type {Types.negativesForFace} */

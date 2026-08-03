@@ -18,10 +18,15 @@
  *  THE LEDGER (Phase 5). No handler here writes `media_faces.face_identity_id`.
  *  Every mutation appends an event via `recordAssignment`, which materialises
  *  the column in the same call — see db/face-assignments.js for why append and
- *  project are one call and never two. `revokeBatch` is deliberately NOT
- *  imported: it owns a `withTransaction`, every write path below is already
- *  inside one, and db/utils.js's `withTransaction` is a bare BEGIN IMMEDIATE
- *  with no savepoints, so nesting it would throw.
+ *  project are one call and never two.
+ *
+ *  `revokeBatch` IS imported, by exactly one handler (`revoke`), and that
+ *  handler is the one write path here that opens no transaction of its own —
+ *  because `revokeBatch` owns one, and neither transaction helper in
+ *  db/utils.js has savepoints, so wrapping it would throw. That is the whole
+ *  rule, and it is why `revoke` sits apart from its neighbours in shape as well
+ *  as in what it does. A revocable ledger with no route to revoke it is a
+ *  property only a test can observe; this is the route.
  *
  *  BATCH POLICY, and the judgement in it. A batch exists to make a *decision*
  *  revocable as one thing, so the question for each route is "is there one
@@ -76,7 +81,13 @@ import {
   setAsideMedia,
   countSetAsideMedia,
 } from "../../db/media-faces.js"
-import { createBatch, recordAssignment } from "../../db/face-assignments.js"
+import {
+  createBatch,
+  recordAssignment,
+  getBatch,
+  revokeBatch,
+  recentBatches,
+} from "../../db/face-assignments.js"
 import { now } from "../../db/utils.js"
 import { groupFaces, distanceMatrix, centroid } from "../../public/vision/group.js"
 import { buildPrototypes, matchFace } from "../../public/vision/assign.js"
@@ -92,7 +103,14 @@ const FACE_AUDIT_ACTIONS = Object.freeze({
   UNASSIGN: "FACE_UNASSIGN",
   NOT_A_FACE: "FACE_NOT_A_FACE",
   PROPAGATE: "FACE_PROPAGATE",
+  REVOKE: "FACE_REVOKE_BATCH",
 })
+
+/** How many batches the history list returns at most. A ceiling, not a page
+ *  size: this is an undo for a pass that has just gone wrong, so the useful
+ *  rows are the recent ones and paging back through a year of them is a
+ *  different feature. */
+const BATCH_LIST_MAX = 50
 
 /** One batch mutation (assign/unassign/not-a-face) touches at most this many
  *  face rows. Round; there is no scenario at this project's scale where a
@@ -965,6 +983,110 @@ export async function propagate(req, res, { session }) {
   // `batchId` travels back so the pass is revocable by whoever applied it —
   // without it the batch exists but nothing outside the database knows its name.
   return sendJson(res, 200, { success: true, changed, batchId })
+}
+
+/**
+ * The batch history — the list the undo is chosen from.
+ *
+ * Read-only and deliberately thin: an id, a kind, an actor, two timestamps and
+ * two counts per batch. It names no person, carries no face id and describes no
+ * photograph, so it is a list about DECISIONS rather than about the people they
+ * were made concerning. Revoked batches are included, because "already taken
+ * back, by whom, when" is the answer that stops a second attempt at it.
+ * @type {Types.faceBatchesHandler}
+ */
+export async function batches(req, res) {
+  const urlObj = new URL(req.url ?? "/", `http://${req.headers.host}`)
+  const limitParam = urlObj.searchParams.get("limit")
+  const parsed = limitParam ? parseInt(limitParam, 10) : BATCH_LIST_MAX
+  const limit = Number.isNaN(parsed) || parsed < 1 ? BATCH_LIST_MAX : Math.min(parsed, BATCH_LIST_MAX)
+
+  // Field by field, like every payload in this file.
+  const items = recentBatches(limit).map((row) => ({
+    batchId: row.batch_id,
+    kind: row.kind,
+    actor: row.actor,
+    note: row.note,
+    createdAt: row.created_at,
+    revokedAt: row.revoked_at,
+    revokedBy: row.revoked_by,
+    events: row.events,
+    faces: row.faces,
+  }))
+
+  return sendJson(res, 200, { batches: items, limit })
+}
+
+/**
+ * Take a bulk pass back.
+ *
+ * **The route the batch mechanism existed for.** Until it, every property of
+ * revocation this system claims — that a pass is undoable wholesale, that a
+ * later manual correction survives the undo — was reachable only by importing
+ * `revokeBatch` into a test process. The ledger was revocable and the product
+ * was not.
+ *
+ * Three things are worth pointing at in the shape below.
+ *
+ *  - **No `withTransaction`.** Every other write path in this file opens one;
+ *    this one must not, because `revokeBatch` owns a transaction of its own and
+ *    neither helper in db/utils.js has savepoints. The flag and the
+ *    re-projections land together inside that one.
+ *  - **The actor is the session's, never the body's** — `ledgerActor`, the same
+ *    rule every other event here follows. `revoked_by` is an attribution
+ *    column; a client-supplied one attributes the undo to whoever asked for it.
+ *  - **Re-revoking is allowed and is a no-op re-projection.** `revokeBatch`
+ *    keeps the original `revoked_at`/`revoked_by` (a schema trigger enforces
+ *    that a revocation is never re-dated), so a double-click costs a re-project
+ *    and nothing else. The response says `alreadyRevoked` so the UI can tell
+ *    the admin what actually happened rather than claim a fresh undo.
+ *
+ * What it does NOT offer is un-revoking, and that is a schema rule rather than
+ * an omission here: `face_assignment_batches_revocation_is_permanent` refuses
+ * to clear `revoked_at`, because nothing would re-derive the projections on the
+ * way back. Reinstating a pass means running it again.
+ * @type {Types.faceRevokeHandler}
+ */
+export async function revoke(req, res, { session }) {
+  const body = await parseBody(req)
+
+  if (typeof body.batchId !== "string" || body.batchId.trim() === "") {
+    throw new ValidationError("batchId is required")
+  }
+  const batchId = body.batchId.trim()
+  if (batchId.length > 100) throw new ValidationError("batchId is not a batch id")
+
+  // Checked here so a missing batch is a 404 rather than `revokeBatch`'s bare
+  // Error surfacing as a 500 — the two are different answers to the operator.
+  const existing = getBatch(batchId)
+  if (!existing) throw new NotFoundError(`Batch ${batchId}`)
+  const alreadyRevoked = existing.revoked_at !== null
+
+  const actor = ledgerActor(session)
+  const reprojected = revokeBatch(batchId, actor)
+  const batch = /** @type {import('../../types.js').FaceAssignmentBatch} */ (getBatch(batchId))
+
+  log({
+    action: FACE_AUDIT_ACTIONS.REVOKE,
+    adminId: session?.token,
+    ip: getClientIp(req),
+    resourceType: "face_assignment_batch",
+    details: { batchId, kind: batch.kind, reprojected, alreadyRevoked },
+  })
+
+  return sendJson(res, 200, {
+    success: true,
+    batchId,
+    kind: batch.kind,
+    // How many faces were re-projected — which is every face the batch touched,
+    // not how many changed value. A face an admin corrected afterwards is
+    // re-projected and comes out exactly as they left it, and that is the
+    // promise being kept rather than a shortfall to report.
+    reprojected,
+    revokedAt: batch.revoked_at,
+    revokedBy: batch.revoked_by,
+    alreadyRevoked,
+  })
 }
 
 /**

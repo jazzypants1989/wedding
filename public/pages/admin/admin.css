@@ -2512,6 +2512,74 @@ tr:hover td {
   font-size: var(--text-xs);
 }
 
+/* Recent bulk passes — the undo. Quiet by design: it is the last section on
+   the page and its heading is the toggle, so it costs one line until wanted. */
+.faces-batches-toggle {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.faces-batches-toggle:focus-visible {
+  outline: var(--border-width-thick) solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+.faces-batches-note {
+  margin: 0 0 var(--spacing-sm);
+  font-size: var(--text-sm);
+  max-width: 70ch;
+}
+.faces-batches-error {
+  margin: 0 0 var(--spacing-sm);
+  color: var(--color-status-pending-text);
+  font-size: var(--text-sm);
+}
+.faces-batches-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.faces-batch-row {
+  display: flex;
+  gap: var(--spacing-md);
+  align-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-sm);
+  background: var(--color-card-bg);
+}
+/* Already taken back. Dimmed rather than dropped: "who revoked this, and when"
+   is the answer that stops somebody trying again. */
+.faces-batch-row.is-revoked {
+  opacity: 0.6;
+}
+.faces-batch-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.faces-batch-summary {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+.faces-batch-note,
+.faces-batch-id {
+  margin: 0;
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+.faces-batch-state {
+  font-size: var(--text-xs);
+  flex: 0 0 auto;
+}
+
 /* Ask queue */
 .faces-ask-list {
   list-style: none;

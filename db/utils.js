@@ -170,6 +170,59 @@ export function withTransaction(fn) {
   }
 }
 
+/**
+ * The same transaction, on whichever connection `sql\`\`` is currently bound to.
+ *
+ * `withTransaction` above reaches for `db/connection.js`'s process-wide
+ * singleton, and that is right for the server, where the singleton IS the
+ * connection every `sql\`\`` runs on. It is wrong everywhere else: the vision
+ * CLIs (`scripts/vision/ingest-faces.js`'s `openDatabase`, and
+ * `export-face-work.js`) open their own `DatabaseSync` and `bindExecutor` it
+ * without ever calling `init()`, so a function that mixes `sql\`\`` statements
+ * with `getDb()` throws "Database not initialized" in a CLI — and, if the
+ * singleton happened to be initialised too, would do something worse: hold
+ * `BEGIN IMMEDIATE` open on connection A while writing through connection B,
+ * so the writes are outside the transaction that was supposed to contain them.
+ *
+ * Going through the bound executor makes the two identical. `BEGIN`/`COMMIT`/
+ * `ROLLBACK` are ordinary prepared statements to SQLite, so no new capability
+ * has to be added to `bindExecutor` for this.
+ *
+ * SAME SEMANTICS, DELIBERATELY: still a bare BEGIN IMMEDIATE, still no
+ * savepoints, so it still does not nest. Nesting is what a savepoint would buy,
+ * and this is not the change that should buy it — one transaction primitive
+ * with one behaviour is easier to reason about than two that differ in a way
+ * only the callers of the second know about.
+ * @type {Types.withBoundTransaction}
+ */
+export function withBoundTransaction(fn) {
+  sql`BEGIN IMMEDIATE TRANSACTION`.run()
+  let committed = false
+  try {
+    const result = fn()
+    if (
+      result &&
+      typeof result === "object" &&
+      typeof /** @type {{ then?: unknown }} */ (/** @type {unknown} */ (result)).then === "function"
+    ) {
+      sql`ROLLBACK`.run()
+      throw new Error("withBoundTransaction does not support async callbacks")
+    }
+    sql`COMMIT`.run()
+    committed = true
+    return result
+  } catch (err) {
+    if (!committed) {
+      try {
+        sql`ROLLBACK`.run()
+      } catch {
+        /* already rolled back */
+      }
+    }
+    throw err
+  }
+}
+
 /** @type {Types.logCommunication} */
 export function logCommunication(
   guestId,

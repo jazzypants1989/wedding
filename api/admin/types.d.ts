@@ -904,6 +904,42 @@ export function facePropagateHandler(
   routeInfo: AuthenticatedRouteInfo,
 ): Promise<void>
 
+/** GET /api/admin/faces/batches — the assignment ledger's batch history,
+ *  newest first, `?limit=` clamped to the server's ceiling.
+ *
+ *  Ids, kinds, actors, timestamps and counts. No face ids, no person names,
+ *  nothing about a photograph: a list of DECISIONS, not of who they were about.
+ *  Revoked batches are included — the list exists so an admin can find the pass
+ *  that went wrong, and "already revoked, by whom, when" is part of that. */
+export function faceBatchesHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void>
+
+/** POST /api/admin/faces/revoke — { batchId } → flag the batch revoked and
+ *  re-project every face it touched. Returns `reprojected` (how many), the
+ *  batch `kind`, `revokedAt`/`revokedBy`, and `alreadyRevoked`.
+ *
+ *  The route the batch mechanism exists for: without it, revocation was
+ *  reachable only by importing `revokeBatch` into a test process. Revocation is
+ *  a FLAG, not a compensating event, so a face an admin corrected by hand after
+ *  the pass keeps that correction — the re-projection replays its history with
+ *  the batch's events skipped, and the later manual event still wins.
+ *
+ *  The actor is the session's, never the body's. Re-revoking is permitted and
+ *  is a bare re-projection: the original `revoked_at`/`revoked_by` stand (a
+ *  schema trigger refuses to re-date them) and `alreadyRevoked` says so.
+ *  Un-revoking is not offered, and cannot be: nothing would re-derive the
+ *  projections on the way back, so reinstating a pass means running it again.
+ *
+ *  ⚠ The one write path in this module that opens NO transaction of its own —
+ *  `revokeBatch` owns one and neither db/utils.js helper nests. */
+export function faceRevokeHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
 /** One photograph in GET /api/admin/faces/set-aside. Counts only — nothing here
  *  describes what the photograph shows. */
 export interface SetAsidePhotoOut {
