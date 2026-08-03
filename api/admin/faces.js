@@ -850,7 +850,25 @@ export async function propagate(req, res, { session }) {
   return sendJson(res, 200, { success: true, changed })
 }
 
-/** @type {Types.faceForMediaHandler} */
+/**
+ * Every live face in one photograph — the payload behind the per-photograph
+ * view, and so the ONE list here that is not filtered by routing. `set_aside`
+ * comes back, ungraded (`routeState: null`) comes back, and both carry the same
+ * fields as everything else, because this is the view whose whole purpose is to
+ * make a held-back face nameable via `assignOne`.
+ *
+ * It goes through `chipOf` like every other face payload rather than hand-rolling
+ * a fourth box shape: the `fileKey` and the ORIGINAL pixel `width`/`height` are
+ * what let a client place a box over the rendered image, and having exactly one
+ * function that assembles them is what keeps the two from drifting. The chips map
+ * is built from the media row already fetched above rather than re-queried.
+ *
+ * `identityId` + `provenance` ride along so a name the machine PROPAGATED across
+ * a near-duplicate frame is distinguishable from one a human CONFIRMED. Without
+ * them the view would present both as settled fact, and re-confirming a
+ * propagated guess is exactly the kind of review this screen is for.
+ * @type {Types.faceForMediaHandler}
+ */
 export async function forMedia(req, res, { params }) {
   const idResult = validateId(params.id, "media ID")
   if (!idResult.valid) throw new ValidationError(idResult.error)
@@ -858,12 +876,18 @@ export async function forMedia(req, res, { params }) {
   const media = getMediaById(idResult.value)
   if (!media || media.deleted_at) throw new NotFoundError("Media")
 
+  const chips = new Map([
+    [media.id, { fileKey: media.file_key, width: media.width, height: media.height }],
+  ])
+
   const rows = facesForMediaWithNames(idResult.value)
   const faces = rows.map((row) => ({
-    faceId: row.id,
-    box: { x: row.bbox_x, y: row.bbox_y, w: row.bbox_w, h: row.bbox_h },
+    ...chipOf(row, chips),
     personId: row.person_id,
     personName: row.person_name,
+    identityId: row.face_identity_id,
+    provenance: row.provenance,
+    routeState: row.route_state,
   }))
 
   return sendJson(res, 200, { faces })

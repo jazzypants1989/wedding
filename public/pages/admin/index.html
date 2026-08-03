@@ -1401,6 +1401,41 @@
     </div>
   </dialog>
 
+  <!-- Per-photograph face view (SPEC-vision-lab.md §6.5). One photograph, every
+       face in it boxed over the rendered image, each nameable ONE AT A TIME
+       through POST /api/admin/faces/assign-one.
+
+       This is not a nicety. Quality routing withholds low-grade faces from the
+       Groups and Ask sections, and bulk assign REFUSES them by design, so
+       without this dialog a set-aside face is unnameable through the UI at all
+       and the routing filter becomes a one-way door. Everything else in the
+       Faces tab is a list of faces; this is the one view of a PHOTOGRAPH.
+
+       It lives here, outside #tab-faces, for two reasons: initModals() runs
+       once over document.querySelectorAll("dialog") at startup, so the element
+       must already exist; and #faces-body is replaced wholesale on every
+       render, which would tear an open dialog out of the DOM mid-edit. Its own
+       listeners are wired in initFacesPhoto() — it inherits none of
+       #faces-body's delegation. -->
+  <dialog id="faces-photo-modal" class="modal-lg" aria-labelledby="faces-photo-title">
+    <div class="modal-header flex-between">
+      <h2 id="faces-photo-title">Faces in this photograph</h2>
+      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
+    </div>
+    <p class="text-muted card-text">
+      Every face found here, including any the Ask queue held back as too small or too soft.
+      Choose a face, then type who it is.
+    </p>
+    <div id="faces-photo-body">
+      <!-- Populated by JS: the display variant, the face-box overlay, and the
+           selected face's name control. -->
+    </div>
+    <div id="faces-photo-error" class="alert alert-error" role="alert" hidden></div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" data-close-modal>Done</button>
+    </div>
+  </dialog>
+
   <dialog id="blocklist-modal" aria-labelledby="blocklist-modal-title">
     <div class="modal-header flex-between">
       <h2 id="blocklist-modal-title">Add to Blocklist</h2>
