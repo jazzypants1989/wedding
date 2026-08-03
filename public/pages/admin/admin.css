@@ -2434,6 +2434,84 @@ tr:hover td {
   opacity: 0.75;
 }
 
+/* The "set aside" tally is the only count in that row that is a CONTROL: it is
+   the entry point to the photographs whose faces every other list filters out.
+   Styled to sit in the row like its siblings (font/colour inherited, no button
+   chrome) while staying a real <button> — so it is tab-reachable, announced as
+   expandable, and works on Enter and Space without a keydown handler. The dotted
+   underline is what says it is clickable without a border that would make it the
+   loudest thing in a row of plain numbers. */
+.faces-setaside-toggle {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.faces-setaside-toggle:hover {
+  opacity: 1;
+}
+.faces-setaside-toggle:focus-visible {
+  outline: var(--border-width-thick) solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.faces-setaside-note {
+  margin: 0 0 var(--spacing-sm);
+  font-size: var(--text-sm);
+}
+.faces-setaside-error {
+  margin: 0 0 var(--spacing-sm);
+  color: var(--color-status-pending-text);
+  font-size: var(--text-sm);
+}
+.faces-setaside-list {
+  list-style: none;
+  margin: 0 0 var(--spacing-sm);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.faces-setaside-row {
+  display: flex;
+  gap: var(--spacing-md);
+  align-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-sm);
+  background: var(--color-card-bg);
+}
+/* Every set-aside face on this one has a name. Dimmed rather than removed —
+   the row is still the only way back to those faces if a name was wrong. */
+.faces-setaside-row.is-done {
+  opacity: 0.6;
+}
+.faces-setaside-thumb {
+  width: 64px;
+  height: 64px;
+  flex: 0 0 auto;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-faint);
+}
+.faces-setaside-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.faces-setaside-summary {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+.faces-setaside-remaining {
+  margin: 0;
+  font-size: var(--text-xs);
+}
+
 /* Ask queue */
 .faces-ask-list {
   list-style: none;

@@ -1576,6 +1576,36 @@ export interface MediaFacesResponse {
   faces: MediaFaceEntry[]
 }
 
+/**
+ * One photograph in GET /api/admin/faces/set-aside: a photograph holding at
+ * least one live `set_aside` face.
+ *
+ * Counts and ids only. Nothing in this shape describes what the photograph
+ * shows, and nothing built from it may either — an accessible name derived from
+ * these fields says which photograph and how many faces, never who is in it.
+ */
+export interface FaceSetAsidePhoto {
+  mediaId: number
+  fileKey: string
+  setAsideFaces: number
+  /** How many of `setAsideFaces` are still unnamed. The number that moves:
+   *  naming a set-aside face does not re-grade it, so `setAsideFaces` stays put
+   *  and on its own would make the list look permanently untouched. */
+  unnamedSetAside: number
+  /** Every live face on the photograph, ungraded ones included — the honest
+   *  denominator for "N of M faces here were set aside". */
+  liveFaces: number
+}
+
+/** GET /api/admin/faces/set-aside. `limit`/`offset` echo back what the server
+ *  actually APPLIED (it clamps), so "show more" can page from them safely. */
+export interface FacesSetAsideResponse {
+  photos: FaceSetAsidePhoto[]
+  total: number
+  limit: number
+  offset: number
+}
+
 /** A person in the photographed cast — who a face belongs to. Distinct from a
  *  guest, which is an INVITATION: one row per party, and much of the cast
  *  (partners under someone else's row, children, the photographer, vendors) is

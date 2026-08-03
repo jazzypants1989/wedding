@@ -28,6 +28,8 @@ import {
   routeStateCounts,
   unidentifiedFacesWithDescriptors,
   descriptorToBlob,
+  setAsideMedia,
+  countSetAsideMedia,
 } from "../../../db/media-faces.js"
 import { PROFILE } from "../../../public/vision/route.js"
 
@@ -55,10 +57,14 @@ const SIGNALS = {
   sharpness: 0.05,
 }
 
-/** @param {{ route?: { state: string, reason: string | null, profile: string } | null, withDescriptor?: boolean }} [opts] */
+/** `mediaId` is optional so a test can put SEVERAL faces on ONE photograph —
+ *  which is the whole subject of the setAsideMedia block below, where a
+ *  photograph's mix of route states is the thing being asserted.
+ *  @param {{ route?: { state: string, reason: string | null, profile: string } | null,
+ *            withDescriptor?: boolean, mediaId?: number }} [opts] */
 function makeFace(opts = {}) {
   return insertFace({
-    mediaId: makeMedia(),
+    mediaId: opts.mediaId ?? makeMedia(),
     bbox: { x: 1, y: 2, w: 100, h: 120 },
     landmarks: null,
     signals: SIGNALS,
@@ -71,7 +77,11 @@ function makeFace(opts = {}) {
 
 function clearData() {
   const db = getDb()
+  // Faces first: media_faces.face_identity_id is ON DELETE SET NULL, so the
+  // identities have to outlive the rows that point at them for one statement.
   db.prepare("DELETE FROM media_faces").run()
+  db.prepare("DELETE FROM face_identities").run()
+  db.prepare("DELETE FROM people").run()
   db.prepare("DELETE FROM media").run()
 }
 
@@ -233,6 +243,201 @@ describe("media_faces quality routing", () => {
     assert.strictEqual(byId.get(hidden.id)?.route_state, "set_aside")
     assert.strictEqual(byId.get(hidden.id)?.route_reason, "boxPx")
     assert.strictEqual(byId.get(ungraded.id)?.route_state, null)
+  })
+
+  // --- setAsideMedia: the photographs nothing else can reach -----------------
+
+  /** A named face, seeded the pre-ledger way — a column value with no events
+   *  behind it. Legitimate in a test (see face-identity-single-writer.test.js's
+   *  note on why `tests` is skipped by that scan), and enough here: this block
+   *  is about a COUNT of unnamed faces, not about how a name got there.
+   *  @param {number} faceId */
+  function nameFace(faceId) {
+    const person = Number(
+      getDb().prepare(`INSERT INTO people (display_name) VALUES ('Named In A Test')`).run()
+        .lastInsertRowid,
+    )
+    const identity = Number(
+      getDb()
+        .prepare(`INSERT INTO face_identities (person_id, provenance) VALUES (?, 'confirmed')`)
+        .run(person).lastInsertRowid,
+    )
+    getDb().prepare(`UPDATE media_faces SET face_identity_id = ? WHERE id = ?`).run(identity, faceId)
+  }
+
+  const ALL_PAGES = { limit: 100, offset: 0 }
+  const SET_ASIDE = { state: "set_aside", reason: "boxPx", profile: PROFILE }
+  const ACCEPT = { state: "accept", reason: null, profile: PROFILE }
+
+  it("lists a photograph whose faces are ALL set aside — nothing else can", () => {
+    // The gap this query closes. Groups and the ask queue are lists of FACES
+    // and both filter set_aside out, so this photograph appears in neither and
+    // nothing renders a way into the per-photograph view for it.
+    const media = makeMedia()
+    makeFace({ mediaId: media, route: SET_ASIDE })
+    makeFace({ mediaId: media, route: SET_ASIDE })
+
+    const rows = setAsideMedia(ALL_PAGES)
+    assert.strictEqual(rows.length, 1)
+    assert.strictEqual(rows[0].media_id, media)
+    assert.strictEqual(rows[0].set_aside_faces, 2)
+    assert.strictEqual(rows[0].unnamed_set_aside, 2)
+    assert.strictEqual(rows[0].live_faces, 2)
+    assert.strictEqual(countSetAsideMedia(), 1)
+  })
+
+  it("lists a MIXED photograph, counting only the faces that were set aside", () => {
+    const media = makeMedia()
+    makeFace({ mediaId: media, route: SET_ASIDE })
+    makeFace({ mediaId: media, route: ACCEPT })
+    makeFace({ mediaId: media, route: { state: "ask", reason: "sharpness", profile: PROFILE } })
+
+    const [row] = setAsideMedia(ALL_PAGES)
+    assert.strictEqual(row.media_id, media)
+    assert.strictEqual(row.set_aside_faces, 1)
+    // ...against the WHOLE photograph, so the row can never make it look like a
+    // three-face picture holds one face.
+    assert.strictEqual(row.live_faces, 3)
+  })
+
+  it("an ungraded face never makes a row of its own, but is still counted", () => {
+    // The documented decision. `route_state IS NULL` means "not yet graded",
+    // and an ungraded face is shown by the groups, shown by the ask queue and
+    // assignable in bulk — it is reachable already, so a list of "what nothing
+    // else can reach" must not be padded with it. Dropping it from the
+    // ARITHMETIC would be the real bug, and it is not dropped.
+    const ungradedOnly = makeMedia()
+    makeFace({ mediaId: ungradedOnly })
+    makeFace({ mediaId: ungradedOnly })
+
+    const mixed = makeMedia()
+    makeFace({ mediaId: mixed, route: SET_ASIDE })
+    makeFace({ mediaId: mixed })
+
+    const rows = setAsideMedia(ALL_PAGES)
+    assert.deepStrictEqual(
+      rows.map((r) => r.media_id),
+      [mixed],
+      "the all-ungraded photograph is not in a list about unreachable faces",
+    )
+    assert.strictEqual(rows[0].set_aside_faces, 1)
+    assert.strictEqual(rows[0].live_faces, 2, "the ungraded face is still one of this photo's faces")
+    assert.strictEqual(countSetAsideMedia(), 1)
+  })
+
+  it("unnamed_set_aside falls as faces are named; set_aside_faces does not", () => {
+    // Naming a face does not re-grade it, so the set-aside count sits still
+    // forever. Without the second number the list could never look any closer
+    // to finished, however much work had been done in it.
+    const media = makeMedia()
+    const first = makeFace({ mediaId: media, route: SET_ASIDE })
+    makeFace({ mediaId: media, route: SET_ASIDE })
+
+    nameFace(first.id)
+
+    const [row] = setAsideMedia(ALL_PAGES)
+    assert.strictEqual(row.set_aside_faces, 2)
+    assert.strictEqual(row.unnamed_set_aside, 1)
+    assert.strictEqual(
+      countSetAsideMedia(),
+      1,
+      "a named set-aside face keeps its photograph listed — this is still the only way back to it",
+    )
+  })
+
+  it("excludes a soft-deleted face, and the photograph with it when it was the only one", () => {
+    const gone = makeMedia()
+    const goneFace = makeFace({ mediaId: gone, route: SET_ASIDE })
+    getDb().prepare(`UPDATE media_faces SET deleted_at = '2026-01-01' WHERE id = ?`).run(goneFace.id)
+
+    const partly = makeMedia()
+    makeFace({ mediaId: partly, route: SET_ASIDE })
+    const alsoGone = makeFace({ mediaId: partly, route: SET_ASIDE })
+    getDb()
+      .prepare(`UPDATE media_faces SET deleted_at = '2026-01-01' WHERE id = ?`)
+      .run(alsoGone.id)
+
+    const rows = setAsideMedia(ALL_PAGES)
+    assert.deepStrictEqual(rows.map((r) => r.media_id), [partly])
+    assert.strictEqual(rows[0].set_aside_faces, 1, "the dismissed face is not still counted")
+    assert.strictEqual(rows[0].live_faces, 1)
+    assert.strictEqual(countSetAsideMedia(), 1)
+  })
+
+  it("excludes a soft-deleted photograph entirely", () => {
+    const media = makeMedia()
+    makeFace({ mediaId: media, route: SET_ASIDE })
+    getDb().prepare(`UPDATE media SET deleted_at = '2026-01-01' WHERE id = ?`).run(media)
+
+    assert.deepStrictEqual(setAsideMedia(ALL_PAGES), [])
+    assert.strictEqual(countSetAsideMedia(), 0)
+  })
+
+  it("pages by ascending media id, disjointly and in order", () => {
+    /** @type {number[]} */
+    const ids = []
+    for (let i = 0; i < 5; i++) {
+      const media = makeMedia()
+      ids.push(media)
+      makeFace({ mediaId: media, route: SET_ASIDE })
+    }
+    ids.sort((a, b) => a - b)
+
+    const first = setAsideMedia({ limit: 2, offset: 0 }).map((r) => r.media_id)
+    const second = setAsideMedia({ limit: 2, offset: 2 }).map((r) => r.media_id)
+    const third = setAsideMedia({ limit: 2, offset: 4 }).map((r) => r.media_id)
+
+    assert.deepStrictEqual([...first, ...second, ...third], ids)
+    assert.strictEqual(countSetAsideMedia(), 5)
+    assert.deepStrictEqual(setAsideMedia({ limit: 2, offset: 5 }), [])
+  })
+
+  it("paging is not disturbed by naming a face mid-walk", () => {
+    // Why the order is the immutable media id and not "most set aside first":
+    // a count-ordered list would let a photograph move between pages while the
+    // admin works through it, so one gets served twice and another never.
+    /** @type {number[]} */
+    const ids = []
+    for (let i = 0; i < 4; i++) {
+      const media = makeMedia()
+      ids.push(media)
+      makeFace({ mediaId: media, route: SET_ASIDE })
+      makeFace({ mediaId: media, route: SET_ASIDE })
+    }
+    ids.sort((a, b) => a - b)
+
+    const first = setAsideMedia({ limit: 2, offset: 0 })
+    // Name everything on the first page — the aggressive version of "work done
+    // between two pages".
+    for (const row of first) {
+      for (const face of /** @type {Array<{ id: number }>} */ (
+        getDb().prepare(`SELECT id FROM media_faces WHERE media_id = ?`).all(row.media_id)
+      )) {
+        nameFace(face.id)
+      }
+    }
+
+    const second = setAsideMedia({ limit: 2, offset: 2 })
+    assert.deepStrictEqual(
+      [...first.map((r) => r.media_id), ...second.map((r) => r.media_id)],
+      ids,
+      "every photograph is served exactly once, in id order",
+    )
+  })
+
+  it("returns counts and a file key, never a descriptor", () => {
+    const media = makeMedia()
+    makeFace({ mediaId: media, route: SET_ASIDE, withDescriptor: true })
+    const [row] = setAsideMedia(ALL_PAGES)
+    assert.ok(!("descriptor" in row), "a biometric vector must not ride along")
+    assert.ok(row.file_key, "the file key is what a thumbnail and the dialog are built from")
+  })
+
+  it("is empty, not NULL-ish, when nothing is set aside", () => {
+    makeFace({ route: ACCEPT })
+    makeFace()
+    assert.deepStrictEqual(setAsideMedia(ALL_PAGES), [])
+    assert.strictEqual(countSetAsideMedia(), 0)
   })
 
   // --- The database is the enforcement --------------------------------------

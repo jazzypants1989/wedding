@@ -41,7 +41,18 @@
  *  It is a `<dialog>` declared in index.html rather than markup rendered into
  *  #faces-body, because #faces-body is replaced wholesale on every render and
  *  initModals() sweeps the document once at startup. That also means it
- *  inherits NONE of the delegation below — see initFaceAssignment. */
+ *  inherits NONE of the delegation below — see initFaceAssignment.
+ *
+ *  THE SET-ASIDE LIST closes what was still missing from THAT. Every way into
+ *  the dialog was an "Open photo" button rendered beside a face — in a group's
+ *  card or an ask row — and both of those lists filter `set_aside` out. So a
+ *  photograph whose faces are ALL set aside, or all already named, appeared in
+ *  neither, nothing rendered a button for it, and its faces stayed unreachable
+ *  however carefully assign-one had been exempted. The header's "N set aside"
+ *  count is now a button that lists those PHOTOGRAPHS (GET
+ *  /api/admin/faces/set-aside), each opening the same dialog through the same
+ *  `.faces-open-photo` delegation. No second modal and no second assignment
+ *  path: the only new thing is a way to arrive. */
 /** @import * as Types from "./types.js" */
 
 import {
@@ -68,6 +79,22 @@ let overview = null
 let queueData = null
 /** @type {Types.FacePropagationsResponse | null} */
 let propagationData = null
+
+/** The set-aside PHOTOGRAPH list, and whether the header count has been used to
+ *  open it. Loaded lazily — an admin who never has a set-aside face never pays
+ *  for the query — and kept across a reload, so naming a face in the dialog
+ *  (which reloads the whole tab on close) does not collapse the list underneath
+ *  the person working through it.
+ *  @type {Types.FacesSetAsideResponse | null} */
+let setAsideData = null
+let setAsideOpen = false
+/** Non-fatal: the panel shows this and offers a retry, and every other section
+ *  renders regardless. @type {string | null} */
+let setAsideError = null
+
+/** Photographs per page of the set-aside list. Small on purpose — this is a
+ *  "work through them" list, not a browse, and the rest of the tab is below it. */
+const SET_ASIDE_PAGE = 20
 
 /** People cache for the name-input autocomplete and the People section (a
  *  per-module cache, not shared admin state). A person is who a face belongs
@@ -148,6 +175,11 @@ export async function loadFaceAssignment() {
     overview = /** @type {Types.FacesOverviewResponse} */ (ov)
     queueData = /** @type {Types.FacesQueueResponse} */ (q)
     propagationData = /** @type {Types.FacePropagationsResponse} */ (p)
+    // Only when the panel is open, and only then — the set-aside list is the
+    // one section an admin may never need, so it stays unfetched until asked
+    // for. Once open it is refetched with everything else: naming a face there
+    // changes `unnamedSetAside`, and a stale row would claim work already done.
+    if (setAsideOpen) await refreshSetAside()
     renderCounts()
     renderBody()
   } catch (err) {
@@ -199,6 +231,22 @@ function renderGuestDatalist() {
   dl.innerHTML = html`${guestOptions.map((g) => html`<option value="${g.name}"></option>`)}`
 }
 
+/**
+ * The header tallies — and one of them is a CONTROL, not a statistic.
+ *
+ * "N set aside" is a real `<button>` because it is the entry point to the
+ * photographs those faces are in. Everything else in this tab is a list of
+ * FACES and every one of them filters `set_aside` out, so a photograph whose
+ * faces are all set aside (or all already named) appeared in no group's chips
+ * and no queue row — nothing rendered an "Open photo" button for it and its
+ * faces could not be reached at all, however deliberately `assign-one` had been
+ * exempted from the routing check. This count was already the only place on
+ * screen that admitted they existed; making it the way in is what closes that.
+ *
+ * A button rather than a chip with a click handler, so it is keyboard-reachable
+ * and announced as expandable for free. Its accessible name is a number and two
+ * words — nothing here ever describes a photograph.
+ */
 function renderCounts() {
   const el = getElement("faces-counts")
   if (!overview) {
@@ -213,9 +261,12 @@ function renderCounts() {
     <span class="faces-count"><strong>${c.unidentified}</strong> unidentified</span>
     <span class="faces-count"><strong>${c.notAFace}</strong> not a face</span>
     ${r && r.setAside > 0
-      ? html`<span class="faces-count faces-count-muted"
-          title="Too small or too soft to be worth naming from the queue. Still stored, still grouped — use “Open photo” on any group or queue row to see every face in that photograph, set aside included, and name one there."
-          ><strong>${r.setAside}</strong> set aside</span
+      ? html`<button type="button"
+          class="faces-count faces-count-muted faces-setaside-toggle"
+          aria-expanded="${setAsideOpen ? "true" : "false"}"
+          aria-controls="faces-setaside-panel"
+          title="Too small or too soft to be worth naming from the queue. Still stored, still grouped — open this to list the photographs they are in and name them there."
+          ><strong>${r.setAside}</strong> set aside</button
         >`
       : ""}
     ${r && r.ungraded > 0
@@ -237,6 +288,7 @@ function renderBody() {
   }
 
   body.innerHTML = html`
+    ${setAsidePanelMarkup()}
     <section class="faces-section" aria-labelledby="faces-groups-heading">
       <h3 id="faces-groups-heading">Groups</h3>
       ${groupsMarkup()}
@@ -268,6 +320,181 @@ function emptyIngestMarkup() {
       <pre class="faces-cli-hint">node scripts/vision/ingest-faces.js &lt;run-dir&gt;</pre>
     </div>
   `
+}
+
+// ---- Set aside: the photographs, not the faces ----------------------------
+
+/**
+ * The panel the header's "set aside" count opens.
+ *
+ * Rendered whenever there is a set-aside face at all, `hidden` while collapsed,
+ * rather than added and removed — the toggle's `aria-controls` has to point at
+ * an element that exists, and an assistive technology should be able to find the
+ * region the button claims to control before it is opened.
+ *
+ * It sits FIRST in the body on purpose. It is the shortest list on the page and
+ * the only one whose contents are otherwise unreachable, so it is the one thing
+ * here that would be worst to have to scroll for.
+ */
+function setAsidePanelMarkup() {
+  if (!overview || overview.routeCounts.setAside === 0) return ""
+  return html`
+    <section class="faces-section" id="faces-setaside-panel"
+      aria-labelledby="faces-setaside-heading" ${setAsideOpen ? "" : "hidden"}>
+      <h3 id="faces-setaside-heading">Set aside</h3>
+      <p class="faces-setaside-note text-muted">
+        These faces were held back from the Groups and the Ask queue as too small or too soft to
+        name off a list, and a bulk action will not touch them. Open a photograph to see every
+        face in it — set aside included — and name them one at a time.
+      </p>
+      ${setAsideBodyMarkup()}
+    </section>
+  `
+}
+
+function setAsideBodyMarkup() {
+  // The error sits ABOVE the list rather than replacing it: a failed "show
+  // more" must not throw away the pages that did load, or a transient blip
+  // costs the admin their place in the list.
+  const problem =
+    setAsideError === null
+      ? ""
+      : html`<p class="faces-setaside-error" role="alert">
+          ${setAsideError}
+          <button type="button" class="btn btn-secondary btn-sm faces-setaside-retry">
+            Try again
+          </button>
+        </p>`
+  const data = setAsideData
+  if (!data) return html`${problem}${setAsideError === null ? html`<p class="faces-empty text-muted">Loading…</p>` : ""}`
+  if (data.photos.length === 0) {
+    // Reachable, and worth saying plainly rather than as "nothing here": the
+    // header count is over live FACES while this list is over live
+    // PHOTOGRAPHS, so a set-aside face whose photograph has since been deleted
+    // is counted above and has no row below. Silence would look like a bug.
+    return html`${problem}<p class="faces-empty text-muted">
+      No photographs to open — every remaining set-aside face is on a photograph that has since
+      been deleted.
+    </p>`
+  }
+  const remaining = data.total - data.photos.length
+  return html`
+    ${problem}
+    <ul class="faces-setaside-list">
+      ${data.photos.map(setAsidePhotoRowMarkup)}
+    </ul>
+    ${remaining > 0
+      ? html`<button type="button" class="btn btn-secondary btn-sm faces-setaside-more">
+          Show more (${remaining} more ${remaining === 1 ? "photograph" : "photographs"})
+        </button>`
+      : ""}
+  `
+}
+
+/**
+ * One photograph's row.
+ *
+ * The accessible name on its button is built from ids and counts alone —
+ * "Photograph 41, 3 faces set aside, 2 still to name". Never anything about what
+ * the photograph shows or who is in it (CLAUDE.md, "Photographs Are Input To
+ * Code, Not To A Reader"), and the thumbnail is `alt=""` for the same reason:
+ * it is there to be recognised by the person who took it, not described.
+ * @param {Types.FaceSetAsidePhoto} photo
+ */
+function setAsidePhotoRowMarkup(photo) {
+  const set = photo.setAsideFaces
+  const left = photo.unnamedSetAside
+  const label =
+    `Photograph ${photo.mediaId}, ${set} ${set === 1 ? "face" : "faces"} set aside, ` +
+    (left === 0 ? "all named" : `${left} still to name`)
+  return html`
+    <li class="faces-setaside-row ${left === 0 ? "is-done" : ""}" data-media-id="${photo.mediaId}">
+      <img class="faces-setaside-thumb" src="/media/${photo.fileKey}/thumb" alt="" loading="lazy" />
+      <div class="faces-setaside-main">
+        <p class="faces-setaside-summary">
+          <strong>${set}</strong> of ${photo.liveFaces}
+          ${photo.liveFaces === 1 ? "face" : "faces"} here ${set === 1 ? "was" : "were"} set aside
+        </p>
+        <p class="faces-setaside-remaining text-muted">
+          ${left === 0
+            ? "All of them have a name."
+            : html`${left} still ${left === 1 ? "has" : "have"} no name.`}
+        </p>
+      </div>
+      ${openPhotoButtonMarkup(photo.mediaId, label)}
+    </li>
+  `
+}
+
+/** Fetch one page. Separate from the render so both the toggle and "show more"
+ *  fail the same way. @param {number} offset */
+async function fetchSetAsidePage(offset) {
+  return /** @type {Types.FacesSetAsideResponse} */ (
+    await api(`/api/admin/faces/set-aside?limit=${SET_ASIDE_PAGE}&offset=${offset}`)
+  )
+}
+
+/** Load the first page, replacing whatever was held. Used by the toggle and by
+ *  every reload while the panel is open — naming a face changes
+ *  `unnamedSetAside`, and a stale row would claim work that is already done. */
+async function refreshSetAside() {
+  try {
+    setAsideData = await fetchSetAsidePage(0)
+    setAsideError = null
+  } catch (err) {
+    console.error("Failed to load the set-aside photographs:", err)
+    setAsideError = "Couldn't load the photographs with set-aside faces."
+  }
+}
+
+/**
+ * Open or close the panel.
+ *
+ * `aria-expanded` is updated on the button IN PLACE rather than by re-rendering
+ * the counts: `renderCounts` replaces the whole `#faces-counts` subtree, which
+ * would destroy the very button that was just activated and drop keyboard focus
+ * to the document body.
+ * @param {HTMLElement} toggle
+ */
+async function toggleSetAside(toggle) {
+  setAsideOpen = !setAsideOpen
+  toggle.setAttribute("aria-expanded", setAsideOpen ? "true" : "false")
+  renderBody()
+  if (!setAsideOpen || setAsideData !== null) return
+  await refreshSetAside()
+  renderBody()
+}
+
+/** Append the next page. Focus is put back on the button afterwards (or on the
+ *  last row's "Open photo" when the list is now complete and the button is
+ *  gone), because renderBody replaces the element that was clicked. */
+async function loadMoreSetAside() {
+  const data = setAsideData
+  if (!data) return
+  try {
+    const next = await fetchSetAsidePage(data.photos.length)
+    setAsideData = {
+      photos: [...data.photos, ...next.photos],
+      total: next.total,
+      limit: next.limit,
+      offset: next.offset,
+    }
+    setAsideError = null
+  } catch (err) {
+    console.error("Failed to load more set-aside photographs:", err)
+    // `setAsideData` is left alone — the pages already on screen are still
+    // good, and "show more" stays available to retry with.
+    setAsideError = "Couldn't load any more photographs."
+  }
+  renderBody()
+  const more = document.querySelector(".faces-setaside-more")
+  if (more instanceof HTMLElement) {
+    more.focus()
+    return
+  }
+  const rows = document.querySelectorAll(".faces-setaside-row .faces-open-photo")
+  const last = rows[rows.length - 1]
+  if (last instanceof HTMLElement) last.focus()
 }
 
 // ---- Groups -----------------------------------------------------------
@@ -1716,6 +1943,19 @@ function handleFacesBodyClick(e) {
     return
   }
 
+  if (target.closest(".faces-setaside-more")) {
+    void loadMoreSetAside()
+    return
+  }
+  const retry = target.closest(".faces-setaside-retry")
+  if (retry instanceof HTMLElement) {
+    void (async () => {
+      await refreshSetAside()
+      renderBody()
+    })()
+    return
+  }
+
   const askRow = target.closest(".face-ask-row")
   if (askRow instanceof HTMLElement) {
     handleAskRowClick(askRow, target)
@@ -1859,6 +2099,17 @@ export function initFaceAssignment() {
   getButtonElement("faces-refresh-btn").addEventListener("click", () =>
     void loadFaceAssignment(),
   )
+  // The counts row lives OUTSIDE #faces-body (index.html), so it inherits none
+  // of the delegation below — same reason the photo dialog needs its own
+  // listeners. It is one button, so one delegated click is the whole wiring;
+  // Enter and Space come free from it being a real <button>.
+  getElement("faces-counts").addEventListener("click", (e) => {
+    const target = e.target
+    if (!(target instanceof Element)) return
+    const toggle = target.closest(".faces-setaside-toggle")
+    if (toggle instanceof HTMLElement) void toggleSetAside(toggle)
+  })
+
   const body = getElement("faces-body")
   body.addEventListener("click", handleFacesBodyClick)
   body.addEventListener("keydown", handleFacesBodyKeydown)

@@ -1360,6 +1360,41 @@ export interface RouteStateCounts {
 
 export function routeStateCounts(): RouteStateCounts
 
+/** One photograph holding at least one live `set_aside` face — the row behind
+ *  the Faces tab's "set aside" entry point. Never carries a descriptor. */
+export interface SetAsideMediaRow {
+  media_id: number
+  file_key: string
+  /** Live faces on this photograph graded `set_aside`. */
+  set_aside_faces: number
+  /** How many of those still carry no identity — the number that moves as the
+   *  work is done. `set_aside_faces` never does: naming a face does not
+   *  re-grade it. */
+  unnamed_set_aside: number
+  /** EVERY live face on the photograph, ungraded ones included, so a row can
+   *  never understate how many faces the photograph actually holds. */
+  live_faces: number
+}
+
+/** The photographs with at least one live `set_aside` face, media id ascending.
+ *
+ *  These are the photographs no other list in the Faces tab can reach: groups
+ *  and the ask queue are lists of FACES and both filter `set_aside` out, so one
+ *  whose faces are all set aside (or all already named) appears nowhere and its
+ *  faces cannot be opened at all.
+ *
+ *  An ungraded face (`route_state IS NULL`) never puts a photograph in this list
+ *  — ungraded is shown and bulk-assignable already, so it needs no entry point —
+ *  but ungraded faces are still counted in `live_faces`, so the arithmetic on a
+ *  listed row describes the whole photograph.
+ *
+ *  Ordered by the immutable media id, so paging stays stable while faces are
+ *  being named. */
+export function setAsideMedia(options: { limit: number; offset: number }): SetAsideMediaRow[]
+
+/** How many photographs `setAsideMedia` can return in total, for paging. */
+export function countSetAsideMedia(): number
+
 /** One face belonging to a CONFIRMED (never 'propagated') identity, restricted
  *  to a single descriptor model version. `person_name` is always present;
  *  `guest_id`/`guest_name` come off a LEFT JOIN and are null for an off-roster

@@ -205,6 +205,11 @@ describe("admin auth is required on every route", () => {
     assert.strictEqual(res.status, 401)
   })
 
+  it("401s GET /api/admin/faces/set-aside with no session", async () => {
+    const res = await fetch(`${BASE_URL}/api/admin/faces/set-aside`)
+    assert.strictEqual(res.status, 401)
+  })
+
   it("401s GET /api/admin/media/:id/faces with no session", async () => {
     const res = await fetch(`${BASE_URL}/api/admin/media/1/faces`)
     assert.strictEqual(res.status, 401)
@@ -741,6 +746,204 @@ describe("GET /api/admin/media/:id/faces", () => {
   it("401s with no session", async () => {
     const res = await fetch(`${BASE_URL}/api/admin/media/1/faces`)
     assert.strictEqual(res.status, 401)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// GET /api/admin/faces/set-aside — the DOOR to the escape hatch above.
+//
+// `assign-one` made a set-aside face nameable and the per-photograph view put
+// it on screen, but both are reached from an "Open photo" button rendered
+// beside a face chip or an ask row — and every one of those lists filters
+// `set_aside` out. So a photograph whose faces are ALL set aside, or all
+// already named, appeared in none of them, nothing rendered a button for it,
+// and its faces were unreachable through the UI however deliberately the
+// exemption had been built. This route is the only list here whose rows are
+// PHOTOGRAPHS, and that is exactly what closes it.
+// ---------------------------------------------------------------------------
+describe("GET /api/admin/faces/set-aside", () => {
+  it("lists a photograph whose faces are all set aside — no other list will", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const media = seedMedia({ width: 1000, height: 800 })
+    const a = seedFace(media, CLUSTER_A1, { route: "set_aside" })
+    const b = seedFace(media, CLUSTER_A2, { route: "set_aside" })
+
+    // The gap, asserted rather than assumed: this photograph reaches neither
+    // of the two lists that render an "Open photo" button.
+    const overview = await json(await asAdmin("/api/admin/faces/overview"))
+    for (const group of overview.groups) {
+      assert.ok(
+        !group.media.some((/** @type {any} */ m) => m.mediaId === media),
+        "a set-aside-only photograph has no chip in any group",
+      )
+    }
+    const queue = await json(await asAdmin("/api/admin/faces/queue"))
+    assert.ok(!queue.items.some((/** @type {any} */ i) => i.mediaId === media))
+
+    const body = await json(await asAdmin("/api/admin/faces/set-aside"))
+    assert.strictEqual(body.total, 1)
+    assert.strictEqual(body.photos.length, 1)
+    assert.strictEqual(body.photos[0].mediaId, media)
+    assert.strictEqual(body.photos[0].setAsideFaces, 2)
+    assert.strictEqual(body.photos[0].unnamedSetAside, 2)
+    assert.strictEqual(body.photos[0].liveFaces, 2)
+    // The file key is what the row's thumbnail and the dialog are built from.
+    const fileKey = /** @type {any} */ (
+      db.prepare(`SELECT file_key FROM media WHERE id = ?`).get(media)
+    ).file_key
+    assert.strictEqual(body.photos[0].fileKey, fileKey)
+    assert.ok(a !== b)
+  })
+
+  it("lists a MIXED photograph, counting only the faces that were set aside", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const media = seedMedia()
+    seedFace(media, CLUSTER_A1, { route: "set_aside" })
+    seedFace(media, CLUSTER_A2, { route: "accept" })
+    seedFace(media, CLUSTER_B1, { route: "ask" })
+
+    const body = await json(await asAdmin("/api/admin/faces/set-aside"))
+    assert.strictEqual(body.photos.length, 1)
+    assert.strictEqual(body.photos[0].setAsideFaces, 1)
+    // ...against the whole photograph, so a row can never make a three-face
+    // picture look like a one-face one.
+    assert.strictEqual(body.photos[0].liveFaces, 3)
+  })
+
+  it("an ungraded face makes no row of its own, but is still counted", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    // `route_state IS NULL` is every row written before quality routing. It is
+    // shown by the groups, shown by the queue and assignable in bulk — already
+    // reachable, so a list of "what nothing else can reach" is not padded with
+    // it. Dropping it from the ARITHMETIC would be the real bug, and it is not.
+    const ungradedOnly = seedMedia()
+    seedFace(ungradedOnly, CLUSTER_A1)
+    const mixed = seedMedia()
+    seedFace(mixed, CLUSTER_B1, { route: "set_aside" })
+    seedFace(mixed, CLUSTER_B2)
+
+    const body = await json(await asAdmin("/api/admin/faces/set-aside"))
+    assert.deepStrictEqual(
+      body.photos.map((/** @type {any} */ p) => p.mediaId),
+      [mixed],
+    )
+    assert.strictEqual(body.photos[0].setAsideFaces, 1)
+    assert.strictEqual(body.photos[0].liveFaces, 2)
+  })
+
+  it("keeps a photograph listed once its set-aside faces are named", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    // Naming does not re-grade, so `setAsideFaces` never moves; `unnamedSetAside`
+    // is the number that does. The row stays because it is still the only way
+    // back to those faces if a name turns out to be wrong.
+    const media = seedMedia()
+    const face = seedFace(media, CLUSTER_A1, { route: "set_aside" })
+    seedFace(media, CLUSTER_A2, { route: "set_aside" })
+    const person = seedPerson({ display_name: "Named From The Photograph" })
+
+    await asAdmin("/api/admin/faces/assign-one", {
+      method: "POST",
+      body: JSON.stringify({ faceId: face, personId: person }),
+    })
+
+    const body = await json(await asAdmin("/api/admin/faces/set-aside"))
+    assert.strictEqual(body.photos.length, 1)
+    assert.strictEqual(body.photos[0].setAsideFaces, 2)
+    assert.strictEqual(body.photos[0].unnamedSetAside, 1)
+  })
+
+  it("excludes soft-deleted faces and soft-deleted photographs", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const dismissed = seedMedia()
+    const dismissedFace = seedFace(dismissed, CLUSTER_A1, { route: "set_aside" })
+    db.prepare(`UPDATE media_faces SET deleted_at = '2026-01-01' WHERE id = ?`).run(dismissedFace)
+
+    const deletedPhoto = seedMedia()
+    seedFace(deletedPhoto, CLUSTER_A2, { route: "set_aside" })
+    db.prepare(`UPDATE media SET deleted_at = '2026-01-01' WHERE id = ?`).run(deletedPhoto)
+
+    const survivor = seedMedia()
+    seedFace(survivor, CLUSTER_B1, { route: "set_aside" })
+
+    const body = await json(await asAdmin("/api/admin/faces/set-aside"))
+    assert.deepStrictEqual(
+      body.photos.map((/** @type {any} */ p) => p.mediaId),
+      [survivor],
+    )
+    assert.strictEqual(body.total, 1)
+  })
+
+  it("pages by ascending media id, disjointly, and echoes what it applied", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    /** @type {number[]} */
+    const ids = []
+    for (let i = 0; i < 5; i++) {
+      const media = seedMedia()
+      ids.push(media)
+      seedFace(media, CLUSTER_A1, { route: "set_aside" })
+    }
+    ids.sort((a, b) => a - b)
+
+    const first = await json(await asAdmin("/api/admin/faces/set-aside?limit=2&offset=0"))
+    const second = await json(await asAdmin("/api/admin/faces/set-aside?limit=2&offset=2"))
+    const third = await json(await asAdmin("/api/admin/faces/set-aside?limit=2&offset=4"))
+
+    assert.deepStrictEqual(
+      [...first.photos, ...second.photos, ...third.photos].map(
+        (/** @type {any} */ p) => p.mediaId,
+      ),
+      ids,
+    )
+    assert.strictEqual(first.total, 5)
+    assert.strictEqual(first.limit, 2)
+    assert.strictEqual(second.offset, 2)
+  })
+
+  it("clamps a silly limit and says which one it used", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    // A client that asked for 5000 has to be told it got 100, or its "show
+    // more" arithmetic pages straight past rows nobody ever saw.
+    const huge = await json(await asAdmin("/api/admin/faces/set-aside?limit=5000"))
+    assert.strictEqual(huge.limit, 100)
+    const nonsense = await json(await asAdmin("/api/admin/faces/set-aside?limit=-4&offset=-9"))
+    assert.strictEqual(nonsense.limit, 50)
+    assert.strictEqual(nonsense.offset, 0)
+  })
+
+  it("is empty rather than an error when nothing is set aside", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    seedFace(seedMedia(), CLUSTER_A1, { route: "accept" })
+    seedFace(seedMedia(), CLUSTER_A2)
+    const body = await json(await asAdmin("/api/admin/faces/set-aside"))
+    assert.deepStrictEqual(body.photos, [])
+    assert.strictEqual(body.total, 0)
+  })
+
+  it("never leaks a descriptor", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    seedFace(seedMedia(), CLUSTER_A1, { route: "set_aside" })
+    assertNoDescriptor(await json(await asAdmin("/api/admin/faces/set-aside")))
+  })
+
+  it("hands the per-photograph view a media id it can actually open", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    // The click path, end to end: the list gives an id, that id opens the
+    // dialog's payload, and the face in it is the set-aside one. Anything less
+    // and the entry point could point at nothing.
+    const media = seedMedia({ width: 1200, height: 900 })
+    const hidden = seedFace(media, CLUSTER_A1, { route: "set_aside" })
+
+    const list = await json(await asAdmin("/api/admin/faces/set-aside"))
+    const mediaId = list.photos[0].mediaId
+    const faces = await json(await asAdmin(`/api/admin/media/${mediaId}/faces`))
+    assert.ok(faces.faces.some((/** @type {any} */ f) => f.faceId === hidden))
+
+    const person = seedPerson({ display_name: "Reached At Last" })
+    const res = await asAdmin("/api/admin/faces/assign-one", {
+      method: "POST",
+      body: JSON.stringify({ faceId: hidden, personId: person }),
+    })
+    assert.strictEqual(res.status, 200, "and from there it can be named")
   })
 })
 

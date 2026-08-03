@@ -904,6 +904,38 @@ export function facePropagateHandler(
   routeInfo: AuthenticatedRouteInfo,
 ): Promise<void>
 
+/** One photograph in GET /api/admin/faces/set-aside. Counts only — nothing here
+ *  describes what the photograph shows. */
+export interface SetAsidePhotoOut {
+  mediaId: number
+  fileKey: string
+  /** Live faces on it graded `set_aside`. */
+  setAsideFaces: number
+  /** How many of those are still unnamed — the number that shrinks as the work
+   *  is done, since naming a face never re-grades it. */
+  unnamedSetAside: number
+  /** Every live face on the photograph, ungraded ones included. */
+  liveFaces: number
+}
+
+/** GET /api/admin/faces/set-aside — the photographs holding at least one live
+ *  `set_aside` face, media id ascending, `?limit=&offset=` paged (defaults and
+ *  ceiling from PAGINATION; the applied values come back in the response).
+ *
+ *  The only list in this file whose rows are PHOTOGRAPHS. It exists because
+ *  every face list here filters `set_aside` out, so a photograph whose faces are
+ *  all set aside — or all already named — appeared in none of them, nothing
+ *  rendered an "Open photo" button for it, and `assignOne` was unreachable for
+ *  its faces however deliberately the exemption had been built.
+ *
+ *  Ungraded faces (`route_state IS NULL`) never make a row on their own: they
+ *  are shown and bulk-assignable already. They are still counted in `liveFaces`,
+ *  so a row never understates the photograph. */
+export function faceSetAsideHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void>
+
 /** GET /api/admin/media/:id/faces — EVERY live face in one photograph: the
  *  `chipOf` shape (faceId, mediaId, fileKey, original-pixel width/height, box)
  *  plus `personId`/`personName` (null when unidentified), `identityId`,
