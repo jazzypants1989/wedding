@@ -255,12 +255,41 @@ describe("db/schema add_vision_provenance migration", () => {
       )
     })
 
-    it("does NOT block DELETE", () => {
+    it("does not block DELETE of an ingest nothing points at", () => {
       const ingest = seedIngest(db)
       assert.doesNotThrow(() =>
         db.prepare("DELETE FROM vision_ingests WHERE id = ?").run(ingest),
       )
       assert.strictEqual(rowCount(db, "vision_ingests"), 0)
+    })
+
+    it("DOES block DELETE while a face still points at it — live or retired", () => {
+      // The migration's header once claimed DELETE stayed open here. It does
+      // not: `media_faces.ingest_id REFERENCES vision_ingests(id)` carries no
+      // ON DELETE clause, so the foreign key restricts it. That is the right
+      // behaviour — an ingest is the provenance of the rows it produced, and a
+      // face whose ingest_id dangles cannot say what drew its box — but a
+      // comment asserting the opposite is worse than either choice, so the
+      // behaviour is pinned here and the comment now agrees with it.
+      const ada = personId(db, "Ada", guestId(db, "Ada"))
+      const media = mediaId(db, "aaaa1111")
+      const face = faceId(db, media, identityId(db, ada))
+      const ingest = seedIngest(db)
+      db.prepare("UPDATE media_faces SET ingest_id = ? WHERE id = ?").run(ingest, face)
+
+      assert.throws(() => db.prepare("DELETE FROM vision_ingests WHERE id = ?").run(ingest))
+
+      // Soft-deleting the face does not release it either: the reference is the
+      // row's, not the row's liveness.
+      db.prepare("UPDATE media_faces SET deleted_at = '2026-01-01' WHERE id = ?").run(face)
+      assert.throws(() => db.prepare("DELETE FROM vision_ingests WHERE id = ?").run(ingest))
+      assert.strictEqual(rowCount(db, "vision_ingests"), 1)
+
+      // Hard-deleting the photo cascades the face away and releases it, which is
+      // the one path that has to keep working.
+      db.prepare("DELETE FROM media WHERE id = ?").run(media)
+      assert.doesNotThrow(() => db.prepare("DELETE FROM vision_ingests WHERE id = ?").run(ingest))
+      assert.deepStrictEqual(db.prepare("PRAGMA foreign_key_check").all(), [])
     })
 
     it("rejects a mirror_applied that is neither 0 nor 1", () => {

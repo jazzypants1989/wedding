@@ -18,6 +18,11 @@
 
 import { sql } from "./sql.js"
 import { now } from "./utils.js"
+// The redirect is written here and read there, and the two have to agree about
+// what "the identity at the end of the chain" means — so the merge resolves
+// through the same function every reader does. db/face-assignments.js imports
+// nothing from this file, so the dependency runs one way only.
+import { resolveIdentity } from "./face-assignments.js"
 
 /**
  * A descriptor as it is stored: 4 bytes per float, little-endian, no header —
@@ -145,17 +150,48 @@ export function identitiesForPerson(personId) {
  * A merge is a fact about IDENTITIES, so it is recorded once, here, and
  * `resolveIdentity` makes every historical event still correct.
  *
- * No cycle can form through this path: the source is soft-deleted immediately
- * afterwards by the caller, and `identitiesForPerson` — where every merge
- * target comes from — returns live rows only, so a merged-away identity can
- * never be chosen as a target. (`resolveIdentity` still carries a hop bound,
- * for the hand-edited case.)
+ * **Redirects are kept ONE HOP DEEP, by construction.** Both halves matter:
+ *
+ * - The source is pointed at `resolveIdentity(target)` rather than at the
+ *   target as given, so merging into an identity that has itself been merged
+ *   away lands on the survivor instead of chaining behind it.
+ * - Everything that already pointed at the SOURCE is repointed at the same
+ *   survivor. This is the half that actually bounds the depth: a merge always
+ *   names a live target, so a chain never grows at its head — it grows when a
+ *   target is merged LATER, which is precisely the ordinary case of folding one
+ *   person into another over and over. Thirty-three of those built a
+ *   thirty-three-hop chain and `resolveIdentity` called it corruption.
+ *
+ * That leaves the hop bound in `resolveIdentity` free to mean what it says.
+ *
+ * **A merge needs a LIVE target, and this checks it rather than trusting its
+ * caller.** api/admin/people.js takes every target from `identitiesForPerson`,
+ * which returns live rows only — true today, and the only thing that was
+ * holding. This is an exported primitive, and a target that is not live is the
+ * one input that can close a cycle (merge A into B, then B into A): after that
+ * `resolveIdentity` throws for every identity in the loop, permanently. So a
+ * target that resolves to nobody, or back to the source, is refused — returning
+ * false, the same as any other merge that changed no row.
  * @type {Types.mergeIdentityInto}
  */
 export function mergeIdentityInto(fromIdentityId, toIdentityId) {
-  const result = sql`UPDATE face_identities SET merged_into = ${toIdentityId}
+  const survivor = resolveIdentity(toIdentityId)
+  // Nobody live at the end of the target's chain: redirecting at it would
+  // silently detach every face that resolves through the source.
+  if (survivor === null) return false
+  // The target resolves back to the source — this merge would close the cycle.
+  if (survivor === fromIdentityId) return false
+
+  const result = sql`UPDATE face_identities SET merged_into = ${survivor}
     WHERE id = ${fromIdentityId} AND deleted_at IS NULL`.run()
-  return result.changes > 0
+  if (result.changes === 0) return false
+
+  // Path compression: the source has just stopped being an endpoint, so nothing
+  // may keep pointing at it. Indexed by idx_face_identities_merged.
+  sql`UPDATE face_identities SET merged_into = ${survivor}
+    WHERE merged_into = ${fromIdentityId}`.run()
+
+  return true
 }
 
 /**

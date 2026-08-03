@@ -37,7 +37,7 @@ import {
   facesForMediaWithNames,
   descriptorToBlob,
 } from "../../../db/media-faces.js"
-import { projectFace, recordAssignment } from "../../../db/face-assignments.js"
+import { projectFace, recordAssignment, resolveIdentity } from "../../../db/face-assignments.js"
 
 /** Point a face at an identity (or clear it) the ONLY way there now is: append
  *  a ledger event, which projects the column in the same call. `setFaceIdentity`
@@ -587,6 +587,62 @@ describe("db/media-faces + media_faces/face_identities schema", () => {
       assert.strictEqual(pairs.length, 1)
       assert.strictEqual(pairs[0].identity_a, Math.min(identityB.id, identityC.id))
       assert.strictEqual(pairs[0].identity_b, Math.max(identityB.id, identityC.id))
+    })
+
+    // -----------------------------------------------------------------------
+    // `mergeIdentityInto` is an exported primitive, so "api/admin/people.js only
+    // ever hands it a live target" is a property of one caller, not of the
+    // function. A target that is not live is the one input that can close a
+    // cycle — and a cycle is not a recoverable state: `resolveIdentity` throws
+    // for every identity in it, forever, and says the word "corruption".
+    // -----------------------------------------------------------------------
+    describe("mergeIdentityInto requires a live target", () => {
+      it("refuses a target that has itself been merged back into the source", () => {
+        const source = createIdentity({ personId: makePerson() })
+        const alreadyMerged = createIdentity({ personId: makePerson() })
+        mergeIdentities(alreadyMerged.id, source.id)
+
+        assert.strictEqual(mergeIdentityInto(source.id, alreadyMerged.id), false)
+
+        // The proof that nothing closed: both ends still resolve, and neither
+        // throws.
+        assert.strictEqual(resolveIdentity(source.id), source.id)
+        assert.strictEqual(resolveIdentity(alreadyMerged.id), source.id)
+      })
+
+      it("refuses a chain that ends at a soft-deleted identity", () => {
+        const source = createIdentity({ personId: makePerson() })
+        const middle = createIdentity({ personId: makePerson() })
+        const dead = createIdentity({ personId: makePerson() })
+        mergeIdentityInto(middle.id, dead.id)
+        softDeleteIdentity(middle.id)
+        softDeleteIdentity(dead.id)
+
+        // Redirecting at a chain with nobody live at the end would silently
+        // detach every face that resolves through it.
+        assert.strictEqual(mergeIdentityInto(source.id, middle.id), false)
+        assert.strictEqual(resolveIdentity(source.id), source.id)
+      })
+
+      it("refuses to merge an identity into itself", () => {
+        const identity = createIdentity({ personId: makePerson() })
+        assert.strictEqual(mergeIdentityInto(identity.id, identity.id), false)
+        assert.strictEqual(resolveIdentity(identity.id), identity.id)
+      })
+
+      it("follows a live target's redirect instead of chaining behind it", () => {
+        const source = createIdentity({ personId: makePerson() })
+        const middle = createIdentity({ personId: makePerson() })
+        const survivor = createIdentity({ personId: makePerson() })
+        mergeIdentities(middle.id, survivor.id)
+
+        assert.strictEqual(mergeIdentityInto(source.id, middle.id), true)
+
+        const row = /** @type {{ merged_into: number | null }} */ (
+          getDb().prepare("SELECT merged_into FROM face_identities WHERE id = ?").get(source.id)
+        )
+        assert.strictEqual(row.merged_into, survivor.id, "compressed at merge time, not chained")
+      })
     })
 
     it("faceIdsForIdentity includes soft-deleted face rows", () => {

@@ -33,6 +33,7 @@ import {
   ingestsForModelVersion,
   assertModelVersionInvariant,
 } from "../../../db/vision-ingests.js"
+import { mergeIdentityInto, softDeleteIdentity } from "../../../db/media-faces.js"
 
 let seq = 0
 
@@ -70,6 +71,43 @@ function makeFace(mediaId) {
      VALUES (?, 1, 2, 3, 4, 'test-model', 'cli')`,
     [mediaId ?? makeMedia()],
   )
+}
+
+/** An upload-time detection: the row schema.js's §10 precedence triggers retire
+ *  once the CLI has spoken for the same photo.
+ *  @param {number} mediaId @returns {number} */
+function makeUploadFace(mediaId) {
+  return insert(
+    `INSERT INTO media_faces (media_id, bbox_x, bbox_y, bbox_w, bbox_h, model_version, source)
+     VALUES (?, 1, 2, 3, 4, 'test-model', 'upload')`,
+    [mediaId],
+  )
+}
+
+/** A CLI row stamped with the ingest run that produced it — which is what tells
+ *  one generation of `--replace` rows from the next.
+ *  @param {number} mediaId @param {number} ingestId @returns {number} */
+function makeCliFaceFromIngest(mediaId, ingestId) {
+  return insert(
+    `INSERT INTO media_faces (media_id, bbox_x, bbox_y, bbox_w, bbox_h, model_version, source, ingest_id)
+     VALUES (?, 1, 2, 3, 4, 'test-model', 'cli', ?)`,
+    [mediaId, ingestId],
+  )
+}
+
+/** `scripts/vision/ingest-faces.js`'s `retireCliFaces` — the `--replace` path,
+ *  and `media_faces.deleted_at`'s third author. Reproduced here rather than
+ *  imported because it is one statement and the script is not this file's
+ *  subject; what matters is that it only ever touches LIVE rows.
+ *  @param {number} mediaId */
+function retireLiveCliFaces(mediaId) {
+  getDb()
+    .prepare(
+      `UPDATE media_faces SET deleted_at = '2026-02-02T00:00:00.000Z'
+       WHERE media_id = ? AND model_version = 'test-model'
+         AND source = 'cli' AND deleted_at IS NULL`,
+    )
+    .run(mediaId)
 }
 
 /** @param {number} faceId */
@@ -260,6 +298,78 @@ describe("db/face-assignments + db/vision-ingests", () => {
 
       assert.throws(() => resolveIdentity(a), messageIncludes("cycle"))
     })
+
+    it("compresses a hand-made chain on the way through, so it is walked once", () => {
+      // The hop bound is a CORRUPTION detector, and it can only be that if a
+      // legitimate chain never approaches it. Reading one collapses it.
+      const chain = [makeIdentity(), makeIdentity(), makeIdentity(), makeIdentity()]
+      for (let i = 0; i < chain.length - 1; i++) merge(chain[i], chain[i + 1])
+      const last = chain[chain.length - 1]
+
+      assert.strictEqual(resolveIdentity(chain[0]), last)
+
+      for (const id of chain.slice(0, -1)) {
+        const row = /** @type {{ merged_into: number | null }} */ (
+          getDb().prepare("SELECT merged_into FROM face_identities WHERE id = ?").get(id)
+        )
+        assert.strictEqual(row.merged_into, last, "every hop now points straight at the survivor")
+      }
+    })
+
+    it("a long LEGITIMATE merge chain is not corruption — 40 merges, no throw", () => {
+      // Each step merges the SURVIVING person into a new one, which is exactly
+      // what api/admin/people.js does and the one shape that lengthens a chain
+      // (a merge points at a live identity; chains grow when the TARGET is
+      // merged later). Before path compression this threw "contains a cycle" on
+      // merge 33 — and then the lineage was permanently un-mergeable, every
+      // ledger write on its faces threw, and the operator was told their
+      // database was corrupt.
+      const identities = []
+      for (let i = 0; i < 40; i++) identities.push(makeIdentity())
+
+      const face = makeFace()
+      recordAssignment({ faceId: face, op: "assign", identityId: identities[0], actor: "a" })
+
+      for (let i = 0; i < identities.length - 1; i++) {
+        // api/admin/people.js:250-252, verbatim in shape: redirect, retire,
+        // re-project every affected face.
+        assert.ok(
+          mergeIdentityInto(identities[i], identities[i + 1]),
+          `merge ${i + 1} of ${identities.length - 1} was refused`,
+        )
+        softDeleteIdentity(identities[i])
+        projectFace(face)
+      }
+
+      const survivor = identities[identities.length - 1]
+      for (const identity of identities) assert.strictEqual(resolveIdentity(identity), survivor)
+      assert.strictEqual(faceState(face).face_identity_id, survivor)
+    })
+  })
+
+  describe("createBatch", () => {
+    it("refuses a kind that is not one of the four", () => {
+      // `kind` is typed FaceAssignmentBatchKind and commented with its four
+      // values, and until the enum trigger existed the database took anything.
+      // A batch is the unit revocation acts on; a kind nobody can interpret is
+      // a revocable unit nobody can explain.
+      assert.throws(
+        () => createBatch({ batchId: "b1", kind: /** @type {never} */ ("not-a-real-kind"), actor: "a" }),
+        messageIncludes("Invalid batch kind"),
+      )
+      assert.strictEqual(getBatch("b1"), undefined)
+    })
+
+    it("accepts each of the four", () => {
+      for (const kind of /** @type {import('../../../types.js').FaceAssignmentBatchKind[]} */ ([
+        "label-import",
+        "propagate",
+        "manual",
+        "merge-repair",
+      ])) {
+        assert.strictEqual(createBatch({ batchId: kind, kind, actor: "a" }).kind, kind)
+      }
+    })
   })
 
   describe("recordAssignment", () => {
@@ -435,6 +545,114 @@ describe("db/face-assignments + db/vision-ingests", () => {
 
       assert.deepStrictEqual(projectFace(face), { identityId: identity, notAFace: false })
     })
+
+    // ---------------------------------------------------------------------
+    // `media_faces.deleted_at` has THREE authors, not one: this projection,
+    // schema.js's §10 precedence triggers, and `retireCliFaces` in
+    // scripts/vision/ingest-faces.js (the `--replace` path). The projection may
+    // only ever revive a retirement it WROTE ITSELF and still holds — asking
+    // instead "does a not_a_face event exist in this face's history at all"
+    // answers a different question (did the ledger ever speak?) and hands every
+    // other author's row back to the live pool.
+    //
+    // Each sequence below ends with a row that must stay retired.
+    // ---------------------------------------------------------------------
+    describe("never resurrects a retirement it does not own", () => {
+      it("upload retired by the ledger, then superseded while already dead", () => {
+        // The masking case: the §10 trigger only touches LIVE rows, so the
+        // ledger's own soft-delete hides this row from it. Revoking must not
+        // then conclude the row would have been live all along.
+        const media = makeMedia()
+        const upload = makeUploadFace(media)
+        createBatch({ batchId: "b1", kind: "manual", actor: "a" })
+        recordAssignment({ faceId: upload, op: "not_a_face", actor: "a", batchId: "b1" })
+        assert.ok(faceState(upload).deleted_at, "fixture: the ledger should have retired it")
+
+        makeFace(media) // the authoritative cli row lands for the same photo
+        revokeBatch("b1", "admin2")
+
+        assert.ok(
+          faceState(upload).deleted_at,
+          "an upload row must not rejoin the live pool beside authoritative cli rows",
+        )
+      })
+
+      it("upload revived by revocation, then retired by the trigger, then re-revoked", () => {
+        const media = makeMedia()
+        const upload = makeUploadFace(media)
+        createBatch({ batchId: "b1", kind: "manual", actor: "a" })
+        recordAssignment({ faceId: upload, op: "not_a_face", actor: "a", batchId: "b1" })
+        revokeBatch("b1", "admin2")
+        assert.strictEqual(faceState(upload).deleted_at, null, "fixture: revocation revives it")
+
+        makeFace(media) // now the trigger DOES fire — it is the current author
+        assert.ok(faceState(upload).deleted_at, "fixture: the §10 trigger should have retired it")
+
+        revokeBatch("b1", "admin2") // a second revocation is a bare re-projection
+
+        assert.ok(faceState(upload).deleted_at, "the trigger's retirement is not the ledger's to undo")
+      })
+
+      it("the same, when the re-projection is an unrelated one (the merge back-fill)", () => {
+        // api/admin/people.js's merge loop calls projectFace on every affected
+        // face. Nothing about a merge says anything about supersession.
+        const media = makeMedia()
+        const upload = makeUploadFace(media)
+        createBatch({ batchId: "b1", kind: "manual", actor: "a" })
+        recordAssignment({ faceId: upload, op: "not_a_face", actor: "a", batchId: "b1" })
+        revokeBatch("b1", "admin2")
+        makeFace(media)
+        assert.ok(faceState(upload).deleted_at, "fixture: the §10 trigger should have retired it")
+
+        projectFace(upload)
+
+        assert.ok(faceState(upload).deleted_at, "any projection, not just revocation")
+      })
+
+      it("a cli generation superseded by --replace stays superseded", () => {
+        // The invariant `assertNoLiveCliFaces` enforces is "at most one live cli
+        // generation per (media_id, model_version)". Reviving a retired row from
+        // an earlier generation falsifies it retroactively — after the check
+        // that was supposed to guarantee it has already passed.
+        const media = makeMedia()
+        const first = createIngest(ingestInput()).id
+        const second = createIngest(ingestInput()).id
+        const genOne = makeCliFaceFromIngest(media, first)
+
+        createBatch({ batchId: "b1", kind: "manual", actor: "a" })
+        recordAssignment({ faceId: genOne, op: "not_a_face", actor: "a", batchId: "b1" })
+
+        retireLiveCliFaces(media) // --replace; genOne is already dead, so skipped
+        makeCliFaceFromIngest(media, second)
+
+        revokeBatch("b1", "admin2")
+
+        assert.ok(
+          faceState(genOne).deleted_at,
+          "a superseded cli generation must not rejoin the live pool",
+        )
+      })
+
+      it("still revives the retirement it does own, and only once", () => {
+        // The guard must not cost the ledger its own undo — that is the whole
+        // promise of a revocable not_a_face.
+        const face = makeFace()
+        createBatch({ batchId: "b1", kind: "manual", actor: "a" })
+        recordAssignment({ faceId: face, op: "not_a_face", actor: "a", batchId: "b1" })
+        assert.ok(faceState(face).deleted_at)
+
+        revokeBatch("b1", "admin2")
+        assert.strictEqual(faceState(face).deleted_at, null)
+
+        // And a face nobody ever called not-a-face is not the ledger's to touch.
+        const superseded = makeUploadFace(makeMedia())
+        getDb()
+          .prepare("UPDATE media_faces SET deleted_at = '2026-03-03T00:00:00.000Z' WHERE id = ?")
+          .run(superseded)
+        recordAssignment({ faceId: superseded, op: "assign", identityId: makeIdentity(), actor: "a" })
+        assert.ok(faceState(superseded).deleted_at)
+      })
+    })
   })
 
   describe("revokeBatch", () => {
@@ -470,6 +688,47 @@ describe("db/face-assignments + db/vision-ingests", () => {
 
       assert.strictEqual(getBatch("b1")?.revoked_at, first?.revoked_at)
       assert.strictEqual(getBatch("b1")?.revoked_by, "admin2")
+    })
+
+    it("cannot be undone behind the projection's back", () => {
+      // Revocation is a FLAG, and every projection is derived from it. Clearing
+      // the flag by hand would leave `media_faces.face_identity_id` describing a
+      // world where the batch was revoked and the ledger describing one where it
+      // was not, with nothing to say which is current.
+      const face = makeFace()
+      const identity = makeIdentity()
+      createBatch({ batchId: "b1", kind: "propagate", actor: "a" })
+      recordAssignment({ faceId: face, op: "assign", identityId: identity, actor: "a", batchId: "b1" })
+      revokeBatch("b1", "admin2")
+
+      assert.throws(
+        () =>
+          getDb()
+            .prepare("UPDATE face_assignment_batches SET revoked_at = NULL WHERE batch_id = 'b1'")
+            .run(),
+        messageIncludes("not reversible"),
+      )
+      assert.ok(getBatch("b1")?.revoked_at)
+    })
+
+    it("cannot have its attribution rewritten", () => {
+      // face_assignments.actor is frozen by the append-only trigger; the actor
+      // on the REVOCABLE UNIT was not, which is the more useful one to forge.
+      createBatch({ batchId: "b1", kind: "propagate", actor: "pipeline", note: "auto pass" })
+
+      for (const statement of [
+        "UPDATE face_assignment_batches SET actor = 'someone-else' WHERE batch_id = 'b1'",
+        "UPDATE face_assignment_batches SET kind = 'manual' WHERE batch_id = 'b1'",
+        "UPDATE face_assignment_batches SET note = 'a different story' WHERE batch_id = 'b1'",
+        "UPDATE face_assignment_batches SET batch_id = 'b2' WHERE batch_id = 'b1'",
+      ]) {
+        assert.throws(
+          () => getDb().prepare(statement).run(),
+          messageIncludes("only revoked_at/revoked_by"),
+          statement,
+        )
+      }
+      assert.strictEqual(getBatch("b1")?.actor, "pipeline")
     })
 
     it("LEAVES A LATER MANUAL CORRECTION STANDING — plan §9b's whole promise", () => {
