@@ -17,7 +17,7 @@
 /** @import * as Types from './types.js' */
 
 import { sendJson, parseBody } from "../../core/http.js"
-import { log } from "../../core/utils.js"
+import { log, actorId } from "../../core/utils.js"
 import { getClientIp } from "../../core/rate-limit.js"
 import {
   validateId,
@@ -117,7 +117,9 @@ export async function create(req, res, { session }) {
   const person = createPerson({
     displayName: nameResult.value,
     guestId,
-    createdBy: session?.token ?? null,
+    // Through actorId, like every other actor field — the audit log has always
+    // truncated to 8 chars and this column is the more durable of the two.
+    createdBy: actorId(session?.token),
     notes: notesResult.value,
   })
 

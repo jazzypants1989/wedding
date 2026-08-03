@@ -1432,4 +1432,37 @@ export function runMigrations(db) {
     `)
     record.run("add_media_frame_root")
   }
+
+  // `people.created_by` and `face_identities.confirmed_by` stored the full
+  // 64-char sessions-table key while the audit log stored an 8-char prefix of
+  // the same value, so "which admin did this" was two different strings
+  // depending on where you read it. `core/utils.js`'s `actorId` is now the one
+  // definition; this brings existing rows to it.
+  //
+  // NOT a credential scrub: the value is the SHA-256 hash db/sessions.js keeps,
+  // not the plaintext bearer token, and holding it authenticates nobody. It is
+  // a consistency fix, plus one fewer machine-local session key riding along in
+  // Phase 9's hand-off export.
+  //
+  // A prefix is idempotent under re-truncation, so re-running is safe and a row
+  // written by either shape lands in the same place.
+  // Both UPDATEs are guarded on the table existing. In a real database
+  // `add_people` has always run by the time this does, but a test may pin an
+  // earlier ledger state to exercise one migration in isolation, and a scrub
+  // that hard-depends on a table another migration creates would turn that into
+  // a boot failure (D3: a throwing migration stops the server starting).
+  if (!applied.get("truncate_durable_actor_tokens")) {
+    const tableExists = db.prepare(
+      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+    )
+    if (tableExists.get("people")) {
+      db.exec(`UPDATE people SET created_by = substr(created_by, 1, 8)
+        WHERE created_by IS NOT NULL AND length(created_by) > 8`)
+    }
+    if (tableExists.get("face_identities")) {
+      db.exec(`UPDATE face_identities SET confirmed_by = substr(confirmed_by, 1, 8)
+        WHERE confirmed_by IS NOT NULL AND length(confirmed_by) > 8`)
+    }
+    record.run("truncate_durable_actor_tokens")
+  }
 }

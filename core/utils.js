@@ -58,15 +58,38 @@ export function cleanOldLogs() {
   }
 }
 
+/**
+ * Fold an admin session identifier down to the prefix worth writing down.
+ *
+ * What a handler receives as `session.token` is the sessions ROW's token column
+ * (`core/auth.js`'s `withAdmin` passes the row through), and `db/sessions.js`
+ * stores the SHA-256 hash of the cookie value there — so this is a hash, NOT
+ * the plaintext bearer token, and holding it does not let anyone authenticate.
+ * The point of truncating is therefore not credential leakage:
+ *
+ *  - it is the primary key of the `sessions` table, and the only thing an actor
+ *    field needs is to tell two admins' actions apart, which 8 chars does;
+ *  - the audit log has always truncated to 8 (`buildLogEntry` below), and having
+ *    the durable columns store 64 meant "the actor" was two different values
+ *    depending on where you read it;
+ *  - `people.created_by` and `face_identities.confirmed_by` outlive the log's
+ *    30-day retention, and Phase 9's hand-off export carries the people rows to
+ *    another machine, where a session key from this machine means nothing.
+ *
+ * One definition, used by both the log and the durable columns.
+ *
+ * @type {Types.actorId}
+ */
+export function actorId(token) {
+  return token ? token.slice(0, 8) : null
+}
+
 /** @param {Types.AuditEvent} event */
 function buildLogEntry({ action, adminId, ip, resourceType, resourceId, details }) {
   return {
     timestamp: new Date().toISOString(),
     action,
-    // Store only an 8-char prefix of the session token: enough to correlate an
-    // admin's actions within the log without persisting a full, still-valid
-    // session token to disk (the audit log is retained 30 days).
-    adminId: adminId ? adminId.slice(0, 8) : null,
+    adminId: actorId(adminId),
     ip: ip || null,
     resourceType: resourceType || null,
     resourceId: resourceId || null,

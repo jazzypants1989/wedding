@@ -343,6 +343,14 @@ interface AuditActions {
   readonly THANK_YOU_REPLY: "THANK_YOU_REPLY"
 }
 
+/**
+ * Fold an admin session identifier down to the prefix worth persisting — the
+ * ONE place that decides how much of it any actor field records, durable
+ * column and audit log alike. See the implementation comment in core/utils.js
+ * for why (it is a hash, not a bearer token; this is consistency, not secrecy).
+ */
+export function actorId(token: string | null | undefined): string | null
+
 export function log(event: AuditEvent): void
 /** Write many audit events in a single file append (bulk moderation actions). */
 export function logBatch(events: AuditEvent[]): void

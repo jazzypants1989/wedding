@@ -715,6 +715,29 @@ describe("people: on and off the roster", () => {
     )
     assert.notStrictEqual(row.created_by, "not-me", "actor fields are never client-supplied")
   })
+
+  it("records the 8-char actorId prefix, the same value the audit log records", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    // What a handler gets as `session.token` is the sessions ROW's token column
+    // — the SHA-256 of the cookie value (db/sessions.js `hashToken`), not the
+    // bearer token. The durable columns used to keep all 64 chars of it while
+    // the audit log kept 8, so one admin action had two different actor
+    // spellings. core/utils.js's actorId is the single definition now.
+    const created = await json(await postPerson({ displayName: "Prefix Only" }))
+    const row = /** @type {any} */ (
+      db.prepare(`SELECT created_by FROM people WHERE id = ?`).get(created.person.id)
+    )
+
+    const cookieToken = /** @type {{ cookieHeader: string }} */ (admin).cookieHeader
+      .split("session=")[1]
+      .split(";")[0]
+    const sessionKey = crypto.createHash("sha256").update(cookieToken).digest("hex")
+
+    assert.strictEqual(row.created_by.length, 8, "8 chars, matching the audit log")
+    assert.strictEqual(row.created_by, sessionKey.slice(0, 8))
+    assert.notStrictEqual(row.created_by, sessionKey, "not the whole session key")
+  })
 })
 
 describe("people: duplicate names are legal, but never accidental", () => {

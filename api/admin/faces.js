@@ -18,7 +18,7 @@
 /** @import * as Types from './types.js' */
 
 import { sendJson, parseBody } from "../../core/http.js"
-import { log } from "../../core/utils.js"
+import { log, actorId } from "../../core/utils.js"
 import { getClientIp } from "../../core/rate-limit.js"
 import { validateId, validateIdArray, ValidationError, NotFoundError } from "../../core/validation.js"
 import { withTransaction } from "../../db/utils.js"
@@ -361,7 +361,8 @@ export async function assign(req, res, { session }) {
       existing ??
       createIdentity({
         personId: personIdResult.value,
-        confirmedBy: session?.token ?? null,
+        // Through actorId, like every other actor field — see core/utils.js.
+        confirmedBy: actorId(session?.token),
         confirmedAt: now(),
         provenance: "confirmed",
       })
@@ -578,7 +579,7 @@ export async function propagate(req, res, { session }) {
           existing ??
           createIdentity({
             personId: source.person_id,
-            confirmedBy: session?.token ?? null,
+            confirmedBy: actorId(session?.token),
             confirmedAt: now(),
             provenance: "propagated",
           })

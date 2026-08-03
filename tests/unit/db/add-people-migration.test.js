@@ -378,4 +378,81 @@ describe("db/schema add_people migration", () => {
       assert.deepStrictEqual(db.prepare("PRAGMA foreign_key_check").all(), [])
     })
   })
+
+  describe("truncate_durable_actor_tokens", () => {
+    // Both columns held the full 64-char sessions-table key (the SHA-256 hash
+    // db/sessions.js stores, not a bearer token) while the audit log held its
+    // 8-char prefix — one actor, two spellings. core/utils.js's actorId is the
+    // single definition now; this brings existing rows to it.
+    const SESSION_KEY =
+      "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+    /** @param {DatabaseSync} db */
+    function rerunScrub(db) {
+      db.prepare("DELETE FROM migrations WHERE name = 'truncate_durable_actor_tokens'").run()
+      runMigrations(db)
+    }
+
+    it("cuts a full session key down to the 8-char actorId prefix", () => {
+      runAddPeople(db)
+      db.prepare("INSERT INTO people (display_name, created_by) VALUES ('Ada', ?)").run(
+        SESSION_KEY,
+      )
+      const person = Number(
+        /** @type {{ id: number }} */ (db.prepare("SELECT last_insert_rowid() AS id").get()).id,
+      )
+      db.prepare(
+        "INSERT INTO face_identities (person_id, provenance, confirmed_by) VALUES (?, 'confirmed', ?)",
+      ).run(person, SESSION_KEY)
+
+      rerunScrub(db)
+
+      assert.strictEqual(
+        /** @type {{ created_by: string }} */ (
+          db.prepare("SELECT created_by FROM people WHERE id = ?").get(person)
+        ).created_by,
+        "01234567",
+      )
+      assert.strictEqual(
+        /** @type {{ confirmed_by: string }} */ (
+          db.prepare("SELECT confirmed_by FROM face_identities WHERE person_id = ?").get(person)
+        ).confirmed_by,
+        "01234567",
+      )
+    })
+
+    it("leaves an already-truncated value and a null alone", () => {
+      runAddPeople(db)
+      db.prepare("INSERT INTO people (display_name, created_by) VALUES ('Short', '01234567')").run()
+      db.prepare("INSERT INTO people (display_name, created_by) VALUES ('None', NULL)").run()
+
+      rerunScrub(db)
+      rerunScrub(db) // a prefix is idempotent under re-truncation
+
+      assert.deepStrictEqual(
+        plain(
+          /** @type {Array<{ display_name: string, created_by: string | null }>} */ (
+            db
+              .prepare("SELECT display_name, created_by FROM people ORDER BY display_name")
+              .all()
+          ),
+        ),
+        [
+          { display_name: "None", created_by: null },
+          { display_name: "Short", created_by: "01234567" },
+        ],
+      )
+    })
+
+    it("does not throw when the tables it scrubs do not exist yet", () => {
+      // The fixture's ledger state has `add_people` pinned as applied, so
+      // `people` was never created. A scrub that hard-depended on it would
+      // throw here — and a throwing migration stops the server booting (D3).
+      assert.ok(
+        !db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='people'").get(),
+        "fixture is wrong: people should not exist before add_people runs",
+      )
+      assert.doesNotThrow(() => rerunScrub(db))
+    })
+  })
 })

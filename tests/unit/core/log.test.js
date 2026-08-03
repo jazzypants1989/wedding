@@ -7,7 +7,7 @@ import assert from "node:assert"
 import fs from "node:fs"
 import path from "node:path"
 import os from "node:os"
-import { log, cleanOldLogs, AUDIT_ACTIONS } from "../../../core/utils.js"
+import { log, actorId, cleanOldLogs, AUDIT_ACTIONS } from "../../../core/utils.js"
 
 // AUDIT_LOG_DIR is set by test-env.js — utils.js reads it at module load time
 const LOG_DIR = process.env.AUDIT_LOG_DIR || ""
@@ -143,6 +143,21 @@ describe("core/log", () => {
       const entry = JSON.parse(content)
 
       assert.strictEqual(entry.adminId, "01234567")
+    })
+
+    it("actorId is the ONE definition of how much of a session id is recorded", () => {
+      // Durable columns (people.created_by, face_identities.confirmed_by) go
+      // through this too, not just the audit log — otherwise "the actor" is a
+      // 64-char string in one place and its 8-char prefix in the other. The
+      // value is db/sessions.js's SHA-256 hash, not a bearer token.
+      assert.strictEqual(actorId("0123456789abcdef"), "01234567")
+      assert.strictEqual(actorId(null), null)
+      assert.strictEqual(actorId(undefined), null)
+      assert.strictEqual(actorId(""), null, "an empty token is no actor, not an empty string")
+
+      // Idempotent under re-application, which is what lets the
+      // truncate_durable_actor_tokens migration re-run safely.
+      assert.strictEqual(actorId(actorId("0123456789abcdef")), "01234567")
     })
 
     it("handles missing optional fields as null", async () => {
