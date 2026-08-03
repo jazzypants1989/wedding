@@ -1437,3 +1437,167 @@ export interface FaceWithNameRow {
 /** Live faces for one photo, id ascending, each carrying the identified
  *  person's name if any. The descriptor is never selected. */
 export function facesForMediaWithNames(mediaId: number): FaceWithNameRow[]
+
+/** @file vision-ingests.js - Ingest provenance (schema.js
+ *  `add_vision_provenance`). One row per pipeline run: what produced a face,
+ *  as opposed to `media_faces.model_version`, which names only the descriptor
+ *  space the face was embedded into. */
+
+import type { VisionIngest, VisionIngestConfig } from "../types.js"
+
+export interface CreateIngestInput {
+  datasetId: string
+  /** Descriptor space only — embedder, width, normalisation, mirror. Never the
+   *  detector: the detector is what this row records. */
+  modelVersion: string
+  detectorSha256: string
+  embedderSha256: string
+  engineSha256: string
+  /** Stored as 0/1; SQLite has no boolean. */
+  mirrorApplied: boolean
+  normalisation: string
+  routeProfile: string
+  /** The ALLOWLISTED config object (see VisionIngestConfig) — serialised here,
+   *  so callers never hand-roll the JSON. Never a path, never argv, never a
+   *  number measured from the photographs. */
+  config: VisionIngestConfig
+}
+
+/** Insert an ingest row and return it. A PLAIN statement with no transaction
+ *  of its own — every caller is already inside one (db/utils.js
+ *  `withTransaction` is a bare BEGIN IMMEDIATE and does not nest). */
+export function createIngest(input: CreateIngestInput): VisionIngest
+
+export function getIngestById(id: number): VisionIngest | undefined
+
+/** Every ingest recorded against one descriptor space, id ascending. */
+export function ingestsForModelVersion(modelVersion: string): VisionIngest[]
+
+/** The three facts a `model_version` string is a NAME FOR. If two runs disagree
+ *  on any of them, the same string means two different descriptor spaces. */
+export interface ModelVersionTriple {
+  embedderSha256: string
+  normalisation: string
+  mirrorApplied: boolean
+}
+
+/** Throw if `modelVersion` has already been recorded against a DIFFERENT
+ *  (embedder, normalisation, mirror) triple.
+ *
+ *  `model_version` is what every distance computation partitions on, so a
+ *  reused string silently mixes two descriptor spaces inside one comparison —
+ *  and that failure looks like a slightly worse recogniser rather than like a
+ *  bug, which is exactly why it needs a hard check instead of a convention.
+ *  Identical reuse is fine and expected: a second run of the same models. */
+export function assertModelVersionInvariant(
+  modelVersion: string,
+  triple: ModelVersionTriple,
+): void
+
+/** @file face-assignments.js - The append-only ledger behind
+ *  `media_faces.face_identity_id` (schema.js `add_vision_provenance`).
+ *
+ *  Nothing else may write `face_identity_id` once this exists:
+ *  `recordAssignment` appends the event AND materialises the column in one
+ *  call, and `projectFace` is the single definition of "materialise". Two
+ *  implementations of one rule is how they drift. */
+
+import type {
+  FaceAssignment,
+  FaceAssignmentBatch,
+  FaceAssignmentBatchKind,
+  FaceAssignmentOp,
+} from "../types.js"
+
+export interface CreateBatchInput {
+  /** Caller-chosen, and the primary key — so making it unique (a uuid, a run
+   *  id) is the caller's job. */
+  batchId: string
+  kind: FaceAssignmentBatchKind
+  /** core/utils.js `actorId()`. Never from the client. */
+  actor: string
+  note?: string | null
+}
+
+export function createBatch(input: CreateBatchInput): FaceAssignmentBatch
+
+export function getBatch(batchId: string): FaceAssignmentBatch | undefined
+
+export interface RecordAssignmentInput {
+  faceId: number
+  op: FaceAssignmentOp
+  /** Required for `assign`/`negative`, absent/null for `clear`/`not_a_face` —
+   *  trigger-enforced, so a disagreement throws rather than storing a state
+   *  nobody can replay. */
+  identityId?: number | null
+  /** core/utils.js `actorId()`. Never from the client. */
+  actor: string
+  /** Null for a one-off event, which is therefore not bulk-revocable. */
+  batchId?: string | null
+  reason?: string | null
+}
+
+/** Append one event AND project the face, in one call. Plain statements, no
+ *  transaction of its own: every write path in api/admin/faces.js is already
+ *  inside a `withTransaction`, which is a bare BEGIN IMMEDIATE and does not
+ *  nest. Returns the appended row. */
+export function recordAssignment(input: RecordAssignmentInput): FaceAssignment
+
+/** Every event for one face, id ascending — the audit view. Includes revoked
+ *  batches' events and `negative` events, both of which replay skips: this is
+ *  the history, not the verdict. */
+export function assignmentsForFace(faceId: number): FaceAssignment[]
+
+/** Follow `face_identities.merged_into` to the live identity at the end of the
+ *  chain. Returns null for a null input, for an identity that does not exist,
+ *  and for a chain that ends at a soft-deleted row.
+ *
+ *  **Throws rather than looping** if the chain exceeds its hop bound — a cycle
+ *  is corrupt data, and an infinite loop inside a request is worse than an
+ *  error. */
+export function resolveIdentity(identityId: number | null): number | null
+
+export interface ReplayOptions {
+  /** Replay as if this batch had never happened — the preview half of
+   *  `revokeBatch`, and the reason projection cannot be a trigger (SQL cannot
+   *  express "replay excluding batch X"). */
+  ignoreBatchId?: string | null
+}
+
+/** What the ledger says a face currently is. */
+export interface FaceReplayResult {
+  /** The LIVE identity id, already resolved through any merges. Null when the
+   *  face is unassigned, or when its identity has been deleted. */
+  identityId: number | null
+  /** The box is not a face at all. Materialises as a soft delete. */
+  notAFace: boolean
+}
+
+/** Replay one face's events, newest first, and return the first survivor.
+ *
+ *  Skipped: events in a revoked batch, events in `ignoreBatchId`, and every
+ *  `negative` event (a constraint on what the face is NOT, never a state).
+ *  No survivor → `{ identityId: null, notAFace: false }`. */
+export function replayFace(faceId: number, opts?: ReplayOptions): FaceReplayResult
+
+/** Materialise `replayFace` onto `media_faces` (`face_identity_id` and
+ *  `deleted_at`), and return what it wrote. The SINGLE definition of
+ *  "materialise" — a trigger was considered and rejected, because it cannot
+ *  express "replay excluding batch X" and the logic would then exist twice. */
+export function projectFace(faceId: number, opts?: ReplayOptions): FaceReplayResult
+
+/** Flag a batch revoked and re-project every face it touched. Returns how many
+ *  faces were re-projected.
+ *
+ *  Reversible by construction: revocation is a flag, not a compensating event,
+ *  so a later manual correction on the same face simply outranks the revoked
+ *  bulk one and SURVIVES the revocation. Throws if the batch does not exist.
+ *  Re-revoking an already-revoked batch re-projects without overwriting who
+ *  revoked it and when. */
+export function revokeBatch(batchId: string, actor: string): number
+
+/** Identity ids this face has been declared NOT to be, ascending — for
+ *  suggestion ranking. Resolved through merges (a negative against an identity
+ *  since folded into another still applies to the live one) and filtered of
+ *  revoked batches, for the same reasons replay is. */
+export function negativesForFace(faceId: number): number[]

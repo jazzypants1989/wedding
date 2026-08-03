@@ -1540,4 +1540,206 @@ export function runMigrations(db) {
     }
     record.run("truncate_durable_actor_tokens")
   }
+
+  // Ingest provenance and an append-only assignment ledger (plan §9).
+  //
+  // Two separate problems, one migration, because they answer the same
+  // question from opposite ends: *why does this row say what it says?*
+  //
+  //  - `vision_ingests` is the run that produced a detection. `media_faces`
+  //    already carries `model_version`, but that names the DESCRIPTOR SPACE
+  //    only (embedder, width, normalisation, mirror) — it says nothing about
+  //    which detector, which engine build, which thresholds or which route
+  //    profile drew the box. Without that, a row from a superseded run is
+  //    indistinguishable from a current one and "re-run only what is stale"
+  //    is not a query anyone can write. `ingest_id` makes it one.
+  //  - `face_assignments` is the EVENT LOG behind `media_faces.face_identity_id`.
+  //    The column alone is a value with no history: a bulk propagate pass and
+  //    a human's deliberate correction look identical in it, so undoing the
+  //    pass either takes the correction with it or takes nothing. Appending
+  //    events and REPLAYING them makes revocation a filter over history
+  //    instead of a destructive edit — a later manual event simply outranks
+  //    the earlier bulk one that got revoked (plan §9b).
+  //
+  // Merge is deliberately NOT an op here. It is a fact about identities, not
+  // about faces: `face_identities.merged_into` is one column update, no
+  // per-face events, and every event ever written stays correct because
+  // readers resolve through the redirect (db/face-assignments.js
+  // `resolveIdentity`).
+  //
+  // Append-only is spelled UPDATE-blocked, never DELETE-blocked. `media_faces`
+  // carries `media(id) ON DELETE CASCADE`, so hard-deleting a photo cascades
+  // into these rows; a delete-blocking trigger would turn a legitimate media
+  // deletion into a hard failure. Immutability that fights the cascade is
+  // worse than no immutability.
+  //
+  // Plain CREATE TABLEs and plain ADD COLUMNs — NOT a table rebuild, so D1
+  // (an implicit delete firing `ON DELETE SET NULL` across every existing
+  // face assignment) is not in play, and `rebuildTable` is deliberately not
+  // used. Each ALTER is guarded on `PRAGMA table_info`, and the ledger tables
+  // on their referents existing, for the same reason `add_face_routing` is: a
+  // test may pin an earlier ledger state to exercise one migration alone, and
+  // a throwing migration stops the server booting (D3).
+  if (!applied.get("add_vision_provenance")) {
+    const tableExists = db.prepare(
+      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+    )
+
+    // Depends on nothing, so it is created unconditionally.
+    db.exec(`
+      -- One ingest run: everything needed to say what produced a face row,
+      -- and nothing that could identify a photograph or a person. config_json
+      -- is an ALLOWLISTED object (versions, hashes, channel orders, detection
+      -- resolution, thresholds, top-K stage, normalisation, mirror, schema
+      -- version) — never a path, never argv, never an environment variable,
+      -- never a count measured from the photographs. This object travels to
+      -- production.
+      CREATE TABLE IF NOT EXISTS vision_ingests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        dataset_id TEXT NOT NULL,
+        model_version TEXT NOT NULL,          -- descriptor space only (see media_faces)
+        detector_sha256 TEXT NOT NULL,
+        embedder_sha256 TEXT NOT NULL,
+        engine_sha256 TEXT NOT NULL,
+        mirror_applied INTEGER NOT NULL DEFAULT 0,   -- 0 | 1
+        normalisation TEXT NOT NULL,          -- e.g. 'arcface' | 'ingraph'
+        route_profile TEXT NOT NULL,          -- PROFILE from public/vision/route.js
+        config_json TEXT NOT NULL,            -- allowlisted object, see above
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_vision_ingests_model
+        ON vision_ingests(model_version);
+
+      -- One revocable batch of assignment events. NOT append-only: revocation
+      -- is the one legitimate update, and it is a flag rather than a
+      -- compensating event precisely so it stays reversible.
+      CREATE TABLE IF NOT EXISTS face_assignment_batches (
+        batch_id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,            -- label-import | propagate | manual | merge-repair
+        actor TEXT NOT NULL,           -- core/utils.js actorId(), never from the client
+        note TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        revoked_at TEXT,
+        revoked_by TEXT
+      );
+    `)
+
+    db.exec(`
+      -- Enum enforcement by trigger, matching add_media_faces/add_people
+      -- rather than introducing inline CHECKs as a second convention.
+      -- INSERT only: every UPDATE on this table already aborts below, so an
+      -- update-side check would be unreachable code pretending to be a rule.
+      CREATE TRIGGER IF NOT EXISTS check_vision_ingests_mirror_insert
+      BEFORE INSERT ON vision_ingests
+      FOR EACH ROW
+      WHEN NEW.mirror_applied NOT IN (0, 1)
+      BEGIN
+        SELECT RAISE(ABORT, 'Invalid mirror_applied. Must be: 0 or 1');
+      END;
+
+      -- An ingest is a historical fact. Re-running the pipeline writes a NEW
+      -- row; editing this one would silently re-mean every face that points
+      -- at it. DELETE stays open on purpose (see the module comment above).
+      CREATE TRIGGER IF NOT EXISTS vision_ingests_immutable
+      BEFORE UPDATE ON vision_ingests
+      FOR EACH ROW
+      BEGIN
+        SELECT RAISE(ABORT, 'vision_ingests is immutable — a new run is a new row');
+      END;
+    `)
+
+    if (tableExists.get("media_faces")) {
+      const faceCols = new Set(
+        /** @type {Array<{ name: string }>} */ (
+          db.prepare("PRAGMA table_info(media_faces)").all()
+        ).map((c) => c.name),
+      )
+      // Nullable, and permanently so: every row written before this migration
+      // predates ingest provenance, and an upload-time detection has no
+      // ingest at all. A NOT NULL column here would have forced a rebuild to
+      // buy a lie.
+      if (!faceCols.has("ingest_id")) {
+        db.exec(
+          `ALTER TABLE media_faces ADD COLUMN ingest_id INTEGER REFERENCES vision_ingests(id)`,
+        )
+      }
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_media_faces_ingest ON media_faces(ingest_id);
+      `)
+    }
+
+    if (tableExists.get("face_identities")) {
+      const identityCols = new Set(
+        /** @type {Array<{ name: string }>} */ (
+          db.prepare("PRAGMA table_info(face_identities)").all()
+        ).map((c) => c.name),
+      )
+      // The merge redirect. NULL = a live identity; non-null = this identity
+      // was folded into another and every reader resolves through it. Old
+      // assignment events keep pointing at the identity they actually named,
+      // which is what makes them still true after a merge.
+      if (!identityCols.has("merged_into")) {
+        db.exec(
+          `ALTER TABLE face_identities ADD COLUMN merged_into INTEGER REFERENCES face_identities(id)`,
+        )
+      }
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_face_identities_merged
+          ON face_identities(merged_into) WHERE merged_into IS NOT NULL;
+      `)
+    }
+
+    if (tableExists.get("media_faces") && tableExists.get("face_identities")) {
+      db.exec(`
+        -- The ledger. Ordering is by id and never by created_at: the
+        -- timestamp has one-second resolution and a batch writes many events
+        -- inside it, so "the latest event wins" would be a coin toss.
+        CREATE TABLE IF NOT EXISTS face_assignments (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          face_id INTEGER NOT NULL REFERENCES media_faces(id) ON DELETE CASCADE,
+          op TEXT NOT NULL,                     -- assign | clear | not_a_face | negative
+          identity_id INTEGER REFERENCES face_identities(id),
+          actor TEXT NOT NULL,
+          batch_id TEXT REFERENCES face_assignment_batches(batch_id),
+          reason TEXT,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- (face_id, id) covers the replay query whole: seek to the face, walk
+        -- its events in id order, stop at the first survivor.
+        CREATE INDEX IF NOT EXISTS idx_face_assignments_face ON face_assignments(face_id, id);
+        CREATE INDEX IF NOT EXISTS idx_face_assignments_batch ON face_assignments(batch_id);
+        CREATE INDEX IF NOT EXISTS idx_face_assignments_identity ON face_assignments(identity_id);
+      `)
+
+      db.exec(`
+        -- op/identity_id must agree, or the ledger records a state nobody can
+        -- replay: assign and negative both NAME someone (negative names who
+        -- this face is NOT), clear and not_a_face both name no one.
+        CREATE TRIGGER IF NOT EXISTS check_face_assignments_op_insert
+        BEFORE INSERT ON face_assignments
+        FOR EACH ROW
+        WHEN NEW.op NOT IN ('assign', 'clear', 'not_a_face', 'negative')
+             OR (NEW.op IN ('assign', 'negative') AND NEW.identity_id IS NULL)
+             OR (NEW.op IN ('clear', 'not_a_face') AND NEW.identity_id IS NOT NULL)
+        BEGIN
+          SELECT RAISE(ABORT, 'Invalid face assignment: op must be assign, clear, not_a_face or negative, with identity_id set for assign/negative and null for clear/not_a_face');
+        END;
+
+        -- Append-only: a correction is a NEW event, never an edit to an old
+        -- one. Rewriting history here would defeat the entire point of
+        -- keeping it — a revoked batch could no longer be told apart from a
+        -- batch that never happened.
+        CREATE TRIGGER IF NOT EXISTS face_assignments_append_only
+        BEFORE UPDATE ON face_assignments
+        FOR EACH ROW
+        BEGIN
+          SELECT RAISE(ABORT, 'face_assignments is append-only — correct it by appending a new event');
+        END;
+      `)
+    }
+
+    record.run("add_vision_provenance")
+  }
 }
