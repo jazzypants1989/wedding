@@ -295,11 +295,12 @@ test("prototypes come from the whole cast, so a query can be lost to another per
 /**
  * @param {number} m1Correct
  * @param {number} purity
- * @param {Array<boolean>} weldFree
+ * @param {number[]} folds which fold indices this model actually scored
  * @param {Map<string, { correct: number, total: number }>} [perPerson]
+ * @param {boolean[]} [weldFreeAvailable] per fold; diagnostic only, defaults true
  * @returns {Types.VariantResult}
  */
-function result(m1Correct, purity, weldFree, perPerson = new Map()) {
+function result(m1Correct, purity, folds, perPerson = new Map(), weldFreeAvailable = []) {
   return {
     variant: /** @type {Types.CompareVariant} */ (
       /** @type {unknown} */ ({ dir: "fixture", mirror: false })
@@ -308,7 +309,13 @@ function result(m1Correct, purity, weldFree, perPerson = new Map()) {
     m2: {
       purity,
       labelledFaces: 40,
-      perFold: weldFree.map((wf) => ({ cutoff: 0.5, weldFree: wf, faces: 8 })),
+      perFold: folds.map((fold, i) => ({
+        fold,
+        cutoff: 0.5,
+        faces: 8,
+        weldedGroups: 0,
+        weldFreeAvailable: weldFreeAvailable[i] ?? true,
+      })),
     },
   }
 }
@@ -317,8 +324,8 @@ function result(m1Correct, purity, weldFree, perPerson = new Map()) {
 const people = (pairs) => new Map(pairs.map(([k, c]) => [k, { correct: c, total: 4 }]))
 
 test("a margin under the predeclared one is no decision, not a narrow win", () => {
-  const incumbent = result(10, 0.9, [true, true], people([["a", 3], ["b", 3]]))
-  const challenger = result(12, 0.95, [true, true], people([["a", 4], ["b", 4]]))
+  const incumbent = result(10, 0.9, [0, 1], people([["a", 3], ["b", 3]]))
+  const challenger = result(12, 0.95, [0, 1], people([["a", 4], ["b", 4]]))
   const verdict = decide(incumbent, challenger, 3)
   assert.equal(verdict.adopt, false)
   assert.equal(verdict.outcome, "no-decision-keep-incumbent")
@@ -329,8 +336,8 @@ test("a face-count win carried by one person fails the spread condition", () => 
   // +5 faces overall, comfortably past the margin — but it comes from a single
   // person while the challenger is behind on three others. That is the shape
   // the spread condition exists to catch.
-  const incumbent = result(10, 0.9, [true, true], people([["a", 0], ["b", 4], ["c", 3], ["d", 3]]))
-  const challenger = result(15, 0.9, [true, true], people([["a", 4], ["b", 3], ["c", 2], ["d", 2]]))
+  const incumbent = result(10, 0.9, [0, 1], people([["a", 0], ["b", 4], ["c", 3], ["d", 3]]))
+  const challenger = result(15, 0.9, [0, 1], people([["a", 4], ["b", 3], ["c", 2], ["d", 2]]))
   const verdict = decide(incumbent, challenger, 3)
   assert.equal(verdict.adopt, false)
   assert.ok(verdict.reasons.some((r) => r.includes("M1-spread")))
@@ -338,34 +345,69 @@ test("a face-count win carried by one person fails the spread condition", () => 
   assert.equal(verdict.m1Spread.behind, 3)
 })
 
-test("cutoff derivations taking different branches make M2 no decision", () => {
-  const incumbent = result(10, 0.90, [true, true], people([["a", 2], ["b", 2], ["c", 2]]))
-  const challenger = result(14, 0.99, [true, false], people([["a", 4], ["b", 4], ["c", 4]]))
+test("welding is diagnostic, not a gate: a challenger that finds weld-free points is not declined for it", () => {
+  // The rule as first written declined here — the two cutoffs would have come
+  // from different objectives. `deriveCutoff` now uses one objective always, so
+  // the weld diagnostics differing between the models says nothing about
+  // comparability and must not reach the verdict.
+  const cast = people([["a", 2], ["b", 2], ["c", 2]])
+  const better = people([["a", 4], ["b", 4], ["c", 4]])
+  const incumbent = result(10, 0.90, [0, 1], cast, [false, false])
+  const challenger = result(14, 0.95, [0, 1], better, [true, true])
   const verdict = decide(incumbent, challenger, 3)
-  assert.equal(verdict.branchesAgree, false)
-  assert.equal(verdict.adopt, false, "M1 and the spread both pass; the branch check still declines")
-  assert.ok(verdict.reasons.some((r) => r.includes("same branch")))
+  assert.equal(verdict.foldsAlign, true)
+  assert.equal(verdict.adopt, true, "the challenger separated better; that is not a reason to decline it")
+  assert.deepEqual(verdict.reasons, [])
 })
 
-test("both models falling back on the same fold is identical treatment, not a failure", () => {
-  const incumbent = result(10, 0.90, [false, false], people([["a", 2], ["b", 2], ["c", 2]]))
-  const challenger = result(14, 0.95, [false, false], people([["a", 4], ["b", 4], ["c", 4]]))
+test("two models that scored different folds make M2 no decision", () => {
+  // Equal LENGTHS, different folds — the case a positional comparison passes
+  // and a purity pooled over different faces should not. Fold 2 vs fold 3 means
+  // the two purities are over different people entirely.
+  const incumbent = result(10, 0.90, [0, 1, 2], people([["a", 2], ["b", 2], ["c", 2]]))
+  const challenger = result(14, 0.99, [0, 1, 3], people([["a", 4], ["b", 4], ["c", 4]]))
   const verdict = decide(incumbent, challenger, 3)
-  assert.equal(verdict.branchesAgree, true)
+  assert.equal(verdict.foldsAlign, false)
+  assert.equal(verdict.adopt, false, "M1 and the spread both pass; the fold mismatch still declines")
+  assert.ok(verdict.reasons.some((r) => r.includes("different folds")))
+})
+
+test("a model that skipped a fold is not silently compared against one that did not", () => {
+  const incumbent = result(10, 0.90, [0, 1, 2], people([["a", 2], ["b", 2], ["c", 2]]))
+  const challenger = result(14, 0.99, [0, 2], people([["a", 4], ["b", 4], ["c", 4]]))
+  const verdict = decide(incumbent, challenger, 3)
+  assert.equal(verdict.foldsAlign, false)
+  assert.equal(verdict.adopt, false)
+})
+
+test("no fold scored at all is no decision, not a purity comparison of two NaNs", () => {
+  const incumbent = result(10, NaN, [], people([["a", 2]]))
+  const challenger = result(14, NaN, [], people([["a", 4]]))
+  const verdict = decide(incumbent, challenger, 3)
+  assert.equal(verdict.foldsAlign, true)
+  assert.equal(verdict.adopt, false)
+  assert.ok(verdict.reasons.some((r) => r.includes("no fold could be scored")))
+})
+
+test("the same folds scored by both models is a like-for-like gate", () => {
+  const incumbent = result(10, 0.90, [0, 1], people([["a", 2], ["b", 2], ["c", 2]]))
+  const challenger = result(14, 0.95, [0, 1], people([["a", 4], ["b", 4], ["c", 4]]))
+  const verdict = decide(incumbent, challenger, 3)
+  assert.equal(verdict.foldsAlign, true)
   assert.equal(verdict.adopt, true)
 })
 
 test("worse purity blocks adoption even when M1 and the spread both pass", () => {
-  const incumbent = result(10, 0.95, [true, true], people([["a", 2], ["b", 2], ["c", 2]]))
-  const challenger = result(14, 0.80, [true, true], people([["a", 4], ["b", 4], ["c", 4]]))
+  const incumbent = result(10, 0.95, [0, 1], people([["a", 2], ["b", 2], ["c", 2]]))
+  const challenger = result(14, 0.80, [0, 1], people([["a", 4], ["b", 4], ["c", 4]]))
   const verdict = decide(incumbent, challenger, 3)
   assert.equal(verdict.adopt, false)
   assert.ok(verdict.reasons.some((r) => r.includes("purity")))
 })
 
 test("every condition passing adopts the challenger", () => {
-  const incumbent = result(10, 0.90, [true, true], people([["a", 2], ["b", 2], ["c", 2]]))
-  const challenger = result(14, 0.92, [true, true], people([["a", 4], ["b", 4], ["c", 4]]))
+  const incumbent = result(10, 0.90, [0, 1], people([["a", 2], ["b", 2], ["c", 2]]))
+  const challenger = result(14, 0.92, [0, 1], people([["a", 4], ["b", 4], ["c", 4]]))
   const verdict = decide(incumbent, challenger, 3)
   assert.equal(verdict.adopt, true)
   assert.equal(verdict.outcome, "adopt-challenger")
@@ -373,8 +415,8 @@ test("every condition passing adopts the challenger", () => {
 })
 
 test("a tie between a model's own variants goes to mirror-off", () => {
-  const off = result(12, 0.9, [true])
-  const on = result(12, 0.9, [true])
+  const off = result(12, 0.9, [0])
+  const on = result(12, 0.9, [0])
   on.variant = /** @type {Types.CompareVariant} */ (
     /** @type {unknown} */ ({ dir: "mirror-on", mirror: true })
   )

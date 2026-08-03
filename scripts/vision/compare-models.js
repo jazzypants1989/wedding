@@ -21,12 +21,14 @@
  *     (D4), so a key-derived split moves when the labels are merely re-saved.
  *     Never randomness. Re-running reproduces the split exactly.
  *  3. **The two models are treated identically, and where they cannot be, it
- *     says so and declines.** The shipped default cutoff is dropped from the
- *     candidate set because it is tuned for one of the two spaces; a cutoff
- *     derivation that falls back to a second objective for one model and not
- *     the other is reported as no-decision rather than compared.
+ *     says so and declines.** Two selection inputs the report uses are dropped
+ *     here, both because they can be available to one candidate and not the
+ *     other: the shipped default cutoff (tuned for one of the two spaces) and
+ *     the weld-free preference (see `deriveCutoff`). And if the two models end
+ *     up scoring different folds, their purities are over different faces, so
+ *     M2 declines rather than compares.
  *  4. **No decision is the default outcome.** A margin under the bar, metrics
- *     disagreeing, or the branch check firing all land there, and there keeps
+ *     disagreeing, or the folds not aligning all land there, and there keeps
  *     the incumbent.
  *
  *  Nothing here writes into this repository. Every figure it produces is a
@@ -48,7 +50,6 @@ import { distanceMatrix, groupFaces } from "../../public/vision/group.js"
 import { groupingQuality, pairDistances } from "../../public/vision/metrics.js"
 
 import {
-  bestSweepPoint,
   buildView,
   loadRun,
   personFoldsOf,
@@ -369,12 +370,35 @@ export function scoreM1(view, m1) {
 /**
  * A model's operating cutoff, derived on people it will not be scored on.
  *
- * The candidate set comes from the tuning faces' OWN distance tails and does
- * not include the shipped default: that constant was tuned for one of the two
- * descriptor spaces, and offering it to only one candidate is a home-field
- * advantage inside the procedure written to be identical for both.
+ * One objective, always: best pair-F1 among the cannot-link points. Two inputs
+ * the report's own cutoff choice uses are deliberately absent, for one shared
+ * reason — a selection input available to one candidate and not the other is a
+ * home-field advantage inside the procedure written to be identical for both.
+ *
+ * 1. **The shipped default cutoff is not a candidate.** `sweepCutoffs` injects
+ *    it by default; it is a constant hand-tuned for the incumbent's 128-d
+ *    space, and the challenger has no counterpart to it. Candidates come from
+ *    the tuning faces' own distance tails only.
+ * 2. **The weld-free preference is not applied** (`bestSweepPoint`, which picks
+ *    the best pair-F1 among the points that welded nobody and falls back to
+ *    best pair-F1 over everything when there is no such point). That preference
+ *    is right for the report — unpicking two welded people is expensive,
+ *    merging is two clicks — but here it is a data-dependent branch that can
+ *    fire for one model and not the other, and the branch is not neutral:
+ *    filtering to weld-free points selects for precisely the property M2 then
+ *    scores, because welding is what destroys purity. Preferring weld-free when
+ *    choosing where to stand and then scoring purity double-counts a single
+ *    product judgement, and it is that double-count which makes the two
+ *    operating points incomparable when the branch differs. Dropping it also
+ *    makes the rule's own clause 4 true: choosing on pair-F1 and scoring purity
+ *    is then genuinely not selection on the metric being reported.
+ *
+ * Whether a weld-free point existed at all is still recorded. It is a finding
+ * about this dataset in its own right — at no swept cutoff does the grouping
+ * separate these people without welding two together — and Phase 4's routing
+ * work should know it. Reported, never gating.
  * @param {Types.FaceView} tuning
- * @returns {{ cutoff: number, weldFree: boolean } | null}
+ * @returns {Types.DerivedCutoff | null}
  */
 export function deriveCutoff(tuning) {
   const { same, diff } = pairDistances(tuning.set, { labels: tuning.labels })
@@ -386,8 +410,14 @@ export function deriveCutoff(tuning) {
     photoIds: tuning.photoIds,
     cannotLink: [true],
   })
-  const best = bestSweepPoint(points)
-  return best === null ? null : { cutoff: best.point.cutoff, weldFree: best.weldFree }
+  const pool = points.filter((p) => p.cannotLink)
+  if (pool.length === 0) return null
+  const best = pool.reduce((b, p) => (p.quality.pairF1 > b.quality.pairF1 ? p : b))
+  return {
+    cutoff: best.cutoff,
+    weldedGroups: best.quality.weldedGroups,
+    weldFreeAvailable: pool.some((p) => p.quality.weldedGroups === 0),
+  }
 }
 
 /**
@@ -405,10 +435,15 @@ export function deriveCutoff(tuning) {
 export function scoreM2(variant, folds, pool) {
   let purityHits = 0
   let labelled = 0
-  /** @type {Array<{ cutoff: number, weldFree: boolean, faces: number }>} */
+  /** @type {Types.M2Fold[]} */
   const perFold = []
 
-  for (const heldOut of folds) {
+  // Indexed, not merely iterated: a fold can be skipped below, and which folds
+  // were skipped is model-dependent, so `decide` has to be able to tell whether
+  // the two models pooled their purity over the same faces. A compacted array
+  // with no fold identity cannot answer that.
+  for (let index = 0; index < folds.length; index++) {
+    const heldOut = folds[index]
     const tuning = buildView(variant.run, {
       pool,
       requireLabel: true,
@@ -433,7 +468,13 @@ export function scoreM2(variant, folds, pool) {
     const quality = groupingQuality(groups, scored.labels)
     purityHits += quality.purity * quality.labelledFaces
     labelled += quality.labelledFaces
-    perFold.push({ cutoff: derived.cutoff, weldFree: derived.weldFree, faces: quality.labelledFaces })
+    perFold.push({
+      fold: index,
+      cutoff: derived.cutoff,
+      faces: quality.labelledFaces,
+      weldedGroups: derived.weldedGroups,
+      weldFreeAvailable: derived.weldFreeAvailable,
+    })
   }
 
   return { purity: labelled > 0 ? purityHits / labelled : NaN, labelledFaces: labelled, perFold }
@@ -500,24 +541,30 @@ export function decide(incumbent, challenger, margin) {
     reasons.push(`M1-spread: ahead on ${m1Spread.ahead} people, behind on ${m1Spread.behind}`)
   }
 
-  // The branch check. bestSweepPoint falls back to a second objective when no
-  // swept point is weld-free; if that fires for one model and not the other,
-  // the two cutoffs were chosen by different rules and M2 is not a like-for-
-  // like gate. Both falling back on the same fold is identical treatment.
-  const folds = Math.min(incumbent.m2.perFold.length, challenger.m2.perFold.length)
-  let branchesAgree = incumbent.m2.perFold.length === challenger.m2.perFold.length
-  for (let i = 0; i < folds; i++) {
-    if (incumbent.m2.perFold[i].weldFree !== challenger.m2.perFold[i].weldFree) branchesAgree = false
-  }
-  if (!branchesAgree) {
+  // Both models must have scored the SAME folds. `scoreM2` skips a fold whose
+  // tuning set yields no candidate cutoffs, and which folds that happens on is
+  // model-dependent — the candidates come from each model's own distance tails.
+  // A skipped fold does not merely misalign a per-fold comparison: it pools M2
+  // purity over a different set of faces for each model, and two purities over
+  // different denominators are not a gate. So the fold sets must match by
+  // identity, not by count.
+  /** @param {Types.VariantResult} r */
+  const foldsOf = (r) => r.m2.perFold.map((f) => f.fold)
+  const ours = foldsOf(incumbent)
+  const theirs = foldsOf(challenger)
+  const foldsAlign = ours.length === theirs.length && ours.every((f, i) => f === theirs[i])
+  if (!foldsAlign) {
     reasons.push(
-      "M2 no decision: the two cutoff derivations did not take the same branch — one model had " +
-        "weld-free points where the other did not, so the cutoffs came from different objectives",
+      "M2 no decision: the two models scored different folds, so their pooled purity is over " +
+        `different faces (incumbent [${ours.join(",")}], challenger [${theirs.join(",")}])`,
     )
+  } else if (ours.length === 0) {
+    reasons.push("M2 no decision: no fold could be scored for either model")
   }
 
-  const m2Pass = branchesAgree && challenger.m2.purity >= incumbent.m2.purity
-  if (branchesAgree && !m2Pass) reasons.push("M2: challenger group purity is worse than the incumbent's")
+  const m2Comparable = foldsAlign && ours.length > 0
+  const m2Pass = m2Comparable && challenger.m2.purity >= incumbent.m2.purity
+  if (m2Comparable && !m2Pass) reasons.push("M2: challenger group purity is worse than the incumbent's")
 
   const adopt = m1Pass && spreadPass && m2Pass
   return {
@@ -525,7 +572,7 @@ export function decide(incumbent, challenger, margin) {
     outcome: adopt ? "adopt-challenger" : "no-decision-keep-incumbent",
     m1Delta,
     m1Spread,
-    branchesAgree,
+    foldsAlign,
     reasons,
   }
 }
@@ -570,7 +617,8 @@ export function runCompare(args, deps = {}) {
       `  ${result.variant.dir}  mirror=${result.variant.mirror ? "on " : "off"}  ` +
         `M1 ${result.m1.correct}/${result.m1.total}  ` +
         `M2 purity ${result.m2.purity.toFixed(4)} over ${result.m2.labelledFaces} face(s)  ` +
-        `weld-free ${result.m2.perFold.filter((f) => f.weldFree).length}/${result.m2.perFold.length} fold(s)`,
+        `weld-free points existed on ${result.m2.perFold.filter((f) => f.weldFreeAvailable).length}/` +
+        `${result.m2.perFold.length} fold(s) [reported, not gating]`,
     )
   }
 

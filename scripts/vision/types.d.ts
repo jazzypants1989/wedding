@@ -1648,11 +1648,30 @@ export interface M1Score {
   perPerson: Map<string, { correct: number; total: number }>
 }
 
+/**
+ * One model's operating cutoff for one fold. The two weld fields are diagnostic
+ * only: the comparison derives its cutoff by a single objective (best pair-F1
+ * over the cannot-link points) precisely so that welding cannot branch it.
+ */
+export interface DerivedCutoff {
+  cutoff: number
+  /** Groups the chosen point welds. Reported; never a gate. */
+  weldedGroups: number
+  /** Whether ANY swept point welded nobody. The T7 finding, per fold. */
+  weldFreeAvailable: boolean
+}
+
+export interface M2Fold extends DerivedCutoff {
+  /** Index into the fold list. Identity, not position — folds can be skipped. */
+  fold: number
+  faces: number
+}
+
 export interface M2Score {
   /** Pooled across folds, not averaged. NaN when nothing was scored. */
   purity: number
   labelledFaces: number
-  perFold: Array<{ cutoff: number; weldFree: boolean; faces: number }>
+  perFold: M2Fold[]
 }
 
 export interface VariantResult {
@@ -1666,8 +1685,9 @@ export interface Verdict {
   outcome: "adopt-challenger" | "no-decision-keep-incumbent"
   m1Delta: number
   m1Spread: { ahead: number; behind: number; level: number }
-  /** False when the two cutoff derivations took different branches. */
-  branchesAgree: boolean
+  /** False when the two models scored different folds, so M2's two pooled
+   * purities are over different faces and cannot gate anything. */
+  foldsAlign: boolean
   /** Every condition that failed, in the order they were checked. */
   reasons: string[]
 }
