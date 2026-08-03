@@ -99,11 +99,22 @@ export interface PinnedWeight {
    * tier 2's fetch-weights.js grows out of.
    */
   url: string
+  /**
+   * A model this repository can run but does not require. Absence reports
+   * `absent-optional` and does not fail the run; wrong bytes under its name
+   * still do.
+   *
+   * The distinction is availability, never integrity: a machine that ships the
+   * incumbent should not be told it is missing a challenger it deliberately
+   * does not carry, and pinning only the required files would leave the one
+   * artifact nobody can audit by reading it audited by nothing at all.
+   */
+  optional?: boolean
 }
 
 export interface WeightCheck {
   name: string
-  status: "ok" | "missing" | "mismatch" | "lfs-pointer"
+  status: "ok" | "missing" | "mismatch" | "lfs-pointer" | "absent-optional"
   detail: string
 }
 
@@ -133,7 +144,52 @@ export interface VisionEngine {
   /** Free sessions. Optional — a run that omits it must still exit. */
   close?(): Promise<void>
   /** Runtime and model identification, recorded in timing.json. */
-  info(): { runtime: string; detector: string; embedder: string }
+  info(): EngineInfo
+}
+
+/**
+ * The machine-readable half of `info()` — what a later ingest records as the
+ * provenance of a descriptor space, and what tells two runs apart when their
+ * filenames agree and their bytes do not.
+ *
+ * Content hashes rather than filenames throughout: a filename says what
+ * somebody called an artifact, a digest says which artifact it was.
+ *
+ * Mirror-averaging is deliberately absent. It is a caller's setting, not an
+ * engine's, and the run writer assembles the full provenance from both — see
+ * `Session1Timing.provenance` and `config.mirrorTta`.
+ */
+export interface EngineProvenance {
+  /** Inference runtime and version, without the bracketed settings. */
+  runtime: string
+  detectChannels: "rgb" | "bgr"
+  embedChannels: "rgb" | "bgr"
+  topKStage: "pre" | "post"
+  /**
+   * `in-graph` — the network normalises its own input, so it is fed raw 0-255.
+   * `arcface` — the network has no such nodes and the engine applies
+   * (x − 127.5) / 127.5 before the tensor.
+   */
+  embedNorm: string
+  /** Whether the mode came from the engine's digest table or an override. */
+  embedNormSource: string
+  detectorSha256: string
+  embedderSha256: string
+  /** The engine module's own bytes. It is scaffolding, so it has no version. */
+  engineSha256: string
+}
+
+export interface EngineInfo {
+  /** Human line, printed by the batch and by the report. */
+  runtime: string
+  detector: string
+  embedder: string
+  /**
+   * Optional, because an engine satisfying this interface need not offer it and
+   * `loadEngine` checks for methods, not fields — a run whose engine omits it
+   * simply has no structured provenance to record.
+   */
+  engine?: EngineProvenance
 }
 
 export interface DetectOptions {
@@ -274,8 +330,39 @@ export interface Session1Timing {
   faces: number
   /** Wall-clock ms and call count per stage, summed over the run. */
   stages: Record<string, { ms: number; n: number }>
-  /** Backend version line, engine info, node version. */
+  /**
+   * Backend version line, engine info, node version — display strings, printed
+   * as `k=v` by the report. The structured facts live in `provenance`; keeping
+   * this block flat is what lets a run made before that existed still print.
+   */
   environment: Record<string, string>
+  /**
+   * Engine provenance for a machine to read: which artifacts, by digest, in
+   * which configuration. Optional — runs written before this existed have none,
+   * and a consumer must treat its absence as "unknown", never as a default.
+   *
+   * Written by the batch ALONE, and it means the strong thing: one engine both
+   * detected and described this directory. `redescribe-crops.js` deletes it
+   * rather than updating it, because after a re-describe it is no longer true —
+   * see the two fields below. A consumer that reads this one on a re-describe
+   * output therefore gets `undefined` and fails closed, rather than reading a
+   * digest that describes a different pass.
+   */
+  provenance?: EngineProvenance
+  /**
+   * The engine that produced THIS directory's descriptors, written by
+   * `redescribe-crops.js`. Its detector fields describe how that engine was
+   * configured, not the detection that produced these boxes — the boxes came
+   * from the source run and `sourceProvenance` is the authority on them.
+   */
+  describeProvenance?: EngineProvenance
+  /**
+   * The source run's `provenance`, copied verbatim by `redescribe-crops.js`.
+   * Absent when the source run recorded none — which is "unknown", and must not
+   * be filled in from the re-describing engine, however plausible that would be:
+   * the two are only the same file if nobody changed `--weights`.
+   */
+  sourceProvenance?: EngineProvenance
   /**
    * The tunables the run actually used, so a report can be read months later.
    *
@@ -1507,3 +1594,90 @@ export interface RekeyArgs {
 /** Read the runs and files, rekey, write the outputs into `outDir`, print
  *  counts (only counts) through `log`. Returns the process exit code. */
 export function runRekey(args: RekeyArgs, log: (line: string) => void): number
+
+// --- Model comparison (scripts/vision/compare-models.js) ---------------------
+
+/**
+ * Parsed CLI arguments. `incumbent` and `challenger` are repeatable, one entry
+ * per variant — the rule scores four runs, both models with mirror-averaging on
+ * and off, and picks each model's best before comparing the two.
+ */
+export interface CompareArgs {
+  help: boolean
+  incumbent: string[]
+  challenger: string[]
+  /** Which pool is scored. Pool A is the individually judged one. */
+  pool: "A" | "B"
+  folds: number
+  /** Query faces one person may contribute to M1. */
+  cap: number
+  /** Capped query faces the challenger must win by. */
+  margin: number
+  /** Where to write the full result, or null. Must be under tmp/. */
+  json: string | null
+}
+
+/** One re-described run, loaded and restricted to the scored pool. */
+export interface CompareVariant {
+  dir: string
+  run: LoadedRun
+  view: FaceView
+  /** Whether THIS directory's descriptors are mirror-averaged. */
+  mirror: boolean
+  /** From the run's describeProvenance; null for a run that recorded none. */
+  embedderSha256: string | null
+}
+
+/**
+ * The M1 scored set: which faces build prototypes, which are queried, and how
+ * many people were splittable at all. Computed once and shared by every
+ * variant, because it depends only on face ids and frames.
+ */
+export interface M1Set {
+  /** Person key per view row for prototype-side faces, null elsewhere. */
+  assignments: Array<string | null>
+  queries: Array<{ row: number; faceId: number; person: string }>
+  splittable: number
+  people: number
+}
+
+export interface M1Score {
+  correct: number
+  total: number
+  /** Per person, for the spread condition. Keyed by opaque person key. */
+  perPerson: Map<string, { correct: number; total: number }>
+}
+
+export interface M2Score {
+  /** Pooled across folds, not averaged. NaN when nothing was scored. */
+  purity: number
+  labelledFaces: number
+  perFold: Array<{ cutoff: number; weldFree: boolean; faces: number }>
+}
+
+export interface VariantResult {
+  variant: CompareVariant
+  m1: M1Score
+  m2: M2Score
+}
+
+export interface Verdict {
+  adopt: boolean
+  outcome: "adopt-challenger" | "no-decision-keep-incumbent"
+  m1Delta: number
+  m1Spread: { ahead: number; behind: number; level: number }
+  /** False when the two cutoff derivations took different branches. */
+  branchesAgree: boolean
+  /** Every condition that failed, in the order they were checked. */
+  reasons: string[]
+}
+
+export interface CompareReport {
+  incumbents: VariantResult[]
+  challengers: VariantResult[]
+  bestIncumbent: VariantResult
+  bestChallenger: VariantResult
+  verdict: Verdict
+  m1Set: M1Set
+  folds: number
+}

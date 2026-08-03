@@ -26,6 +26,15 @@
  *     not a per-face anything — only how many crops were processed. What the
  *     descriptors are worth is session1-report.js's job, run afterwards
  *     against the directory this script writes.
+ *  5. **The output's provenance names the engine that actually ran.** The
+ *     source run's `timing.json` travels with the crops, and copying it
+ *     wholesale would leave a directory full of one model's descriptors
+ *     stating, in exactly the field a later ingest reads, that another model
+ *     made them. So the describe side is re-stamped from this run's engine,
+ *     the source's own record is preserved beside it rather than overwritten
+ *     (the boxes are still its work), and the batch's `provenance` — which
+ *     claims one engine did both — is deleted rather than updated. A consumer
+ *     reading it on a re-describe output gets `undefined` and fails closed.
  *
  *  Nothing here searches for a run directory (CLAUDE.md; SPEC §15 r1) — it is
  *  always the one positional argument.
@@ -377,6 +386,37 @@ export async function runRedescribe(args, deps = {}) {
       // reader of the output needs to know.
       mirrorTta: args.mirrorTta,
     }
+
+    // The rest of this block exists because copying the source run's timing
+    // wholesale would leave an output directory full of one model's descriptors
+    // stating, in the field a later ingest reads, that another model made them.
+    // Every engine-derived fact is therefore re-stamped from the engine that
+    // actually ran here, and the source's own record is preserved beside it
+    // rather than overwritten — the boxes are still the source run's work.
+    // `detector` is dropped from the display block for the same reason
+    // `provenance` is deleted below: this engine loaded a detector and never
+    // used it, so letting it overwrite the source run's would credit it with
+    // boxes it did not draw. The source's `backend` is left alone for the
+    // mirror-image reason — it decoded the photographs these crops were cut
+    // from, and this pass decoded no photograph at all.
+    const { engine: describeProvenance, detector: unusedDetector, ...describeDisplay } = engine.info()
+    void unusedDetector
+
+    timing.sourceProvenance = timing.provenance
+    delete timing.provenance
+    timing.describeProvenance = describeProvenance
+    timing.environment = { ...timing.environment, node: process.version, ...describeDisplay }
+
+    // The engine's own display line advertises its detector settings too, and
+    // in this directory those describe a detector that was loaded and never
+    // ran. Where the structured block is available the line is rebuilt from
+    // the describe side alone, so no reader has to know that.
+    if (describeProvenance) {
+      timing.environment.runtime =
+        `${describeProvenance.runtime} [embedChannels=${describeProvenance.embedChannels} ` +
+        `embedNorm=${describeProvenance.embedNorm}] (describe pass only)`
+    }
+
     fs.writeFileSync(path.join(args.outDir, "timing.json"), JSON.stringify(timing, null, 2) + "\n")
   } else {
     log(`! ${timingFile} not found — the new run has no timing.json.`)

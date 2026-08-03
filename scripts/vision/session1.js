@@ -1093,6 +1093,12 @@ export async function runSession1(args, deps = {}) {
     "window.SESSION1_CONTACT = " + JSON.stringify(contactData) + "\n",
   )
 
+  // The engine reports the same facts twice: a line for a person and a block
+  // for a machine. They are split here rather than merged, so `environment`
+  // stays all-strings for the report's `k=v` line and `provenance` is the one
+  // place a later ingest reads.
+  const { engine: engineProvenance, ...engineDisplay } = engine.info()
+
   /** @type {Types.Session1Timing} */
   const timing = {
     photos: photos.length,
@@ -1104,8 +1110,9 @@ export async function runSession1(args, deps = {}) {
     environment: {
       node: process.version,
       backend: `${backend.name} ${backend.version}`,
-      ...engine.info(),
+      ...engineDisplay,
     },
+    provenance: engineProvenance,
     config: {
       detectEdge: args.detectEdge,
       sourceEdge: args.sourceEdge,

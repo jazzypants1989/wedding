@@ -91,6 +91,24 @@ export const PINNED_WEIGHTS = [
       `${LFS_MEDIA_BASE}/face_recognition_sface/` +
       "face_recognition_sface_2021dec_int8bq.onnx",
   },
+  {
+    name: "glintr100.onnx",
+    bytes: 260694151,
+    sha256: "a7933ea5330113b01c9b60351d8f4c33003f145d8470ac5f0e52ee2effe25c60",
+    licence: "Apache-2.0",
+    role: "embedder (AuraFace-v1, 512-d — the challenger; optional)",
+    // Not the opencv_zoo LFS host: this one comes from its own publisher, and
+    // the embedder file ALONE. The repo it lives in also bundles
+    // InsightFace-derived detectors and attribute models its Apache grant does
+    // not cover — see VISION-MODELS.md.
+    //
+    // `/main/` is a branch, so unlike the three above this URL is mutable. The
+    // digest is the audit either way — a moved branch fails the hash rather
+    // than passing quietly — but if this model is ever adopted, re-pin the URL
+    // to a revision sha before Phase 9 depends on it.
+    url: "https://huggingface.co/fal/AuraFace-v1/resolve/main/glintr100.onnx",
+    optional: true,
+  },
 ]
 
 /**
@@ -289,6 +307,17 @@ async function checkOne(dir, pinned, candidates) {
     if (pointer && pointer.oid === pinned.sha256) return pointerCheck(pinned, candidate.name, pointer)
   }
 
+  if (pinned.optional) {
+    return {
+      name: pinned.name,
+      status: "absent-optional",
+      detail:
+        `not in ${dir}, and not required — this one is pinned so that a machine which DOES ` +
+        `carry it checks the right bytes, not so that every machine has to. ` +
+        `Fetch ${pinned.url} (${bytes(pinned.bytes)} bytes) if you need it.`,
+    }
+  }
+
   return {
     name: pinned.name,
     status: "missing",
@@ -396,9 +425,16 @@ async function main() {
   console.log(`pinned    ${PINNED_WEIGHTS.length} files — ledger: docs/post-wedding/VISION-MODELS.md`)
   console.log("")
 
+  // An optional file that is simply not here is neither a pass nor a failure —
+  // nothing was verified and nothing was found wrong, and marking it either way
+  // would misreport one of the two.
+  const passed = (/** @type {Types.WeightCheck} */ check) => check.status === "ok"
+  const failed = (/** @type {Types.WeightCheck} */ check) =>
+    check.status !== "ok" && check.status !== "absent-optional"
+
   for (const check of checks) {
     const pinned = byName.get(check.name)
-    const mark = check.status === "ok" ? "✓" : "✗"
+    const mark = check.status === "ok" ? "✓" : check.status === "absent-optional" ? "–" : "✗"
     const licence = pinned ? pinned.licence : ""
     const role = pinned ? pinned.role : ""
     console.log(
@@ -411,20 +447,23 @@ async function main() {
   /** @type {Map<string, number>} */
   const counts = new Map()
   for (const check of checks) counts.set(check.status, (counts.get(check.status) ?? 0) + 1)
-  const ok = counts.get("ok") ?? 0
+  const ok = checks.filter(passed).length
+  const bad = checks.filter(failed).length
+  const required = checks.length - (counts.get("absent-optional") ?? 0)
 
   console.log("")
-  if (ok === checks.length) {
-    console.log(`${ok}/${checks.length} verified against the pinned digests.`)
+  if (bad === 0) {
+    const aside = required === checks.length ? "" : ` (${checks.length - required} optional, not present)`
+    console.log(`${ok}/${required} verified against the pinned digests${aside}.`)
   } else {
     const failures = [...counts.entries()]
-      .filter(([status]) => status !== "ok")
+      .filter(([status]) => status !== "ok" && status !== "absent-optional")
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([status, n]) => `${n} ${status}`)
       .join(", ")
-    console.log(`${ok}/${checks.length} verified — ${failures}. See the detail lines above.`)
+    console.log(`${ok}/${required} verified — ${failures}. See the detail lines above.`)
   }
-  process.exit(ok === checks.length ? 0 : 1)
+  process.exit(bad === 0 ? 0 : 1)
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

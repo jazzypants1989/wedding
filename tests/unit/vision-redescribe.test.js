@@ -77,6 +77,30 @@ function fakeEngine() {
       for (let i = 0; i < out.length; i++) out[i] /= len
       return out
     },
+    info: () => ({
+      runtime: "fake",
+      detector: "fake-detector",
+      embedder: "fake-embedder",
+      engine: {
+        runtime: "fake",
+        detectChannels: "rgb",
+        embedChannels: "rgb",
+        topKStage: "pre",
+        embedNorm: "arcface",
+        embedNormSource: "sha256-table",
+        detectorSha256: "detector-digest",
+        embedderSha256: "embedder-digest",
+        engineSha256: "engine-digest",
+      },
+    }),
+  }
+}
+
+/** An engine offering no structured provenance — `info().engine` is optional. */
+function fakeEngineWithoutProvenance() {
+  const engine = fakeEngine()
+  return {
+    ...engine,
     info: () => ({ runtime: "fake", detector: "fake-detector", embedder: "fake-embedder" }),
   }
 }
@@ -120,9 +144,10 @@ function faceRecord(id, extra = {}) {
  * PNG crop per face.
  * @param {string} label
  * @param {Types.Session1FaceRecord[]} faces
+ * @param {Partial<Types.Session1Timing>} [extraTiming]
  * @returns {string}
  */
-function writeRun(label, faces) {
+function writeRun(label, faces, extraTiming = {}) {
   const dir = workDir(label)
   fs.mkdirSync(path.join(dir, "crops"), { recursive: true })
   fs.writeFileSync(path.join(dir, "faces.jsonl"), faces.map((f) => JSON.stringify(f)).join("\n") + "\n")
@@ -135,6 +160,7 @@ function writeRun(label, faces) {
     stages: {},
     environment: { node: "fixture" },
     config: { detectEdge: 1280, mirrorTta: true },
+    ...extraTiming,
   }
   fs.writeFileSync(path.join(dir, "timing.json"), JSON.stringify(timing))
   for (const f of faces) writePng(syntheticCrop(f.id), path.join(dir, f.crop))
@@ -193,6 +219,77 @@ test("--mirror-tta writes the mirror-averaged vector as the CANONICAL descriptor
     JSON.parse(fs.readFileSync(path.join(args.outDir, "timing.json"), "utf8"))
   )
   assert.equal(timing.config.mirrorTta, true)
+})
+
+/** A source run's provenance, distinguishable from the re-describing engine's. */
+const SOURCE_PROVENANCE = {
+  runtime: "source-runtime",
+  detectChannels: /** @type {const} */ ("bgr"),
+  embedChannels: /** @type {const} */ ("rgb"),
+  topKStage: /** @type {const} */ ("pre"),
+  embedNorm: "in-graph",
+  embedNormSource: "sha256-table",
+  detectorSha256: "source-detector-digest",
+  embedderSha256: "source-embedder-digest",
+  engineSha256: "source-engine-digest",
+}
+
+test("a re-describe re-stamps the engine that made ITS descriptors", async () => {
+  // Copying the source run's timing wholesale would leave a directory full of
+  // one model's descriptors stating, in the field a later ingest reads, that
+  // another model made them.
+  const runDir = writeRun("restamp", [faceRecord(0)], {
+    environment: { node: "fixture", backend: "vips fixture", embedder: "source-embedder", detector: "source-detector" },
+    provenance: SOURCE_PROVENANCE,
+  })
+  const args = argsFor(runDir)
+
+  const result = await runRedescribe(args, { engine: fakeEngine(), log: () => {} })
+  assert.equal(result.exitCode, 0)
+
+  const timing = /** @type {Types.Session1Timing} */ (
+    JSON.parse(fs.readFileSync(path.join(args.outDir, "timing.json"), "utf8"))
+  )
+
+  assert.equal(
+    timing.describeProvenance?.embedderSha256,
+    "embedder-digest",
+    "the embedder that produced these descriptors is this run's, by digest",
+  )
+  assert.deepEqual(timing.sourceProvenance, SOURCE_PROVENANCE, "the source run's own record is preserved beside it")
+  assert.equal(
+    "provenance" in timing,
+    false,
+    "the strong claim — one engine both detected and described — is no longer true, so it is deleted rather than updated",
+  )
+  assert.equal(timing.environment.embedder, "fake-embedder", "the display line names this run's embedder")
+  assert.equal(
+    timing.environment.detector,
+    "source-detector",
+    "this engine loaded a detector and never used it; the boxes are still the source run's",
+  )
+  assert.equal(timing.environment.backend, "vips fixture", "this pass decoded no photograph, so the decoder is unchanged")
+  assert.equal(
+    timing.environment.runtime.includes("detectChannels"),
+    false,
+    "the display line advertises describe-side settings only — the detector ones would be about a pass that did not happen",
+  )
+  assert.ok(timing.environment.runtime.includes("describe pass only"))
+})
+
+test("an engine with no structured provenance leaves the field absent, not guessed", async () => {
+  const runDir = writeRun("restamp-none", [faceRecord(0)], { provenance: SOURCE_PROVENANCE })
+  const args = argsFor(runDir)
+
+  const result = await runRedescribe(args, { engine: fakeEngineWithoutProvenance(), log: () => {} })
+  assert.equal(result.exitCode, 0)
+
+  const timing = /** @type {Types.Session1Timing} */ (
+    JSON.parse(fs.readFileSync(path.join(args.outDir, "timing.json"), "utf8"))
+  )
+  assert.equal("describeProvenance" in timing, false, "absent is 'unknown', which a consumer must fail closed on")
+  assert.equal("provenance" in timing, false, "and it is certainly not the source's — that engine did not run here")
+  assert.deepEqual(timing.sourceProvenance, SOURCE_PROVENANCE)
 })
 
 test("without --mirror-tta a legacy-shape run is migrated to the plain canonical shape", async () => {

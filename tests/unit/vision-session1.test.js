@@ -129,7 +129,22 @@ function fakeEngine(options = {}) {
       for (let i = 0; i < out.length; i++) out[i] /= len
       return out
     },
-    info: () => ({ runtime: "fake", detector: "fake-detector", embedder: "fake-embedder" }),
+    info: () => ({
+      runtime: "fake",
+      detector: "fake-detector",
+      embedder: "fake-embedder",
+      engine: {
+        runtime: "fake",
+        detectChannels: "bgr",
+        embedChannels: "rgb",
+        topKStage: "pre",
+        embedNorm: "in-graph",
+        embedNormSource: "sha256-table",
+        detectorSha256: "detector-digest",
+        embedderSha256: "embedder-digest",
+        engineSha256: "engine-digest",
+      },
+    }),
   }
   return engine
 }
@@ -766,6 +781,13 @@ test("runSession1 writes every declared output, with faces indexed by row", asyn
   assert.equal(timing.faces, 3)
   assert.equal(timing.environment.node, process.version)
   assert.equal(timing.environment.runtime, "fake")
+  // The engine reports the same facts twice — a line for a person, a block for
+  // a machine — and the two are kept apart: `environment` stays all-strings so
+  // the report's k=v line still prints, and `provenance` is the one place a
+  // later ingest reads a digest from.
+  assert.equal(typeof timing.environment.engine, "undefined")
+  assert.equal(timing.provenance.embedderSha256, "embedder-digest")
+  assert.equal(timing.provenance.embedNorm, "in-graph")
   assert.equal(timing.config.detectEdge, 1280)
   assert.equal(timing.config.poolASize, 2)
   assert.ok(timing.stages.detect.n >= 3)

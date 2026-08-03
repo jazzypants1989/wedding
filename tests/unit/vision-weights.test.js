@@ -99,23 +99,30 @@ function find(checks, name) {
 
 // --- The pinned table itself -------------------------------------------------
 
+/** Everything served from opencv_zoo, which is everything but the challenger. */
+const LFS_MEDIA_HOST = "https://media.githubusercontent.com/media/"
+
 test("pinned table is well formed", () => {
-  assert.equal(PINNED_WEIGHTS.length, 3)
+  assert.equal(PINNED_WEIGHTS.length, 4)
   for (const pinned of PINNED_WEIGHTS) {
     assert.equal(pinned.sha256.length, 64, `${pinned.name} digest is not 64 hex chars`)
     assert.equal(pinned.sha256, pinned.sha256.toLowerCase(), `${pinned.name} digest is not lowercase`)
     assert.ok(pinned.bytes > 0)
     assert.ok(pinned.name.endsWith(".onnx"))
     assert.ok(pinned.licence.length > 0)
-    // raw.githubusercontent.com returns the pointer, not the model. The whole
-    // point of recording the URL here is that it is the media host.
-    assert.ok(
-      pinned.url.startsWith("https://media.githubusercontent.com/media/"),
-      `${pinned.name} is not pinned to the LFS media host`,
-    )
     assert.ok(pinned.url.endsWith(pinned.name))
-    // Pinned to a commit, never to a branch — the URL has to be immutable.
-    assert.ok(!pinned.url.includes("/main/"))
+    if (pinned.url.startsWith(LFS_MEDIA_HOST)) {
+      // Pinned to a commit, never to a branch — the URL has to be immutable.
+      assert.ok(!pinned.url.includes("/main/"), `${pinned.name} is pinned to a branch, not a commit`)
+    } else {
+      // Not every publisher is opencv_zoo. What must hold for all of them is
+      // that the URL is not raw.githubusercontent.com, which serves the LFS
+      // pointer rather than the model — the failure this table exists to name.
+      assert.ok(
+        !pinned.url.startsWith("https://raw.githubusercontent.com/"),
+        `${pinned.name} points at the pointer host, not the file`,
+      )
+    }
   }
   const names = new Set(PINNED_WEIGHTS.map((pinned) => pinned.name))
   assert.equal(names.size, PINNED_WEIGHTS.length, "duplicate name in the pinned table")
@@ -184,24 +191,52 @@ test("readLfsPointer refuses to sniff a file too large to be one", () => {
 
 // --- Classification ----------------------------------------------------------
 
+/** What an absent entry should be called, given whether it is required. */
+const absentStatus = (/** @type {string} */ name) =>
+  PINNED_WEIGHTS.find((entry) => entry.name === name)?.optional ? "absent-optional" : "missing"
+
 test("an empty directory reports every entry missing, with the fetch URL and the manual escape hatch", async () => {
   const dir = scratchDir("empty")
   const checks = await verifyWeights(dir)
   assert.equal(checks.length, PINNED_WEIGHTS.length)
   for (const check of checks) {
-    assert.equal(check.status, "missing")
+    assert.equal(check.status, absentStatus(check.name))
     const pinned = PINNED_WEIGHTS.find((entry) => entry.name === check.name)
     assert.ok(pinned)
-    assert.ok(check.detail.includes(pinned.url), "missing detail must carry the URL to fetch from")
-    assert.ok(check.detail.includes("Manual placement"), "missing detail must offer manual placement")
+    assert.ok(check.detail.includes(pinned.url), "an absent entry must carry the URL to fetch from")
+    if (!pinned.optional) {
+      assert.ok(check.detail.includes("Manual placement"), "missing detail must offer manual placement")
+    }
   }
   fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test("an optional weight's absence is not a failure, but wrong bytes under its name still are", async () => {
+  // Availability and integrity are different questions. A machine that ships
+  // only the incumbent should not be told it is missing a challenger it
+  // deliberately does not carry — but a file claiming to BE the challenger and
+  // failing the digest is the exact case this table exists to catch, optional
+  // or not.
+  const optional = PINNED_WEIGHTS.find((entry) => entry.optional)
+  assert.ok(optional, "the table is expected to carry at least one optional entry")
+
+  const empty = scratchDir("optional-absent")
+  const absent = await verifyAgainst(empty, [optional])
+  assert.equal(find(absent, optional.name).status, "absent-optional")
+  assert.ok(find(absent, optional.name).detail.includes("not required"))
+  fs.rmSync(empty, { recursive: true, force: true })
+
+  const wrong = scratchDir("optional-wrong")
+  write(wrong, optional.name, "not the challenger")
+  const checks = await verifyAgainst(wrong, [optional])
+  assert.equal(find(checks, optional.name).status, "mismatch")
+  fs.rmSync(wrong, { recursive: true, force: true })
 })
 
 test("a nonexistent directory is missing, not a crash", async () => {
   const checks = await verifyWeights(path.join(os.tmpdir(), "vision-weights-does-not-exist-9f3c"))
   assert.equal(checks.length, PINNED_WEIGHTS.length)
-  for (const check of checks) assert.equal(check.status, "missing")
+  for (const check of checks) assert.equal(check.status, absentStatus(check.name))
 })
 
 test("right name, wrong bytes is a mismatch carrying both digests", async () => {
@@ -308,7 +343,7 @@ test("non-onnx files in the directory are ignored entirely", async () => {
   write(dir, "face_detection_yunet_2026may.onnx.LICENCE.md", "MIT")
   fs.mkdirSync(path.join(dir, "face_recognition_sface_2021dec.onnx"))
   const checks = await verifyWeights(dir)
-  for (const check of checks) assert.equal(check.status, "missing")
+  for (const check of checks) assert.equal(check.status, absentStatus(check.name))
   fs.rmSync(dir, { recursive: true, force: true })
 })
 
@@ -320,7 +355,7 @@ test("every check names a pinned entry, in table order", async () => {
     PINNED_WEIGHTS.map((pinned) => pinned.name),
   )
   for (const check of checks) {
-    assert.ok(["ok", "missing", "mismatch", "lfs-pointer"].includes(check.status))
+    assert.ok(["ok", "missing", "mismatch", "lfs-pointer", "absent-optional"].includes(check.status))
     assert.ok(check.detail.length > 0)
   }
   fs.rmSync(dir, { recursive: true, force: true })
