@@ -101,6 +101,14 @@ failure available and it is ruled out.
 
 ## 3. The feature has never been run
 
+> **⚠ Point 2 below is closed, 2026-08-03.** The roster gap is no longer a
+> blocker and no longer schema-level: the `people` table shipped, a face is
+> assigned to a *person*, and `people.guest_id` is a nullable link to the
+> roster. See [`DECISIONS-vision.md`](./DECISIONS-vision.md) §6 for the ruling
+> and the reason. The paragraph is kept because it is why the table exists. The
+> rest of this section — and §1's inventory — is a snapshot of 2026-07-31 and is
+> being overtaken; check the code.
+
 This is the single most important line in this document.
 
 **`media_faces` and `face_identities` contain zero rows.** `ingest-faces.js` has
@@ -161,54 +169,48 @@ boxes* and require re-running ingest — cheap, automated, minutes — while the
 unfinished census is the expensive loss; losing a set of machine-detected boxes
 is not.
 
-⚠ **This refines [`DECISIONS-vision.md`](./DECISIONS-vision.md) §4's ordering,
-which puts ingest at step 4 behind three measurement steps. That document is
-binding and explicitly says not to reinterpret it — so this is written here as a
-proposal for the owner, not as an adopted change.** §7 asks the question
-directly.
+⚠ **This was written as a proposal, and the owner adopted it on 2026-08-03.**
+[`DECISIONS-vision.md`](./DECISIONS-vision.md) §4 now says it outright: the
+census is an evaluation set, not a gate on ingest, and §1's feature-first ruling
+governs where the two conflict. That document is the binding record; this
+paragraph is the argument behind it.
 
 ---
 
-## 5. The channel-order decision — evidence in hand, decision pending
+## 5. The channel order — decided: the reference order (BGR)
+
+> **⚠ Rewritten 2026-08-03, and the rewrite is the point.** This section
+> previously summarised, in words, what the channel-order comparison found —
+> which order recovered more of the faces the oracle also found, which had the
+> lower corroboration rate, which placed landmarks better. It carried no
+> figures, and it was still a violation of §0 and of `CLAUDE.md`'s fourth
+> photograph rule: a comparative conclusion drawn from measuring photographs of
+> identifiable people is a measurement of those people, quantified or not. What
+> a document records is **the decision** and **the method to re-derive it**.
+> Never the evidence.
 
 The wrapper feeds the detector one channel order; OpenCV's reference
-implementation feeds it the other. Both are plausible; they produce different
-detections in number and position; neither errors.
+implementation feeds it the other. Both are plausible; neither errors; they
+produce different detections.
 
-**The experiment SESSION-4 asked for has been run**, using the independent macOS
-Vision detector as referee over the same frames, scoring both complete runs with
-the report's own comparison code. Re-derive it locally with
-`oracleSummary()` from `session1-report.js` against each run directory and the
-shared oracle file; the numbers stay out of this repository.
+**Decided: BGR, the reference order.** See
+[`DECISIONS-vision.md`](./DECISIONS-vision.md) §7, which is the binding record.
+One of the two reasons behind it is not a measurement and can be stated here —
+the network was trained on what the reference implementation feeds it. The
+other is the oracle comparison, and what that returned belongs in `tmp/`.
 
-**What it found, qualitatively:**
+**To re-derive the comparison locally:** run `oracleSummary()` from
+`session1-report.js` against each of the two run directories and the shared
+oracle file, and read recall against the independent detector first (that is the
+metric closest to "did we miss someone"), corroboration rate second and
+sceptically (the oracle is conservative; a detection it declines to confirm is
+not thereby a false positive), landmark placement only as a tie-breaker. The
+run directories live in `tmp/` and the numbers stay there.
 
-- The reference order (**BGR**) recovers **materially more** of the faces the
-  independent detector also found. That is the metric closest to "did we miss
-  someone", and it is the one that matters for a product whose failure mode is a
-  guest silently absent from their own photographs.
-- BGR also produces more detections the oracle does not corroborate, so its
-  agreement rate is lower — but Vision is conservative, and its
-  non-confirmation is not proof of a false positive. This is genuinely
-  ambiguous, not a counter-argument of equal weight.
-- Landmark placement is marginally better under BGR.
-- The training-convention prior points the same way: the network was trained on
-  what the reference implementation feeds it.
-
-**Recommendation: adopt BGR — but not yet, and not silently.** Adopting it means
-re-detecting, which orphans the entire existing labelling. The order of
-operations that makes it cheap instead of catastrophic:
-
-1. Build label portability (§8) so a re-detection stops being a cliff.
-2. Re-detect under BGR.
-3. Re-key the existing labels onto the new detection set.
-4. Finish the census once, against the settled configuration.
-
-If portability is judged not worth building first, the alternative is to finish
-the census on the current (RGB) run and accept that the detector is missing some
-faces the oracle can see — a real cost, paid quietly, in coverage.
-
-**This is the owner's call and it is not made.**
+Adopting BGR means a re-detection, which orphans a labelling keyed to the old
+detection set. `scripts/vision/rekey-labels.js` — built since this section was
+first written — carries a labelling across by content hash and box overlap, so
+that is now a migration rather than a cliff.
 
 ---
 
@@ -279,6 +281,14 @@ on the borrowed engine** ([`DECISIONS-vision.md`](./DECISIONS-vision.md) §1). I
 was wanted days ago. This is the shortest honest path there, and none of it is
 throwaway work.
 
+> **⚠ Steps 0 and 1 were answered on 2026-08-03 and are kept for their
+> reasoning, not as instructions.** Step 0 is **yes** — the census is an
+> evaluation set, not a gate ([`DECISIONS-vision.md`](./DECISIONS-vision.md)
+> §4). Step 1's *recommendation* was not taken: the owner chose a separate
+> `people` table over the nullable column, and it has shipped (§6 there). The
+> current, binding ordering of everything below is
+> [`DECISIONS-vision.md`](./DECISIONS-vision.md) §4.
+
 **Step 0 — one question the owner must answer before anything starts (§4):**
 may ingest run against the *current* detection set, ahead of settling the channel
 order and finishing the census? If yes, the feature ships in days and the
@@ -307,7 +317,7 @@ Assuming yes:
    being the least reversible-looking and the most immediately satisfying —
    memory-book chapters and thank-you-card photo suggestions are the two
    strongest candidates, and the archive index is the safest. **Owner chooses;
-   this is open in `DECISIONS-vision.md` §5.**
+   this is open in `DECISIONS-vision.md` §9.**
 
 **Step 6 is not optional: back up `labels.json`, `identities.json` and every
 run's `timing.json` right now, outside this repository**, with
@@ -376,15 +386,19 @@ Recorded so they are asked rather than assumed. Several have been "answered in
 conversation and lost" before; that is what
 [`DECISIONS-vision.md`](./DECISIONS-vision.md) exists to stop.
 
-1. **May ingest run ahead of the census and the channel-order decision?** (§4,
-   §7 step 0.) This one gates the schedule.
-2. **Adopt BGR?** (§5.) And if so, before or after building label portability?
+1. ~~**May ingest run ahead of the census and the channel-order decision?**~~
+   ✅ **Answered: yes.** The census is an evaluation set, not a gate —
+   [`DECISIONS-vision.md`](./DECISIONS-vision.md) §4.
+2. ~~**Adopt BGR?**~~ ✅ **Answered: yes**, and label portability was built
+   first, so a re-detection is a migration (§5,
+   [`DECISIONS-vision.md`](./DECISIONS-vision.md) §7).
 3. **Which product surface gets tags first?** Memory-book chapters,
    thank-you-card photo suggestions, sunset-archive index, or an opt-in "photos
-   of you".
-4. **How do identities link to the roster?** §7 step 1 proposes nullable
-   `guest_id` plus a display name; the alternative is a separate `people` table
-   now.
+   of you". — **still open.**
+4. ~~**How do identities link to the roster?**~~ ✅ **Answered: a `people`
+   table**, with a nullable link to a roster guest —
+   [`DECISIONS-vision.md`](./DECISIONS-vision.md) §6. §7 step 1 below proposed
+   the nullable-column alternative and was not taken.
 5. **Video: in scope, or a recorded non-goal?**
 6. **Does anything guest-facing ever use this**, or is admin-only permanent?
 7. **How far does the craft phase reach** beyond re-implementation?

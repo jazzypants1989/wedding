@@ -747,33 +747,71 @@ Beyond the effects lab it needs:
 
 ## 10. Schema and privacy
 
-⊙ **Built.** Both tables exist in `db/schema.js` under the `add_media_faces`
-migration, with the precedence triggers below, and the admin API
-(`api/admin/faces.js`) and Faces tab are wired to them. **Neither table has ever
-held a row** — the ingest has not been run for real. See
+⊙ **Built.** Every table below exists in `db/schema.js`, with the constraints and
+precedence triggers noted, and the admin API (`api/admin/faces.js`,
+`api/admin/people.js`) and the Faces tab are wired to them. The migrations, in
+the order they landed: `add_media_faces`, `add_people`, `add_face_routing`,
+`add_vision_provenance`. For what has and has not been *run*, see
 [`VISION-STATUS.md`](./VISION-STATUS.md).
 
 **Tables**, following the existing polymorphic-target trigger and soft-delete
 patterns:
 
-- `media_faces` — `media_id`, bbox, landmarks, quality score, `descriptor` BLOB
-  (nullable: detection-only rows exist), model version, source (`cli` | `upload`).
-- `face_identities` — group → `guests` link, confirmed-by, confirmed-at.
+- `people` — the photographed cast: `display_name`, a **nullable** `guest_id`,
+  created-by, notes, soft-delete.
+- `media_faces` — `media_id`, bbox, landmarks, the nine `signal_` columns that
+  are exactly `gateSignals()`'s output shape (so a row can be re-graded against
+  new cutoffs without re-detecting), `descriptor` BLOB (nullable:
+  detection-only rows exist), model version, source (`cli` | `upload`), the
+  `route_*` columns §6.2's routing writes (`accept` | `ask` | `set_aside`), and
+  a nullable `ingest_id`.
+- `face_identities` — group → `people` link, provenance (`confirmed` |
+  `propagated`, unique per person among live rows), confirmed-by, confirmed-at,
+  and `merged_into`.
+- `vision_ingests` — **immutable**, one row per ingest run: dataset id, model
+  version, the detector / embedder / engine SHA-256s, mirror and normalisation
+  settings, route profile, and an **allowlisted** `config_json`. What that
+  object may carry is a closed list — versions, digests, channel orders,
+  resolutions, thresholds, normalisation and mirror settings, schema version —
+  and what it may never carry is equally closed: filesystem paths, argv,
+  environment variables, names, and any count or distribution measured from the
+  photographs. It travels to production later; §15 r4 travels with it.
+- `face_assignment_batches` + `face_assignments` — the **append-only assignment
+  ledger**. Every naming decision is an event (`assign` | `clear` |
+  `not_a_face` | `negative`) belonging to a batch (`label-import` | `propagate`
+  | `manual` | `merge-repair`), and `media_faces.face_identity_id` is a
+  *projection* of replaying a face's events. Revoking a batch sets a flag rather
+  than writing compensating events, so a manual correction made after it
+  survives the revocation — which is the whole reason the ledger is worth
+  having.
 
-⚠ **`face_identities.guest_id` is `NOT NULL`, and that is a design decision with
-a consequence this spec did not anticipate.** An identity *is* the confirmed link
-to a roster guest — that is what "confirmed" means in the schema, and an unnamed
-recognition group correctly has no row at all. But the `guests` table holds
-**parties, not people** (a row is an invitation), and plenty of people in the
-photographs are not on it at all: photographer, vendors, plus-ones recorded under
-someone else's row, children. So "confirm this group" currently has nothing valid
-to point at for a large share of the cast. **This is the one schema-level blocker
-between the built feature and a usable one**, it is listed as open in
-[`DECISIONS-vision.md`](./DECISIONS-vision.md) §5, and
-[`VISION-STATUS.md`](./VISION-STATUS.md) proposes the options.
+⚠ **UPDATE is blocked on `vision_ingests` and `face_assignments`; DELETE is
+not.** `media_faces` cascades from `media`, so a delete-blocking trigger would
+turn a media delete into a hard failure rather than a clean cascade.
 
-Store the model version so a swap cannot silently mix incompatible descriptors.
-Deleting a guest or a media row **must cascade.**
+⚠ **Merge is a redirect, not an op.** Folding one identity into another is a
+fact about *identities*, not about faces: one `merged_into` update, no per-face
+events, and every event already written stays true forever. Readers resolve
+through the redirect.
+
+⚠ **The roster gap is closed — and it is why `people` exists.** This spec
+originally had `face_identities.guest_id NOT NULL`, on the reasoning that an
+identity *is* the confirmed link to a roster guest. The reasoning did not survive
+contact with the roster: a `guests` row is an **invitation**, one per party, and
+plenty of people in the photographs are not on that list under their own row —
+photographer, vendors, plus-ones recorded under someone else's row, children. So
+"confirm this group" had nothing valid to point at for a large share of the cast,
+which made it the one schema-level blocker between the built feature and a usable
+one. The `add_people` migration resolved it in favour of a separate `people`
+table rather than a nullable column; the ruling and the reasoning are
+[`DECISIONS-vision.md`](./DECISIONS-vision.md) §6.
+
+Store the model version so a swap cannot silently mix incompatible descriptors —
+and note that `model_version` names the **descriptor space only** (embedder,
+output width, normalisation, mirror setting), never the detector. Detection
+provenance is what `ingest_id` records. Deleting a guest or a media row **must
+cascade**; a deleted guest leaves the `people` row standing with a null
+`guest_id`, because the person was still in the photograph.
 
 ⚠ **Set a precedence rule for the two sources.** With both a CLI pass and
 upload-time detection writing boxes, rows from different code versions and
