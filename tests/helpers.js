@@ -24,7 +24,13 @@ try {
 // Use a temporary database file for test isolation (never touch production DB).
 // Exported so tests can derive the server's uploads dir (media-storage.js builds
 // it from dirname(DATABASE_PATH)) to assert on-disk file cleanup.
-export const TEST_DB_PATH = path.join(os.tmpdir(), `wedding-test-${process.pid}-${Date.now()}.db`)
+// An already-set DATABASE_PATH wins, so a test file that must open the SAME
+// database in its own process (faces-admin.test.js, which loads the assignment
+// ledger to replay a face) can choose the path before anything evaluates
+// db/connection.js — which snapshots it at import time. Unset, as it is for
+// every other file, this is the temp path it always was.
+export const TEST_DB_PATH =
+  process.env.DATABASE_PATH || path.join(os.tmpdir(), `wedding-test-${process.pid}-${Date.now()}.db`)
 
 // Where the spawned server writes its JSONL audit log. Exported so tests can
 // assert that state-changing endpoints logged the expected action.

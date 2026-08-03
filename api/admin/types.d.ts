@@ -782,8 +782,11 @@ export function personUpdateHandler(
 ): Promise<void>
 
 /** POST /api/admin/people/merge — { fromPersonId, intoPersonId }: fold one
- *  person into another (re-point identities and faces, retire the source).
- *  Prototypes are computed on demand, so the re-point IS the rebuild. */
+ *  person into another. A merge is a fact about IDENTITIES: the source
+ *  identity gets `merged_into` and is retired, no per-face event is written,
+ *  and `resolveIdentity` reads through the redirect so every historical
+ *  assignment still names what it named. Prototypes are computed on demand, so
+ *  the redirect IS the rebuild. */
 export function personMergeHandler(
   req: IncomingMessage,
   res: ServerResponse,
@@ -827,27 +830,35 @@ export function faceQueueHandler(
 ): Promise<void>
 
 /** POST /api/admin/faces/assign — { faceIds: number[], personId } → find-or-create
- *  a CONFIRMED identity for the person and point every face at it, one txn.
- *  Assigning by name is not an API shape.
+ *  a CONFIRMED identity for the person and append one `assign` event per face,
+ *  one txn. Assigning by name is not an API shape.
  *
  *  BULK: refuses any face id whose `route_state` is `set_aside`, so an action
  *  over a group can never touch a face the queue did not show. Ungraded
  *  (`route_state IS NULL`) rows are allowed — that means "not yet graded", not
- *  "rejected". Use `assign-one` for a face the routing held back. */
+ *  "rejected". Use `assign-one` for a face the routing held back.
+ *
+ *  Returns `batchId`: every bulk mutation is one revocable `manual` batch, so
+ *  naming a welded group by mistake is one revocation rather than N undos. */
 export function faceAssignHandler(
   req: IncomingMessage,
   res: ServerResponse,
   routeInfo: AuthenticatedRouteInfo,
 ): Promise<void>
 
-/** POST /api/admin/faces/unassign — { faceIds: number[] } → clear face_identity_id. */
+/** POST /api/admin/faces/unassign — { faceIds: number[] } → append one `clear`
+ *  event per face, in one revocable `manual` batch (`batchId` in the response).
+ *  The earlier assign stays on record; clearing appends, never overwrites. */
 export function faceUnassignHandler(
   req: IncomingMessage,
   res: ServerResponse,
   routeInfo: AuthenticatedRouteInfo,
 ): Promise<void>
 
-/** POST /api/admin/faces/not-a-face — { faceIds: number[] } → soft-delete the rows. */
+/** POST /api/admin/faces/not-a-face — { faceIds: number[] } → append one
+ *  `not_a_face` event per face, in one revocable `manual` batch. The soft
+ *  delete is that event's PROJECTION, so revoking the batch brings the rows
+ *  back — a bulk dismissal is no longer a one-way door. */
 export function faceNotAFaceHandler(
   req: IncomingMessage,
   res: ServerResponse,
@@ -861,7 +872,9 @@ export function faceNotAFaceHandler(
  *  it the routing filter would be a one-way door rather than a filter on
  *  attention, and a face the admin is looking straight at could not be named.
  *  Exactly one id, no group and no server-side selection, so a client bug costs
- *  one row. `personId: null` clears, making this its own undo. */
+ *  one row. `personId: null` clears, making this its own undo — which is also
+ *  why its event carries NO batch: a batch of one says nothing the event does
+ *  not, and this route is already its own reversal. */
 export function faceAssignOneHandler(
   req: IncomingMessage,
   res: ServerResponse,
@@ -880,7 +893,11 @@ export function facePropagationsHandler(
  *  proposals. Each target gets a second-class `provenance='propagated'`
  *  identity for the same person, never the confirmed one, so a propagation can
  *  never seed a prototype. Proposals are re-derived server-side; a face that
- *  is no longer proposed is refused, not humoured. */
+ *  is no longer proposed is refused, not humoured.
+ *
+ *  Returns `batchId`, and this is the route the batch mechanism exists for: a
+ *  bulk pass over MACHINE proposals, revocable wholesale. Revoking it later
+ *  leaves any face a human has since corrected exactly as they left it. */
 export function facePropagateHandler(
   req: IncomingMessage,
   res: ServerResponse,
