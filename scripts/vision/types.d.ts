@@ -8,6 +8,7 @@
  * usable in both venues.
  */
 import type { DatabaseSync } from "node:sqlite"
+import type { FaceAssignmentOp, VisionIngest } from "../../types.js"
 import type { ImageBackend, ImportManifest, MediaBackends, RgbImage } from "../lib/types.js"
 import type {
   DescriptorSet,
@@ -1701,3 +1702,261 @@ export interface CompareReport {
   m1Set: M1Set
   folds: number
 }
+
+// --- Portable face-work hand-off (scripts/vision/export-face-work.js) ---
+//
+// The artifact that carries face-tagging work from the machine that did the
+// naming to the machine that serves the site. It carries NO descriptors, NO
+// filesystem paths and NO source-machine row ids — see the file header for the
+// full argument. Everything below is the shape of that file plus the two halves
+// that write and read it.
+
+/** A box in SOURCE pixels, the frame `media_faces.bbox_*` is stored in. */
+export interface FaceWorkBox {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/**
+ * The LOGICAL ingest provenance, as it travels. Deliberately not a
+ * `VisionIngest`: no `id` (a source-machine primary key the target must never
+ * trust) and no `created_at` (a fact about when a machine ran, not about what
+ * it produced). `config` is the parsed, allowlisted `config_json`.
+ */
+export interface FaceWorkIngest {
+  datasetId: string
+  modelVersion: string
+  detectorSha256: string
+  embedderSha256: string
+  engineSha256: string
+  /** 0 | 1, matching the column. */
+  mirrorApplied: number
+  normalisation: string
+  routeProfile: string
+  config: Record<string, unknown>
+}
+
+/**
+ * Enough of the assignment ledger to be honest about where a confirmation came
+ * from, and no more. `events: 0` alongside a confirmation means a PRE-LEDGER
+ * row — the projection carries a value that no event explains, which is a true
+ * and important thing to be able to see. The actor is never carried: it is the
+ * first eight characters of a live admin session token.
+ */
+export interface FaceWorkLedgerSummary {
+  events: number
+  op: FaceAssignmentOp
+  /** `face_assignment_batches.kind`, or null for a batch-less event. */
+  kind: string | null
+  decidedAt: string
+}
+
+/** One decision about one `(photo content hash, box)`. */
+export interface FaceWorkConfirmation {
+  /** `<sha256>:<x>,<y>,<w>,<h>` at two decimal places. Content, not a row id. */
+  key: string
+  op: "assign" | "not_a_face"
+  /** `p1..pN` into `FaceWorkPayload.people`; null for `not_a_face`. */
+  personRef: string | null
+  /** `face_identities.provenance` on the source; null for `not_a_face`. */
+  provenance: string | null
+  ledger: FaceWorkLedgerSummary | null
+}
+
+/** A named person. No `guest_id`, no `notes`, no `people.id`. */
+export interface FaceWorkPerson {
+  ref: string
+  displayName: string
+}
+
+/** Everything the content digest is taken over. Never the export timestamp. */
+export interface FaceWorkPayload {
+  formatVersion: number
+  ingest: FaceWorkIngest
+  /** Whether unreviewed ('propagated') identities were carried. */
+  includesPropagated: boolean
+  people: FaceWorkPerson[]
+  confirmations: FaceWorkConfirmation[]
+}
+
+export interface FaceWorkArtifact {
+  format: string
+  exportedAt: string
+  /** sha256 over `canonicalJson(payload)`. */
+  contentSha256: string
+  /** `face-work-<32 hex of contentSha256>` — what makes replay a no-op. */
+  batchId: string
+  payload: FaceWorkPayload
+}
+
+/** Which faces belong to an ingest: its `ingest_id` column, or (for rows that
+ *  predate that column) `model_version` + `source='cli'`. */
+export type FaceWorkFacesFrom = "ingest" | "model-version"
+
+/** One `media_faces` row as both halves read it. Never carries a descriptor. */
+export interface FaceWorkFaceRow {
+  id: number
+  bbox_x: number
+  bbox_y: number
+  bbox_w: number
+  bbox_h: number
+  face_identity_id: number | null
+  deleted_at: string | null
+  /** `media.source_sha256` — the photograph's content hash. */
+  sha256: string
+}
+
+/** Why an incoming key found no target face. */
+export type FaceWorkMatchFailure = "photo" | "box" | "ambiguous" | "malformed"
+
+/** One event the import would append. Never a direct column write. */
+export interface FaceWorkAction {
+  faceId: number
+  op: "assign" | "not_a_face"
+  personRef: string | null
+  identityId: number | null
+}
+
+export interface FaceWorkConflict {
+  kind: "person-split" | "person-collapse" | "confirmation"
+  detail: string
+}
+
+/** Everything the import would do, and every reason it should not. */
+export interface FaceWorkPlan {
+  batchId: string
+  /** This artifact is already on this machine: a no-op, not a refusal. */
+  alreadyApplied: boolean
+  /** Non-empty means nothing is written. */
+  refusals: string[]
+  advisories: string[]
+  actions: FaceWorkAction[]
+  unmatched: Record<FaceWorkMatchFailure, number>
+  /** Refs with no content match — a new person on the target. */
+  peopleToCreate: string[]
+  peopleMatched: number
+  /** Confirmations the target already agrees with. No event is appended. */
+  satisfied: number
+  conflicts: FaceWorkConflict[]
+  personIdByRef?: Map<string, number>
+  nameByRef?: Map<string, string>
+}
+
+export interface FaceWorkArgs {
+  command: "export" | "import" | "preflight" | null
+  artifact: string | null
+  database: string | null
+  ingestId: number | null
+  facesFrom: FaceWorkFacesFrom
+  includePropagated: boolean
+  weights: string | null
+  engine: string | null
+  expectEngine: string | null
+  matchOverlap: boolean
+  force: boolean
+  actor: string
+  note: string | null
+  dryRun: boolean
+}
+
+export type FaceWorkArgsResult =
+  | { valid: true; value: FaceWorkArgs }
+  | { valid: false; error: string }
+
+/** `<sha256>:<x>,<y>,<w>,<h>`, boxes at two decimal places. */
+export function faceWorkBoxKey(sha256: string, box: FaceWorkBox): string
+
+/**
+ * Deterministic JSON: keys sorted by code unit, no whitespace, no locale.
+ *
+ * `unknown` in, deliberately: it is fed a `config_json` this process did not
+ * write, so a shape assertion at the boundary would be a claim rather than a
+ * check. Anything with no JSON form serialises as `null`, matching what
+ * `JSON.stringify` puts in an array slot for one.
+ */
+export function canonicalJson(value: unknown): string
+
+/** The artifact's content address, over the payload only. */
+export function faceWorkDigest(payload: FaceWorkPayload): string
+
+/** What differs between the ingest an artifact came from and a local one.
+ *  `blocking` is what moves a box; `advisory` is what an operator should read. */
+export function faceWorkProvenanceDiff(
+  exported: FaceWorkIngest,
+  targetRow: VisionIngest,
+): { equivalent: boolean; blocking: string[]; advisory: string[] }
+
+/** Read the projected current state plus a ledger annotation, and build the
+ *  artifact. Throws when one content key carries rows that disagree. */
+export function buildFaceWorkExport(options: {
+  db: DatabaseSync
+  ingestId: number | null
+  facesFrom: FaceWorkFacesFrom
+  includePropagated: boolean
+}): {
+  artifact: FaceWorkArtifact
+  stats: {
+    candidateFaces: number
+    contentKeys: number
+    people: number
+    assigned: number
+    notAFace: number
+    skippedPropagated: number
+  }
+}
+
+/** Parse, structurally validate, and check the declared content digest. */
+export function parseFaceWorkArtifact(
+  text: string,
+): { valid: true; value: FaceWorkArtifact } | { valid: false; error: string }
+
+/** Resolve incoming keys onto target face rows. Exact by default; mutual-best
+ *  IoU with a margin under `overlap`, which is a reviewed exception. */
+export function matchFaceWorkKeys(
+  keys: string[],
+  targetRows: FaceWorkFaceRow[],
+  options: { overlap: boolean },
+): {
+  matched: Map<string, FaceWorkFaceRow[]>
+  unmatched: Map<string, FaceWorkMatchFailure>
+}
+
+export function planFaceWorkImport(options: {
+  db: DatabaseSync
+  artifact: FaceWorkArtifact
+  ingestId: number | null
+  facesFrom: FaceWorkFacesFrom
+  matchOverlap: boolean
+  force: boolean
+}): FaceWorkPlan
+
+/** One transaction, one batch, `recordAssignment` for every event. */
+export function applyFaceWorkImport(options: {
+  db: DatabaseSync
+  plan: FaceWorkPlan
+  actor: string
+  note: string | null
+}): {
+  batchId: string
+  applied: boolean
+  events: number
+  peopleCreated: number
+  identitiesCreated: number
+}
+
+/** Weights and engine against pinned digests, before the database is opened. */
+export function faceWorkPreflight(options: {
+  weightsDir: string | null
+  enginePath: string | null
+  expectedEngineSha256: string | null
+}): Promise<{
+  ok: boolean
+  failures: string[]
+  checks: WeightCheck[]
+  engineSha256: string | null
+}>
+
+/** No regex: a manual switch over known `--flags`. Unknown flags are refused. */
+export function parseFaceWorkArgs(argv: string[]): FaceWorkArgsResult
