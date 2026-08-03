@@ -18,8 +18,15 @@ process.env.TEST_SERVER_PORT = process.env.TEST_SERVER_PORT || "3011"
 // module-evaluation time, and ../helpers.js transitively evaluates it, so the
 // variable has to be set BEFORE that import: here, and nowhere later.
 //
-// helpers.js's TEST_DB_PATH honours an already-set value, so the server child
+// helpers.js's TEST_DB_PATH honours TEST_DATABASE_PATH, so the server child
 // process and this one agree on which file they are both using.
-process.env.DATABASE_PATH =
-  process.env.DATABASE_PATH ||
-  path.join(os.tmpdir(), `wedding-test-faces-${process.pid}-${Date.now()}.db`)
+//
+// Both are set UNCONDITIONALLY, and that matters. `helpers.js` calls
+// `process.loadEnvFile` on the repo's `.env`, so any DATABASE_PATH an owner has
+// configured there would otherwise win here — and `.env.example` ships the
+// variable blank with CLAUDE.md documenting it as "used by scripts/tests". The
+// path a test writes to is decided here and nowhere else.
+const facesTestDb = path.join(os.tmpdir(), `wedding-test-faces-${process.pid}-${Date.now()}.db`)
+
+process.env.TEST_DATABASE_PATH = facesTestDb
+process.env.DATABASE_PATH = facesTestDb

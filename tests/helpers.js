@@ -24,13 +24,33 @@ try {
 // Use a temporary database file for test isolation (never touch production DB).
 // Exported so tests can derive the server's uploads dir (media-storage.js builds
 // it from dirname(DATABASE_PATH)) to assert on-disk file cleanup.
-// An already-set DATABASE_PATH wins, so a test file that must open the SAME
-// database in its own process (faces-admin.test.js, which loads the assignment
-// ledger to replay a face) can choose the path before anything evaluates
-// db/connection.js — which snapshots it at import time. Unset, as it is for
-// every other file, this is the temp path it always was.
+//
+// The override variable is TEST_DATABASE_PATH and deliberately NOT DATABASE_PATH.
+// A test file that must open the SAME database in its own process
+// (faces-admin.test.js, which loads the assignment ledger to replay a face) has
+// to choose the path before anything evaluates db/connection.js, which snapshots
+// it at import time — see tests/integration/_faces-admin-port.js.
+//
+// ⚠ It must not be DATABASE_PATH. `.env` is loaded four lines above, and
+// `.env.example` ships a blank `DATABASE_PATH=` that CLAUDE.md documents as
+// "used by scripts/tests". An owner who fills it in with the production path —
+// the documented thing to do — would point resetDatabase() and cleanupTestData()
+// at the real database. A separate name cannot be set by following the docs.
+const TEST_DB_OVERRIDE = process.env.TEST_DATABASE_PATH
+
 export const TEST_DB_PATH =
-  process.env.DATABASE_PATH || path.join(os.tmpdir(), `wedding-test-${process.pid}-${Date.now()}.db`)
+  TEST_DB_OVERRIDE || path.join(os.tmpdir(), `wedding-test-${process.pid}-${Date.now()}.db`)
+
+// Belt and braces: whatever route the path arrived by, it may never be inside
+// the repository's own data/ directory. The helpers below issue unconditional
+// DELETEs, so a wrong path here is not a failing test — it is data loss.
+if (path.resolve(TEST_DB_PATH).startsWith(path.join(PROJECT_ROOT, "data") + path.sep)) {
+  throw new Error(
+    `Refusing to run tests against ${TEST_DB_PATH}: it is inside the repository's ` +
+      `data/ directory. The test helpers DELETE from every table. Unset ` +
+      `TEST_DATABASE_PATH, or point it somewhere disposable.`,
+  )
+}
 
 // Where the spawned server writes its JSONL audit log. Exported so tests can
 // assert that state-changing endpoints logged the expected action.
