@@ -71,7 +71,46 @@ order, resolution) orphan them. Therefore, in order:
    sunset archive — owner to choose which).
 5. Craft phase begins.
 
-## 5. Open questions that remain genuinely open
+## 5. The recogniser: the incumbent stays, and mirror-averaging is off
+
+**Decided 2026-08-03.** SFace 128-d ships, mirror-averaging off. The 512-d
+challenger (AuraFace / glintr100) does not replace it.
+
+Read the outcome correctly: the challenger was **not** worse. It led on both
+metrics. It led by less than the margin the decision rule named in advance, and
+"a margin under the bar keeps the incumbent" is that rule's default branch — so
+this is a decision, not a deferral. Resolving a near-tie by looking at the
+numbers again is precisely what predeclaring a margin prevents. Mirror-averaging
+lost on both models and is off regardless of which one ships.
+
+`model_version` for ingest is `sface128-n127.5d128-nomirror`.
+
+**The method, to re-derive locally.** No measured figure appears in this
+repository (rule 3); everything below regenerates from a local run in minutes.
+
+1. Re-describe one detection run's existing crops under each of four variants —
+   both models, each with and without mirror-averaging — with
+   `scripts/vision/redescribe-crops.js`. Crops, boxes and face ids are untouched
+   by a recogniser change, which is what makes the labels stay valid.
+2. Score them with `scripts/vision/compare-models.js`, which implements the
+   predeclared rule and decides nothing on its own: top-1 prototype-suggestion
+   accuracy on a within-person frame-grouped split with a per-person cap, plus
+   group purity at each model's own cutoff derived on person-disjoint folds it
+   is not scored on.
+3. The rule itself — metrics, margin, the spread condition, the no-decision
+   default, and five dated amendments including one that is post-hoc and says so
+   — is `decision-rule-phase2.md` in the owner's private artifact repository,
+   alongside the results. It is not in this repository because it sits next to
+   measurements.
+
+**One finding that outlives the comparison, because Phase 4 depends on it:** in
+neither descriptor space does any swept cutoff separate this cast without welding
+two people together. That is a property of the photographs and the cast, not of
+the recogniser, so routing and grouping work must not assume a clean cutoff
+exists. Re-derive it from the sweep table in `scripts/vision/session1-report.js`'s
+output — the `welded` column, over every cannot-link point.
+
+## 6. Open questions that remain genuinely open
 
 Recorded so they are asked, not assumed:
 
