@@ -2362,6 +2362,12 @@ tr:hover td {
   height: 100%;
   object-fit: cover;
   display: block;
+  /* layout.css's global `img { max-width: 100% }` reset is a CONSTRAINT, not a
+     default — it clamps the crop positioning's inline width back to the 96px
+     chip while the negative left/top offsets still apply, shoving the image
+     entirely outside the clipped chip. Every chip rendered as blank background
+     until this opted out. */
+  max-width: none;
 }
 .face-chip.is-toggleable {
   cursor: pointer;
