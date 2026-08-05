@@ -39,6 +39,7 @@ import {
   hardDeleteMedia,
   setMediaOriginalExt,
   setMediaSortOrders,
+  setMediaSourceSha256,
   setMediaVariantBytes,
   sumOriginalBytes,
   updateMediaCaption,
@@ -284,6 +285,10 @@ export function createLocalSink(options = {}) {
           status: MEDIA_STATUS.APPROVED,
         })
         if (input.caption !== null) updateMediaCaption(row.id, input.caption)
+        // The join key the face pipeline matches detection runs against,
+        // stamped from the same hash the manifest records — at import time,
+        // where the row and the file are still provably the same thing.
+        if (input.sourceSha256 !== null) setMediaSourceSha256(row.id, input.sourceSha256)
         return result
       })
       return { id: finalized.id, status: finalized.status }

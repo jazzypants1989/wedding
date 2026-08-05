@@ -1366,6 +1366,33 @@ export function openDatabase(dbPath: string): DatabaseSync
 /** sha256 -> media.id, for every non-deleted media row that has one. */
 export function loadMediaShaMap(): Map<string, number>
 
+/** media.id -> ORIGINAL pixel dimensions, for every live media row. */
+export function loadMediaDims(): Map<number, { width: number | null; height: number | null }>
+
+/** How far the two axes' scale factors may disagree (relative) before the
+ *  sha256 join itself is considered suspect. */
+export const ASPECT_TOLERANCE: number
+
+/** A face's geometry moved from the run's decode space into the media row's
+ *  original pixels — the space `media_faces` promises to the Faces tab. */
+export type ScaledFaceGeometry =
+  | { kind: "scaled" | "unscaled"; box: Session1FaceRecord["box"]; landmarks: number[] | null }
+  | { kind: "mismatch"; box: null; landmarks: null }
+
+/**
+ * Scale one face's box and landmarks by the per-axis ratio of the media row's
+ * recorded dimensions to the photo record's decode dimensions. Pure.
+ * `unscaled` when the media row has no dimensions (the tab cannot crop those
+ * anyway); `mismatch` when the aspect ratios disagree beyond tolerance, which
+ * is evidence the join landed on a different image. Signals are never touched:
+ * they are detection-time measurements.
+ */
+export function scaleFaceGeometry(
+  face: Session1FaceRecord,
+  photo: Session1PhotoRecord,
+  media: { width: number | null; height: number | null } | null,
+): ScaledFaceGeometry
+
 /**
  * Pure join: no DB access. `mediaBySha` is supplied already queried, so this
  * is unit-testable with a plain Map.
@@ -1396,6 +1423,12 @@ export interface IngestRunResult {
    *  is missing one of the nine gate signals, which leaves it ungraded rather
    *  than graded against an absent number. */
   facesGraded: number
+  /** Inserted with decode-space geometry because the media row recorded no
+   *  dimensions to scale into. */
+  facesUnscaled: number
+  /** Skipped outright: the media row's dimensions contradict the photo's
+   *  aspect ratio beyond ASPECT_TOLERANCE, so the sha256 join is suspect. */
+  facesSkippedAspect: number
   /** `media` rows given a `frame_root_sha256`. Zero on a dry run. */
   framesWritten: number
   /** `media` rows given a `captured_at`. Photos with no EXIF time are skipped. */
@@ -1460,16 +1493,32 @@ export function ingestRun(options: IngestRunOptions): IngestRunResult
 export interface BackfillManifestOptions {
   db: DatabaseSync
   manifest: ImportManifest
+  /** The `uploads/media` tree beside the target database (core/media-storage.js's
+   *  layout, rooted by the caller — NOT by the DATABASE_PATH env). */
+  uploadsMediaDir: string
   dryRun: boolean
 }
 
 export interface BackfillManifestResult {
-  total: number
-  updated: number
+  /** Live media rows examined. */
+  rows: number
+  /** Stamped value equals the stored original's hash — nothing to do. */
+  verified: number
+  /** Was NULL; stored original's hash is manifest-known, so it was written. */
+  stamped: number
+  /** Was stamped with a hash the stored original disproves; the true hash is
+   *  manifest-known, so the stale value was replaced. */
+  corrected: number
+  /** The stored original's hash is unknown to this manifest — fail closed,
+   *  nothing written (e.g. an import that modified originals). */
+  unverified: number
+  /** No recorded original extension, or the original file was unreadable. */
+  unreadable: number
 }
 
-/** Populate media.source_sha256 from an import-media manifest, for rows that
- *  don't have it yet. Counts only — never a filename. */
+/** Populate (and repair) media.source_sha256, each value verified against the
+ *  row's stored original — the manifest authorizes, it never maps ids. Counts
+ *  only — never a filename. */
 export function backfillFromManifest(options: BackfillManifestOptions): BackfillManifestResult
 
 /** Throws unless given a non-empty model version tag; returns it unchanged

@@ -619,6 +619,12 @@ export function setMediaVariantBytes(id: number, variant: string, bytes: number)
 /** Record the sniff-derived storage extension on the original. */
 export function setMediaOriginalExt(id: number, ext: string): void
 
+/** Record the content hash of the file this row was imported from — the join
+ *  key the vision pipeline matches detection runs against. Written at import
+ *  time by scripts/lib/sink-local.js; ingest-faces.js's --backfill-manifest
+ *  repairs rows that predate the stamp. */
+export function setMediaSourceSha256(id: number, sha256: string): void
+
 export interface FinalizeMediaInput {
   width: number | null
   height: number | null

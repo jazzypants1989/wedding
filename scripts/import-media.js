@@ -175,6 +175,26 @@ export function parseArgs(argv) {
         `Quote paths containing spaces.`,
     }
   }
+  // `"$PHOTOS"` with the variable unset arrives as an empty string, and
+  // path.resolve("") is the current working directory — which once swept this
+  // repository's own screenshots into a gallery. Refuse both shapes by name.
+  if (positional[0].length === 0) {
+    return {
+      valid: false,
+      error:
+        'The directory argument is empty. If you passed a shell variable (e.g. "$PHOTOS"), ' +
+        "it is not set in this shell.",
+    }
+  }
+  const dir = path.resolve(positional[0])
+  if (dir === path.resolve(import.meta.dirname, "..")) {
+    return {
+      valid: false,
+      error:
+        "That directory is this project's own repository. Photographs are imported from an " +
+        "explicit directory of their own — refusing to sweep the repo's images into the gallery.",
+    }
+  }
 
   for (const [name, allowed] of Object.entries(ENUM_FLAGS)) {
     const value = values[name]
@@ -197,7 +217,7 @@ export function parseArgs(argv) {
   return {
     valid: true,
     value: {
-      dir: path.resolve(positional[0]),
+      dir,
       section,
       dryRun: flags.has("dry-run"),
       url: values.url ? normalizeOrigin(values.url) : null,
@@ -667,6 +687,7 @@ export async function runImport(args, deps = {}) {
           height: built.height,
           durationS: built.durationSeconds,
           caption: item.caption,
+          sourceSha256: item.sha256,
         })
         openSessions.delete(session.id)
         // Past this line the row exists and is approved, so the catch below must

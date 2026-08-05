@@ -451,6 +451,10 @@ export interface ImportSink {
       height: number
       durationS: number | null
       caption: string | null
+      /** Content hash of the ORIGIN file (what was hashed for the manifest).
+       *  The local sink stamps it on the row; the http sink has no API field
+       *  for it and ignores it (--backfill-manifest covers those rows). */
+      sourceSha256: string | null
     },
   ): Promise<{ id: number; status: string }>
   /** Throw away a created-but-unfinalized session (SIGINT, mid-file failure). */

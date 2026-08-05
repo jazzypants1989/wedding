@@ -95,8 +95,22 @@ describe("parseArgs", () => {
     assert.ok(value.manifestPath.endsWith("import-manifest.json"))
   })
 
+  it("refuses an empty directory argument — the unset-$PHOTOS shape", () => {
+    const result = parseArgs([""])
+    assert.equal(result.valid, false)
+    assert.ok(!result.valid && result.error.includes("empty"))
+  })
+
+  it("refuses the repository's own root directory", () => {
+    const repoRoot = path.resolve(import.meta.dirname, "..", "..")
+    const result = parseArgs([repoRoot])
+    assert.equal(result.valid, false)
+    assert.ok(!result.valid && result.error.includes("repository"))
+  })
+
   it("resolves the directory to an absolute path", () => {
-    assert.equal(args(["."]).dir, path.resolve("."))
+    // Not "." — tests run from the repo root, and the repo itself is refused.
+    assert.equal(args(["tmp/photos"]).dir, path.resolve("tmp/photos"))
     assert.ok(path.isAbsolute(args(["some/relative/dir"]).dir))
   })
 
@@ -369,8 +383,8 @@ describe("buildPlan", () => {
 
 /** Records every call, so a test can assert on the whole conversation. */
 function stubSink(overrides = {}) {
-  /** @type {{ created: number[], put: [number, string][], finalized: number[], discarded: number[], ordered: number[][] }} */
-  const calls = { created: [], put: [], finalized: [], discarded: [], ordered: [] }
+  /** @type {{ created: number[], put: [number, string][], finalized: number[], finalizeInputs: Array<{ sourceSha256: string | null }>, discarded: number[], ordered: number[][] }} */
+  const calls = { created: [], put: [], finalized: [], finalizeInputs: [], discarded: [], ordered: [] }
   let nextId = 100
   const sink = {
     name: /** @type {const} */ ("local"),
@@ -388,9 +402,10 @@ function stubSink(overrides = {}) {
       calls.put.push([id, variant])
       return { bytes: 1 }
     },
-    /** @param {number} id */
-    async finalize(id) {
+    /** @param {number} id @param {{ sourceSha256: string | null }} input */
+    async finalize(id, input) {
       calls.finalized.push(id)
+      calls.finalizeInputs.push(input)
       return { id, status: "approved" }
     },
     /** @param {number} id */
@@ -479,6 +494,12 @@ describe("runImport", () => {
       ["display", "thumb", "original"],
     )
     assert.equal(sink.calls.finalized.length, 2)
+    // Every finalize carries the origin file's content hash — the join key the
+    // face pipeline matches detection runs against, stamped at import time.
+    for (const input of sink.calls.finalizeInputs) {
+      assert.equal(typeof input.sourceSha256, "string")
+      assert.equal(/** @type {string} */ (input.sourceSha256).length, 64)
+    }
     assert.equal(sink.calls.discarded.length, 0)
     // sort_order follows filename order, which is why IMG_0001 leads.
     assert.deepEqual(sink.calls.ordered, [

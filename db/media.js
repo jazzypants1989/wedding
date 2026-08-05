@@ -135,6 +135,11 @@ export function setMediaOriginalExt(id, ext) {
   sql`UPDATE media SET original_ext = ${ext} WHERE id = ${id}`.run()
 }
 
+/** @type {Types.setMediaSourceSha256} */
+export function setMediaSourceSha256(id, sha256) {
+  sql`UPDATE media SET source_sha256 = ${sha256} WHERE id = ${id}`.run()
+}
+
 /** @type {Types.finalizeMedia} */
 export function finalizeMedia(id, { width, height, durationS, needsDisplay, status }) {
   // The status='uploading' guard makes this a no-op on an already-finalized row

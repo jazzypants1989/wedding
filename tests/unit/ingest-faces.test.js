@@ -7,6 +7,7 @@
  */
 
 import assert from "node:assert/strict"
+import crypto from "node:crypto"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -24,6 +25,7 @@ import {
   readJsonl,
   readTiming,
   requireModelVersion,
+  scaleFaceGeometry,
 } from "../../scripts/vision/ingest-faces.js"
 import { blobToDescriptor } from "../../db/media-faces.js"
 import { PROFILE, routeCutoffs } from "../../public/vision/route.js"
@@ -159,14 +161,19 @@ function writeRun(dir, photos, faces, timingOverride) {
   }
 }
 
-/** @param {import('node:sqlite').DatabaseSync} db @param {string | null} sha */
-function seedMedia(db, sha) {
+/** @param {import('node:sqlite').DatabaseSync} db @param {string | null} sha
+ *  @param {{ width?: number | null, height?: number | null }} [dims] Omitted
+ *  dims model a row that never recorded them — the ingest keeps decode-space
+ *  geometry for those rather than dropping the face. */
+function seedMedia(db, sha, dims = {}) {
+  const { width = null, height = null } = dims
   const fileKey = `fk-${Math.random().toString(16).slice(2)}`
   const result = db
     .prepare(
-      `INSERT INTO media (file_key, kind, section, status, source_sha256) VALUES (?, 'image', 'guest', 'approved', ?)`,
+      `INSERT INTO media (file_key, kind, section, status, source_sha256, width, height)
+       VALUES (?, 'image', 'guest', 'approved', ?, ?, ?)`,
     )
-    .run(fileKey, sha)
+    .run(fileKey, sha, width, height)
   return Number(result.lastInsertRowid)
 }
 
@@ -333,6 +340,50 @@ describe("frameMetadataForPhotos", () => {
 // ingestRun, against a real temp DB
 // ---------------------------------------------------------------------------
 
+describe("scaleFaceGeometry", () => {
+  it("scales box and landmarks per axis into the media row's original pixels", () => {
+    const result = scaleFaceGeometry(
+      face([1], { box: { x: 10, y: 20, w: 40, h: 40 } }),
+      photo({ width: 100, height: 100 }),
+      { width: 200, height: 200 },
+    )
+    assert.equal(result.kind, "scaled")
+    assert.deepEqual(result.box, { x: 20, y: 40, w: 80, h: 80 })
+    assert.deepEqual(result.landmarks, [40, 60, 80, 60, 60, 80, 44, 100, 76, 100])
+  })
+
+  it("keeps decode-space geometry when the media row recorded no dimensions", () => {
+    const original = face([1])
+    const result = scaleFaceGeometry(original, photo(), { width: null, height: null })
+    assert.equal(result.kind, "unscaled")
+    assert.deepEqual(result.box, original.box)
+    assert.deepEqual(result.landmarks, original.landmarks)
+  })
+
+  it("treats a missing media row the same as missing dimensions", () => {
+    assert.equal(scaleFaceGeometry(face([1]), photo(), null).kind, "unscaled")
+  })
+
+  it("refuses to scale when the aspect ratios contradict — the join is suspect", () => {
+    const result = scaleFaceGeometry(face([1]), photo({ width: 100, height: 100 }), { width: 300, height: 100 })
+    assert.equal(result.kind, "mismatch")
+    assert.equal(result.box, null)
+  })
+
+  it("tolerates the sub-percent disagreement integer rounding produces", () => {
+    // A 4032×3024 original decoded to 2000×1500 is exact; 3025 high is the
+    // off-by-one shape a rounded decode edge produces.
+    const result = scaleFaceGeometry(face([1]), photo({ width: 2000, height: 1500 }), { width: 4032, height: 3025 })
+    assert.equal(result.kind, "scaled")
+  })
+
+  it("passes absent landmarks through as null", () => {
+    const result = scaleFaceGeometry(face([1], { landmarks: [] }), photo(), { width: 200, height: 200 })
+    assert.equal(result.kind, "scaled")
+    assert.equal(result.landmarks, null)
+  })
+})
+
 describe("ingestRun", () => {
   it("joins by sha256, inserts one media_faces row per face of a matched photo, and round-trips the descriptor", () => {
     const db = freshDb()
@@ -372,6 +423,57 @@ describe("ingestRun", () => {
       for (let i = 0; i < descriptor.length; i++) {
         assert.ok(Math.abs(decoded[i] - descriptor[i]) < 1e-6, `component ${i} round-trips`)
       }
+    } finally {
+      db.close()
+    }
+  })
+
+  it("writes boxes and landmarks in the media row's ORIGINAL pixels, not the run's decode space", () => {
+    const db = freshDb()
+    try {
+      // The run decoded at 100×100; the stored original is 400×400. Inserting
+      // decode-space numbers here is the bug that made every Faces-tab chip a
+      // featureless zoomed patch.
+      const mediaId = seedMedia(db, "sha-a", { width: 400, height: 400 })
+      const runDir = path.join(workDir, "run-scaled")
+      writeRun(runDir, [photo({ id: 0, sha256: "sha-a" })], [face([1, 2, 3], { id: 0, photoId: 0 })])
+
+      const result = ingestRun({ db, runDir, modelVersion: "v1", replace: false, dryRun: false })
+      assert.equal(result.facesInserted, 1)
+      assert.equal(result.facesUnscaled, 0)
+      assert.equal(result.facesSkippedAspect, 0)
+
+      const row = /** @type {any} */ (
+        db.prepare(`SELECT bbox_x, bbox_y, bbox_w, bbox_h, landmarks FROM media_faces WHERE media_id = ?`).get(mediaId)
+      )
+      assert.equal(row.bbox_x, 40)
+      assert.equal(row.bbox_y, 80)
+      assert.equal(row.bbox_w, 160)
+      assert.equal(row.bbox_h, 160)
+      assert.deepEqual(JSON.parse(row.landmarks), [80, 120, 160, 120, 120, 160, 88, 200, 152, 200])
+    } finally {
+      db.close()
+    }
+  })
+
+  it("skips a face whose media dimensions contradict the photo — and the dry run counts it identically", () => {
+    const db = freshDb()
+    try {
+      const mediaId = seedMedia(db, "sha-a", { width: 300, height: 100 })
+      const runDir = path.join(workDir, "run-aspect")
+      writeRun(runDir, [photo({ id: 0, sha256: "sha-a" })], [face([1, 2, 3], { id: 0, photoId: 0 })])
+
+      const dry = ingestRun({ db, runDir, modelVersion: "v1", replace: false, dryRun: true })
+      const wet = ingestRun({ db, runDir, modelVersion: "v1", replace: false, dryRun: false })
+      for (const result of [dry, wet]) {
+        assert.equal(result.facesInserted, 0)
+        assert.equal(result.facesSkippedAspect, 1)
+      }
+
+      const count = /** @type {{ n: number }} */ (
+        db.prepare(`SELECT COUNT(*) AS n FROM media_faces WHERE media_id = ?`).get(mediaId)
+      ).n
+      assert.equal(count, 0, "a contradicted join must write nothing")
     } finally {
       db.close()
     }
@@ -481,69 +583,186 @@ describe("ingestRun", () => {
 // ---------------------------------------------------------------------------
 
 describe("backfillFromManifest", () => {
-  /** @param {number} mediaId @param {string} sha */
-  function manifestFor(mediaId, sha) {
-    return {
-      version: 1,
-      origins: {
-        "http://localhost:3000": {
-          [sha]: {
-            id: mediaId,
-            fileKey: "abc123",
-            section: "official",
-            name: "IMG_0001.jpg",
-            bytes: 12345,
-            at: "2026-01-01T00:00:00.000Z",
-          },
-        },
-      },
-    }
+  /** @param {Buffer | string} content */
+  const shaOf = (content) => crypto.createHash("sha256").update(content).digest("hex")
+
+  let uploadsCounter = 0
+  /** A fresh uploads/media tree for one test. */
+  function freshUploads() {
+    uploadsCounter++
+    const dir = path.join(workDir, `uploads-${uploadsCounter}`, "media")
+    fs.mkdirSync(dir, { recursive: true })
+    return dir
   }
 
-  it("populates source_sha256 only where it was NULL", () => {
+  let keyCounter = 0
+  /**
+   * Insert a media row and put its stored original on disk, the way an import
+   * leaves them. `stamped` is what source_sha256 currently says — null, the
+   * truth, or a stale value from another database's manifest ids.
+   * @param {import('node:sqlite').DatabaseSync} db @param {string} uploadsMediaDir
+   * @param {{ content: string, stamped?: string | null }} options
+   */
+  function seedRowWithOriginal(db, uploadsMediaDir, { content, stamped = null }) {
+    keyCounter++
+    const fileKey = keyCounter.toString(16).padStart(32, "0")
+    const dir = path.join(uploadsMediaDir, fileKey.slice(0, 2), fileKey)
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, "original.jpg"), content)
+    const result = db
+      .prepare(
+        `INSERT INTO media (file_key, kind, section, status, original_ext, source_sha256)
+         VALUES (?, 'image', 'guest', 'approved', 'jpg', ?)`,
+      )
+      .run(fileKey, stamped)
+    return Number(result.lastInsertRowid)
+  }
+
+  /** A manifest that KNOWS these hashes — under deliberately meaningless ids,
+   *  because ids from a dead database are exactly what must not matter.
+   *  @param {string[]} shas */
+  function manifestKnowing(shas) {
+    /** @type {Record<string, any>} */
+    const entries = {}
+    let id = 900
+    for (const sha of shas) {
+      entries[sha] = { id: id++, fileKey: "unrelated", section: "official", name: "x.jpg", bytes: 1, at: "2026-01-01T00:00:00.000Z" }
+    }
+    return { version: 1, origins: { "local:/somewhere": entries } }
+  }
+
+  /** @param {import('node:sqlite').DatabaseSync} db @param {number} id */
+  function stampOf(db, id) {
+    return /** @type {{ source_sha256: string | null }} */ (
+      db.prepare(`SELECT source_sha256 FROM media WHERE id = ?`).get(id)
+    ).source_sha256
+  }
+
+  it("stamps an unstamped row from its stored original's hash — the manifest's claimed id is ignored", () => {
     const db = freshDb()
     try {
-      const mediaId = seedMedia(db, null)
-      const result = backfillFromManifest({ db, manifest: manifestFor(mediaId, "sha-x"), dryRun: false })
-      assert.equal(result.total, 1)
-      assert.equal(result.updated, 1)
-
-      const row = /** @type {{ source_sha256: string | null }} */ (
-        db.prepare(`SELECT source_sha256 FROM media WHERE id = ?`).get(mediaId)
-      )
-      assert.equal(row.source_sha256, "sha-x")
+      const uploads = freshUploads()
+      const mediaId = seedRowWithOriginal(db, uploads, { content: "photo-bytes-a" })
+      const result = backfillFromManifest({
+        db,
+        manifest: manifestKnowing([shaOf("photo-bytes-a")]),
+        uploadsMediaDir: uploads,
+        dryRun: false,
+      })
+      assert.equal(result.stamped, 1)
+      assert.equal(stampOf(db, mediaId), shaOf("photo-bytes-a"))
     } finally {
       db.close()
     }
   })
 
-  it("does not overwrite a row that already has a source_sha256", () => {
+  it("corrects a row whose stamp its own stored original disproves — the stale-manifest-id incident", () => {
     const db = freshDb()
     try {
-      const mediaId = seedMedia(db, "sha-existing")
-      const result = backfillFromManifest({ db, manifest: manifestFor(mediaId, "sha-x"), dryRun: false })
-      assert.equal(result.updated, 0)
-
-      const row = /** @type {{ source_sha256: string | null }} */ (
-        db.prepare(`SELECT source_sha256 FROM media WHERE id = ?`).get(mediaId)
-      )
-      assert.equal(row.source_sha256, "sha-existing")
+      const uploads = freshUploads()
+      // The row holds a screenshot's hash; the file on disk is a real photo
+      // whose hash the manifest knows. This is the exact shape that dropped
+      // 259 faces: 95 rebuilt-database rows stamped through dead row ids.
+      const mediaId = seedRowWithOriginal(db, uploads, {
+        content: "photo-bytes-b",
+        stamped: shaOf("some-screenshot"),
+      })
+      const result = backfillFromManifest({
+        db,
+        manifest: manifestKnowing([shaOf("photo-bytes-b"), shaOf("some-screenshot")]),
+        uploadsMediaDir: uploads,
+        dryRun: false,
+      })
+      assert.equal(result.corrected, 1)
+      assert.equal(stampOf(db, mediaId), shaOf("photo-bytes-b"))
     } finally {
       db.close()
     }
   })
 
-  it("--dry-run counts what would change without writing", () => {
+  it("verifies an already-correct stamp and writes nothing", () => {
     const db = freshDb()
     try {
-      const mediaId = seedMedia(db, null)
-      const result = backfillFromManifest({ db, manifest: manifestFor(mediaId, "sha-x"), dryRun: true })
-      assert.equal(result.updated, 1)
+      const uploads = freshUploads()
+      const mediaId = seedRowWithOriginal(db, uploads, {
+        content: "photo-bytes-c",
+        stamped: shaOf("photo-bytes-c"),
+      })
+      const result = backfillFromManifest({
+        db,
+        manifest: manifestKnowing([]),
+        uploadsMediaDir: uploads,
+        dryRun: false,
+      })
+      assert.equal(result.verified, 1)
+      assert.equal(result.stamped + result.corrected, 0)
+      assert.equal(stampOf(db, mediaId), shaOf("photo-bytes-c"))
+    } finally {
+      db.close()
+    }
+  })
 
-      const row = /** @type {{ source_sha256: string | null }} */ (
-        db.prepare(`SELECT source_sha256 FROM media WHERE id = ?`).get(mediaId)
+  it("fails closed when the stored original's hash is unknown to the manifest", () => {
+    const db = freshDb()
+    try {
+      const uploads = freshUploads()
+      // Unstamped: stays unstamped. Stamped with something else (a strip-
+      // original import whose stamp came from the origin file): left alone.
+      const nullRow = seedRowWithOriginal(db, uploads, { content: "unknown-1" })
+      const stampedRow = seedRowWithOriginal(db, uploads, {
+        content: "unknown-2",
+        stamped: shaOf("the-origin-before-stripping"),
+      })
+      const result = backfillFromManifest({
+        db,
+        manifest: manifestKnowing([shaOf("something-else-entirely")]),
+        uploadsMediaDir: uploads,
+        dryRun: false,
+      })
+      assert.equal(result.unverified, 2)
+      assert.equal(stampOf(db, nullRow), null)
+      assert.equal(stampOf(db, stampedRow), shaOf("the-origin-before-stripping"))
+    } finally {
+      db.close()
+    }
+  })
+
+  it("counts a row whose original is missing as unreadable, and touches nothing", () => {
+    const db = freshDb()
+    try {
+      const uploads = freshUploads()
+      const mediaId = seedRowWithOriginal(db, uploads, { content: "soon-gone" })
+      const row = /** @type {{ file_key: string }} */ (
+        db.prepare(`SELECT file_key FROM media WHERE id = ?`).get(mediaId)
       )
-      assert.equal(row.source_sha256, null, "dry run must not write")
+      fs.rmSync(path.join(uploads, row.file_key.slice(0, 2)), { recursive: true, force: true })
+      const result = backfillFromManifest({
+        db,
+        manifest: manifestKnowing([shaOf("soon-gone")]),
+        uploadsMediaDir: uploads,
+        dryRun: false,
+      })
+      assert.equal(result.unreadable, 1)
+      assert.equal(stampOf(db, mediaId), null)
+    } finally {
+      db.close()
+    }
+  })
+
+  it("--dry-run computes the same counts and writes nothing", () => {
+    const db = freshDb()
+    try {
+      const uploads = freshUploads()
+      const wrong = shaOf("stale")
+      const mediaId = seedRowWithOriginal(db, uploads, { content: "photo-bytes-d", stamped: wrong })
+      const result = backfillFromManifest({
+        db,
+        manifest: manifestKnowing([shaOf("photo-bytes-d")]),
+        uploadsMediaDir: uploads,
+        dryRun: true,
+      })
+      assert.equal(result.corrected, 1)
+      assert.equal(stampOf(db, mediaId), wrong, "dry run must not write")
     } finally {
       db.close()
     }

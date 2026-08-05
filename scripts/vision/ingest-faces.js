@@ -6,10 +6,16 @@
  *
  *  Two jobs behind one entry point, either or both per invocation:
  *
- *   1. `--backfill-manifest PATH` populates `media.source_sha256` from the bulk
- *      importer's manifest (scripts/lib/import-manifest.js) for rows that don't
- *      have it yet — nothing else in the pipeline writes that column (see
- *      schema.js's add_media_faces migration comment).
+ *   1. `--backfill-manifest PATH` populates `media.source_sha256`, VERIFIED
+ *      against the stored originals rather than trusted from the manifest's row
+ *      ids. A manifest id is only meaningful in the database it was created
+ *      against, and the manifest outlives databases — a smoke DB was once
+ *      rebuilt under a manifest that had already recorded another import, and
+ *      the stale ids stamped 95 real photographs with another file's hash. So:
+ *      every row's stored original is re-hashed, and a value is written only
+ *      when that hash is one the manifest actually knows. (sink-local.js now
+ *      stamps the hash at import time, so this pass is for rows that predate
+ *      that.)
  *   2. The main pass: read `<run-dir>/photos.jsonl` + `faces.jsonl`, join each
  *      photo's sha256 to `media.source_sha256`, and insert one `media_faces`
  *      row per face of a matched photo. `--model-version` is required and never
@@ -67,6 +73,7 @@
  */
 /** @import * as Types from './types.js' */
 
+import crypto from "node:crypto"
 import { DatabaseSync } from "node:sqlite"
 import fs from "node:fs"
 import path from "node:path"
@@ -121,8 +128,11 @@ const USAGE = `Usage: node scripts/vision/ingest-faces.js <run-dir> [options]
                              pairs' previous 'cli' rows before inserting. Without
                              it, a pair that already has live 'cli' rows is refused.
   --database PATH            Override the SQLite file. Default: data/wedding.db.
-  --backfill-manifest PATH   Populate media.source_sha256 from an import-media
-                              manifest, for rows that don't have it yet.
+  --backfill-manifest PATH   Populate (and repair) media.source_sha256. Each
+                              row's stored original is re-hashed; a value is
+                              written only when the hash is one this manifest
+                              recorded. Rows the importer stamped at import
+                              time verify and pass through untouched.
   --dry-run                  Report counts; write nothing.
   --help                     Show this message.
 `
@@ -289,6 +299,85 @@ export function loadMediaShaMap() {
   const map = new Map()
   for (const row of rows) map.set(row.source_sha256, row.id)
   return map
+}
+
+/** media.id -> ORIGINAL pixel dimensions, for every live media row. Null when
+ *  a row never recorded them (finalize always writes both, so that is a
+ *  test-fixture shape more than a production one). */
+export function loadMediaDims() {
+  /** @type {Array<{ id: number, width: number | null, height: number | null }>} */
+  const rows = sql`SELECT id, width, height FROM media WHERE deleted_at IS NULL`.all()
+  /** @type {Map<number, { width: number | null, height: number | null }>} */
+  const map = new Map()
+  for (const row of rows) map.set(row.id, { width: row.width, height: row.height })
+  return map
+}
+
+/**
+ * How far the two axes' scale factors may disagree before the join itself is
+ * suspect. The batch decodes with one uniform long-edge scale, so a photo and
+ * its media row can only differ by rounding — measured across a real 673-photo
+ * join, every pair agreed within a fraction of a percent. 2% is far outside
+ * rounding and far inside "this is a different image".
+ */
+export const ASPECT_TOLERANCE = 0.02
+
+/**
+ * A face's box and landmarks, scaled from the run's DECODE space into the
+ * media row's ORIGINAL pixels — the space `media_faces` promises (the Faces
+ * tab positions its crops against `media.width`/`height`; see
+ * public/pages/admin/face-assignment.js `positionFaceChipImage`).
+ *
+ * The batch never decodes a photograph above `--source-edge` (default 2000px),
+ * so its boxes are in that smaller space and inserting them verbatim was the
+ * bug that made every admin face chip a featureless zoomed patch.
+ *
+ * Three outcomes, pure and unit-testable:
+ *  - `scaled`   — dimensions known, aspects agree: geometry multiplied up.
+ *  - `unscaled` — the media row never recorded dimensions. The contract can't
+ *    be expressed, but the tab also cannot crop without them (it falls back to
+ *    an uncropped thumb), so the decode-space values are kept rather than the
+ *    face dropped.
+ *  - `mismatch` — dimensions known and the aspect ratios disagree beyond
+ *    tolerance. That is not a scaling problem, it is evidence the sha256 join
+ *    landed on a DIFFERENT image; writing either space's numbers would be
+ *    wrong, so the face is skipped and counted.
+ *
+ * `signals` are deliberately NOT rescaled: they record what the gate measured
+ * at detection time, in detection space, and `route_state` was graded against
+ * exactly those numbers.
+ * @type {Types.scaleFaceGeometry}
+ */
+export function scaleFaceGeometry(face, photo, media) {
+  const landmarks = face.landmarks && face.landmarks.length > 0 ? face.landmarks : null
+  if (
+    !media ||
+    typeof media.width !== "number" ||
+    typeof media.height !== "number" ||
+    !(media.width > 0) ||
+    !(media.height > 0)
+  ) {
+    return { kind: "unscaled", box: face.box, landmarks }
+  }
+  if (!(photo.width > 0) || !(photo.height > 0)) {
+    // A photo record with no usable dimensions cannot vouch for its own boxes.
+    return { kind: "mismatch", box: null, landmarks: null }
+  }
+  const scaleX = media.width / photo.width
+  const scaleY = media.height / photo.height
+  if (Math.abs(scaleX - scaleY) > ASPECT_TOLERANCE * Math.max(scaleX, scaleY)) {
+    return { kind: "mismatch", box: null, landmarks: null }
+  }
+  return {
+    kind: "scaled",
+    box: {
+      x: face.box.x * scaleX,
+      y: face.box.y * scaleY,
+      w: face.box.w * scaleX,
+      h: face.box.h * scaleY,
+    },
+    landmarks: landmarks ? landmarks.map((value, i) => (i % 2 === 0 ? value * scaleX : value * scaleY)) : null,
+  }
 }
 
 /**
@@ -732,14 +821,30 @@ export function ingestRun({ db, runDir, modelVersion, replace, dryRun }) {
   const matchedMediaIds = [...new Set(matched.map((m) => m.mediaId))]
   /** @type {Map<number, number>} */
   const mediaIdByPhotoId = new Map(matched.map((m) => [m.photo.id, m.mediaId]))
+  /** @type {Map<number, Types.Session1PhotoRecord>} */
+  const photoById = new Map(matched.map((m) => [m.photo.id, m.photo]))
   const facesToInsert = faces.filter((f) => mediaIdByPhotoId.has(f.photoId))
 
   const frameMeta = frameMetadataForPhotos(photos)
   const cutoffs = routeCutoffs()
+  const mediaDims = loadMediaDims()
+
+  /** Decode-space geometry -> the media row's original pixels, resolved once
+   *  so the dry run counts exactly what the real pass would write. */
+  const geometryFor = (/** @type {Types.Session1FaceRecord} */ face) => {
+    const photo = photoById.get(face.photoId)
+    const mediaId = /** @type {number} */ (mediaIdByPhotoId.get(face.photoId))
+    return photo
+      ? scaleFaceGeometry(face, photo, mediaDims.get(mediaId) ?? null)
+      : /** @type {const} */ ({ kind: "mismatch", box: null, landmarks: null })
+  }
 
   let framesWritten = 0
   let capturedAtWritten = 0
+  let facesInserted = 0
   let facesGraded = 0
+  let facesUnscaled = 0
+  let facesSkippedAspect = 0
   /** @type {number | null} */
   let ingestId = null
 
@@ -748,7 +853,16 @@ export function ingestRun({ db, runDir, modelVersion, replace, dryRun }) {
     // point of --dry-run is to find out whether the real one would work.
     assertModelVersionInvariant(modelVersion, ingestInput)
     if (!replace) assertNoLiveCliFaces(matchedMediaIds, modelVersion)
-    for (const face of facesToInsert) if (gradeFace(face, cutoffs)) facesGraded++
+    for (const face of facesToInsert) {
+      const geometry = geometryFor(face)
+      if (geometry.kind === "mismatch") {
+        facesSkippedAspect++
+        continue
+      }
+      if (geometry.kind === "unscaled") facesUnscaled++
+      facesInserted++
+      if (gradeFace(face, cutoffs)) facesGraded++
+    }
   } else {
     withTransaction(db, () => {
       // §9a's invariant, and it comes first: a model_version already recorded
@@ -790,12 +904,19 @@ export function ingestRun({ db, runDir, modelVersion, replace, dryRun }) {
       }
       for (const face of facesToInsert) {
         const mediaId = /** @type {number} */ (mediaIdByPhotoId.get(face.photoId))
+        const geometry = geometryFor(face)
+        if (geometry.kind === "mismatch") {
+          facesSkippedAspect++
+          continue
+        }
+        if (geometry.kind === "unscaled") facesUnscaled++
+        facesInserted++
         const route = gradeFace(face, cutoffs)
         if (route) facesGraded++
         insertFace({
           mediaId,
-          bbox: face.box,
-          landmarks: face.landmarks && face.landmarks.length > 0 ? face.landmarks : null,
+          bbox: geometry.box,
+          landmarks: geometry.landmarks,
           signals: face.signals ?? null,
           descriptor:
             face.descriptor && face.descriptor.length > 0
@@ -814,47 +935,106 @@ export function ingestRun({ db, runDir, modelVersion, replace, dryRun }) {
     photosInRun: photos.length,
     matched: matched.length,
     unmatched: unmatchedCount,
-    facesInserted: facesToInsert.length,
+    facesInserted,
     facesGraded,
+    facesUnscaled,
+    facesSkippedAspect,
     framesWritten,
     capturedAtWritten,
     ingestId,
   }
 }
 
+/** @param {string} file @returns {string} sha256 hex of the file's bytes. */
+function sha256File(file) {
+  return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex")
+}
+
 /**
- * Populate media.source_sha256 from an import-media manifest, for rows that
- * don't have it yet. Counts only — never logs a filename (ManifestEntry.name
- * is a basename at import time, which could itself identify a photo's subject).
+ * Populate (and repair) media.source_sha256, verified against the stored
+ * originals — the manifest is the AUTHORIZATION corpus, never the source of a
+ * row mapping.
+ *
+ * Why not trust `entry.id`, which is exactly what this function used to do: a
+ * manifest survives the database it was written against. Rebuild the database
+ * under the same manifest path — which happened, once, for real — and every
+ * old entry's id now names an arbitrary row in the new database. The old code
+ * stamped 95 real photographs with another import's hashes that way, and the
+ * sha256 join then silently dropped every face on them.
+ *
+ * So each live row's stored original is re-hashed, and that hash decides:
+ *  - equals the stamped value            -> verified, nothing to do
+ *  - row unstamped, hash manifest-known  -> stamp it (the hash, not the claim)
+ *  - row stamped otherwise, hash known   -> the stamp is provably stale: fix it
+ *  - hash unknown to the manifest        -> fail closed, count, write nothing
+ *    (an import that modified originals — `--strip-original` — lands here; its
+ *    rows are stamped at import time by sink-local.js and never need this pass)
+ *
+ * Counts only — never logs a filename (ManifestEntry.name is a relative path
+ * at import time, which could itself identify a photo's subject).
  * @type {Types.backfillFromManifest}
  */
-export function backfillFromManifest({ db, manifest, dryRun }) {
-  let total = 0
-  let updated = 0
+export function backfillFromManifest({ db, manifest, uploadsMediaDir, dryRun }) {
+  /** @type {Set<string>} */
+  const manifestShas = new Set()
+  for (const origin of Object.keys(manifest.origins)) {
+    for (const sha256 of Object.keys(manifest.origins[origin])) manifestShas.add(sha256)
+  }
 
-  const apply = () => {
-    for (const origin of Object.keys(manifest.origins)) {
-      const entries = manifest.origins[origin]
-      for (const sha256 of Object.keys(entries)) {
-        const entry = entries[sha256]
-        total++
-        if (dryRun) {
-          /** @type {{ source_sha256: string | null } | undefined} */
-          const row = sql`SELECT source_sha256 FROM media WHERE id = ${entry.id}`.get()
-          if (row && row.source_sha256 === null) updated++
-        } else {
-          const result = sql`UPDATE media SET source_sha256 = ${sha256}
-            WHERE id = ${entry.id} AND source_sha256 IS NULL`.run()
-          updated += Number(result.changes)
-        }
-      }
+  /** @type {Array<{ id: number, file_key: string, original_ext: string | null, source_sha256: string | null }>} */
+  const rows = sql`SELECT id, file_key, original_ext, source_sha256 FROM media
+    WHERE deleted_at IS NULL`.all()
+
+  const counts = { rows: rows.length, verified: 0, stamped: 0, corrected: 0, unverified: 0, unreadable: 0 }
+  /** @type {Array<{ id: number, sha256: string }>} */
+  const writes = []
+
+  for (const row of rows) {
+    if (!row.original_ext) {
+      counts.unreadable++
+      continue
+    }
+    // Same layout core/media-storage.js's itemDir derives — but rooted at the
+    // caller's database, not at the DATABASE_PATH env that module reads once at
+    // import time. `--database` must win here.
+    const file = path.join(
+      uploadsMediaDir,
+      row.file_key.slice(0, 2),
+      row.file_key,
+      `original.${row.original_ext}`,
+    )
+    /** @type {string} */
+    let rehash
+    try {
+      rehash = sha256File(file)
+    } catch {
+      counts.unreadable++
+      continue
+    }
+    if (row.source_sha256 === rehash) {
+      counts.verified++
+    } else if (!manifestShas.has(rehash)) {
+      counts.unverified++
+    } else if (row.source_sha256 === null) {
+      counts.stamped++
+      writes.push({ id: row.id, sha256: rehash })
+    } else {
+      counts.corrected++
+      writes.push({ id: row.id, sha256: rehash })
     }
   }
 
-  if (dryRun) apply()
-  else withTransaction(db, apply)
+  // Hashing happens outside the transaction — it can take seconds across a
+  // real library, and nothing read above is a write dependency.
+  if (!dryRun && writes.length > 0) {
+    withTransaction(db, () => {
+      for (const write of writes) {
+        sql`UPDATE media SET source_sha256 = ${write.sha256} WHERE id = ${write.id}`.run()
+      }
+    })
+  }
 
-  return { total, updated }
+  return counts
 }
 
 /**
@@ -903,10 +1083,16 @@ async function main() {
   try {
     if (args.backfillManifest) {
       const manifest = loadManifest(args.backfillManifest)
-      const result = backfillFromManifest({ db, manifest, dryRun: args.dryRun })
+      // The stored originals live beside whichever database this invocation
+      // targets — core/media-storage.js's layout, rooted here by the flag.
+      const uploadsMediaDir = path.join(path.dirname(dbPath), "uploads", "media")
+      const result = backfillFromManifest({ db, manifest, uploadsMediaDir, dryRun: args.dryRun })
       console.log(
-        `backfill-manifest: ${result.updated} of ${result.total} manifest entries applied to media.source_sha256` +
-          (args.dryRun ? " (dry run)" : ""),
+        `backfill-manifest: ${result.rows} media rows — ${result.verified} verified, ` +
+          `${result.stamped} stamped, ${result.corrected} corrected (stale id), ` +
+          `${result.unverified} unverified (hash unknown to manifest — left alone), ` +
+          `${result.unreadable} without a readable original` +
+          (args.dryRun ? " (dry run — nothing written)" : ""),
       )
     }
 
@@ -924,6 +1110,17 @@ async function main() {
       console.log(`unmatched (no sha match): ${result.unmatched}`)
       console.log(`faces inserted: ${result.facesInserted}` + (args.dryRun ? " (dry run — nothing written)" : ""))
       console.log(`faces graded for the queue: ${result.facesGraded}`)
+      if (result.facesUnscaled > 0) {
+        console.log(
+          `faces kept in decode-space coordinates (media row has no dimensions): ${result.facesUnscaled}`,
+        )
+      }
+      if (result.facesSkippedAspect > 0) {
+        console.log(
+          `faces SKIPPED — media dimensions contradict the photo's aspect ratio ` +
+            `(sha join suspect): ${result.facesSkippedAspect}`,
+        )
+      }
       if (!args.dryRun) {
         console.log(`ingest id: ${result.ingestId}`)
         console.log(`frame roots written: ${result.framesWritten}`)
