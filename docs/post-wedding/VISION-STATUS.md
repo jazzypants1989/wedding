@@ -1,6 +1,7 @@
 # Vision project: where it actually stands
 
-**Date:** 2026-07-31
+**Date:** 2026-07-31, updated 2026-08-04 (see the dated update below §0 — the
+chain has now run end to end locally, and §3's headline is history)
 **Status:** **this is the current-state document.** It is the one file in this
 directory that is meant to be true today, and the one that must be updated when
 anything changes. Every other `SESSION-*.md` is a dated record.
@@ -31,6 +32,58 @@ it is a hard line, because this repository is public and those are all facts
 about identifiable people. Where a number would be the natural thing to write,
 this file says **which artifact to read locally** instead. The run reports print
 everything; they live in `tmp/` and are deleted with it.
+
+---
+
+## The 2026-08-04 update — the chain has run, locally
+
+The full pipeline — detection batch → media import → content-hash join →
+`ingest-faces` → the Faces tab rendering real crops — has now executed end to
+end against a scratch database under `tmp/`. The production database remains
+untouched. First contact with real data surfaced four defects, all fixed with
+unit tests the same day:
+
+1. **Face geometry was stored in decode-space coordinates.** The batch decodes
+   photographs at `--source-edge`; the ingest copied boxes verbatim, but
+   `media_faces` promises the Faces tab coordinates in the media row's ORIGINAL
+   pixels (`positionFaceChipImage` scales by `naturalWidth / media.width`). The
+   ingest now scales boxes and landmarks per photo (`scaleFaceGeometry`), keeps
+   decode values only when a media row never recorded dimensions, and skips a
+   face outright when the aspect ratios contradict — that is evidence the sha
+   join landed on the wrong image, not a scaling problem. The `signal_` columns
+   stay in detection space on purpose: they are what the gate measured.
+2. **`--backfill-manifest` trusted manifest row ids, which die with their
+   database.** An import manifest outlives a rebuilt database, and its recorded
+   row ids then name arbitrary rows. The backfill now re-hashes each row's
+   stored original and writes only hashes the manifest actually knows,
+   correcting stamps the file itself disproves and failing closed otherwise.
+   The importer also now stamps `source_sha256` at import time
+   (`sink-local.finalize`), so the backfill is repair for pre-existing rows.
+3. **`import-media` accepted an empty directory argument** — an unset shell
+   variable resolved to the current directory and swept repository images into
+   a gallery. It now refuses the empty string and the repo root by name.
+4. **The Faces tab's crop never survived the global CSS reset.**
+   `layout.css`'s `img { max-width: 100% }` is a constraint, not a default: it
+   clamped the chip's inline crop width while the negative offsets still
+   applied, sliding every image outside its clipped 96px chip. Every chip
+   rendered as empty background from the day the tab was built — undetectable
+   until real photographs existed. `.face-chip-img` now opts out
+   (`max-width: none`).
+
+Two operational traps worth knowing, found the hard way: `core/static.js`
+gzips assets **at boot** and serves from that cache, so an edit to served
+CSS/JS is invisible until the server restarts; and the CSP blocks **parsed**
+`style="…"` attributes (no `style-src-attr` allowance) while permitting CSSOM
+writes — `guests.js`, `gallery-admin.js` and `manual-sms.js` carry templates
+with style attributes that silently never apply (open cleanup item).
+
+**What remains** (the owner's private plan holds the authoritative list): the
+importer that carries the local labelling into `people`/`face_identities` (the
+one unbuilt feature — the agreed shape is a converter into the face-work
+artifact format, reusing the tested export/import); the single deliberate
+threshold-tuning pass after the owner has used the tab; the CSP style-attribute
+cleanup; hardening the sha→media join for byte-identical duplicates (currently
+last-row-wins); and the production pass itself, which has still never run.
 
 ---
 
@@ -100,6 +153,11 @@ failure available and it is ruled out.
 ---
 
 ## 3. The feature has never been run
+
+> **⚠ This headline is history as of 2026-08-04** — the chain has now run end
+> to end against a local scratch database (see the dated update above §1). The
+> section is kept because its two gaps explain why the sequencing below looked
+> the way it did. The production pass has still never run.
 
 > **⚠ Point 2 below is closed, 2026-08-03.** The roster gap is no longer a
 > blocker and no longer schema-level: the `people` table shipped, a face is
