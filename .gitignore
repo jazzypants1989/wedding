@@ -35,3 +35,8 @@ pnpm-lock.yaml
 # Claude
 CLAUDE.md
 .claude
+
+# devloop's exported issue archive — the durable record kept after captured
+# screenshots are pruned. This repository is public, and those records carry
+# page DOM snippets, console output, and cropped screenshots of authed views.
+.devloop/

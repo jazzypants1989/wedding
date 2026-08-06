@@ -230,14 +230,64 @@ never leaves the laptop at all. It is the last item on §4's list because it is 
 different piece of work, not because it is the easy part, and no session should
 treat it as a deploy step tacked onto the end.
 
-## 9. Open questions that remain genuinely open
+## 9. Tags do reach a guest-facing surface — after the deploy, as portfolio work
+
+**Decided 2026-08-06**, closing the longest-standing open question here.
+
+Admin-only is **not** permanent. Once the site is deployed, tagging becomes an
+input to at least one guest-facing feature, built as optional and additive. The
+framing the owner gave is the important part: after deploy, the goal is *"as
+much cool stuff as possible for portfolio value"* — so this is not a commitment
+to a particular feature, it is a ruling that the door stays open and the data
+model should not assume otherwise.
+
+**Which surface is still open** (memory-book chapters, thank-you-card photo
+suggestions, sunset-archive index, opt-in "photos of you"). That choice is
+deliberately deferred to the post-deploy sessions rather than guessed now,
+because nothing before the deploy depends on it.
+
+**What this rules out:** nothing in the current build. It does mean §3 of
+`VISION-STATUS.md`'s old "admin-only, permanent?" framing is dead, and that a
+future guest-facing reader is a design constraint on any schema change from
+here — a `people` row is a thing a guest may eventually see the name of.
+
+## 10. Open questions that remain genuinely open
 
 Recorded so they are asked, not assumed:
 
-- Which product surfaces get the tags first (memory-book chapters,
-  thank-you-card photo suggestions, archive index, opt-in "photos of you")?
+- Which guest-facing surface gets the tags first (§9 settles *that* they do, not
+  *which*).
 - Video: in scope for the craft phase, or a recorded non-goal?
-- What the production hand-off actually moves (§8).
+- What the production hand-off actually moves (§8) — **narrowed 2026-08-06**,
+  see below.
 - How far the craft phase goes beyond re-implementation (e.g. training on the
   owner's own labels with hand-written backpropagation) — raised 2026-07-31,
   unevaluated, explicitly not dismissed.
+
+### The production hand-off, as far as it is settled
+
+**Decided 2026-08-06: the borrowed engine does not go to the VPS.** The
+production pass runs from the owner's machine wherever it can, and the one step
+that resists is a small, known change rather than an unknown.
+
+What forces the question is narrower than it looked. `ingest-faces.js` needs
+**no engine and no weights** — detection already happened locally, and ingest is
+a content-hash join over the run's own `faces.jsonl`. `import-media` has an HTTP
+sink (`--url=`) built for driving a remote server. So the only step wanting
+`tmp/rig/engine.mjs` on the target machine is `export-face-work.js import`,
+which hard-requires `--weights` and `--engine` and then *hashes the engine and
+compares it to the digest the artifact carries*.
+
+That is a **provisioning check** — the error strings say so — and its content is
+a comparison of two digests. On a machine that will never run inference it
+verifies a property that does not matter there. So the intended fix is to let
+`import` accept `--expect-engine SHA256` in place of `--engine PATH`, with the
+digest coming from a locally-run `preflight` or the pinned table. Same
+guarantee, same two strings compared, and nothing borrowed ever reaches
+production — which keeps the tier-4 promise ("ends with the borrowed engine
+deleted") true by construction rather than by cleanup.
+
+**Explicitly rejected: pulling the production database down, running the pass
+locally, and pushing it back.** The site is live. Every guestbook entry, RSVP,
+comment, reaction and upload landing during that window is silently destroyed by
+the push. Named here so nobody reaches for it under time pressure.

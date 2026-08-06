@@ -1,16 +1,40 @@
 # Vision project: where it actually stands
 
-**Date:** 2026-07-31, updated 2026-08-04 (see the dated update below §0 — the
-chain has now run end to end locally, and §3's headline is history)
+**Date:** 2026-07-31, last updated **2026-08-06**. Read the 2026-08-06 section
+below §0 first — it is the current state, and it supersedes the 2026-08-04 one.
 **Status:** **this is the current-state document.** It is the one file in this
-directory that is meant to be true today, and the one that must be updated when
-anything changes. Every other `SESSION-*.md` is a dated record.
-**Binding above it:** [`CLAUDE.md`](../../CLAUDE.md) (the photograph rules —
-hook-enforced) · [`DECISIONS-vision.md`](./DECISIONS-vision.md) (the owner's
-answers; not re-litigated) · [`SPEC-vision-lab.md`](./SPEC-vision-lab.md) §15
-(working rules)
-**Reference:** [`VISION-MODELS.md`](./VISION-MODELS.md) — the model ledger, still
-accurate.
+directory meant to be true today, and the one that must be updated when anything
+changes. Every `SESSION-*.md` is a dated record, not current.
+
+---
+
+## START HERE — the reading order, and nothing else is required
+
+Read these four, in this order. Everything else in this directory is reference
+or history, and you can reach it from here when you need it.
+
+| # | File | What it is | Read it for |
+|---|---|---|---|
+| 1 | [`CLAUDE.md`](../../CLAUDE.md) | Repo rules. **Binding, and partly hook-enforced** | The four photograph rules, no-regex, zero-dep. Nothing below relaxes any of them |
+| 2 | **This file** | Current state | What exists, what runs, what is left |
+| 3 | [`DECISIONS-vision.md`](./DECISIONS-vision.md) | The owner's rulings | Settled questions. **Not re-litigated** — if you disagree, say so and move on |
+| 4 | [`SPEC-vision-lab.md`](./SPEC-vision-lab.md) §15 | Working rules for the pipeline | How to run anything without breaking rule 1 |
+
+**Reference, when a specific question sends you there:**
+[`VISION-MODELS.md`](./VISION-MODELS.md) (the model ledger — still accurate) ·
+[`08-bulk-import.md`](./08-bulk-import.md) (the media importer) ·
+`SESSION-*.md` (dated records; **stale by construction**, read for reasoning
+only).
+
+**Not in this repository, and you will not be given them unasked:** the owner's
+plan file, and the private backup repo that holds the labelling artifacts and
+every measurement of the photographs. If a question needs a number measured from
+the photographs, the answer is *derive it locally* — never *go and read it*.
+
+⚠ **Do the same to this file that it did to its predecessors.** It will go
+stale. When it disagrees with the code, the code is right and this file is a
+bug. Every claim below was checked against the code or the database on the date
+in its section heading — not carried forward.
 
 ---
 
@@ -32,6 +56,100 @@ it is a hard line, because this repository is public and those are all facts
 about identifiable people. Where a number would be the natural thing to write,
 this file says **which artifact to read locally** instead. The run reports print
 everything; they live in `tmp/` and are deleted with it.
+
+---
+
+## The 2026-08-06 update — the labels are in the database, and the tab is real
+
+**This is the current state.** The section below it (2026-08-04) is kept for the
+four defects it records, which are still the best worked example in this project
+of what first contact with real data costs.
+
+**The labels→people importer — the plan's "only unbuilt feature" — is built,
+has RUN, and applied cleanly.** `scripts/vision/convert-labels-to-face-work.js`
+turns a labelling session into a `wedding-face-work` artifact, which
+`export-face-work.js import` then applies through the one tested set of conflict
+semantics. It writes no database rows itself, deliberately: a second writer
+would be a second answer to "this face is already someone else", free to drift
+from the first. The local gallery now carries a full cast of named people and a
+single `label-import` assignment batch. **Read the counts off the database, not
+from here** (CLAUDE.md's fourth photograph rule) — they are facts about
+identifiable people.
+
+**Routing was revised and the stored grades were re-graded.** The profile moved
+`route-r1` → `route-r2`, and `scripts/vision/regrade-faces.js` — a new CLI that
+re-runs `routeFace` over stored signals, touching only `route_state`,
+`route_reason` and `route_profile` — has been run over every live row. Two
+changes are behind the bump:
+
+- **A soft gate failure now asks rather than hides.** A face whose *only* gate
+  failure is `eyeRatioLow` — the pose proxy, i.e. a turned head — reaches the
+  queue instead of being set aside. A turned head is nameable by someone who
+  knows the people; it is only unnameable to a recogniser. It can never reach
+  `accept`, so this widens the queue and never the automatic decisions. The
+  upper bound (`eyeRatioHigh`) is deliberately *not* forgiven: eyes further
+  apart than a face allows is a broken detection, not an awkward pose.
+- **The grouping cutoff moved 0.45 → 0.55**, because the old value's cost model
+  priced fragmentation against a UI that no longer exists.
+
+⚠ **The tuning pass is not finished.** The owner's standing ruling is that
+threshold tuning happens *once, after end-to-end, never piecemeal*. The change
+above is made and applied; the **predeclared calibration check has not run** —
+every face a careful human declined to identify (the pool-A skips) that the gate
+now routes `accept` is a threshold that must move. Now that both the labels and
+the r2 grades are in one database that check is a query rather than a JSONL
+join. Do it before treating the thresholds as settled.
+
+**The Faces tab was rebuilt around one group at a time.** Groups is now two
+views: a fixed-height overview list that names nobody, and a review view showing
+one face large with a filmstrip of the whole group beside it. The filmstrip
+carries the group's `set_aside` members too — shown, dimmed, and nameable only
+one at a time through `assign-one`, never by a bulk confirm. That separation is
+enforced by the *payload shape* (`media`/`faceIds` vs `setAsideMedia`), not by
+client-side filtering. The per-group "this may be two people" banner is gone;
+`weldRisk` in `api/admin/faces.js` records what was tried instead and how to
+re-run the search, so nobody re-derives it.
+
+**Chips now load the `display` variant, not `thumb`.** A chip is a magnified
+sliver, so the source resolution is the only thing deciding how sharp a face
+looks. Known cost, not yet addressed: `display` is 1600px against `thumb`'s
+400px, and the review filmstrip renders a whole group at once. Fine locally;
+**it will matter over the VPS link.** The bounded fix is to choose the variant
+per face from `box.w` and the known 400px cap — data already in the payload —
+rather than always taking the larger file.
+
+**Also this session:** two comments carrying measurements of the photographs
+were scrubbed from `public/vision/defaults.js` and `api/admin/faces.js` (rule 4
+— they recorded evidence, and only the decision and the method to re-derive it
+may be written here); the converter's not-a-face sentinel became a constant
+(below); and `regrade-faces.js` gained the tests it should have had before it
+ever ran.
+
+**One trap worth carrying forward.** An inline JSDoc type-assertion whose type
+is broken across lines — with a leading asterisk on the continuation — silently
+mangles the parenthesised expression at runtime. A `.get()` returned `undefined`
+for a row that demonstrably existed, with no error from anywhere. Keep inline
+casts on one line; long types go in a `@typedef`.
+
+### What remains
+
+1. **Finish the tuning pass** — the calibration check above.
+2. **The owner reviews the Faces tab** and files UI issues. Do this through
+   `placeholder-proxy.mjs`, which swaps every photograph for a dimension-matched
+   cartoon so chip crops stay pixel-identical and no photograph reaches the
+   browser.
+3. **Fix what that review finds**, plus three small carried items: the T18 CSP
+   style-attribute cleanup in three admin tabs; duplicate content-hash fan-out
+   in `loadMediaShaMap` (one row per sha, last wins); and `--expect-engine` on
+   `export-face-work.js import`, so the production pass never needs the borrowed
+   engine on the VPS (see [`DECISIONS-vision.md`](./DECISIONS-vision.md) §10).
+4. **Deploy** — code and migrations first, while the production face tables are
+   still empty. `export-face-work.js`'s own usage text opens with this, and it
+   is also what defuses D1: the FK action that nulls every assignment has
+   nothing to destroy when it fires against empty tables.
+5. **The production pass** — still never run.
+6. **The guest-facing surface**, post-deploy, per
+   [`DECISIONS-vision.md`](./DECISIONS-vision.md) §9.
 
 ---
 
@@ -110,6 +228,10 @@ more than once.
 | Admin faces API | `api/admin/faces.js` | ⊙ built, integration-tested |
 | Admin Faces tab | `public/pages/admin/` | ⊙ built |
 | Must-link propagation across near-duplicate frames | `public/vision/must-link.js` | ⊙ built, tested |
+| Face-work artifact export/import (the hand-off) | `scripts/vision/export-face-work.js` | ⊙ built, tested |
+| Labelling → face-work converter | `scripts/vision/convert-labels-to-face-work.js` | ⊙ built, tested, **run for real 2026-08-06** |
+| Re-grade stored faces under the current profile | `scripts/vision/regrade-faces.js` | ⊙ built, tested, run |
+| Label portability across detection sets | `scripts/vision/rekey-labels.js` | ⊙ built, exercised |
 
 **Verification, as of this date:** the full suite passes — unit and integration,
 zero failures — and both TypeScript projects typecheck clean. The vision subset
@@ -145,10 +267,12 @@ failure available and it is ruled out.
   the network.
 - **Tier 5** — the Vision Lab bench in `/studio`.
 - **Tiers 6–7** — upload-time detection, WebGPU backend.
-- **Label portability across detection sets** — re-keying labels by content hash
-  and box overlap. Not built. `datasetId` *detects* a mismatch; nothing
-  *repairs* one.
-- **An import path for labels into the labelling page** — *now built*, see §6.
+- ~~**Label portability across detection sets**~~ — **built**
+  (`scripts/vision/rekey-labels.js`, and exercised for real). `datasetId`
+  detects a mismatch; this repairs one, by content hash plus box overlap.
+- ~~**An import path for labels into the labelling page**~~ — **built**, see §6.
+- ~~**A path from the labelling into the database**~~ — **built and run**,
+  2026-08-06: `convert-labels-to-face-work.js` → `export-face-work.js import`.
 
 ---
 
@@ -334,6 +458,13 @@ without the fix.
 
 ## 7. Necessary next actions — the shortest path to a working feature
 
+> **⚠ SUPERSEDED as a to-do list, 2026-08-06.** Steps 1–4 are done: the roster
+> gap closed with the `people` table, the photographs are imported, ingest has
+> run, and the labelling is in the database. **The live list is "What remains"
+> in the 2026-08-06 section at the top of this file.** This section is kept for
+> its reasoning, which still explains why the order was what it was — and for
+> step 6, which is a standing obligation rather than a step.
+
 The owner's stated priority is **a usable feature as fast as possible, admin-only,
 on the borrowed engine** ([`DECISIONS-vision.md`](./DECISIONS-vision.md) §1). It
 was wanted days ago. This is the shortest honest path there, and none of it is
@@ -450,16 +581,23 @@ conversation and lost" before; that is what
 2. ~~**Adopt BGR?**~~ ✅ **Answered: yes**, and label portability was built
    first, so a re-detection is a migration (§5,
    [`DECISIONS-vision.md`](./DECISIONS-vision.md) §7).
-3. **Which product surface gets tags first?** Memory-book chapters,
-   thank-you-card photo suggestions, sunset-archive index, or an opt-in "photos
-   of you". — **still open.**
+3. ~~**Which product surface gets tags first?**~~ ⚠ **Partly answered
+   2026-08-06:** tags *do* reach a guest-facing surface, after the deploy, as
+   optional portfolio work — [`DECISIONS-vision.md`](./DECISIONS-vision.md) §9.
+   *Which* surface is still open, and deliberately deferred: nothing before the
+   deploy depends on it.
 4. ~~**How do identities link to the roster?**~~ ✅ **Answered: a `people`
    table**, with a nullable link to a roster guest —
    [`DECISIONS-vision.md`](./DECISIONS-vision.md) §6. §7 step 1 below proposed
    the nullable-column alternative and was not taken.
-5. **Video: in scope, or a recorded non-goal?**
-6. **Does anything guest-facing ever use this**, or is admin-only permanent?
-7. **How far does the craft phase reach** beyond re-implementation?
+5. **Video: in scope, or a recorded non-goal?** — still open.
+6. ~~**Does anything guest-facing ever use this**, or is admin-only
+   permanent?~~ ✅ **Answered 2026-08-06: admin-only is not permanent.**
+   [`DECISIONS-vision.md`](./DECISIONS-vision.md) §9.
+7. **How far does the craft phase reach** beyond re-implementation? — still open.
+8. **What the production hand-off moves** — ⚠ **narrowed 2026-08-06.** The
+   borrowed engine does not go to the VPS, and the one step that wanted it has a
+   known fix. [`DECISIONS-vision.md`](./DECISIONS-vision.md) §10.
 
 ---
 
