@@ -4,18 +4,42 @@
  * @file Seed a realistic post-wedding DEMO dataset for hands-on review of the
  * gallery + guestbook features (see docs/post-wedding/). Unlike
  * `seed-preview.js --gallery N` (which writes undecodable magic-byte stubs for a
- * grid perf check), this downloads REAL stock photos/videos so everything
- * renders, and it seeds guestbook entries, comments and reactions across every
- * moderation state so the admin queue + curation flows have something to act on.
+ * grid perf check), everything here renders, and it seeds guestbook entries,
+ * comments and reactions across every moderation state so the admin queue +
+ * curation flows have something to act on.
  *
- * Zero-dep: only Node built-ins (node:sqlite/https/fs/path/crypto). Variant
- * generation is normally client-side (public/components/media-processing.js), so
- * we fetch pre-sized real images from picsum.photos and write the thumb/display/
- * original files directly — no image library needed.
+ * TWO MODES, chosen automatically from the target database:
  *
- * Idempotent: a manifest of everything it created is stored in app_state, so a
- * re-run cleans the prior demo dataset first (rows + on-disk files). Requires
- * network access on first run; downloads are cached under data/.seed-cache/.
+ *   ADOPT  — the database ALREADY holds enough approved `official` images (a
+ *            bulk-imported library, `npm run import:media`). Nothing is
+ *            downloaded and no photo is created, re-encoded, moved or deleted:
+ *            the demo's captions, authorship, gallery sections and moderation
+ *            states are written onto rows that are already there. Every field
+ *            this touches is snapshotted into the manifest first, so a re-run
+ *            (or `--clean`) puts every one of those rows back exactly as found.
+ *
+ *   DOWNLOAD — the database has no such library (a fresh `data/wedding.db`).
+ *            Falls back to fetching real stock photos from picsum.photos and
+ *            writing thumb/display/original files directly, exactly as this
+ *            script has always done. Variant generation is normally
+ *            client-side (public/components/media-processing.js), hence
+ *            pre-sized fetches rather than an image library.
+ *
+ * Sample VIDEOS are downloaded in both modes (an imported photo library has
+ * none) and degrade gracefully: no network, or `--no-video`, simply means no
+ * video in the gallery — the run still completes and says so.
+ *
+ * Zero-dep: only Node built-ins (node:sqlite/https/fs/path/crypto).
+ *
+ * Idempotent: a manifest of everything created AND everything adopted is stored
+ * in app_state, so a re-run cleans/restores the prior demo dataset first.
+ * Downloads are cached under <data dir>/.seed-cache/.
+ *
+ * Flags:  --no-video   skip the sample-video downloads entirely (offline runs)
+ *         --clean      undo the previous demo seed and exit (nothing reseeded)
+ *
+ * Target database: DATABASE_PATH (default data/wedding.db). The uploads tree is
+ * always its sibling `uploads/` directory — see core/media-storage.js.
  */
 
 import { DatabaseSync } from "node:sqlite"
@@ -45,6 +69,18 @@ const BASE_URL = process.env.BASE_URL || "http://localhost:3000"
 const DEMO_CODE = "LOVEBIRD"
 const MANIFEST_KEY = "seed_demo_manifest"
 const EMAIL_MARKER = "@seed.demo" // marks demo accounts/guests for cleanup
+
+// --- CLI flags -------------------------------------------------------------
+const KNOWN_FLAGS = ["--no-video", "--clean"]
+for (const arg of process.argv.slice(2)) {
+  if (!KNOWN_FLAGS.includes(arg)) {
+    console.error(`Unknown option: ${arg}`)
+    console.error("Usage: npm run seed:demo [-- --no-video] [-- --clean]")
+    process.exit(1)
+  }
+}
+const SKIP_VIDEO = process.argv.includes("--no-video")
+const CLEAN_ONLY = process.argv.includes("--clean")
 
 /** @typedef {{ url: string, duration: number, cache: string }} VideoSource */
 /** A few real sample clips of varying length so the gallery has more than one
@@ -189,37 +225,128 @@ async function materializeVideo(fileKey, posterSeed, source) {
 }
 
 // ---------------------------------------------------------------------------
-// Cleanup: remove any prior demo dataset (rows + files) before reseeding.
+// The manifest: what this script created, and what it BORROWED.
+//
+// `fileKeys` are rows the seed itself inserted — on cleanup they are deleted,
+// files and all. `adopted` are rows that were already in the database before
+// the seed ran; the seed only overwrote the six presentation columns below, and
+// cleanup writes the recorded originals straight back. Nothing in `adopted` is
+// ever deleted, and its files are never touched at all.
 // ---------------------------------------------------------------------------
 
-/** @param {DatabaseSync} db @param {string} fileKey */
-function removeItemFiles(db, fileKey) {
+/**
+ * @typedef {Object} AdoptedSnapshot
+ * @property {string} fileKey
+ * @property {string} section @property {string} status
+ * @property {number | null} accountId @property {string | null} caption
+ * @property {string | null} createdAt @property {string | null} reviewedAt
+ */
+/** @typedef {{ fileKeys: string[], adopted: AdoptedSnapshot[] }} SeedManifest */
+
+/** @param {unknown} raw @returns {AdoptedSnapshot | null} */
+function toSnapshot(raw) {
+  if (typeof raw !== "object" || raw === null) return null
+  const r = /** @type {Record<string, unknown>} */ (raw)
+  if (typeof r.fileKey !== "string" || r.fileKey.length === 0) return null
+  if (typeof r.section !== "string" || typeof r.status !== "string") return null
+  /** @param {unknown} v @returns {string | null} */
+  const str = (v) => (typeof v === "string" ? v : null)
+  return {
+    fileKey: r.fileKey,
+    section: r.section,
+    status: r.status,
+    accountId: typeof r.accountId === "number" ? r.accountId : null,
+    caption: str(r.caption),
+    createdAt: str(r.createdAt),
+    reviewedAt: str(r.reviewedAt),
+  }
+}
+
+/** @param {DatabaseSync} db @returns {SeedManifest} */
+function readManifest(db) {
+  /** @type {SeedManifest} */
+  const empty = { fileKeys: [], adopted: [] }
+  const row = /** @type {{ value: string } | undefined} */ (
+    db.prepare("SELECT value FROM app_state WHERE key = ?").get(MANIFEST_KEY)
+  )
+  if (!row) return empty
+  /** @type {unknown} */
+  let parsed
+  try {
+    parsed = JSON.parse(row.value)
+  } catch {
+    return empty // Corrupt manifest — the marker sweep below is the backstop.
+  }
+  if (typeof parsed !== "object" || parsed === null) return empty
+  const obj = /** @type {Record<string, unknown>} */ (parsed)
+  if (Array.isArray(obj.fileKeys)) {
+    for (const k of obj.fileKeys) if (typeof k === "string") empty.fileKeys.push(k)
+  }
+  if (Array.isArray(obj.adopted)) {
+    for (const a of obj.adopted) {
+      const snap = toSnapshot(a)
+      if (snap) empty.adopted.push(snap)
+    }
+  }
+  return empty
+}
+
+// ---------------------------------------------------------------------------
+// Cleanup: restore borrowed rows, then remove the prior demo dataset.
+// ---------------------------------------------------------------------------
+
+/** @param {string} fileKey */
+function removeItemFiles(fileKey) {
   fs.rmSync(itemDir(fileKey), { recursive: true, force: true })
   fs.rmSync(path.join(QUARANTINE_DIR, fileKey), { recursive: true, force: true })
 }
 
-/** @param {DatabaseSync} db */
-function cleanupPriorDemo(db) {
-  /** @type {Set<string>} */
-  const fileKeys = new Set()
-
-  const manifestRow = /** @type {{ value: string } | undefined} */ (
-    db.prepare("SELECT value FROM app_state WHERE key = ?").get(MANIFEST_KEY)
+/**
+ * A row carrying a `source_sha256` came from the bulk importer — it is a real
+ * photograph this script did not create and must never delete, whatever a stale
+ * or hand-edited manifest claims. The demo's own inserts never set that column.
+ * @param {DatabaseSync} db @param {string} fileKey @returns {boolean}
+ */
+function isImportedMedia(db, fileKey) {
+  const row = /** @type {{ source_sha256: string | null } | undefined} */ (
+    db.prepare("SELECT source_sha256 FROM media WHERE file_key = ?").get(fileKey)
   )
-  if (manifestRow) {
-    try {
-      const parsed = /** @type {{ fileKeys?: string[] }} */ (JSON.parse(manifestRow.value))
-      for (const k of parsed.fileKeys || []) fileKeys.add(k)
-    } catch {
-      // Corrupt manifest — fall through to the email-marker sweep below.
-    }
+  return !!(row && row.source_sha256)
+}
+
+/** @param {DatabaseSync} db @returns {{ restored: number, deleted: number }} */
+function cleanupPriorDemo(db) {
+  const manifest = readManifest(db)
+
+  // 1. Put every borrowed row back the way it was found. This runs FIRST so the
+  //    marker sweep below can no longer see a real photo as "demo-account media".
+  const restore = db.prepare(
+    `UPDATE media SET section = ?, status = ?, account_id = ?, caption = ?,
+       created_at = ?, reviewed_at = ? WHERE file_key = ?`,
+  )
+  /** @type {Set<string>} */
+  const adoptedKeys = new Set()
+  let restored = 0
+  for (const a of manifest.adopted) {
+    adoptedKeys.add(a.fileKey)
+    const result = restore.run(
+      a.section, a.status, a.accountId, a.caption, a.createdAt, a.reviewedAt, a.fileKey,
+    )
+    restored += Number(result.changes)
   }
 
-  // Belt-and-suspenders: media owned by any demo account, even if the manifest
+  /** @type {Set<string>} */
+  const fileKeys = new Set()
+  for (const k of manifest.fileKeys) if (!adoptedKeys.has(k)) fileKeys.add(k)
+
+  // 2. Belt-and-suspenders: media owned by any demo account, even if the manifest
   // was lost (e.g. hand-edited DB). "Demo account" = one we email-marked, OR one
   // bound to the demo household guest — the latter also catches the trusted
   // account the *user* registered during the walkthrough (no @seed.demo email),
   // plus any media they uploaded, so a reseed doesn't leave orphans behind.
+  // `source_sha256 IS NULL` keeps the sweep off the imported photo library: a
+  // borrowed row that somehow still points at a demo account gets its
+  // attribution dropped by the account delete below, never its bytes.
   const householdRow = /** @type {{ id: number } | undefined} */ (
     db
       .prepare(
@@ -232,17 +359,19 @@ function cleanupPriorDemo(db) {
   const markedMedia = /** @type {{ file_key: string }[]} */ (
     db
       .prepare(
-        `SELECT file_key FROM media WHERE account_id IN
+        `SELECT file_key FROM media WHERE source_sha256 IS NULL AND account_id IN
            (SELECT id FROM accounts
               WHERE contact_email LIKE ? OR (? IS NOT NULL AND guest_id = ?))`,
       )
       .all("%" + EMAIL_MARKER, householdId, householdId)
   )
-  for (const m of markedMedia) fileKeys.add(m.file_key)
+  for (const m of markedMedia) if (!adoptedKeys.has(m.file_key)) fileKeys.add(m.file_key)
 
+  let deleted = 0
   for (const key of fileKeys) {
-    removeItemFiles(db, key)
-    db.prepare("DELETE FROM media WHERE file_key = ?").run(key)
+    if (isImportedMedia(db, key)) continue // never ours to delete
+    removeItemFiles(key)
+    deleted += Number(db.prepare("DELETE FROM media WHERE file_key = ?").run(key).changes)
   }
 
   // Deleting demo accounts cascades their guestbook entries, comments and
@@ -257,6 +386,40 @@ function cleanupPriorDemo(db) {
     "DELETE FROM guests WHERE invite_code = ? OR email LIKE ?",
   ).run(DEMO_CODE, "%" + EMAIL_MARKER)
   db.prepare("DELETE FROM app_state WHERE key = ?").run(MANIFEST_KEY)
+  return { restored, deleted }
+}
+
+// ---------------------------------------------------------------------------
+// Adoption: the photographs already in this database.
+// ---------------------------------------------------------------------------
+
+/**
+ * @typedef {Object} AdoptableRow
+ * @property {number} id @property {string} file_key @property {string} section
+ * @property {string} status @property {number | null} account_id
+ * @property {string | null} caption
+ * @property {string | null} created_at @property {string | null} reviewed_at
+ */
+
+/**
+ * Approved official images that were here before this run. Restricted to the
+ * `official` section on purpose: that is the shape a bulk import leaves behind,
+ * and it means a database's own guest uploads are never re-attributed to a demo
+ * account. Ordered so selection is stable across runs.
+ * @param {DatabaseSync} db @returns {AdoptableRow[]}
+ */
+function listAdoptableMedia(db) {
+  return /** @type {AdoptableRow[]} */ (
+    db
+      .prepare(
+        `SELECT id, file_key, section, status, account_id, caption, created_at, reviewed_at
+           FROM media
+          WHERE kind = 'image' AND section = 'official' AND status = 'approved'
+            AND deleted_at IS NULL
+          ORDER BY sort_order, id`,
+      )
+      .all()
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -281,22 +444,38 @@ db.exec("PRAGMA synchronous = NORMAL")
 createTables(db)
 runMigrations(db)
 ensureUploadDirs()
-cleanupPriorDemo(db)
+const cleaned = cleanupPriorDemo(db)
 
-/** @type {string[]} */
-const manifestFileKeys = []
+if (CLEAN_ONLY) {
+  console.log("")
+  console.log("=== Wedding DEMO data cleaned ===")
+  console.log(`  ${cleaned.restored} pre-existing media row(s) restored to their original state`)
+  console.log(`  ${cleaned.deleted} seed-created media row(s) removed (rows + files)`)
+  console.log("  Demo accounts, guestbook entries, comments, reactions, gifts and cards removed.")
+  console.log("")
+  db.close()
+  process.exit(0)
+}
 
-// Persist the fileKey manifest to app_state. Called incrementally (before each
-// item's download) so that if a download throws mid-run — a network blip or a
-// slow CDN — the next reseed can still find and remove the partial rows
-// and on-disk files, including account-less official items the marker sweep
-// can't reach.
+// Pre-existing photographs available to borrow. Computed AFTER cleanup so a
+// previous run's own downloaded images are never counted as "already here".
+const adoptable = listAdoptableMedia(db)
+
+/** @type {SeedManifest} */
+const manifest = { fileKeys: [], adopted: [] }
+
+// Persist the manifest to app_state. Called incrementally — before each item's
+// download, and before each borrowed row is overwritten — so that if the run
+// throws mid-way (a network blip, a slow CDN) the next reseed can still find and
+// remove the partial rows and on-disk files, including account-less official
+// items the marker sweep can't reach, and can still restore every row already
+// touched.
 const upsertManifest = db.prepare(
   `INSERT INTO app_state (key, value, updated_at) VALUES (?, ?, ?)
    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
 )
 function persistManifest() {
-  upsertManifest.run(MANIFEST_KEY, JSON.stringify({ fileKeys: manifestFileKeys }), ago(0))
+  upsertManifest.run(MANIFEST_KEY, JSON.stringify(manifest), ago(0))
 }
 
 // --- Demo household guest (its invite code makes trusted logins possible) ---
@@ -526,27 +705,105 @@ mediaSpecs.push({ kind: "video", section: "guest", status: "pending", accountId:
 /** @type {{ image: SeededMedia[], video: SeededMedia[], official: SeededMedia[] }} */
 const seededMedia = { image: [], video: [], official: [] }
 
-let downloaded = 0
+// ADOPT vs DOWNLOAD. Every image spec must find a home, so adoption is all-or-
+// nothing: a database with a library big enough to dress the whole demo borrows
+// from it, anything smaller (a fresh data/wedding.db) downloads as before.
+const imageSpecCount = mediaSpecs.filter((s) => s.kind === "image").length
+const ADOPT = adoptable.length >= imageSpecCount
+
+// Official specs take from the FRONT of the library (so the captioned shots the
+// demo writes sit at the head of the gallery, where the walkthrough expects
+// them); everything bound for the guest wall / review queue takes from the BACK,
+// leaving the front of the story of the day undisturbed.
+let frontIx = 0
+let backIx = adoptable.length - 1
+/** @param {MediaSpec} spec @returns {AdoptableRow} */
+function takeAdoptable(spec) {
+  const row = spec.section === "official" ? adoptable[frontIx++] : adoptable[backIx--]
+  if (!row || frontIx > backIx + 1) {
+    throw new Error("Ran out of adoptable media — this should be impossible")
+  }
+  return row
+}
+
+const updateAdopted = db.prepare(
+  `UPDATE media SET section = ?, status = ?, account_id = ?, caption = ?,
+     created_at = ?, reviewed_at = ? WHERE id = ?`,
+)
+
+let materialized = 0
+let downloads = 0
+let videoSkipped = 0
+/** @type {string | null} */
+let videoSkipReason = SKIP_VIDEO ? "--no-video" : null
+
 for (const spec of mediaSpecs) {
-  const fileKey = crypto.randomBytes(16).toString("hex")
-  manifestFileKeys.push(fileKey)
-  persistManifest() // record before downloading so a mid-run crash stays cleanable
   const reviewedAt = spec.status === "pending" ? null : ago(spec.hoursAgo)
 
-  let mediaId
   if (spec.kind === "video") {
-    const v = await materializeVideo(fileKey, spec.picsumId, spec.video ?? VIDEO_SOURCES.s5)
-    mediaId = Number(
-      insertMedia.run(
-        fileKey, spec.accountId, "video", spec.section, spec.status, spec.caption, "mp4",
-        v.originalBytes, null, null, v.posterBytes, v.width, v.height,
-        v.durationSeconds, 0, spec.sortOrder ?? 0, ago(spec.hoursAgo), reviewedAt,
-      ).lastInsertRowid,
+    // No imported library ever contains these, so videos are always fetched —
+    // and are the only part of the run allowed to fail without failing the run.
+    if (SKIP_VIDEO) {
+      videoSkipped++
+      continue
+    }
+    const fileKey = crypto.randomBytes(16).toString("hex")
+    manifest.fileKeys.push(fileKey)
+    persistManifest() // record before downloading so a mid-run crash stays cleanable
+    try {
+      const v = await materializeVideo(fileKey, spec.picsumId, spec.video ?? VIDEO_SOURCES.s5)
+      const mediaId = Number(
+        insertMedia.run(
+          fileKey, spec.accountId, "video", spec.section, spec.status, spec.caption, "mp4",
+          v.originalBytes, null, null, v.posterBytes, v.width, v.height,
+          v.durationSeconds, 0, spec.sortOrder ?? 0, ago(spec.hoursAgo), reviewedAt,
+        ).lastInsertRowid,
+      )
+      seededMedia.video.push({ id: mediaId, status: spec.status, fileKey })
+      downloads++
+    } catch (err) {
+      // Offline right before the demo is a supported state: drop the video and
+      // carry on rather than leaving a half-seeded database behind.
+      removeItemFiles(fileKey)
+      videoSkipped++
+      if (!videoSkipReason) {
+        videoSkipReason = err instanceof Error ? err.message : String(err)
+      }
+      continue
+    }
+  } else if (ADOPT) {
+    // Borrow a photograph that is already here. Its file_key, its files, its
+    // bytes, its faces and its dimensions are all left exactly as they were —
+    // only the six presentation columns below change, and the originals go into
+    // the manifest first so cleanup can put them back.
+    const row = takeAdoptable(spec)
+    manifest.adopted.push({
+      fileKey: row.file_key,
+      section: row.section,
+      status: row.status,
+      accountId: row.account_id,
+      caption: row.caption,
+      createdAt: row.created_at,
+      reviewedAt: row.reviewed_at,
+    })
+    persistManifest() // record BEFORE overwriting so a crash stays restorable
+    updateAdopted.run(
+      spec.section, spec.status, spec.accountId, spec.caption,
+      ago(spec.hoursAgo), reviewedAt, row.id,
     )
-    seededMedia.video.push({ id: mediaId, status: spec.status, fileKey })
+    const entry = { id: row.id, status: spec.status, fileKey: row.file_key }
+    if (spec.section === "official") seededMedia.official.push(entry)
+    else seededMedia.image.push(entry)
+    // NOTE: spec.quarantine is deliberately ignored here. Moving a real
+    // photograph's files into quarantine is exactly the kind of thing this
+    // script must not do — the rejected row exists for the moderation filter,
+    // its bytes stay put.
   } else {
+    const fileKey = crypto.randomBytes(16).toString("hex")
+    manifest.fileKeys.push(fileKey)
+    persistManifest()
     const img = await materializeImage(fileKey, spec.picsumId, spec.orient ?? "L")
-    mediaId = Number(
+    const mediaId = Number(
       insertMedia.run(
         fileKey, spec.accountId, "image", spec.section, spec.status, spec.caption, "jpg",
         img.originalBytes, img.displayBytes, img.thumbBytes, null, img.width, img.height,
@@ -555,17 +812,21 @@ for (const spec of mediaSpecs) {
     )
     if (spec.section === "official") seededMedia.official.push({ id: mediaId, status: spec.status, fileKey })
     else seededMedia.image.push({ id: mediaId, status: spec.status, fileKey })
+    downloads++
+
+    if (spec.quarantine) {
+      // Move the on-disk files to quarantine to mirror a real rejection.
+      const src = itemDir(fileKey)
+      const dest = path.join(QUARANTINE_DIR, fileKey)
+      fs.mkdirSync(QUARANTINE_DIR, { recursive: true })
+      if (fs.existsSync(src)) fs.renameSync(src, dest)
+    }
   }
 
-  if (spec.quarantine) {
-    // Move the on-disk files to quarantine to mirror a real rejection.
-    const src = itemDir(fileKey)
-    const dest = path.join(QUARANTINE_DIR, fileKey)
-    fs.mkdirSync(QUARANTINE_DIR, { recursive: true })
-    if (fs.existsSync(src)) fs.renameSync(src, dest)
+  materialized++
+  if (downloads > 0 && materialized % 5 === 0) {
+    process.stdout.write(`  …${materialized}/${mediaSpecs.length} media\n`)
   }
-  downloaded++
-  if (downloaded % 5 === 0) process.stdout.write(`  …${downloaded}/${mediaSpecs.length} media\n`)
 }
 
 // --- Guestbook ------------------------------------------------------------
@@ -765,9 +1026,13 @@ function uniqueCardToken() {
   throw new Error("Could not generate a unique demo card token")
 }
 
-// A couple of approved guest photos for the card's polaroid strip — guarded
-// (slice() never throws) in case media seeding above ever comes up short.
-const cardPhotoKeys = approvedImages.map((m) => m.fileKey)
+// A couple of approved photos for the card's polaroid strip — guarded (slice()
+// never throws) in case media seeding above ever comes up short. In ADOPT mode
+// these are the captioned shots at the head of the official set, which is what
+// the walkthrough's "this photo appears in N sent thank-you cards" warning step
+// (Track 4, Remove one) reaches for; in DOWNLOAD mode they stay the seeded guest
+// photos, unchanged.
+const cardPhotoKeys = (ADOPT ? approvedOfficial : approvedImages).map((m) => m.fileKey)
 
 /**
  * @typedef {Object} CardSpec
@@ -915,13 +1180,14 @@ persistManifest()
 // ---------------------------------------------------------------------------
 // Summary.
 // ---------------------------------------------------------------------------
+const imageSpecs = mediaSpecs.filter((s) => s.kind === "image")
 const counts = {
-  media: mediaSpecs.length,
+  media: materialized,
   official: seededMedia.official.length,
   approvedGuest: approvedImages.length,
-  pending: mediaSpecs.filter((s) => s.status === "pending").length,
-  hidden: mediaSpecs.filter((s) => s.status === "hidden").length,
-  rejected: mediaSpecs.filter((s) => s.status === "rejected").length,
+  pending: imageSpecs.filter((s) => s.status === "pending").length + seededMedia.video.filter((v) => v.status === "pending").length,
+  hidden: imageSpecs.filter((s) => s.status === "hidden").length,
+  rejected: imageSpecs.filter((s) => s.status === "rejected").length,
   videos: seededMedia.video.length,
   guestbook: entrySpecs.length,
   gifts: giftSpecs.length,
@@ -934,11 +1200,50 @@ const counts = {
 console.log("")
 console.log("=== Wedding DEMO data seeded ===")
 console.log("")
+if (ADOPT) {
+  console.log(
+    `Mode: ADOPTED ${manifest.adopted.length} photograph(s) already in this database ` +
+      `(of ${adoptable.length} available). Nothing downloaded, nothing re-encoded,`,
+  )
+  console.log(
+    `      nothing deleted — only section / status / author / caption / date were rewritten,`,
+  )
+  console.log(
+    `      and the originals are recorded in app_state['${MANIFEST_KEY}'].`,
+  )
+  console.log(
+    `      To put every borrowed row back exactly as it was:  npm run seed:demo -- --clean`,
+  )
+} else {
+  console.log(`Mode: DOWNLOADED stock photos (no existing photo library in this database).`)
+}
+console.log("")
 console.log(
   `Media: ${counts.media} (${counts.official} official, ${counts.approvedGuest} approved guest, ` +
     `${counts.pending} pending, ${counts.hidden} hidden, ${counts.rejected} rejected, ${counts.videos} video)`,
 )
+if (videoSkipped > 0) {
+  console.log(
+    `  ⚠ ${videoSkipped} sample video(s) skipped — ${videoSkipReason ?? "download failed"}.`,
+  )
+  console.log(
+    `    The gallery has no video to play, and the moderation queue is one item lighter.`,
+  )
+  console.log(`    Re-run with a network connection (and without --no-video) to add them.`)
+}
 console.log(`Guestbook: ${counts.guestbook} entries (+ comments & reactions)`)
+const queueRow = /** @type {{ n: number } | undefined} */ (
+  db
+    .prepare(
+      `SELECT (SELECT COUNT(*) FROM media WHERE status = 'pending' AND deleted_at IS NULL)
+            + (SELECT COUNT(*) FROM guestbook_entries WHERE status = 'pending' AND deleted_at IS NULL)
+            + (SELECT COUNT(*) FROM comments WHERE status = 'pending' AND deleted_at IS NULL) AS n`,
+    )
+    .get()
+)
+console.log(
+  `Moderation: Admin → Moderation should badge ${queueRow ? queueRow.n : 0} pending item(s).`,
+)
 console.log(
   `Gifts: ${counts.gifts} logged for The Demo Household (${counts.giftsWithAmount} with a private $ amount, ` +
     `${counts.giftsWithPhysicalCard} already physical-card-sent)`,
