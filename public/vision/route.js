@@ -47,7 +47,7 @@ import { applyGate } from "./gate.js"
  * point of the column: an old row's grade should be readable as "graded under
  * r1", not as "graded under whatever the file says today".
  */
-export const PROFILE = "route-r1"
+export const PROFILE = "route-r2"
 
 /**
  * Order of attribution when more than one condition holds. Cheapest and most
@@ -58,6 +58,41 @@ export const PROFILE = "route-r1"
 const ACCEPT_CHECKS = ["boxPx", "sharpness"]
 
 /**
+ * Gate failures that mean "hard to name", not "not a usable detection".
+ *
+ * The gate answers one question — is this a usable face — and everything that
+ * fails it is hidden. That conflates two different failures, and the first pass
+ * over a real labelled run showed the conflation is expensive in exactly one
+ * place.
+ *
+ * `eyeRatioLow` fires when the eyes sit close together relative to the box,
+ * which is the pose proxy: a head turned far enough that one eye is occluded.
+ * A turned head is a perfectly nameable face to someone who knows the people in
+ * the photographs — it is only unnameable to a recogniser. Hiding it spends the
+ * one resource this feature has (the owner's attention) by REMOVING chances to
+ * spend it.
+ *
+ * So a face whose ONLY gate failure is this one is asked about rather than set
+ * aside. It can never reach `accept` — a turned face should not be named
+ * unprompted — so this widens the queue, never the automatic decisions.
+ *
+ * The upper bound (`eyeRatioHigh`) is deliberately NOT here. Eyes further apart
+ * than a face allows means the landmarks came out mirrored or the detection is
+ * wrong, which is a broken detection rather than an awkward pose.
+ *
+ * **To re-derive this locally rather than trusting it:** take a run whose faces
+ * a human has individually adjudicated, join it to the ingested rows, and for
+ * each gate check cross-tabulate the faces it hid against what the human said —
+ * named / declined to identify / not a face. A check that hides mostly faces a
+ * human could name is miscategorised and belongs here; one that hides mostly
+ * junk is doing its job and does not. Do the same before adding a second entry.
+ * Do not record what that table said in this repository — it is a measurement of
+ * identifiable people (CLAUDE.md's fourth photograph rule).
+ * @type {ReadonlyArray<string>}
+ */
+const SOFT_GATE_FAILURES = ["eyeRatioLow"]
+
+/**
  * Route one face. `signals` is `gateSignals()`'s output; `cutoffs` is
  * `defaults.gate` merged with `defaults.route`, so a caller tuning either
  * section gets both without a second argument.
@@ -65,10 +100,17 @@ const ACCEPT_CHECKS = ["boxPx", "sharpness"]
  */
 export function routeFace(signals, cutoffs) {
   const gate = applyGate(signals, cutoffs)
-  if (!gate.pass) {
+  // A gate failure hides the face UNLESS every reason it failed is one of the
+  // "hard to name, still a face" kind — see SOFT_GATE_FAILURES. Checking that
+  // ALL reasons are soft, rather than that the primary one is, matters: a face
+  // that is both turned AND below the size floor is genuinely unusable, and
+  // reading only the first reason would surface it on the strength of the
+  // forgivable half of its problem.
+  const hardReasons = gate.reasons.filter((reason) => !SOFT_GATE_FAILURES.includes(reason))
+  if (hardReasons.length > 0) {
     return {
       state: "set_aside",
-      reason: gate.primaryReason ?? "gate",
+      reason: hardReasons[0],
       score: 0,
       profile: PROFILE,
     }
@@ -82,6 +124,21 @@ export function routeFace(signals, cutoffs) {
     headroom[key] < headroom[worst] ? key : worst,
   )
   const score = headroom[weakest]
+
+  // A face that failed the gate softly is ALWAYS asked about, however well it
+  // scores on size and sharpness. A big sharp face in profile is the easiest
+  // possible case for a human and still the wrong thing to name unprompted, so
+  // the score orders it within the queue and never promotes it out of one.
+  // `gate.pass` is the test rather than a recomputation: everything hard has
+  // already returned above, so a failed gate here can only be soft.
+  if (!gate.pass) {
+    return {
+      state: "ask",
+      reason: gate.primaryReason ?? "gate",
+      score,
+      profile: PROFILE,
+    }
+  }
 
   return score >= 1
     ? { state: "accept", reason: null, score: 1, profile: PROFILE }

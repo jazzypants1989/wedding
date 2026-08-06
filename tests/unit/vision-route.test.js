@@ -66,6 +66,48 @@ test("failing a gate check sets the face aside, and names the check", () => {
   assert.equal(verdict.score, 0)
 })
 
+// --- Soft gate failures: hard to name, still a face --------------------------
+
+test("a turned head is asked about, not hidden", () => {
+  // Below gate.minEyeRatio: the eyes have crowded together because the head is
+  // turned far enough to occlude one. That is a pose, not a broken detection,
+  // and a human who knows these people can name it — so it belongs in the queue.
+  const verdict = routeFace(face({ eyeRatio: CUTOFFS.minEyeRatio / 2 }), CUTOFFS)
+  assert.equal(verdict.state, "ask")
+  assert.equal(verdict.reason, "eyeRatioLow")
+})
+
+test("a turned head is never accepted, however good the rest of it is", () => {
+  // Every other signal is comfortably past both accept bars. The pose alone has
+  // to hold it in the queue, or the machine names a profile shot unprompted.
+  const verdict = routeFace(
+    face({ eyeRatio: CUTOFFS.minEyeRatio / 2, boxPx: 4000, sharpness: 0.9 }),
+    CUTOFFS,
+  )
+  assert.equal(verdict.state, "ask", "a soft gate failure caps the state at ask")
+  assert.ok(verdict.score > 0, "and still scores, so the queue can order it")
+})
+
+test("eyes too FAR apart is still hidden — that is a broken detection", () => {
+  // The upper bound is not forgiven. Eyes wider apart than a face allows means
+  // mirrored landmarks or a box on something that is not a head.
+  const verdict = routeFace(face({ eyeRatio: CUTOFFS.maxEyeRatio * 1.5 }), CUTOFFS)
+  assert.equal(verdict.state, "set_aside")
+  assert.equal(verdict.reason, "eyeRatioHigh")
+})
+
+test("turned AND unusable is hidden, on the strength of the unusable half", () => {
+  // The forgivable reason must not rescue a face that also fails a real check.
+  // Reading only the FIRST reason would surface this one, because the check
+  // order puts the pose proxy ahead of some of the hard checks.
+  const verdict = routeFace(
+    face({ eyeRatio: CUTOFFS.minEyeRatio / 2, boxPx: 5 }),
+    CUTOFFS,
+  )
+  assert.equal(verdict.state, "set_aside")
+  assert.equal(verdict.reason, "boxPx", "the hard reason is what is reported")
+})
+
 test("a face that passes the gate but not the accept bar is asked about", () => {
   // Between gate.minBoxPx and route.acceptMinBoxPx: a real detection that a
   // human should look at rather than one the machine should name unprompted.
@@ -183,8 +225,13 @@ test("PROFILE pins every constant a routing decision reads", () => {
   // route_state was graded under the OLD table, and route_profile is what says
   // so. Bump PROFILE in route.js and update the expectations here, together, in
   // one commit. Do not update one without the other.
+  //
+  // r1 -> r2 changed no constant. It changed the RULE: a face whose only gate
+  // failure is the turned-head proxy is now asked about instead of hidden. That
+  // re-means every stored grade just as surely as moving a number would, which
+  // is why the profile moved even though this table did not.
   const { gate, route } = allDefaults()
-  assert.equal(PROFILE, "route-r1")
+  assert.equal(PROFILE, "route-r2")
   assert.deepEqual(gate, {
     minBoxPx: 40,
     minBorderPx: 0,

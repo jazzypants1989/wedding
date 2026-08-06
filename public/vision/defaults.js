@@ -127,12 +127,26 @@ const VISION_CONFIG = {
 
   group: {
     /**
-     * Cosine DISTANCE (1 - cosine similarity), not similarity. Deliberately
-     * tighter than any verification threshold: the costs are asymmetric. One
-     * person split across three groups costs two clicks; two people welded into
-     * one is expensive to notice and annoying to unpick.
+     * Cosine DISTANCE (1 - cosine similarity), not similarity. Still tighter
+     * than any verification threshold, because the costs remain asymmetric —
+     * but less so than before, because the old value's cost model was wrong.
+     *
+     * That model was "one person split across three groups costs two clicks",
+     * and both halves were wrong about this UI rather than about any
+     * photograph. The tab listed every group at full length with no name
+     * suggested, so each extra group cost a scroll and a retype, not a click.
+     * And "three" was an assumption the comment made, never a measurement it
+     * had. So a tight cutoff was buying purity against a fragmentation cost the
+     * comment had no basis for pricing.
+     *
+     * Derive locally before changing this, and write nothing down: sweep the
+     * cutoff over a labelled run, plot groups-per-person against faces landing
+     * in the wrong group, and take the knee. Both of those curves are
+     * measurements of identifiable people, so they stay where the photographs
+     * are (CLAUDE.md's fourth photograph rule). This table carries the value
+     * and the method; never the evidence.
      */
-    cutoff: 0.45,
+    cutoff: 0.55,
     /** Two faces in one photograph are different people. Blocks the worst merge. */
     cannotLinkWithinPhoto: true,
   },
