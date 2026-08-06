@@ -316,9 +316,20 @@ export function loadMediaDims() {
 /**
  * How far the two axes' scale factors may disagree before the join itself is
  * suspect. The batch decodes with one uniform long-edge scale, so a photo and
- * its media row can only differ by rounding — measured across a real 673-photo
- * join, every pair agreed within a fraction of a percent. 2% is far outside
- * rounding and far inside "this is a different image".
+ * its media row can only differ by rounding. 2% is far outside rounding and far
+ * inside "this is a different image".
+ *
+ * To re-derive locally rather than trusting that: over a run joined to a
+ * populated gallery, take `(media.width / photo.width) / (media.height /
+ * photo.height)` for every matched pair and look at how far the extreme values
+ * sit from 1. A uniform decode puts the whole distribution within rounding of
+ * it, and anything beyond this constant is a join that landed on the wrong
+ * image — which is what the `mismatch` counter reports rather than "fixes".
+ *
+ * (No figure from that distribution belongs in this file. It is a measurement
+ * of the owner's photographs and this repository is public — CLAUDE.md's fourth
+ * photograph rule. State the method; derive the number where the photographs
+ * are.)
  */
 export const ASPECT_TOLERANCE = 0.02
 

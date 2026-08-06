@@ -105,6 +105,10 @@ const TEST_FIXTURE_FILES = new Set([
   "tests/unit/db/media-faces-routing.test.js",
   "tests/unit/db/vision-provenance-migration.test.js",
   "tests/unit/vision-export-face-work.test.js",
+  // Seeds an assigned face to prove a re-grade never clears one. The assignment
+  // has to be there BEFORE regradeFaces runs, and going through the ledger to
+  // create it would test the ledger rather than the re-grade.
+  "tests/unit/vision-regrade.test.js",
   // This file. Its fixtures below are deliberately-obfuscated writes fed to the
   // scanner as strings, so the scanner finds them in its own source too.
   SELF,

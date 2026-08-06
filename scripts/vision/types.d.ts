@@ -2111,3 +2111,143 @@ export function faceWorkPreflight(options: {
 
 /** No regex: a manual switch over known `--flags`. Unknown flags are refused. */
 export function parseFaceWorkArgs(argv: string[]): FaceWorkArgsResult
+
+// --- convert-labels-to-face-work.js -------------------------------------------
+
+export interface ConvertLabelsArgs {
+  /** Directory holding photos.jsonl, faces.jsonl, labels.json, identities.json.
+   *  Always explicit; nothing is searched for. */
+  runDir: string
+  database: string | null
+  /** REQUIRED. The row whose logical provenance becomes `payload.ingest`, which
+   *  is what makes the import's equivalence check hold by construction. */
+  ingestId: number
+  facesFrom: FaceWorkFacesFrom
+  /** REQUIRED. Refused inside this repository unless .gitignore covers it. */
+  out: string
+  dryRun: boolean
+}
+
+export type ConvertLabelsArgsResult =
+  | { valid: true; value: ConvertLabelsArgs }
+  | { valid: false; error: string }
+
+/** No regex: a manual switch over known `--flags`. Unknown flags are refused. */
+export function parseConvertLabelsArgs(argv: string[]): ConvertLabelsArgsResult
+
+/**
+ * `identities.json`'s map reduced to person key → display name. Accepts both the
+ * `{ guestId, name }` shape label.html writes today and the bare-name shape older
+ * exports wrote; anything else throws rather than being coerced, because a
+ * mangled value would travel to production as a real person's label. `guestId` is
+ * dropped — the artifact format carries no `people.guest_id`.
+ */
+export function normaliseIdentityNames(identities: Record<string, unknown>): Map<string, string>
+
+/**
+ * Every distinct label value, against `NOT_A_FACE` and the names sidecar. The
+ * sentinel is a constant the labelling tool guarantees, never inferred; a value
+ * that is neither it nor named is a person nobody named, and a refusal. `value`
+ * is the sentinel when the labeller used it and null when they did not.
+ */
+export function checkLabelValues(
+  labelValues: Iterable<string>,
+  namedKeys: ReadonlySet<string>,
+): { valid: true; value: string | null } | { valid: false; error: string }
+
+/** Counts only — never a filename, a path or a name. Printed to the console by
+ *  the CLI; nothing here is ever written into a file in this repository. */
+export interface ConvertLabelsStats {
+  facesInRun: number
+  labelled: number
+  skippedByLabeller: number
+  unlabelled: number
+  assign: number
+  notAFace: number
+  people: number
+  /** Keyed in decode space because the media row records no dimensions — the
+   *  same fallback the ingest took, so the keys still agree. */
+  unscaled: number
+  /** Every way a labelled face can fail to name a face row on the target. Any
+   *  of them being non-zero refuses the conversion. */
+  unjoinable: {
+    photoRecordMissing: number
+    photoMissing: number
+    aspectMismatch: number
+    boxMissing: number
+  }
+  /** Two labelled faces resolving to one content key. A refusal: one box carries
+   *  one decision. */
+  duplicateKeys: number
+  /** One content key naming several face rows here (a photograph imported twice,
+   *  or a superseded re-ingest). Advisory: the import applies to each. */
+  multiRowKeys: number
+}
+
+export interface ConvertLabelsResult {
+  /** Null when `refusals` is non-empty. */
+  artifact: FaceWorkArtifact | null
+  refusals: string[]
+  advisories: string[]
+  stats: ConvertLabelsStats
+}
+
+/**
+ * The artifact, or every reason there is not one. Pure — `mediaBySha` and
+ * `targetKeyCounts` arrive already queried — so the decode→original scaling, the
+ * sentinel derivation and every refusal are testable against plain objects.
+ */
+export function buildFaceWorkFromLabels(options: {
+  photos: readonly Session1PhotoRecord[]
+  faces: readonly Session1FaceRecord[]
+  labels: Session1LabelFile
+  /** Person key → display name, from `normaliseIdentityNames`. */
+  identityNames: ReadonlyMap<string, string>
+  /** The target's own `vision_ingests` row, read rather than reconstructed. */
+  ingestRow: VisionIngest
+  /** Photo content hash → the media row's ORIGINAL dimensions. */
+  mediaBySha: ReadonlyMap<string, { width: number | null; height: number | null }>
+  /** Content key → how many face rows on the target carry it. */
+  targetKeyCounts: ReadonlyMap<string, number>
+}): ConvertLabelsResult
+
+// --- regrade-faces.js --------------------------------------------------------
+
+/** Parsed argv for the re-grade CLI. `error` present means refuse and print
+ *  usage; the other fields are meaningless in that case. */
+export interface RegradeArgs {
+  /** Explicit SQLite path. Null falls back to $DATABASE_PATH, then the real
+   *  database — which is why a scratch run should always pass it. */
+  database: string | null
+  /** Re-grade every live face, not only those carrying a stale profile. */
+  all: boolean
+  dryRun: boolean
+  help: boolean
+  error?: string
+}
+
+/** What a re-grade did, or would do. Counts only — this shape is printed, and a
+ *  face id or a photograph reference in it would be a measurement of the
+ *  owner's photographs leaving the machine that holds them. */
+export interface RegradeReport {
+  considered: number
+  /** Rows left alone because a signal column was absent. Grading against an
+   *  undefined would silently route them `set_aside`. */
+  ungradable: number
+  unchanged: number
+  written: number
+  /** `"<from> -> <to>"` → count. `from` is `"ungraded"` for a null state. */
+  transitions: Record<string, number>
+  /** Resulting state → count, over the faces considered. */
+  after: Record<string, number>
+}
+
+/** Nine signals out of a `facesWithSignals` row, or null when any is absent or
+ *  not a finite number. */
+export function signalsFromRow(row: Record<string, unknown>): GateSignals | null
+
+/** Re-grade a set of faces, writing only when `apply` is true. */
+export function regradeFaces(
+  faceIds: number[],
+  options: { apply: boolean },
+): RegradeReport
