@@ -324,7 +324,10 @@ function isShown(face) {
 /**
  * How likely this group is to be two people welded into one.
  *
- * **Why the Faces tab needs this at all.** The Phase 2 comparison established
+ * ⚠ **ORDERING ONLY. Never a warning.** This used to drive a per-group banner
+ * and it must not again. Read the next three paragraphs before reinstating one.
+ *
+ * **Why the Faces tab computes it at all.** The Phase 2 comparison established
  * that on this cast, in BOTH descriptor spaces tried, no grouping cutoff
  * separates everyone without welding two people together. Welding is therefore
  * not a hypothetical this UI should be relaxed about — it is a thing that is
@@ -337,10 +340,32 @@ function isShown(face) {
  * below the cutoff, so individual pairs inside an accepted group are free to
  * sit well beyond it. A ratio above 1 says, in one number, "this group contains
  * two faces further apart than the threshold that was supposed to separate
- * people" — which is what a weld looks like from the inside.
+ * people". No new tunable: the comparison is against `group.cutoff`, the
+ * constant that built the group in the first place.
  *
- * No new tunable: the comparison is against `group.cutoff`, the constant that
- * built the group in the first place.
+ * **Why it is not a warning, and why looking for a better one is a dead end.**
+ * It drove a per-group banner once. As a binary alarm it was not selective
+ * enough to be worth interrupting anyone with, and an alarm that is always on
+ * is an alarm nobody reads — it trains the operator to click past the one
+ * signal the screen has. Three candidates were then scored for selectivity
+ * against a hand-labelled set: this ratio, the fraction of internal pairs
+ * beyond the cutoff, and the mean pair distance. None of them earned a
+ * warning, so none of them is one.
+ *
+ * That search has been done. What it returned is a measurement of identifiable
+ * people and stays where the photographs are (CLAUDE.md's fourth photograph
+ * rule), so this comment records the decision and the method only. **To re-run
+ * it locally rather than trusting it:** join a labelled run to the ingested
+ * rows, mark each live group mixed or pure by its faces' true people, and score
+ * each candidate's precision and recall against that. Weigh what you get
+ * against the base rate you find — on a rare enough event, a weak binary test
+ * costs more attention than it saves.
+ *
+ * So the score is spent where being wrong is free: as a SORT ORDER in the
+ * overview list ("most varied first"), where a bad guess costs the admin
+ * nothing but the order they work in. The real check is the review view, which
+ * puts every face in the group on screen large and one at a time. Do not
+ * re-derive the search above; it has been done.
  * @param {import('../../public/vision/types.js').DescriptorSet} set
  * @param {readonly number[]} members row indices into `set`
  * @param {{ n: number, d: Float64Array | Float32Array | number[] }} raw un-mutated distance matrix
@@ -367,7 +392,7 @@ export async function overview(req, res) {
   const cutoff = /** @type {number} */ (groupDefaults.cutoff)
   const byVersion = loadUnidentifiedByModelVersion()
 
-  /** @type {Array<{ faceIds: number[], media: Array<ReturnType<typeof chipOf>>, suggestion: { personId: number, personName: string, margin: number } | null, size: number, shown: number, setAside: number, weld: { diameter: number, ratio: number } | null }>} */
+  /** @type {Array<{ faceIds: number[], media: Array<ReturnType<typeof chipOf>>, setAsideMedia: Array<ReturnType<typeof chipOf>>, suggestion: { personId: number, personName: string, margin: number } | null, size: number, shown: number, setAside: number, weld: { diameter: number, ratio: number } | null }>} */
   const rawGroups = []
 
   for (const [modelVersion, { faces, set }] of byVersion) {
@@ -396,6 +421,15 @@ export async function overview(req, res) {
       // not only by the server-side check that also refuses it.
       const shownMembers = cluster.members.filter((i) => isShown(faces[i]))
       if (shownMembers.length === 0) continue
+      // The withheld members, as chips and NOTHING else. They are a second
+      // array rather than extra entries in `media` on purpose: `faceIds` and
+      // `media` are what the bulk-confirm button reads, and keeping the two
+      // lists physically separate is what preserves "a bulk confirm cannot
+      // carry a face that was never shown as bulk-nameable" as a property of
+      // the payload's SHAPE rather than of the client's filtering discipline.
+      // The review view shows these dimmed and labelled, and names them one at
+      // a time through assign-one — which is the only route that will take one.
+      const heldBackMembers = cluster.members.filter((i) => !isShown(faces[i]))
 
       /** @type {{ personId: number, personName: string, margin: number } | null} */
       let suggestion = null
@@ -414,10 +448,11 @@ export async function overview(req, res) {
       rawGroups.push({
         faceIds: shownMembers.map((i) => faces[i].id),
         media: shownMembers.map((i) => chipOf(faces[i], chips)),
+        setAsideMedia: heldBackMembers.map((i) => chipOf(faces[i], chips)),
         suggestion,
         size: cluster.size,
         shown: shownMembers.length,
-        setAside: cluster.members.length - shownMembers.length,
+        setAside: heldBackMembers.length,
         weld: weldRisk(set, cluster.members, raw, cutoff),
       })
     }
@@ -430,6 +465,11 @@ export async function overview(req, res) {
     key: index,
     faceIds: g.faceIds,
     media: g.media,
+    /** The cluster members routing held back, as chips. Never in `faceIds` and
+     *  never in `media`, so they can be SHOWN without becoming bulk-assignable —
+     *  the review view's filmstrip renders them dimmed, and `assign-one` is the
+     *  only route that will name one. */
+    setAsideMedia: g.setAsideMedia,
     suggestion: g.suggestion,
     /** Total cluster size, INCLUDING faces not shown — so the UI can say
      *  "3 more too small to show" rather than silently disagreeing with

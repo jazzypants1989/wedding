@@ -1374,14 +1374,15 @@ export function refreshInboxBadge(): Promise<void>
 
 /** @file face-assignment.js — Types for the admin Faces tab (assisted face
  *  tagging against the guest roster, docs/post-wedding/SPEC-vision-lab.md
- *  §6.5). Built against a server contract that has no crop endpoint, so a
- *  face is displayed by cropping the media's existing `thumb` variant
- *  client-side to the face's box — which needs the ORIGINAL photo's pixel
- *  width/height alongside the box. The contract's overview/queue payloads
- *  name only `faceId`/`mediaId`/`box` on each entry; `fileKey`, `width` and
- *  `height` here are an ASSUMED addition (matching MediaListItem's fields),
- *  not confirmed against a running server. If the server omits them, the
- *  chip degrades to an uncropped thumbnail rather than failing. */
+ *  §6.5). There is no crop endpoint and there cannot be one — re-encoding a
+ *  crop server-side needs an image library on the request path, which this
+ *  project does not have — so a face is displayed by loading the media's
+ *  `display` variant and cropping to the face's box client-side. That needs the
+ *  ORIGINAL photo's pixel width/height alongside the box, because the box is in
+ *  original-pixel coordinates and the variant is an unknown scale of it;
+ *  `fileKey`, `width` and `height` ride on every chip entry for exactly that,
+ *  pinned by an integration test. A missing dimension degrades to an uncropped
+ *  image rather than failing. */
 
 /** A face's pixel bounding box, in the ORIGINAL photo's coordinate space. */
 export interface FaceBox {
@@ -1422,16 +1423,17 @@ export interface FaceGroupSuggestion {
 }
 
 /**
- * How likely a group is to be two people welded together: its widest internal
- * pair, over the grouping cutoff. Above 1 means the group contains two faces
- * further apart than the threshold that is supposed to separate people —
- * possible because the clustering is average-linkage, so a merge only needs the
- * MEAN below the cutoff.
+ * How varied a group's faces are: its widest internal pair, over the grouping
+ * cutoff. Above 1 means the group contains two faces further apart than the
+ * threshold that is supposed to separate people — possible because the
+ * clustering is average-linkage, so a merge only needs the MEAN below the
+ * cutoff.
  *
- * Present because the Phase 2 comparison established that on this cast, in both
- * descriptor spaces tried, no cutoff separates everyone without welding two
- * people. Welding is not a hypothetical here, and the fast path is a button
- * that names a whole group at once.
+ * ⚠ SORT ORDER ONLY. It is never rendered as a per-group warning, and the
+ * search for a statistic selective enough to be one came back empty — see
+ * `weldRisk` in api/admin/faces.js for what was tried and why none of it
+ * survived contact with a hand-labelled set. The check the UI actually offers
+ * is the review view: every face in the group, large, one at a time.
  */
 export interface FaceGroupWeld {
   diameter: number
@@ -1441,16 +1443,23 @@ export interface FaceGroupWeld {
 /** One unnamed cluster from GET /api/admin/faces/overview, largest first. */
 export interface FaceGroup {
   key: string
-  /** Only the faces the admin can SEE — set-aside members are absent, so a
-   *  bulk confirm cannot carry a face that was never on screen. */
+  /** The faces a BULK confirm may name — set-aside members are absent, so a
+   *  bulk confirm cannot carry one the server would refuse anyway. */
   faceIds: number[]
+  /** Chips for exactly `faceIds`, same order. */
   media: FaceChipEntry[]
+  /** Chips for the members routing HELD BACK. Shown by the review view's
+   *  filmstrip (dimmed, labelled) so the group's real extent is visible, and
+   *  deliberately absent from `faceIds`: these are nameable only one at a time
+   *  through POST /api/admin/faces/assign-one, which is the single-face
+   *  exemption from the bulk routing check. */
+  setAsideMedia: FaceChipEntry[]
   suggestion: FaceGroupSuggestion | null
-  /** The FULL cluster size, including faces filtered out of the chips. */
+  /** The FULL cluster size: `media.length + setAsideMedia.length`. */
   size: number
-  /** How many of `size` were withheld by routing. */
+  /** How many of `size` were withheld by routing — `setAsideMedia.length`. */
   setAside: number
-  /** Null for a single-face group — one face cannot be two people. */
+  /** Null for a single-face group. SORT ORDER ONLY — see FaceGroupWeld. */
   weld: FaceGroupWeld | null
 }
 

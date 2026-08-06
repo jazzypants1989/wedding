@@ -426,7 +426,9 @@
 
       <!-- Faces Tab: assisted face tagging against the guest roster
            (docs/post-wedding/SPEC-vision-lab.md §6.5). A list, never a
-           wizard — Groups / Ask queue / Identified, populated by JS. -->
+           wizard — Groups / Ask queue / Identified, populated by JS. Groups is
+           itself two views: a compact list, and a focused one-group-at-a-time
+           review that takes over #faces-body while it is open. -->
       <div id="tab-faces" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-faces" hidden>
         <div class="card">
           <div class="card-header flex-between">
@@ -436,9 +438,9 @@
             </div>
           </div>
           <p class="text-muted card-text">
-            Faces found in your photos, grouped by who they likely belong to. Name a group to
-            teach the matcher that person — the more you name, the better the Ask queue below gets
-            at suggesting the rest.
+            Faces found in your photos, grouped by who they likely belong to. Open a group to look
+            through its faces one at a time, then name the whole group at once — the more you
+            name, the better the Ask queue below gets at suggesting the rest.
           </p>
           <div id="faces-counts" class="faces-counts" aria-live="polite"></div>
           <!-- Two DIFFERENT rosters, and the distinction is the whole point of

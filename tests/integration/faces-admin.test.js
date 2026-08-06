@@ -1352,6 +1352,44 @@ describe("quality routing (plan §8)", () => {
     assert.strictEqual(group.setAside, 1)
   })
 
+  it("carries the withheld members in their OWN array, never in faceIds", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    // The review view's filmstrip shows every face in a group INCLUDING the
+    // ones routing held back — that is how an admin reaches all the
+    // photographs a group spans. The bulk endpoint refuses those same ids. Both
+    // are true at once only because the payload keeps two lists: `media` (whose
+    // ids are `faceIds`, and which "Confirm all" posts) and `setAsideMedia`
+    // (shown, dimmed, and nameable only through assign-one). If these ever
+    // merge, a bulk confirm starts 400ing on exactly the groups worth naming.
+    const m1 = seedMedia({ width: 4000, height: 3000 })
+    const m2 = seedMedia({ width: 4000, height: 3000 })
+    const shown = seedFace(m1, CLUSTER_A1, { route: "accept" })
+    const hidden = seedFace(m2, CLUSTER_A2, { route: "set_aside" })
+
+    const body = await json(await asAdmin("/api/admin/faces/overview"))
+    assertNoDescriptor(body)
+    const group = body.groups.find((/** @type {any} */ g) => g.faceIds.includes(shown))
+    assert.ok(group)
+
+    assert.ok(!group.faceIds.includes(hidden), "a held-back face is never bulk-nameable")
+    assert.deepStrictEqual(
+      group.setAsideMedia.map((/** @type {any} */ m) => m.faceId),
+      [hidden],
+    )
+    // Same chip shape as `media`, or the filmstrip cannot crop it: the box is
+    // in ORIGINAL pixels and needs the file key and those dimensions beside it.
+    const chip = group.setAsideMedia[0]
+    assert.strictEqual(chip.mediaId, m2)
+    assert.ok(chip.fileKey)
+    assert.strictEqual(chip.width, 4000)
+    assert.strictEqual(chip.height, 3000)
+    assert.ok(chip.box)
+    // And the two arrays account for the whole cluster, so "Face 3 of 3" in the
+    // filmstrip agrees with the "3 faces" the overview row claims.
+    assert.strictEqual(group.media.length + group.setAsideMedia.length, group.size)
+  })
+
   it("reports weld risk against the grouping cutoff", async (t) => {
     if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
 

@@ -2343,10 +2343,14 @@ tr:hover td {
   overflow-x: auto;
 }
 
-/* Face chip — a fixed-size crop of one face, positioned client-side from the
-   media's `thumb` variant + the face's source-pixel box (no crop endpoint). */
+/* Face chip — a crop of one face, positioned client-side from the media's
+   `display` variant + the face's source-pixel box (no crop endpoint). The size
+   lives HERE and nowhere else: positionFaceChipImage measures its container, so
+   the filmstrip chip and the review stage below are the same markup at another
+   size and need no JS constant of their own. */
 .face-chip {
   position: relative;
+  display: block;
   width: 96px;
   height: 96px;
   overflow: hidden;
@@ -2369,72 +2373,238 @@ tr:hover td {
      until this opted out. */
   max-width: none;
 }
-.face-chip.is-toggleable {
-  cursor: pointer;
-}
-.face-chip.is-toggleable:focus-visible {
-  outline: var(--border-width-thick) solid var(--color-primary);
-  outline-offset: 2px;
-}
 .face-chip.is-dimmed {
   opacity: 0.35;
   filter: grayscale(70%);
 }
 
-/* Groups */
-.faces-groups-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: var(--spacing-md);
+/* ---- Groups, view 1: the compact overview list ----------------------------
+   One row per group at a FIXED height whatever the group holds — the previous
+   grid rendered every face of every group, which put about three people on
+   screen and ran tens of thousands of pixels tall. `+N not shown here` is the
+   row growing in text instead of in height. */
+.faces-groups-standing {
+  margin: 0 0 var(--spacing-sm);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  max-width: 80ch;
 }
-.face-group-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: var(--spacing-sm);
-  background: var(--color-card-bg);
-}
-.face-group-chips {
+.faces-groups-toolbar {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
+}
+.faces-groups-sort {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: var(--text-sm);
+}
+.faces-groups-total {
+  font-size: var(--text-sm);
+}
+.faces-overview-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
   gap: var(--spacing-xs);
 }
-.face-group-controls {
+.face-overview-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  width: 100%;
+  padding: var(--spacing-xs);
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-card-bg);
+}
+.face-overview-row:hover {
+  border-color: var(--color-primary);
+}
+.face-overview-row:focus-visible {
+  outline: var(--border-width-thick) solid var(--color-primary);
+  outline-offset: 2px;
+}
+.face-overview-chips {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+.face-overview-chips .face-chip {
+  width: 64px;
+  height: 64px;
+}
+.face-overview-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.face-overview-count {
+  font-size: var(--text-sm);
+}
+.face-overview-more,
+.face-overview-suggestion {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+.face-overview-more {
+  margin-left: var(--spacing-xs);
+}
+.face-overview-go {
+  flex: 0 0 auto;
+  color: var(--color-primary);
+  font-size: var(--text-sm);
+}
+
+/* ---- Groups, view 2: one group at a time ---------------------------------
+   The face large enough to be sure about, and every face in the group beside
+   it. This replaces "Open photo" as the way to reach the several photographs a
+   group spans — that button opened exactly one of them and led nowhere. */
+.face-review {
+  outline: none;
+}
+.face-review-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+.face-review-pos {
+  margin: 0;
+  font-size: var(--text-base);
+}
+.face-review-name {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--spacing-xs);
+  margin-left: auto;
 }
-.face-group-name-input {
-  flex: 1 1 auto;
-  min-width: 10ch;
+.face-review-name-input {
+  min-width: 18ch;
 }
-.face-group-suggestion {
-  font-size: var(--text-xs);
-}
-.face-group-input-error {
+.face-review-input-error {
   flex-basis: 100%;
   color: var(--color-status-pending-text);
   font-size: var(--text-xs);
 }
-
-/* Quality routing (plan §8). The weld warning sits ABOVE the chips, not beside
-   the confirm button: it is a reason to look at the faces again, and it is
-   useless once the eye has already travelled past them to the name field. */
-.face-group-weld {
-  margin: 0;
-  padding: var(--spacing-xs) var(--spacing-sm);
-  border-left: 3px solid var(--color-status-pending-text);
+.face-review-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--spacing-md);
+}
+/* The container IS the crop frame — positionFaceChipImage measures it, so the
+   size of the main image is set here and in no JS constant. Square because a
+   face box is roughly square and a letterboxed one would waste the width. */
+.face-review-stage {
+  position: relative;
+  flex: 0 0 auto;
+  width: min(420px, 100%);
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
   border-radius: var(--radius-sm);
-  background: var(--color-surface-alt, transparent);
+  background: var(--color-primary-faint);
+}
+.face-review-side {
+  display: flex;
+  flex: 1 1 280px;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  min-width: 240px;
+}
+.face-review-facepos {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+.face-review-flag {
+  margin-left: var(--spacing-xs);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-faint);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+/* Scrolls INSIDE its own box rather than lengthening the page: a long group has
+   to stay a fixed-size thing on screen, or this is the old wall again. */
+.face-review-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  max-height: 340px;
+  overflow-y: auto;
+}
+.face-strip-chip {
+  position: relative;
+  flex: 0 0 auto;
+  width: 76px;
+  height: 76px;
+  padding: 0;
+  overflow: hidden;
+  border: var(--border-width-thick) solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-faint);
+  cursor: pointer;
+}
+.face-strip-chip:focus-visible {
+  outline: var(--border-width-thick) solid var(--color-primary);
+  outline-offset: 2px;
+}
+.face-strip-chip.is-selected {
+  border-color: var(--color-primary);
+}
+/* Set aside: visible, obviously different, and NOT nameable in bulk. Dashed,
+   because the same dashed outline means the same thing in the per-photograph
+   dialog below. */
+.face-strip-chip.is-setaside {
+  border-style: dashed;
+  border-color: var(--color-text-muted);
+  opacity: 0.55;
+}
+.face-strip-chip.is-excluded {
+  opacity: 0.3;
+  filter: grayscale(80%);
+}
+.face-review-face-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+.face-review-note,
+.face-review-setaside {
+  margin: 0;
   font-size: var(--text-xs);
   line-height: 1.4;
 }
-.face-group-setaside {
-  margin: 0;
+.face-review-note {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-left: 3px solid var(--color-text-muted);
+  border-radius: var(--radius-sm);
+}
+.face-review-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
+}
+.face-review-hint {
   font-size: var(--text-xs);
+}
+.face-review-hint kbd {
+  margin: 0 1px;
 }
 .faces-count-muted {
   opacity: 0.75;

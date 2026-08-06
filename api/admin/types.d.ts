@@ -815,7 +815,16 @@ export interface FaceBoxOut {
 
 /** GET /api/admin/faces/overview — tile counts + live groups over unidentified
  *  faces, largest first, each with a prototype-match suggestion when at least
- *  one identity is confirmed. */
+ *  one identity is confirmed.
+ *
+ *  Each group carries its faces in TWO arrays. `media` (whose ids are
+ *  `faceIds`) is what a bulk confirm may name; `setAsideMedia` is the members
+ *  routing held back — shown by the review view's filmstrip, dimmed, and
+ *  nameable only one at a time through `assign-one`. Keeping them apart is what
+ *  makes "a bulk action can never name a face the admin was not shown as
+ *  bulk-nameable" a property of the payload rather than of a client's
+ *  filtering. `weld` is an ORDERING score only — see faces.js's `weldRisk` for
+ *  why it is never rendered as a warning. */
 export function faceOverviewHandler(
   req: IncomingMessage,
   res: ServerResponse,
