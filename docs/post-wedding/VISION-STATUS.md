@@ -20,6 +20,12 @@ or history, and you can reach it from here when you need it.
 | 3 | [`DECISIONS-vision.md`](./DECISIONS-vision.md) | The owner's rulings | Settled questions. **Not re-litigated** — if you disagree, say so and move on |
 | 4 | [`SPEC-vision-lab.md`](./SPEC-vision-lab.md) §15 | Working rules for the pipeline | How to run anything without breaking rule 1 |
 
+**About to touch a migration, the ingest, or the labelling?** Read
+[`TRAPS.md`](./TRAPS.md) first. It is the catalogue of things that fail
+*silently* in this codebase, each marked with how well it is actually known —
+verified, or inherited and unchecked. Several inherited claims have already
+turned out to be stale, so the label matters.
+
 **Planning the next session rather than doing one?** Go to
 [`SESSION-PLAN.md`](./SESSION-PLAN.md) instead. It holds the remaining sequence
 and, for each session, the short list of documents to hand the agent running it
