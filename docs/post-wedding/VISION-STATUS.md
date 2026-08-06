@@ -20,6 +20,12 @@ or history, and you can reach it from here when you need it.
 | 3 | [`DECISIONS-vision.md`](./DECISIONS-vision.md) | The owner's rulings | Settled questions. **Not re-litigated** — if you disagree, say so and move on |
 | 4 | [`SPEC-vision-lab.md`](./SPEC-vision-lab.md) §15 | Working rules for the pipeline | How to run anything without breaking rule 1 |
 
+**Planning the next session rather than doing one?** Go to
+[`SESSION-PLAN.md`](./SESSION-PLAN.md) instead. It holds the remaining sequence
+and, for each session, the short list of documents to hand the agent running it
+— which is the only thing that list is for. It spans this repo and the devloop
+module in `~/repos/make-a`.
+
 **Reference, when a specific question sends you there:**
 [`VISION-MODELS.md`](./VISION-MODELS.md) (the model ledger — still accurate) ·
 [`08-bulk-import.md`](./08-bulk-import.md) (the media importer) ·
@@ -132,6 +138,9 @@ for a row that demonstrably existed, with no error from anywhere. Keep inline
 casts on one line; long types go in a `@typedef`.
 
 ### What remains
+
+**Sequenced, with per-session handoff lists, in
+[`SESSION-PLAN.md`](./SESSION-PLAN.md).** The summary:
 
 1. **Finish the tuning pass** — the calibration check above.
 2. **The owner reviews the Faces tab** and files UI issues. Do this through
