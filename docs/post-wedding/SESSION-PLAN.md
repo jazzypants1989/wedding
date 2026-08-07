@@ -40,7 +40,7 @@ settled; it is not a bug to fix.
 | 1   | Faces UI review (devloop dogfood)                | wedding | `SCREENSHOT-PROXY.md` · `VISION-STATUS.md` · `/capture-issues` skill             | Medium — owner-driven     |
 | 2   | Devloop burrs + docs                             | make-a  | `ORCHESTRATOR-HANDOFF.md` · `IMPLEMENTATION-PLAN.md` · session 1's notes         | Small                     |
 | 3   | Fix the faces UI issues + small vision hardening | wedding | `VISION-STATUS.md` · `TRAPS.md` · `/fix-issues` skill · the `.claude/issues-faces` store | Medium–large     |
-| 4   | The non-vision backlog                           | wedding | `/fix-issues` skill · `00-overview.md` · the `.claude/issues` store              | Small–medium              |
+| 4   | The non-vision backlog                           | wedding | `/fix-issues` skill · `../archive/00-overview.md` · the `.claude/issues` store              | Small–medium              |
 | 5   | Deploy                                           | wedding | **`TRAPS.md` §migrations** · `DECISIONS-vision.md` §10 · `scripts/deploy.js`     | Medium — **highest risk** |
 | 6   | The production face pass                         | wedding | **`TRAPS.md` §production** · `DECISIONS-vision.md` §8–§10 · `export-face-work.js` header | Medium — **never run** |
 | 7   | Doc closeout + archive                           | wedding | This file · `VISION-STATUS.md` · `docs/post-wedding/`                            | Small                     |
@@ -150,8 +150,9 @@ real time twice.
 **Goal.** The issues about the rest of the app, which have been parked since
 July.
 
-**Hand over:** the `/fix-issues` skill · `docs/post-wedding/00-overview.md`
-(binding for this area) · the `.claude/issues` store.
+**Hand over:** the `/fix-issues` skill · `docs/archive/00-overview.md` (archived
+2026-08-06, but still the binding spec for this area) · the `.claude/issues`
+store.
 
 **Size, as of 2026-08-06:** 15 issues filed, 7 resolved and awaiting review, **8
 still open**. Smaller than it looks from the file sizes. It may be worth merging
@@ -236,18 +237,34 @@ module in the repo names it and nothing here can rebuild it.
 
 **Hand over:** this file · `VISION-STATUS.md` · `docs/post-wedding/`.
 
-**The work.**
+**Already done, 2026-08-06** (by the owner, mid-session — this session shrank
+accordingly). Eighteen files moved to `docs/archive/`: the eight numbered
+feature specs, the four dated `SESSION-*-vision.md` records,
+`HANDOFF-session-1-vision.md`, `RESEARCH-face-recognition.md`,
+`review-adjudication.md`, `demo-walkthrough.html` and
+`what-counts-as-a-dependency.md`. `docs/post-wedding/` is down to eight live
+files, and the top-level listing is honest for the first time.
 
-- Collapse the owner's plan file into `VISION-STATUS.md`. Its traps (T1–T20) are
-  the part worth keeping; its phase lists are all superseded.
-- Archive the four dated vision records — `SESSION-1`…`SESSION-4-vision.md`,
-  plus `HANDOFF-session-1-vision.md`. They already carry staleness banners;
-  moving them under an `archive/` directory makes the top-level listing honest.
-- Fold `RESEARCH-face-recognition.md` and `review-adjudication.md` in or archive
-  them.
-- Update `CLAUDE.md`'s project tree — it has drifted behind several
-  `scripts/vision/` additions, and it is the first thing every agent reads.
-- Answer or explicitly park the last open questions: video in scope
+**The work that remains.**
+
+- **Fix the references the move broke.** Verified broken on 2026-08-06 and
+  **not yet fixed**: `CLAUDE.md` points at `docs/what-counts-as-a-dependency.md`
+  and `docs/post-wedding/08-bulk-import.md`, both of which are now under
+  `docs/archive/`. `CLAUDE.md` is the first thing every agent reads and it is
+  gitignored, so nothing will catch this but a person. (This file and
+  `VISION-STATUS.md` were repointed the same day.)
+- **Decide whether "archived" is the right status for the feature specs.**
+  `00-overview.md` is described in `CLAUDE.md` as *binding*, and
+  `08-bulk-import.md` documents a CLI that still ships. Archiving something
+  still binding is a category error worth resolving deliberately — either they
+  come back, or `CLAUDE.md` stops calling them binding.
+- **Collapse the owner's plan file into `VISION-STATUS.md`.** Its traps are
+  already extracted into `TRAPS.md`; what is left worth keeping is the
+  *reasoning* — why the sequencing was what it was. Then retire it.
+- **Update `CLAUDE.md`'s project tree** — it has drifted behind several
+  `scripts/vision/` additions (`convert-labels-to-face-work.js`,
+  `regrade-faces.js`, `compare-models.js` among them).
+- **Answer or explicitly park the last open questions:** video in scope
   (`DECISIONS-vision.md` §10), how far the craft phase reaches, and which
   guest-facing surface gets tags (§9).
 

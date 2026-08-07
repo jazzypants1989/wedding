@@ -34,9 +34,9 @@ module in `~/repos/make-a`.
 
 **Reference, when a specific question sends you there:**
 [`VISION-MODELS.md`](./VISION-MODELS.md) (the model ledger — still accurate) ·
-[`08-bulk-import.md`](./08-bulk-import.md) (the media importer) ·
-`SESSION-*.md` (dated records; **stale by construction**, read for reasoning
-only).
+[`08-bulk-import.md`](../archive/08-bulk-import.md) (the media importer) ·
+`../archive/SESSION-*.md` (dated records; **stale by construction**, read for
+reasoning only).
 
 **Not in this repository, and you will not be given them unasked:** the owner's
 plan file, and the private backup repo that holds the labelling artifacts and
