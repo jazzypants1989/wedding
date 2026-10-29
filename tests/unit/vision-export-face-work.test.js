@@ -43,6 +43,7 @@ import {
   planFaceWorkImport,
   useDatabase,
 } from "../../scripts/vision/export-face-work.js"
+import { PINNED_WEIGHTS } from "../../scripts/vision/verify-weights.js"
 
 const REPO_ROOT = path.join(import.meta.dirname, "..", "..")
 
@@ -381,6 +382,20 @@ describe("parseFaceWorkArgs", () => {
     const noEngine = parseFaceWorkArgs(["import", "in.json", "--weights", "w"])
     assert.equal(noEngine.valid, false)
     if (!noEngine.valid) assert.ok(noEngine.error.includes("--engine"))
+  })
+
+  it("accepts digest-only import (--expect-engine, no --weights), and refuses both engine forms", () => {
+    const sha = "a".repeat(64)
+    const digestOnly = parseFaceWorkArgs(["import", "in.json", "--expect-engine", sha])
+    assert.equal(digestOnly.valid, true)
+    if (digestOnly.valid) {
+      assert.equal(digestOnly.value.expectEngine, sha)
+      assert.equal(digestOnly.value.engine, null)
+      assert.equal(digestOnly.value.weights, null)
+    }
+    const both = parseFaceWorkArgs(["import", "in.json", "--engine", "e.mjs", "--expect-engine", sha])
+    assert.equal(both.valid, false)
+    if (!both.valid) assert.ok(both.error.includes("not both"))
   })
 
   it("only accepts the two documented --faces-from values", () => {
@@ -839,14 +854,34 @@ describe("matchFaceWorkKeys", () => {
   })
 
   it("overlap mode refuses two plausible candidates rather than picking one", () => {
+    // Two different boxes that both overlap the source almost equally. (Not
+    // byte-identical boxes: those are one face on two media rows — next test.)
     /** @type {import('../../scripts/vision/types.js').FaceWorkFaceRow[]} */
     const twins = [
       { id: 1, bbox_x: 10, bbox_y: 10, bbox_w: 20, bbox_h: 20, face_identity_id: null, deleted_at: null, sha256: "aa" },
-      { id: 2, bbox_x: 10, bbox_y: 10, bbox_w: 20, bbox_h: 20, face_identity_id: null, deleted_at: null, sha256: "aa" },
+      { id: 2, bbox_x: 11, bbox_y: 10, bbox_w: 20, bbox_h: 20, face_identity_id: null, deleted_at: null, sha256: "aa" },
     ]
     const { matched, unmatched } = matchFaceWorkKeys(["aa:10,10,20,20"], twins, { overlap: true })
     assert.equal(matched.size, 0)
     assert.equal(unmatched.get("aa:10,10,20,20"), "ambiguous")
+  })
+
+  it("one face fanned out to two media rows (same hash, same box) matches BOTH, in either mode", () => {
+    /** @type {import('../../scripts/vision/types.js').FaceWorkFaceRow[]} */
+    const fannedOut = [
+      { id: 1, bbox_x: 10, bbox_y: 10, bbox_w: 20, bbox_h: 20, face_identity_id: null, deleted_at: null, sha256: "aa" },
+      { id: 2, bbox_x: 10, bbox_y: 10, bbox_w: 20, bbox_h: 20, face_identity_id: null, deleted_at: null, sha256: "aa" },
+      { id: 3, bbox_x: 60, bbox_y: 10, bbox_w: 20, bbox_h: 20, face_identity_id: null, deleted_at: null, sha256: "aa" },
+    ]
+    for (const overlap of [false, true]) {
+      const { matched, unmatched } = matchFaceWorkKeys(["aa:10,10,20,20"], fannedOut, { overlap })
+      assert.equal(unmatched.size, 0, `overlap=${overlap}`)
+      assert.deepEqual(
+        (matched.get("aa:10,10,20,20") ?? []).map((r) => r.id).sort(),
+        [1, 2],
+        `overlap=${overlap}`,
+      )
+    }
   })
 })
 
@@ -1124,6 +1159,53 @@ describe("provisioning preflight", () => {
       expectedEngineSha256: "1".repeat(64),
     })
     assert.ok(wrong.failures.some((failure) => failure.includes("different engine")))
+  })
+
+  it("digest-only mode: passes on pinned digests with no files at all", async () => {
+    const engine = "c".repeat(64)
+    const result = await faceWorkPreflight({
+      weightsDir: null,
+      enginePath: null,
+      expectedEngineSha256: engine,
+      declaredEngineSha256: engine,
+      declaredWeightDigests: [PINNED_WEIGHTS[0].sha256, PINNED_WEIGHTS[1].sha256],
+    })
+    assert.deepEqual(result.failures, [])
+    assert.equal(result.ok, true)
+    assert.equal(result.engineSha256, engine)
+  })
+
+  it("digest-only mode: refuses a different engine, an unpinned weight, or a malformed digest", async () => {
+    const pinned = [PINNED_WEIGHTS[0].sha256, PINNED_WEIGHTS[1].sha256]
+    const wrongEngine = await faceWorkPreflight({
+      weightsDir: null,
+      enginePath: null,
+      expectedEngineSha256: "c".repeat(64),
+      declaredEngineSha256: "d".repeat(64),
+      declaredWeightDigests: pinned,
+    })
+    assert.ok(wrongEngine.failures.some((f) => f.includes("different engine")))
+
+    const unpinned = await faceWorkPreflight({
+      weightsDir: null,
+      enginePath: null,
+      expectedEngineSha256: "c".repeat(64),
+      declaredEngineSha256: "c".repeat(64),
+      declaredWeightDigests: [pinned[0], "e".repeat(64)],
+    })
+    assert.equal(unpinned.ok, false)
+    assert.ok(unpinned.failures.some((f) => f.includes("not a pinned digest")))
+
+    for (const bad of ["C".repeat(64), "c".repeat(63), "g".repeat(64)]) {
+      const malformed = await faceWorkPreflight({
+        weightsDir: null,
+        enginePath: null,
+        expectedEngineSha256: bad,
+        declaredEngineSha256: bad,
+        declaredWeightDigests: pinned,
+      })
+      assert.ok(malformed.failures.some((f) => f.includes("64 lowercase hex")), bad)
+    }
   })
 
   it("refuses when there is nothing to compare the engine against", async () => {

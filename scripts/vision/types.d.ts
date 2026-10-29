@@ -1363,8 +1363,9 @@ export function readJsonl<T>(file: string): { records: T[]; skipped: number; pre
  */
 export function openDatabase(dbPath: string): DatabaseSync
 
-/** sha256 -> media.id, for every non-deleted media row that has one. */
-export function loadMediaShaMap(): Map<string, number>
+/** sha256 -> every non-deleted media.id carrying it, ascending. A list: rows
+ *  can share a hash (a guest re-uploading a photographer's file). */
+export function loadMediaShaMap(): Map<string, number[]>
 
 /** media.id -> ORIGINAL pixel dimensions, for every live media row. */
 export function loadMediaDims(): Map<number, { width: number | null; height: number | null }>
@@ -1399,9 +1400,14 @@ export function scaleFaceGeometry(
  */
 export function joinPhotosToMedia(
   photos: readonly Session1PhotoRecord[],
-  mediaBySha: ReadonlyMap<string, number>,
+  mediaBySha: ReadonlyMap<string, readonly number[]>,
 ): {
+  /** One pair per (photo, media row): a photo fans out to every row sharing its hash. */
   matched: Array<{ photo: Session1PhotoRecord; mediaId: number }>
+  /** Distinct photos that matched at least one row. */
+  matchedPhotos: number
+  /** Media rows beyond the first per matched photo — the fan-out. */
+  duplicateRows: number
   unmatchedCount: number
 }
 
@@ -1415,7 +1421,11 @@ export interface IngestRunOptions {
 
 export interface IngestRunResult {
   photosInRun: number
+  /** Distinct photos matched to at least one media row. */
   matched: number
+  /** Extra media rows that received faces because they share a matched
+   *  photo's content hash. */
+  duplicateRows: number
   /** No sha256 match against any imported media row — likely not imported yet. */
   unmatched: number
   facesInserted: number
@@ -2102,6 +2112,12 @@ export function faceWorkPreflight(options: {
   weightsDir: string | null
   enginePath: string | null
   expectedEngineSha256: string | null
+  /** Digest-only mode (`import --expect-engine`): the engine digest vouched
+   *  for in place of hashing a file. Used only when `enginePath` is null. */
+  declaredEngineSha256?: string | null
+  /** Digest-only mode without `--weights`: the artifact's weight digests,
+   *  each required to be in PINNED_WEIGHTS. Used only when `weightsDir` is null. */
+  declaredWeightDigests?: readonly string[] | null
 }): Promise<{
   ok: boolean
   failures: string[]

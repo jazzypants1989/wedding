@@ -271,12 +271,27 @@ describe("readJsonl", () => {
 describe("joinPhotosToMedia", () => {
   it("matches by sha256 and counts the rest as unmatched", () => {
     const photos = [photo({ id: 0, sha256: "sha-a" }), photo({ id: 1, sha256: "sha-unknown" })]
-    const mediaBySha = new Map([["sha-a", 42]])
-    const { matched, unmatchedCount } = joinPhotosToMedia(photos, mediaBySha)
+    const mediaBySha = new Map([["sha-a", [42]]])
+    const { matched, matchedPhotos, duplicateRows, unmatchedCount } = joinPhotosToMedia(photos, mediaBySha)
     assert.equal(matched.length, 1)
     assert.equal(matched[0].mediaId, 42)
     assert.equal(matched[0].photo.id, 0)
+    assert.equal(matchedPhotos, 1)
+    assert.equal(duplicateRows, 0)
     assert.equal(unmatchedCount, 1)
+  })
+
+  it("fans a photo out to every media row sharing its hash", () => {
+    const { matched, matchedPhotos, duplicateRows } = joinPhotosToMedia(
+      [photo({ id: 0, sha256: "sha-a" })],
+      new Map([["sha-a", [7, 42]]]),
+    )
+    assert.deepEqual(
+      matched.map((m) => m.mediaId),
+      [7, 42],
+    )
+    assert.equal(matchedPhotos, 1)
+    assert.equal(duplicateRows, 1)
   })
 
   it("matches nothing against an empty map", () => {
@@ -385,6 +400,33 @@ describe("scaleFaceGeometry", () => {
 })
 
 describe("ingestRun", () => {
+  it("writes a photo's faces to EVERY media row sharing its content hash (TRAPS: duplicate hashes)", () => {
+    const db = freshDb()
+    try {
+      const official = seedMedia(db, "sha-dup")
+      const guestCopy = seedMedia(db, "sha-dup")
+      const runDir = path.join(workDir, "run-dup")
+      const descriptor = [0.1, 0.2, -0.3, 0.4, 0.5, -0.6, 0.7, -0.8]
+      writeRun(runDir, [photo({ id: 0, sha256: "sha-dup" })], [face(descriptor, { id: 0, photoId: 0 })])
+
+      const dry = ingestRun({ db, runDir, modelVersion: "v1", replace: false, dryRun: true })
+      assert.equal(dry.facesInserted, 2, "the dry run counts what the real pass writes")
+
+      const result = ingestRun({ db, runDir, modelVersion: "v1", replace: false, dryRun: false })
+      assert.equal(result.matched, 1, "one photo")
+      assert.equal(result.duplicateRows, 1)
+      assert.equal(result.facesInserted, 2)
+      for (const mediaId of [official, guestCopy]) {
+        const n = /** @type {{ n: number }} */ (
+          db.prepare(`SELECT COUNT(*) AS n FROM media_faces WHERE media_id = ?`).get(mediaId)
+        )
+        assert.equal(n.n, 1, `media ${mediaId} received the face`)
+      }
+    } finally {
+      db.close()
+    }
+  })
+
   it("joins by sha256, inserts one media_faces row per face of a matched photo, and round-trips the descriptor", () => {
     const db = freshDb()
     try {

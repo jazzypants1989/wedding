@@ -194,7 +194,7 @@ import { bindExecutor, sql } from "../../db/sql.js"
 import { now } from "../../db/utils.js"
 import { boxIou } from "../../public/vision/detect.js"
 import { hashFile } from "../lib/import-manifest.js"
-import { verifyWeights } from "./verify-weights.js"
+import { verifyWeights, PINNED_WEIGHTS } from "./verify-weights.js"
 
 const USAGE = `Usage: node scripts/vision/export-face-work.js <command> [options]
 
@@ -244,12 +244,22 @@ export options:
 import options:
 
   --weights DIR              Directory holding the pinned .onnx weight files.
-                              REQUIRED. Verified against the digests in
-                              scripts/vision/verify-weights.js before the
-                              database is touched.
+                              REQUIRED unless --expect-engine. Verified against
+                              the digests in scripts/vision/verify-weights.js
+                              before the database is touched.
   --engine PATH              The vision engine module (tmp/rig/engine.mjs).
-                              REQUIRED. Hashed and compared to the engine the
-                              artifact was produced under.
+                              Hashed and compared to the engine the artifact
+                              was produced under. This or --expect-engine is
+                              REQUIRED.
+  --expect-engine SHA256     DIGEST-ONLY MODE, for a machine that will never
+                              run inference (the VPS): the engine digest this
+                              import must be under, from a local preflight or
+                              the pinned table, compared to the artifact's
+                              instead of hashing a file. --weights becomes
+                              optional; without it, the artifact's detector
+                              and embedder digests must each be pinned in
+                              verify-weights.js. Nothing borrowed needs to be
+                              on the machine (DECISIONS-vision.md §10).
   --match-overlap            REVIEWED EXCEPTION. Accept a target ingest whose
                               provenance is not equivalent, and match boxes by
                               mutual-best IoU instead of exactly. A detector
@@ -1266,12 +1276,23 @@ export function matchFaceWorkKeys(keys, targetRows, { overlap }) {
     return { matched, unmatched }
   }
 
-  /** @type {Map<string, Types.FaceWorkFaceRow[]>} */
+  // Candidates are DISTINCT boxes, each carrying every row that has it. Rows
+  // with the same hash and box are one face in the same picture stored on more
+  // than one media row (ingest fans a photo out to every row sharing its hash).
+  // As separate candidates they would tie on IoU and read as "ambiguous",
+  // dropping a confirmation that belongs on all of them.
+  /** @type {Map<string, Array<{ id: number, box: Types.FaceWorkBox, rows: Types.FaceWorkFaceRow[] }>>} */
   const targetsBySha = new Map()
-  for (const row of targetRows) {
-    const found = targetsBySha.get(row.sha256)
-    if (found) found.push(row)
-    else targetsBySha.set(row.sha256, [row])
+  for (const rows of grouped.values()) {
+    const first = rows.reduce((a, b) => (b.id < a.id ? b : a))
+    const candidate = {
+      id: first.id,
+      box: { x: first.bbox_x, y: first.bbox_y, w: first.bbox_w, h: first.bbox_h },
+      rows,
+    }
+    const found = targetsBySha.get(first.sha256)
+    if (found) found.push(candidate)
+    else targetsBySha.set(first.sha256, [candidate])
   }
   for (const list of targetsBySha.values()) list.sort((a, b) => a.id - b.id)
 
@@ -1296,16 +1317,7 @@ export function matchFaceWorkKeys(keys, targetRows, { overlap }) {
       continue
     }
     /** @type {number[][]} */
-    const iou = sources.map((source) =>
-      targets.map((target) =>
-        boxIou(source.box, {
-          x: target.bbox_x,
-          y: target.bbox_y,
-          w: target.bbox_w,
-          h: target.bbox_h,
-        }),
-      ),
-    )
+    const iou = sources.map((source) => targets.map((target) => boxIou(source.box, target.box)))
     const colStats = targets.map((_t, j) => bestAndSecond(iou.map((row) => row[j])))
 
     for (let i = 0; i < sources.length; i++) {
@@ -1326,7 +1338,7 @@ export function matchFaceWorkKeys(keys, targetRows, { overlap }) {
         unmatched.set(sources[i].key, "ambiguous")
         continue
       }
-      matched.set(sources[i].key, [targets[j]])
+      matched.set(sources[i].key, targets[j].rows)
     }
   }
 
@@ -1903,11 +1915,32 @@ export function applyFaceWorkImport({ db, plan, actor, note }) {
  * already run over the library has told you something true far too late.
  * @type {Types.faceWorkPreflight}
  */
-export async function faceWorkPreflight({ weightsDir, enginePath, expectedEngineSha256 }) {
+export async function faceWorkPreflight({
+  weightsDir,
+  enginePath,
+  expectedEngineSha256,
+  declaredEngineSha256 = null,
+  declaredWeightDigests = null,
+}) {
   /** @type {string[]} */
   const failures = []
 
-  if (!weightsDir) {
+  // Digest-only mode (DECISIONS-vision.md §10): on a machine that never runs
+  // inference there are no files whose bytes matter, so the check becomes the
+  // comparison the file hash would have fed — the same two strings, compared.
+  // The import's provenance diff still refuses a target ingest whose detector,
+  // embedder or engine digest differs from the artifact's.
+  if (!weightsDir && declaredWeightDigests) {
+    const pinned = new Set(PINNED_WEIGHTS.map((w) => w.sha256))
+    for (const digest of declaredWeightDigests) {
+      if (!pinned.has(digest)) {
+        failures.push(
+          `weights: the artifact was produced under ${String(digest).slice(0, 16)}…, which is not ` +
+            "a pinned digest in verify-weights.js. Pass --weights DIR to check files instead.",
+        )
+      }
+    }
+  } else if (!weightsDir) {
     failures.push("--weights DIR is required: the weight digests are the whole audit of files nobody can read.")
   }
   /** @type {import('./types.js').WeightCheck[]} */
@@ -1924,7 +1957,21 @@ export async function faceWorkPreflight({ weightsDir, enginePath, expectedEngine
 
   /** @type {string | null} */
   let engineSha256 = null
-  if (!enginePath) {
+  if (!enginePath && declaredEngineSha256 !== null) {
+    if (!isSha256Hex(declaredEngineSha256)) {
+      failures.push("--expect-engine must be a sha256: 64 lowercase hex characters.")
+    } else if (!expectedEngineSha256) {
+      failures.push("engine: the artifact carries no engine digest to compare --expect-engine against.")
+    } else if (declaredEngineSha256 !== expectedEngineSha256) {
+      failures.push(
+        `engine: --expect-engine is ${declaredEngineSha256.slice(0, 16)}… but the work was ` +
+          `produced under ${expectedEngineSha256.slice(0, 16)}…. A different engine draws ` +
+          `different boxes, and every confirmation here is keyed by one.`,
+      )
+    } else {
+      engineSha256 = declaredEngineSha256
+    }
+  } else if (!enginePath) {
     failures.push(
       "--engine PATH is required: the engine is the borrowed runtime that produced the boxes, " +
         "and an unverified one silently produces different ones.",
@@ -1952,6 +1999,17 @@ export async function faceWorkPreflight({ weightsDir, enginePath, expectedEngine
   }
 
   return { ok: failures.length === 0, failures, checks, engineSha256 }
+}
+
+/** 64 lowercase hex characters, checked without a regex.
+ *  @param {string} value */
+function isSha256Hex(value) {
+  if (value.length !== 64) return false
+  for (let i = 0; i < value.length; i++) {
+    const c = value.charCodeAt(i)
+    if (!((c >= 0x30 && c <= 0x39) || (c >= 0x61 && c <= 0x66))) return false
+  }
+  return true
 }
 
 // ---------------------------------------------------------------------------
@@ -2202,8 +2260,23 @@ export function parseFaceWorkArgs(argv) {
   }
 
   if (command === "import") {
-    if (!args.weights) return { valid: false, error: "import needs --weights DIR (the provisioning preflight)" }
-    if (!args.engine) return { valid: false, error: "import needs --engine PATH (the provisioning preflight)" }
+    if (args.engine && args.expectEngine) {
+      return {
+        valid: false,
+        error: "import takes --engine PATH or --expect-engine SHA256, not both (one engine check)",
+      }
+    }
+    if (!args.engine && !args.expectEngine) {
+      return {
+        valid: false,
+        error:
+          "import needs --engine PATH, or --expect-engine SHA256 on a machine that never runs " +
+          "inference (the provisioning preflight)",
+      }
+    }
+    if (!args.weights && !args.expectEngine) {
+      return { valid: false, error: "import needs --weights DIR (the provisioning preflight)" }
+    }
   }
   if (command === "preflight") {
     if (!args.weights) return { valid: false, error: "preflight needs --weights DIR" }
@@ -2277,17 +2350,27 @@ async function runImport(args) {
   const artifact = parsed.value
 
   // Preflight first, before the database is opened.
+  const digestOnly = !args.engine
   const pre = await faceWorkPreflight({
     weightsDir: args.weights,
     enginePath: args.engine,
     expectedEngineSha256: artifact.payload.ingest.engineSha256,
+    declaredEngineSha256: digestOnly ? args.expectEngine : null,
+    declaredWeightDigests: args.weights
+      ? null
+      : [artifact.payload.ingest.detectorSha256, artifact.payload.ingest.embedderSha256],
   })
   for (const failure of pre.failures) console.error(`preflight: ${failure}`)
   if (!pre.ok) {
     console.error("\nprovisioning preflight failed — nothing was read and nothing was written.")
     return 1
   }
-  console.log("preflight: weights and engine verified against the pinned digests.")
+  console.log(
+    digestOnly
+      ? "preflight: digest-only — the artifact's engine and weight digests match the pinned ones; " +
+          "no engine or weights were needed on this machine."
+      : "preflight: weights and engine verified against the pinned digests.",
+  )
 
   const db = openDatabase(resolveDbPath(args.database))
   try {

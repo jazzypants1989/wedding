@@ -105,6 +105,13 @@ bytes differ), which is not evidence it is safe: a guest re-uploading a
 photographer's file is the ordinary case that produces it, and production is
 where guests are. Fan out to every row sharing the hash, or refuse loudly.
 
+> **FIXED 2026-10-29: fan-out.** `loadMediaShaMap` now returns every row per
+> hash. Ingest writes a photo's faces to all of them and prints how many extra
+> rows it reached. `export-face-work.js import` matches one key to every row
+> carrying it, in `--match-overlap` mode too, where identical boxes used to tie
+> as "ambiguous". Tests: `ingest-faces.test.js` ("EVERY media row") and
+> `vision-export-face-work.test.js` ("fanned out to two media rows").
+
 ### `--replace` soft-deletes the rows confirmations point at
 **INHERITED.** Plan: D12.
 

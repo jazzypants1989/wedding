@@ -290,14 +290,25 @@ function withTransaction(db, fn) {
   }
 }
 
-/** sha256 (content hash) -> media.id, for every media row that has one. */
+/**
+ * sha256 (content hash) -> EVERY live media.id carrying it, ascending.
+ *
+ * A list, not one id: two rows can share a hash — a guest re-uploading a
+ * photographer's file is the ordinary case, and production is where guests
+ * are. This used to be `map.set(...)` per row, so the last row won and the
+ * others silently never received faces (TRAPS.md, "Duplicate content hashes").
+ */
 export function loadMediaShaMap() {
   /** @type {Array<{ id: number, source_sha256: string }>} */
   const rows = sql`SELECT id, source_sha256 FROM media
-    WHERE source_sha256 IS NOT NULL AND deleted_at IS NULL`.all()
-  /** @type {Map<string, number>} */
+    WHERE source_sha256 IS NOT NULL AND deleted_at IS NULL ORDER BY id`.all()
+  /** @type {Map<string, number[]>} */
   const map = new Map()
-  for (const row of rows) map.set(row.source_sha256, row.id)
+  for (const row of rows) {
+    const ids = map.get(row.source_sha256)
+    if (ids) ids.push(row.id)
+    else map.set(row.source_sha256, [row.id])
+  }
   return map
 }
 
@@ -393,23 +404,29 @@ export function scaleFaceGeometry(face, photo, media) {
 
 /**
  * Pure join: which photos in this run match an already-imported media row, by
- * content hash. No DB access — `mediaBySha` is supplied already queried, so
- * this is unit-testable with a plain Map.
+ * content hash. One pair per (photo, media row) — a photo whose bytes are in
+ * several rows fans out to all of them, and `duplicateRows` counts the rows
+ * beyond the first. No DB access — `mediaBySha` is supplied already queried,
+ * so this is unit-testable with a plain Map.
  * @type {Types.joinPhotosToMedia}
  */
 export function joinPhotosToMedia(photos, mediaBySha) {
   /** @type {Array<{ photo: Types.Session1PhotoRecord, mediaId: number }>} */
   const matched = []
   let unmatchedCount = 0
+  let matchedPhotos = 0
+  let duplicateRows = 0
   for (const photo of photos) {
-    const mediaId = mediaBySha.get(photo.sha256)
-    if (mediaId === undefined) {
+    const mediaIds = mediaBySha.get(photo.sha256)
+    if (!mediaIds || mediaIds.length === 0) {
       unmatchedCount++
       continue
     }
-    matched.push({ photo, mediaId })
+    matchedPhotos++
+    duplicateRows += mediaIds.length - 1
+    for (const mediaId of mediaIds) matched.push({ photo, mediaId })
   }
-  return { matched, unmatchedCount }
+  return { matched, matchedPhotos, duplicateRows, unmatchedCount }
 }
 
 /**
@@ -827,24 +844,30 @@ export function ingestRun({ db, runDir, modelVersion, replace, dryRun }) {
   const ingestInput = buildIngestInput({ timing: readTiming(runDir), faces, modelVersion })
 
   const mediaBySha = loadMediaShaMap()
-  const { matched, unmatchedCount } = joinPhotosToMedia(photos, mediaBySha)
+  const { matched, matchedPhotos, duplicateRows, unmatchedCount } = joinPhotosToMedia(photos, mediaBySha)
 
   const matchedMediaIds = [...new Set(matched.map((m) => m.mediaId))]
-  /** @type {Map<number, number>} */
-  const mediaIdByPhotoId = new Map(matched.map((m) => [m.photo.id, m.mediaId]))
+  /** Every media row a photo's faces go to — more than one when rows share
+   *  the photo's content hash. @type {Map<number, number[]>} */
+  const mediaIdsByPhotoId = new Map()
+  for (const { photo, mediaId } of matched) {
+    const ids = mediaIdsByPhotoId.get(photo.id)
+    if (ids) ids.push(mediaId)
+    else mediaIdsByPhotoId.set(photo.id, [mediaId])
+  }
   /** @type {Map<number, Types.Session1PhotoRecord>} */
   const photoById = new Map(matched.map((m) => [m.photo.id, m.photo]))
-  const facesToInsert = faces.filter((f) => mediaIdByPhotoId.has(f.photoId))
+  const facesToInsert = faces.filter((f) => mediaIdsByPhotoId.has(f.photoId))
 
   const frameMeta = frameMetadataForPhotos(photos)
   const cutoffs = routeCutoffs()
   const mediaDims = loadMediaDims()
 
-  /** Decode-space geometry -> the media row's original pixels, resolved once
-   *  so the dry run counts exactly what the real pass would write. */
-  const geometryFor = (/** @type {Types.Session1FaceRecord} */ face) => {
+  /** Decode-space geometry -> one media row's original pixels, resolved the
+   *  same way in both passes so the dry run counts exactly what the real pass
+   *  would write. Per row: rows sharing a hash may record different dimensions. */
+  const geometryFor = (/** @type {Types.Session1FaceRecord} */ face, /** @type {number} */ mediaId) => {
     const photo = photoById.get(face.photoId)
-    const mediaId = /** @type {number} */ (mediaIdByPhotoId.get(face.photoId))
     return photo
       ? scaleFaceGeometry(face, photo, mediaDims.get(mediaId) ?? null)
       : /** @type {const} */ ({ kind: "mismatch", box: null, landmarks: null })
@@ -865,14 +888,16 @@ export function ingestRun({ db, runDir, modelVersion, replace, dryRun }) {
     assertModelVersionInvariant(modelVersion, ingestInput)
     if (!replace) assertNoLiveCliFaces(matchedMediaIds, modelVersion)
     for (const face of facesToInsert) {
-      const geometry = geometryFor(face)
-      if (geometry.kind === "mismatch") {
-        facesSkippedAspect++
-        continue
+      for (const mediaId of /** @type {number[]} */ (mediaIdsByPhotoId.get(face.photoId))) {
+        const geometry = geometryFor(face, mediaId)
+        if (geometry.kind === "mismatch") {
+          facesSkippedAspect++
+          continue
+        }
+        if (geometry.kind === "unscaled") facesUnscaled++
+        facesInserted++
+        if (gradeFace(face, cutoffs)) facesGraded++
       }
-      if (geometry.kind === "unscaled") facesUnscaled++
-      facesInserted++
-      if (gradeFace(face, cutoffs)) facesGraded++
     }
   } else {
     withTransaction(db, () => {
@@ -914,37 +939,39 @@ export function ingestRun({ db, runDir, modelVersion, replace, dryRun }) {
         }
       }
       for (const face of facesToInsert) {
-        const mediaId = /** @type {number} */ (mediaIdByPhotoId.get(face.photoId))
-        const geometry = geometryFor(face)
-        if (geometry.kind === "mismatch") {
-          facesSkippedAspect++
-          continue
+        for (const mediaId of /** @type {number[]} */ (mediaIdsByPhotoId.get(face.photoId))) {
+          const geometry = geometryFor(face, mediaId)
+          if (geometry.kind === "mismatch") {
+            facesSkippedAspect++
+            continue
+          }
+          if (geometry.kind === "unscaled") facesUnscaled++
+          facesInserted++
+          const route = gradeFace(face, cutoffs)
+          if (route) facesGraded++
+          insertFace({
+            mediaId,
+            bbox: geometry.box,
+            landmarks: geometry.landmarks,
+            signals: face.signals ?? null,
+            descriptor:
+              face.descriptor && face.descriptor.length > 0
+                ? descriptorToBlob(Float32Array.from(face.descriptor))
+                : null,
+            modelVersion,
+            source: "cli",
+            route,
+            ingestId,
+          })
         }
-        if (geometry.kind === "unscaled") facesUnscaled++
-        facesInserted++
-        const route = gradeFace(face, cutoffs)
-        if (route) facesGraded++
-        insertFace({
-          mediaId,
-          bbox: geometry.box,
-          landmarks: geometry.landmarks,
-          signals: face.signals ?? null,
-          descriptor:
-            face.descriptor && face.descriptor.length > 0
-              ? descriptorToBlob(Float32Array.from(face.descriptor))
-              : null,
-          modelVersion,
-          source: "cli",
-          route,
-          ingestId,
-        })
       }
     })
   }
 
   return {
     photosInRun: photos.length,
-    matched: matched.length,
+    matched: matchedPhotos,
+    duplicateRows,
     unmatched: unmatchedCount,
     facesInserted,
     facesGraded,
@@ -1118,6 +1145,11 @@ async function main() {
       })
       console.log(`photos in run: ${result.photosInRun}`)
       console.log(`matched to media: ${result.matched}`)
+      if (result.duplicateRows > 0) {
+        console.log(
+          `also written to media rows sharing a matched photo's content hash: ${result.duplicateRows}`,
+        )
+      }
       console.log(`unmatched (no sha match): ${result.unmatched}`)
       console.log(`faces inserted: ${result.facesInserted}` + (args.dryRun ? " (dry run — nothing written)" : ""))
       console.log(`faces graded for the queue: ${result.facesGraded}`)
