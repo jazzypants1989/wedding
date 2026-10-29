@@ -84,17 +84,27 @@ describe("db/sessions", () => {
       )
     })
 
-    it("invalidates all previous sessions (single-admin)", () => {
+    it("keeps earlier sessions alive (several devices/tabs at once)", () => {
       const first = createSession()
       const second = createSession()
+      assert.ok(getSession(first.token), "a new login must not sign out the first")
+      assert.ok(getSession(second.token))
+    })
 
-      // First session should be deleted
-      const firstSession = getSession(first.token)
-      assert.strictEqual(firstSession, null, "first session should be gone")
+    it("caps concurrent sessions, signing out the oldest", () => {
+      const sessions = Array.from({ length: SESSION.MAX_CONCURRENT + 1 }, () => createSession())
+      assert.strictEqual(getSession(sessions[0].token), null, "oldest is signed out")
+      for (const s of sessions.slice(1)) assert.ok(getSession(s.token))
+    })
 
-      // Second session should be valid
-      const secondSession = getSession(second.token)
-      assert.ok(secondSession, "second session should exist")
+    it("prunes expired sessions at login", () => {
+      const old = createSession()
+      getDb()
+        .prepare("UPDATE sessions SET expires_at = ? WHERE token = ?")
+        .run("2000-01-01T00:00:00.000Z", hashToken(old.token))
+      createSession()
+      const row = getDb().prepare("SELECT 1 FROM sessions WHERE token = ?").get(hashToken(old.token))
+      assert.strictEqual(row, undefined)
     })
 
     it("stores hashed token in the database", () => {

@@ -110,6 +110,7 @@ export const SESSION = Object.freeze({
   DURATION_MS: 24 * 60 * 60 * 1000, // 24 hours absolute max
   IDLE_TIMEOUT_MS: 30 * 60 * 1000, // 30 minutes idle timeout
   CSRF_ROTATION_MS: 60 * 60 * 1000, // 1 hour CSRF token rotation
+  MAX_CONCURRENT: 5, // admin logins kept at once; a 6th signs out the oldest
 })
 
 export const GUEST_SESSION = Object.freeze({

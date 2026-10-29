@@ -121,6 +121,8 @@ export const SESSION: {
   readonly DURATION_MS: number
   readonly IDLE_TIMEOUT_MS: number
   readonly CSRF_ROTATION_MS: number
+  /** Admin sessions kept at once; a new login beyond it ends the oldest. */
+  readonly MAX_CONCURRENT: number
 }
 
 export const GUEST_SESSION: {

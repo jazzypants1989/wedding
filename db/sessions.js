@@ -13,8 +13,11 @@ export function hashToken(token) {
 
 /** @type {Types.createSession} */
 export function createSession() {
-  // Single-admin system: invalidate all previous sessions on new login
-  sql`DELETE FROM sessions`.run()
+  // Several concurrent admin sessions (the couple on two devices, a second tab,
+  // a review script) — a new login used to delete every other session, which
+  // silently signed out whoever was already working. Expired rows go now; idle
+  // ones are dropped on their next lookup; the cap below bounds the table.
+  sql`DELETE FROM sessions WHERE expires_at < ${new Date().toISOString()}`.run()
 
   const token = crypto.randomBytes(32).toString("hex")
   const tokenHash = hashToken(token) // Hash before storing
@@ -24,6 +27,10 @@ export function createSession() {
 
   sql`INSERT INTO sessions (token, csrf_token, expires_at, csrf_rotated_at)
     VALUES (${tokenHash}, ${csrf_token}, ${expires_at}, ${timestamp})`.run()
+
+  // Keep only the newest MAX_CONCURRENT; the oldest login is the one signed out.
+  sql`DELETE FROM sessions WHERE rowid NOT IN
+    (SELECT rowid FROM sessions ORDER BY rowid DESC LIMIT ${SESSION.MAX_CONCURRENT})`.run()
 
   return { token, csrf_token, expires_at } // Return plaintext to client
 }
