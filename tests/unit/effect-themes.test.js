@@ -12,7 +12,12 @@ import {
   EFFECT_THEMES,
 } from "../../public/effects/themes.js"
 import { getEffectiveConfig, getDefaultConfig, EFFECT_CONFIGS } from "../../public/effects/config.js"
-import { EFFECT_DEFINITIONS } from "../../public/effects/registry.js"
+import {
+  EFFECT_DEFINITIONS,
+  EFFECT_PAGES,
+  effectRunsOn,
+  effectPageFromPath,
+} from "../../public/effects/registry.js"
 import { LABELS } from "../../public/effects/control-meta.js"
 import { THEME_IDS } from "../../api/admin/site-content.js"
 import { THANK_YOU_THEME_VALUES } from "../../types.js"
@@ -217,4 +222,29 @@ test("the shipped default theme id agrees across every source of truth", () => {
     EFFECT_THEMES.some((t) => t.id === DEFAULT_THEME_ID),
     "DEFAULT_THEME_ID is a real theme",
   )
+})
+
+test("registry pages lists name only known pages, and landing set pieces stay home", () => {
+  for (const def of EFFECT_DEFINITIONS) {
+    for (const page of def.pages || []) {
+      assert.ok(EFFECT_PAGES.includes(page), `${def.id}: unknown page "${page}"`)
+    }
+  }
+  const disco = EFFECT_DEFINITIONS.find((d) => d.id === "disco")
+  assert.ok(disco)
+  assert.equal(effectRunsOn(disco, "home"), true)
+  assert.equal(effectRunsOn(disco, "guestbook"), false)
+  const unscoped = EFFECT_DEFINITIONS.find((d) => !d.pages)
+  assert.ok(unscoped)
+  for (const page of EFFECT_PAGES) assert.equal(effectRunsOn(unscoped, page), true)
+})
+
+test("effectPageFromPath maps guest pages and rejects everything else", () => {
+  assert.equal(effectPageFromPath("/"), "home")
+  assert.equal(effectPageFromPath("/guestbook"), "guestbook")
+  assert.equal(effectPageFromPath("/guestbook/"), "guestbook")
+  assert.equal(effectPageFromPath("/memory-book"), "memory-book")
+  assert.equal(effectPageFromPath("/home"), null)
+  assert.equal(effectPageFromPath("/admin"), null)
+  assert.equal(effectPageFromPath("/studio"), null)
 })

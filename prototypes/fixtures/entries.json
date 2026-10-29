@@ -1,0 +1,469 @@
+{
+  "_note": "Synthetic, fictional guestbook entries for design sketches. Shape: GuestbookFeedResponse (public/pages/guestbook/types.d.ts). Same data in every sketch so they compare fairly. No real guest appears here.",
+  "couple": {
+    "display": "Jordana & Jesse",
+    "date": "2026-04-26",
+    "location": "Portland, OR"
+  },
+  "entries": [
+    {
+      "id": 132,
+      "message": "Call your mother. Both of you. Love, Auntie Lou",
+      "author_name": "Auntie Lou",
+      "author_trusted": true,
+      "status": "approved",
+      "created_at": "2026-05-01 16:42:00",
+      "is_own": false,
+      "reactions": {},
+      "comment_count": 0
+    },
+    {
+      "id": 131,
+      "message": "A todos los años que vienen. Congrats, amigos.",
+      "author_name": "Rafael Domínguez-Ortiz",
+      "author_trusted": true,
+      "status": "approved",
+      "created_at": "2026-05-01 13:00:00",
+      "is_own": false,
+      "reactions": {
+        "heart": {
+          "count": 4,
+          "mine": true
+        }
+      },
+      "comment_count": 0
+    },
+    {
+      "id": 130,
+      "message": "Thank you for feeding us so well. I am still thinking about the peach thing.",
+      "author_name": "Nadia",
+      "author_trusted": true,
+      "status": "approved",
+      "created_at": "2026-05-01 09:18:00",
+      "is_own": false,
+      "reactions": {},
+      "comment_count": 0
+    },
+    {
+      "id": 129,
+      "message": "Here's to the two most stubborn people I know finally agreeing on something.",
+      "author_name": "Jasper Whitlock",
+      "author_trusted": false,
+      "status": "approved",
+      "created_at": "2026-05-01 05:36:00",
+      "is_own": false,
+      "reactions": {},
+      "comment_count": 1
+    },
+    {
+      "id": 128,
+      "message": "Wishing you a marriage as cozy as that venue on a rainy afternoon.",
+      "author_name": "Ingrid",
+      "author_trusted": true,
+      "status": "approved",
+      "created_at": "2026-05-01 01:54:00",
+      "is_own": false,
+      "reactions": {
+        "heart": {
+          "count": 8,
+          "mine": false
+        }
+      },
+      "comment_count": 0
+    },
+    {
+      "id": 127,
+      "message": "Your vows were so you. I will be thinking about the line about the lighthouse for weeks.",
+      "author_name": "Simone Achebe",
+      "author_trusted": true,
+      "status": "approved",
+      "created_at": "2026-04-30 22:12:00",
+      "is_own": false,
+      "reactions": {},
+      "comment_count": 0
+    },
+    {
+      "id": 126,
+      "message": "Who let Pat near the microphone? Pat did. Sorry about the song. Not sorry. Love you.",
+      "author_name": "Cousin Pat",
+      "author_trusted": true,
+      "status": "approved",
+      "created_at": "2026-04-30 18:30:00",
+      "is_own": false,
+      "reactions": {},
+      "comment_count": 0
+    },
+    {
+      "id": 125,
+      "message": "Omedetou gozaimasu! A wonderful celebration.",
+      "author_name": "Hiroshi Tanaka",
+      "author_trusted": true,
+      "status": "approved",
+      "created_at": "2026-04-30 14:48:00",
+      "is_own": false,
+      "reactions": {
+        "heart": {
+          "count": 5,
+          "mine": true
+        }
+      },
+      "comment_count": 0
+    },
+    {
+      "id": 124,
+      "message": "I liked the cake and the bubbles and when you kissed it was gross but nice",
+      "author_name": "Little Maya (age 7)",
+      "author_trusted": false,
+      "status": "approved",
+      "created_at": "2026-04-30 11:06:00",
+      "is_own": false,
+      "reactions": {},
+      "comment_count": 0
+    },
+    {
+      "id": 123,
+      "message": "❤️",
+      "author_name": "Ezra",
+      "author_trusted": true,
+      "status": "approved",
+      "created_at": "2026-04-30 07:24:00",
+      "is_own": false,
+      "reactions": {},
+      "comment_count": 0
+    },
+    {
+      "id": 122,
+      "message": "Forty-one years in, here is what we know: be kind first, right second. Congratulations, darlings.",
+      "author_name": "Moira & Desmond",
+      "author_trusted": true,
+      "status": "approved",
+      "created_at": "2026-04-30 03:42:00",
+      "is_own": false,
+      "reactions": {
+        "heart": {
+          "count": 2,
+          "mine": false
+        }
+      },
+      "comment_count": 0
+    },
+    {
+      "id": 121,
+      "message": "I caught the bouquet. Everyone saw. This is legally binding now.",
+      "author_name": "Zoe Kaplan",
+      "author_trusted": true,
+      "status": "approved",
+      "created_at": "2026-04-30 00:00:00",
+      "is_own": false,
+      "reactions": {},
+      "comment_count": 2
+    },
+    {
+      "id": 120,
+      "message": "Taco truck at midnight = genius. Ten out of ten.",
+      "author_name": "Tomás",
+      "author_trusted": true,
+      "status": "approved",
+      "created_at": "2026-04-29 20:18:00",
+      "is_own": false,
+      "reactions": {},
+      "comment_count": 0
+    },
+    {
+      "id": 119,
+      "message": "So much love in one room. Thank you for the reminder of what matters.",
+      "author_name": "Annika Sørensen",
+      "author_trusted": false,
+      "status": "approved",
+      "created_at": "2026-04-29 16:36:00",
+      "is_own": false,
+      "reactions": {
+        "heart": {
+          "count": 6,
+          "mine": true
+        }
+      },
+      "comment_count": 0
+    },
+    {
+      "id": 118,
+      "message": "A marriage, like a good argument, improves with careful revision. Congratulations.",
+      "author_name": "Professor Ibsen",
+      "author_trusted": true,
+      "status": "approved",
+      "created_at": "2026-04-29 12:54:00",
+      "is_own": false,
+      "reactions": {},
+      "comment_count": 0
+    },
+    {
+      "id": 117,
+      "message": "The sparkler exit!!! I got the best video. Sending it.",
+      "author_name": "Wren",
+      "author_trusted": true,
+      "status": "approved",
+      "created_at": "2026-04-29 09:12:00",
+      "is_own": false,
+      "reactions": {},
+      "comment_count": 1
+    },
+    {
+      "id": 116,
+      "message": "Felicidades a los dos. Que el amor siempre los acompañe. 💛",
+      "author_name": "Luis & Ana Ruiz",
+      "author_trusted": true,
+      "status": "approved",
+      "created_at": "2026-04-29 05:30:00",
+      "is_own": false,
+      "reactions": {
+        "heart": {
+          "count": 3,
+          "mine": false
+        }
+      },
+      "comment_count": 0
+    },
+    {
+      "id": 115,
+      "message": "To many more years of you finishing each other's sandwiches.",
+      "author_name": "Clementine Park",
+      "author_trusted": true,
+      "status": "approved",
+      "created_at": "2026-04-29 01:48:00",
+      "is_own": false,
+      "reactions": {},
+      "comment_count": 0
+    },
+    {
+      "id": 114,
+      "message": "lol the dog in the bow tie",
+      "author_name": "Dev",
+      "author_trusted": false,
+      "status": "approved",
+      "created_at": "2026-04-28 22:06:00",
+      "is_own": true,
+      "reactions": {},
+      "comment_count": 0
+    },
+    {
+      "id": 113,
+      "message": "Wishing you a lifetime of adventures and a house full of good books.",
+      "author_name": "Fatima Al-Sayed",
+      "author_trusted": true,
+      "status": "approved",
+      "created_at": "2026-04-28 18:24:00",
+      "is_own": false,
+      "reactions": {
+        "heart": {
+          "count": 7,
+          "mine": true
+        }
+      },
+      "comment_count": 0
+    },
+    {
+      "id": 112,
+      "message": "I knew it the first time you brought her to Thanksgiving. Welcome to the family officially, sweetheart.",
+      "author_name": "Grandma June",
+      "author_trusted": true,
+      "status": "approved",
+      "created_at": "2026-04-28 14:42:00",
+      "is_own": false,
+      "reactions": {},
+      "comment_count": 0
+    },
+    {
+      "id": 111,
+      "message": "That first-dance dip was ILLEGAL. Respect.",
+      "author_name": "Mx. Rowan Hale",
+      "author_trusted": true,
+      "status": "approved",
+      "created_at": "2026-04-28 11:00:00",
+      "is_own": false,
+      "reactions": {},
+      "comment_count": 0
+    },
+    {
+      "id": 110,
+      "message": "Cheers to you two 🥂",
+      "author_name": "Oskar",
+      "author_trusted": true,
+      "status": "approved",
+      "created_at": "2026-04-28 07:18:00",
+      "is_own": false,
+      "reactions": {
+        "heart": {
+          "count": 4,
+          "mine": false
+        }
+      },
+      "comment_count": 0
+    },
+    {
+      "id": 109,
+      "message": "Dear J & J,\n\nWe have watched you two grow together over so many years, through moves and new jobs and the great sourdough phase of 2020. Seeing you stand up there today, so obviously right for each other, was one of the happiest moments we have had in a long time.\n\nHere is our advice, for what it is worth: keep laughing at the same dumb things. Keep a running list of places you want to go and actually go to one every year. Say thank you for the small stuff.\n\nAll our love, always.",
+      "author_name": "The Abernathy-Nguyen Family",
+      "author_trusted": false,
+      "status": "approved",
+      "created_at": "2026-04-28 03:36:00",
+      "is_own": false,
+      "reactions": {},
+      "comment_count": 2
+    },
+    {
+      "id": 108,
+      "message": "May your coffee be strong and your Mondays be short.",
+      "author_name": "Henrietta \"Hen\" Vasquez",
+      "author_trusted": true,
+      "status": "approved",
+      "created_at": "2026-04-27 23:54:00",
+      "is_own": false,
+      "reactions": {},
+      "comment_count": 0
+    },
+    {
+      "id": 107,
+      "message": "I have been to a lot of weddings and this was the first one where I danced to every single song. My feet hate you. My heart loves you.",
+      "author_name": "Bea",
+      "author_trusted": true,
+      "status": "approved",
+      "created_at": "2026-04-27 20:12:00",
+      "is_own": false,
+      "reactions": {
+        "heart": {
+          "count": 8,
+          "mine": true
+        }
+      },
+      "comment_count": 0
+    },
+    {
+      "id": 106,
+      "message": "🎉🎉🎉",
+      "author_name": "Kenji Morales",
+      "author_trusted": true,
+      "status": "approved",
+      "created_at": "2026-04-27 16:30:00",
+      "is_own": false,
+      "reactions": {},
+      "comment_count": 0
+    },
+    {
+      "id": 105,
+      "message": "What a beautiful day for a beautiful couple. The flowers! The light! The cake!",
+      "author_name": "Dolores Fairweather",
+      "author_trusted": true,
+      "status": "approved",
+      "created_at": "2026-04-27 12:48:00",
+      "is_own": false,
+      "reactions": {},
+      "comment_count": 1
+    },
+    {
+      "id": 104,
+      "message": "Remember: never go to bed angry. Stay up and fight. (Kidding.) Love you both.",
+      "author_name": "Uncle Ray",
+      "author_trusted": false,
+      "status": "approved",
+      "created_at": "2026-04-27 09:06:00",
+      "is_own": false,
+      "reactions": {
+        "heart": {
+          "count": 5,
+          "mine": false
+        }
+      },
+      "comment_count": 0
+    },
+    {
+      "id": 103,
+      "message": "We cried during the vows and then again during the toast. Thank you for letting us be part of it.",
+      "author_name": "Priya & Sam",
+      "author_trusted": true,
+      "status": "approved",
+      "created_at": "2026-04-27 05:24:00",
+      "is_own": false,
+      "reactions": {},
+      "comment_count": 0
+    },
+    {
+      "id": 102,
+      "message": "Best. Wedding. Ever.",
+      "author_name": "Theo Lindqvist",
+      "author_trusted": true,
+      "status": "approved",
+      "created_at": "2026-04-27 01:42:00",
+      "is_own": false,
+      "reactions": {},
+      "comment_count": 0
+    },
+    {
+      "id": 101,
+      "message": "Congratulations!!",
+      "author_name": "Marguerite Okafor",
+      "author_trusted": true,
+      "status": "approved",
+      "created_at": "2026-04-26 22:00:00",
+      "is_own": false,
+      "reactions": {
+        "heart": {
+          "count": 2,
+          "mine": true
+        }
+      },
+      "comment_count": 0
+    }
+  ],
+  "nextCursor": null,
+  "pinned": [
+    {
+      "id": 109,
+      "message": "Dear J & J,\n\nWe have watched you two grow together over so many years, through moves and new jobs and the great sourdough phase of 2020. Seeing you stand up there today, so obviously right for each other, was one of the happiest moments we have had in a long time.\n\nHere is our advice, for what it is worth: keep laughing at the same dumb things. Keep a running list of places you want to go and actually go to one every year. Say thank you for the small stuff.\n\nAll our love, always.",
+      "author_name": "The Abernathy-Nguyen Family",
+      "author_trusted": false,
+      "status": "approved",
+      "created_at": "2026-04-28 03:36:00",
+      "is_own": false,
+      "reactions": {},
+      "comment_count": 2
+    },
+    {
+      "id": 122,
+      "message": "Forty-one years in, here is what we know: be kind first, right second. Congratulations, darlings.",
+      "author_name": "Moira & Desmond",
+      "author_trusted": true,
+      "status": "approved",
+      "created_at": "2026-04-30 03:42:00",
+      "is_own": false,
+      "reactions": {
+        "heart": {
+          "count": 2,
+          "mine": false
+        }
+      },
+      "comment_count": 0
+    },
+    {
+      "id": 112,
+      "message": "I knew it the first time you brought her to Thanksgiving. Welcome to the family officially, sweetheart.",
+      "author_name": "Grandma June",
+      "author_trusted": true,
+      "status": "approved",
+      "created_at": "2026-04-28 14:42:00",
+      "is_own": false,
+      "reactions": {},
+      "comment_count": 0
+    },
+    {
+      "id": 103,
+      "message": "We cried during the vows and then again during the toast. Thank you for letting us be part of it.",
+      "author_name": "Priya & Sam",
+      "author_trusted": true,
+      "status": "approved",
+      "created_at": "2026-04-27 05:24:00",
+      "is_own": false,
+      "reactions": {},
+      "comment_count": 0
+    }
+  ]
+}

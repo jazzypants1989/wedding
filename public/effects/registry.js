@@ -8,6 +8,8 @@
  */
 /** @import * as Types from './types.js' */
 
+export { EFFECT_PAGES, effectPageFromPath } from "./pages.js"
+
 import { createDiscoBall } from "./disco-ball.js"
 import { createCursorTrail } from "./cursor-trail.js"
 import { createMermaidShimmer } from "./mermaid-shimmer.js"
@@ -38,20 +40,26 @@ import { createConfettiDrift } from "./confetti-drift.js"
 import { createInkSparkle } from "./ink-sparkle.js"
 import { createTiltDepth } from "./tilt-depth.js"
 
+/** Landing-page set pieces: they target landing DOM (welcome copy, couple
+ *  photo, disco floor), so they sit out on every other page.
+ *  @type {readonly Types.EffectPage[]} */
+const HOME_ONLY = ["home"]
+
 /** Registry of every effect, mapping its ID to its factory. A theme selects a
- *  subset by id; unlisted ids never run.
+ *  subset by id; unlisted ids never run. `pages` limits where an effect may run
+ *  (absent = everywhere the manager starts); see docs/post-wedding/DESIGN-SLOTS.md.
  *  @type {Types.EffectDefinition[]} */
 export const EFFECT_DEFINITIONS = [
-  { id: "disco", create: createDiscoBall },
+  { id: "disco", create: createDiscoBall, pages: HOME_ONLY },
   { id: "cursor", create: createCursorTrail },
   { id: "shimmer", create: createMermaidShimmer },
   { id: "dividers", create: createSparkleDividers },
   { id: "namespark", create: createNameShimmer },
-  { id: "textglow", create: createTextSparkle },
+  { id: "textglow", create: createTextSparkle, pages: HOME_ONLY },
   { id: "parallaxsparkles", create: createParallaxSparkles },
-  { id: "entrance", create: createGrandEntrance },
-  { id: "spotlight", create: createDiscoSpotlight },
-  { id: "reflections", create: createMirrorReflections },
+  { id: "entrance", create: createGrandEntrance, pages: HOME_ONLY },
+  { id: "spotlight", create: createDiscoSpotlight, pages: HOME_ONLY },
+  { id: "reflections", create: createMirrorReflections, pages: HOME_ONLY },
   { id: "petals", create: createRosePetals },
   { id: "hearts", create: createFloatingHearts },
   { id: "dust", create: createGoldenDust },
@@ -70,5 +78,10 @@ export const EFFECT_DEFINITIONS = [
   { id: "frameglint", create: createFrameGlint },
   { id: "confettidrift", create: createConfettiDrift },
   { id: "inksparkle", create: createInkSparkle },
-  { id: "tiltdepth", create: createTiltDepth },
+  { id: "tiltdepth", create: createTiltDepth, pages: HOME_ONLY },
 ]
+
+/** @type {Types.effectRunsOn} */
+export function effectRunsOn(def, page) {
+  return !def.pages || def.pages.includes(page)
+}

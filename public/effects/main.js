@@ -5,10 +5,9 @@
  */
 /** @import * as Types from './types.js' */
 
-import { EFFECT_DEFINITIONS } from "./registry.js"
+import { EFFECT_DEFINITIONS, effectRunsOn } from "./registry.js"
 import { getEffectiveConfig } from "./config.js"
 import { getActiveTheme } from "./themes.js"
-import { getTypedElement } from "../pages/utils.js"
 import { prefersReducedMotion } from "./effect-utils.js"
 
 // Re-exported so existing importers (the studio, effect factories) keep resolving
@@ -20,6 +19,11 @@ export { isMobile, prefersReducedMotion, randomFrom, randomBetween, cancellableD
 const activeEffects = new Map()
 
 let managerActive = false
+
+/** The page that started the manager; filters out entries whose `pages` list
+ *  excludes it (landing-page set pieces, off the landing page).
+ *  @type {Types.EffectPage} */
+let managerPage = "home"
 
 // Monotonic token identifying the current staggered start-up chain. Bumped on
 // every startEffects() and whenever effects are torn down, so a chain queued via
@@ -45,7 +49,7 @@ function startEffects() {
   // preserving registry order and silently skipping ids the theme names but
   // that aren't registered (e.g. a theme referencing a not-yet-built effect).
   const allowed = new Set(getActiveTheme().effectIds)
-  const defs = EFFECT_DEFINITIONS.filter((d) => allowed.has(d.id))
+  const defs = EFFECT_DEFINITIONS.filter((d) => allowed.has(d.id) && effectRunsOn(d, managerPage))
 
   const gen = ++startGeneration
 
@@ -69,10 +73,13 @@ function startEffects() {
 }
 
 /** @type {Types.initEffectManager} */
-export function initEffectManager() {
+export function initEffectManager(options) {
   if (prefersReducedMotion()) return
-  const link = getTypedElement("effects-css", HTMLLinkElement)
-  if (link) link.media = "all"
+  managerPage = options?.page ?? "home"
+  // Flip the deferred stylesheet on. Optional: a page that loads effects.css
+  // eagerly has no #effects-css to flip.
+  const link = document.getElementById("effects-css")
+  if (link instanceof HTMLLinkElement) link.media = "all"
   managerActive = true
   startEffects()
 }

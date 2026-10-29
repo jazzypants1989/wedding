@@ -8,6 +8,19 @@
 export interface EffectDefinition {
   id: string
   create: (config?: Record<string, unknown>) => EffectInstance
+  /** Guest pages this effect may run on. Absent = every page that starts the
+   *  manager. `["home"]` marks a landing-page set piece (it targets landing DOM
+   *  such as the couple photo or the welcome copy). See DESIGN-SLOTS.md. */
+  pages?: readonly EffectPage[]
+}
+
+/** A guest page the effect manager can run on. `home` is the landing page. */
+export type EffectPage = "home" | "guestbook" | "gallery" | "rsvp" | "memory-book"
+
+/** Options for initEffectManager. */
+export interface EffectManagerOptions {
+  /** Which page is starting the manager. Default `"home"`. */
+  page?: EffectPage
 }
 
 /**
@@ -15,8 +28,16 @@ export interface EffectDefinition {
  * Skips initialization if user prefers reduced motion.
  * @example
  * initEffectManager();
+ * initEffectManager({ page: "guestbook" });
  */
-export function initEffectManager(): void
+export function initEffectManager(options?: EffectManagerOptions): void
+
+/** Whether a registry entry may run on a page (its `pages` list, else anywhere). */
+export function effectRunsOn(def: EffectDefinition, page: EffectPage): boolean
+
+/** The effect page for a URL path (`/` → home, `/guestbook` → guestbook), or
+ *  null for a path that is not an effect page. */
+export function effectPageFromPath(pathname: string): EffectPage | null
 
 /**
  * Stop all running effects and clear the registry.
