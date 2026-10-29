@@ -1,0 +1,304 @@
+/* Archipelago — the cartography. Shared by guestbook and book.
+   Palette param via data-ar-palette; default is theme tokens. */
+
+:root {
+  --ar-sea: color-mix(in oklab, var(--fx-cool-1) 9%, var(--color-card-bg));
+  --ar-ink: color-mix(in oklab, var(--color-text) 40%, var(--color-text-muted));
+  --ar-water: color-mix(in oklab, var(--fx-cool-1) 55%, var(--ar-sea));
+  --ar-land: color-mix(in oklab, var(--fx-gold-3) 22%, var(--color-card-bg));
+  --ar-h0: color-mix(in oklab, var(--fx-leaf-3) 26%, var(--ar-land));
+  --ar-h1: color-mix(in oklab, var(--fx-leaf-3) 42%, var(--ar-land));
+  --ar-h2: color-mix(in oklab, var(--fx-leaf-1) 45%, var(--ar-land));
+  --ar-h3: color-mix(in oklab, var(--fx-leaf-2) 55%, var(--ar-land));
+  --ar-accent: var(--effect-brand);
+  --ar-fringe: 1;
+}
+
+/* "vellum": an antique chart — sepia ink on parchment. */
+:root[data-ar-palette="vellum"] {
+  --ar-sea: light-dark(#efe4c8, #2b2418);
+  --ar-ink: light-dark(#5a4128, #d8c29a);
+  --ar-water: light-dark(#8a7550, #a08a62);
+  --ar-land: light-dark(#e6d3a6, #3d3220);
+  --ar-h0: light-dark(#dcc495, #4a3c26);
+  --ar-h1: light-dark(#cfb07c, #57472c);
+  --ar-h2: light-dark(#bf9a66, #655233);
+  --ar-h3: light-dark(#a97f50, #735e3b);
+  --ar-accent: light-dark(#9b3b25, #d0785c);
+}
+/* "admiralty": a modern nautical chart — buff land, blue shallows. */
+:root[data-ar-palette="admiralty"] {
+  --ar-sea: light-dark(#ffffff, #0f1a26);
+  --ar-ink: light-dark(#1f2f44, #c9d7e8);
+  --ar-water: light-dark(#5d8cc0, #6f9fd4);
+  --ar-land: light-dark(#f2e3b3, #4a4128);
+  --ar-h0: light-dark(#ead6a0, #554a2e);
+  --ar-h1: light-dark(#e0c78c, #605434);
+  --ar-h2: light-dark(#d5b879, #6b5e3a);
+  --ar-h3: light-dark(#c9a866, #776841);
+  --ar-accent: light-dark(#b5227a, #ff7ab8);
+}
+
+.ar-map,
+.ar-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.ar-sea {
+  fill: var(--ar-sea);
+}
+.ar-wl {
+  fill: none;
+  stroke: var(--ar-water);
+  stroke-width: 0.7;
+}
+.ar-wl1 {
+  opacity: 0.6;
+}
+.ar-wl2 {
+  opacity: 0.35;
+  stroke-dasharray: 2 2;
+}
+.ar-land {
+  fill: var(--ar-land);
+  fill-rule: evenodd;
+}
+.ar-land.ar-fav {
+  fill: color-mix(in oklab, var(--ar-accent) 16%, var(--ar-land));
+}
+.ar-hill {
+  fill-rule: evenodd;
+  stroke: var(--ar-ink);
+  stroke-width: 0.35;
+  stroke-opacity: 0.6;
+}
+.ar-h0 { fill: var(--ar-h0); }
+.ar-h1 { fill: var(--ar-h1); }
+.ar-h2 { fill: var(--ar-h2); }
+.ar-h3 { fill: var(--ar-h3); }
+.ar-coast {
+  fill: none;
+  stroke: var(--ar-ink);
+  stroke-width: 1.1;
+  stroke-linejoin: round;
+}
+.ar-peak {
+  fill: var(--ar-ink);
+}
+.ar-tower {
+  fill: var(--ar-ink);
+}
+.ar-lamp {
+  fill: var(--fx-gold-1);
+  stroke: var(--ar-ink);
+  stroke-width: 0.4;
+}
+.ar-beam {
+  fill: var(--fx-gold-1);
+  opacity: 0.35;
+}
+.ar-capital circle {
+  fill: var(--ar-sea);
+  stroke: var(--ar-accent);
+  stroke-width: 0.9;
+}
+.ar-capital path {
+  fill: var(--ar-accent);
+}
+.ar-home .ar-land {
+  fill: color-mix(in oklab, var(--ar-accent) 22%, var(--ar-land));
+}
+.ar-home .ar-coast {
+  stroke-width: 1.6;
+}
+
+/* Map furniture. */
+.ar-grat {
+  fill: none;
+  stroke: var(--ar-ink);
+  stroke-width: 0.4;
+  opacity: 0.22;
+}
+.ar-rhumb {
+  fill: none;
+  stroke: var(--ar-accent);
+  stroke-width: 0.4;
+  opacity: 0.22;
+}
+.ar-border {
+  fill: none;
+  stroke: var(--ar-ink);
+  stroke-width: 2;
+}
+.ar-border-in {
+  fill: none;
+  stroke: var(--ar-ink);
+  stroke-width: 0.6;
+}
+.ar-ticks text {
+  font: 500 8px var(--font-body);
+  fill: var(--ar-ink);
+  text-anchor: middle;
+}
+.ar-rose circle {
+  fill: none;
+  stroke: var(--ar-ink);
+  stroke-width: 0.6;
+}
+.ar-rose-a {
+  fill: var(--ar-ink);
+}
+.ar-rose-b {
+  fill: var(--ar-accent);
+  opacity: 0.85;
+}
+.ar-rose .ar-rose-hub {
+  fill: var(--ar-sea);
+}
+.ar-rose text {
+  font: 400 11px var(--font-display);
+  fill: var(--ar-ink);
+  text-anchor: middle;
+}
+.ar-route {
+  fill: none;
+  stroke: var(--ar-accent);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  opacity: 0.75;
+}
+.ar-t-route {
+  font: italic 400 8px var(--font-display);
+  fill: var(--ar-accent);
+  text-anchor: middle;
+  letter-spacing: 0.04em;
+}
+.ar-t-isle {
+  font-family: var(--font-display);
+  fill: var(--ar-ink);
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: var(--ar-sea);
+  stroke-width: 2.5px;
+  stroke-linejoin: round;
+}
+.ar-t-isle.is-fav {
+  letter-spacing: 0.08em;
+  fill: var(--ar-accent);
+}
+.ar-t-home {
+  font: 400 15px var(--font-display);
+  letter-spacing: 0.2em;
+  fill: var(--ar-accent);
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: var(--ar-sea);
+  stroke-width: 3px;
+}
+.ar-t-sea {
+  font: italic 400 15px var(--font-display);
+  letter-spacing: 0.5em;
+  fill: var(--ar-water);
+  text-anchor: middle;
+}
+.ar-scale path {
+  fill: none;
+  stroke: var(--ar-ink);
+  stroke-width: 1;
+}
+.ar-scale text {
+  font: italic 8px var(--font-display);
+  fill: var(--ar-ink);
+  text-anchor: middle;
+}
+.ar-t-summit {
+  font-family: var(--font-display);
+  font-style: italic;
+  fill: var(--ar-ink);
+  paint-order: stroke;
+  stroke: var(--ar-land);
+  stroke-width: 2px;
+}
+.ar-t-elev {
+  font-style: normal;
+  font-family: var(--font-body);
+  opacity: 0.8;
+}
+.ar-sound text {
+  font-family: var(--font-body);
+  fill: var(--ar-water);
+  text-anchor: middle;
+}
+.ar-north path {
+  fill: var(--ar-ink);
+}
+.ar-north text {
+  font-family: var(--font-display);
+  fill: var(--ar-ink);
+  text-anchor: middle;
+}
+.ar-frame {
+  fill: none;
+  stroke: var(--ar-ink);
+  stroke-width: 0.8;
+}
+
+/* Rising: islands surface out of the sea (screen only, never under reduced motion). */
+.ar-rise .ar-land,
+.ar-rise .ar-hill,
+.ar-rise .ar-coast,
+.ar-rise .ar-peak {
+  opacity: 0;
+  transition: opacity 0.9s ease-out;
+}
+.ar-rise .ar-hill.ar-h0 { transition-delay: 0.3s; }
+.ar-rise .ar-hill.ar-h1 { transition-delay: 0.5s; }
+.ar-rise .ar-hill.ar-h2 { transition-delay: 0.7s; }
+.ar-rise .ar-hill.ar-h3 { transition-delay: 0.9s; }
+.ar-rise .ar-peak { transition-delay: 1.1s; }
+.is-grown .ar-rise .ar-land,
+.is-grown .ar-rise .ar-hill,
+.is-grown .ar-rise .ar-coast,
+.is-grown .ar-rise .ar-peak,
+.is-grown.ar-rise .ar-land,
+.is-grown.ar-rise .ar-hill,
+.is-grown.ar-rise .ar-coast,
+.is-grown.ar-rise .ar-peak {
+  opacity: 1;
+}
+.ar-wl {
+  animation: ar-swell 6s ease-in-out infinite alternate;
+}
+.ar-wl1 {
+  animation-delay: -2s;
+}
+.ar-wl2 {
+  animation-delay: -4s;
+}
+@keyframes ar-swell {
+  from { stroke-opacity: 1; }
+  to { stroke-opacity: 0.35; }
+}
+[data-motion="reduce"] .ar-wl {
+  animation: none;
+}
+[data-motion="reduce"] .ar-rise .ar-land,
+[data-motion="reduce"] .ar-rise .ar-hill,
+[data-motion="reduce"] .ar-rise .ar-coast,
+[data-motion="reduce"] .ar-rise .ar-peak {
+  opacity: 1;
+  transition: none;
+}
+@media print {
+  .ar-wl {
+    animation: none;
+  }
+  .ar-rise .ar-land,
+  .ar-rise .ar-hill,
+  .ar-rise .ar-coast,
+  .ar-rise .ar-peak {
+    opacity: 1 !important;
+    transition: none;
+  }
+}

@@ -1,0 +1,110 @@
+/* Ransom-note letters. Eight "magazines" x four scissor edges. Colours are
+   fixed print colours (paper, newsprint, toner) plus the theme's primary as
+   the one spot colour, so a cut letter reads the same in light, dark and print. */
+
+.ransom {
+  display: block;
+  line-height: 1;
+}
+
+.ransom-vis {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.18em 0.42em;
+}
+
+.ransom-word {
+  display: inline-flex;
+  gap: 0.04em;
+  white-space: nowrap;
+  /* On the word, not the letter: a letter's clip-path would clip its own shadow. */
+  filter: drop-shadow(1px 1.5px 0 rgb(0 0 0 / 0.28));
+}
+
+.rl {
+  display: inline-block;
+  padding: 0.08em 0.14em 0.04em;
+  font-size: var(--rl-size, 1em);
+  line-height: 1;
+  rotate: var(--rl-rot, 0deg);
+  translate: 0 var(--rl-y, 0);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.rl-0 {
+  background: #111;
+  color: #fff;
+  font-family: Impact, "Arial Black", sans-serif;
+}
+
+.rl-1 {
+  background: #fff;
+  color: #111;
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+}
+
+.rl-2 {
+  background: #efe6cf;
+  color: #222;
+  font-family: "Times New Roman", Times, serif;
+  font-weight: bold;
+}
+
+.rl-3 {
+  background: var(--color-primary);
+  color: #fff;
+  font-family: "Arial Black", "Helvetica Neue", Arial, sans-serif;
+  font-weight: 900;
+}
+
+.rl-4 {
+  background: #ffe45c;
+  color: #111;
+  font-family: "Courier New", Courier, monospace;
+  font-weight: bold;
+}
+
+.rl-5 {
+  background: #fff;
+  color: #111;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-weight: 800;
+  outline: 2px solid #111;
+  outline-offset: -4px;
+}
+
+.rl-6 {
+  background:
+    radial-gradient(circle, rgb(0 0 0 / 0.22) 30%, transparent 32%) 0 0 / 5px 5px,
+    #f6f2ea;
+  color: #111;
+  font-family: Didot, "Bodoni 72", "Bodoni MT", "Times New Roman", serif;
+  font-weight: bold;
+}
+
+.rl-7 {
+  background: #2b2b2b;
+  color: #ffe45c;
+  font-family: "Rockwell", "Courier New", serif;
+  font-weight: bold;
+}
+
+/* Scissor edges: no two cuts square. */
+.rl-e0 {
+  clip-path: polygon(2% 4%, 97% 0, 100% 93%, 4% 100%);
+}
+
+.rl-e1 {
+  clip-path: polygon(0 1%, 100% 6%, 96% 100%, 3% 95%);
+}
+
+.rl-e2 {
+  clip-path: polygon(5% 0, 100% 2%, 98% 97%, 0 100%);
+}
+
+.rl-e3 {
+  clip-path: polygon(0 5%, 94% 0, 100% 100%, 6% 97%);
+}

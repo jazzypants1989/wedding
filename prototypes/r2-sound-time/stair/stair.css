@@ -1,0 +1,315 @@
+/* The Stair — guestbook view.
+   card slot `hung`         : [data-gb-card="hung"] — a note on a thread, with the signer's
+                              name on its back. Works flat (any page) or on the stair.
+     --card-w        note width                 {min:12,max:24,step:1} rem   19 (15 phone)
+     --card-thread   thread colour              colour, theme default
+     --card-swing    swing, degrees             {min:0,max:4,step:0.5}       1.2
+   background `stair`       : the 3D stage, the newel post and the helix transform (stair.js).
+     perTurn         notes per turn             {min:4,max:14,step:1}        7
+     rise            drop per note, px          {min:20,max:160,step:10}     70
+     depth           perspective, px            {min:600,max:2400,step:100}  1100 */
+
+:root {
+  --card-w: 19rem;
+  --card-thread: color-mix(in srgb, var(--color-text) 38%, transparent);
+  --card-swing: 1.2deg;
+  --bg-depth: 1100px;
+  --hx-radius: 380px;
+  --hx-amp: min(16vw, 8rem);
+}
+@media (max-width: 40rem) {
+  :root {
+    --card-w: 15rem;
+    --bg-depth: 800px;
+  }
+}
+
+.hx-note {
+  margin: 0;
+  padding: 0.35rem 0.75rem;
+  text-align: right;
+}
+
+.hx-head {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem 1rem;
+  text-align: center;
+}
+.hx-kicker {
+  margin: 0;
+  font-size: var(--text-sm);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.hx-title {
+  margin: 0.2rem 0 0.4rem;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(2.4rem, 8vw, 3.8rem);
+  line-height: 1;
+}
+.hx-lede {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+.hx-keys {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: var(--text-sm);
+}
+kbd {
+  font: inherit;
+  font-size: 0.85em;
+  padding: 0 0.35em;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-card-bg);
+}
+
+/* ---- background: the stage ---- */
+.hx-scroller {
+  position: relative;
+}
+.hx-stage {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
+  perspective: var(--bg-depth);
+  perspective-origin: 50% 30%;
+  /* The room: lit from above, dark below. */
+  background: radial-gradient(120% 70% at 50% 0%, color-mix(in srgb, var(--color-card-bg) 55%, transparent), transparent 70%);
+}
+.hx-world {
+  position: absolute;
+  left: 50%;
+  top: 34%;
+  width: 0;
+  height: 0;
+  transform-style: preserve-3d;
+}
+.hx-post {
+  position: absolute;
+  left: -1.3rem;
+  top: -120vh;
+  width: 2.6rem;
+  height: 400vh;
+  transform: translateZ(calc(-1 * var(--hx-radius)));
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--color-text) 30%, var(--color-background)),
+    color-mix(in srgb, var(--color-text) 8%, var(--color-background)) 38%,
+    color-mix(in srgb, var(--color-text) 22%, var(--color-background)) 70%,
+    color-mix(in srgb, var(--color-text) 34%, var(--color-background))
+  );
+  border-radius: 1.3rem;
+  opacity: 0.8;
+}
+.hx-helix {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-style: preserve-3d;
+}
+.hx-item {
+  position: absolute;
+  left: calc(var(--card-w) / -2);
+  top: 0;
+  width: var(--card-w);
+  transform-style: preserve-3d;
+}
+.hx-item.is-far {
+  --hx-op: 0 !important;
+  pointer-events: none;
+}
+.hx-item.is-far::before {
+  display: none;
+}
+.hx-counter {
+  position: absolute;
+  left: 50%;
+  bottom: 1.25rem;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 0.2rem 0.7rem;
+  border-radius: var(--radius-full);
+  background: var(--color-background);
+  text-align: center;
+  font-size: var(--text-xs);
+  letter-spacing: 0.2em;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- card: hung ---- */
+[data-gb-card="hung"] .hx-item::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  width: 1px;
+  height: 9rem;
+  opacity: var(--hx-op, 1);
+  background: linear-gradient(transparent, var(--card-thread) 60%);
+}
+[data-gb-card="hung"] .gb-entry {
+  position: relative;
+  display: block;
+  transform-style: preserve-3d;
+  transform-origin: 50% -3rem;
+  animation: hx-swing var(--hx-swing-dur, 6s) ease-in-out var(--hx-swing-delay, 0s) infinite alternate;
+  outline: none;
+}
+@keyframes hx-swing {
+  from {
+    transform: rotateZ(calc(-1 * var(--card-swing)));
+  }
+  to {
+    transform: rotateZ(var(--card-swing));
+  }
+}
+.hx-face,
+.hx-back {
+  opacity: var(--hx-op, 1);
+  backface-visibility: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  background: var(--color-card-bg);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
+}
+.hx-face {
+  position: relative;
+  padding: 1.1rem 1.2rem 0.9rem;
+}
+/* The hole the thread goes through. */
+.hx-face::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0.45rem;
+  width: 0.4rem;
+  height: 0.4rem;
+  margin-left: -0.2rem;
+  border-radius: 50%;
+  background: var(--color-background);
+  box-shadow: inset 0 0 0 1px var(--color-border);
+}
+.hx-back {
+  position: absolute;
+  inset: 0;
+  transform: rotateY(180deg);
+  display: grid;
+  place-items: center;
+  background: color-mix(in oklab, var(--color-card-bg) 88%, var(--color-text));
+}
+.hx-back span {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: var(--text-xl);
+  color: var(--color-text-muted);
+  padding: 0 1rem;
+  text-align: center;
+}
+.gb-message {
+  margin: 0.4rem 0 0.7rem;
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.gb-sig {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.2rem 0.6rem;
+}
+.gb-author {
+  font-family: var(--font-display);
+}
+.gb-meta {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+.gb-entry.is-favourite .hx-face {
+  border-color: var(--color-primary);
+}
+.hx-item.is-front .hx-face {
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18), 0 0 0 1px var(--color-primary-faint);
+}
+.gb-entry:focus-visible .hx-face {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
+}
+
+/* ---- Flat: reduced motion, the toggle, and print. The spiral seen side-on. ---- */
+[data-flat] .hx-stage {
+  position: static;
+  height: auto;
+  overflow: visible;
+  perspective: none;
+  background: none;
+}
+[data-flat] .hx-world {
+  position: static;
+  width: auto;
+  height: auto;
+  transform-style: flat;
+}
+[data-flat] .hx-post,
+[data-flat] .hx-counter,
+[data-flat] .hx-back,
+[data-flat] .hx-keys {
+  display: none;
+}
+[data-flat] .hx-helix {
+  position: static;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2.4rem;
+  padding: 3rem 1rem 2rem;
+  transform-style: flat;
+}
+[data-flat] .hx-item {
+  position: relative;
+  left: auto;
+  max-width: calc(100vw - 2rem);
+  transform: translateX(calc(var(--hx-side, 0) * var(--hx-amp)));
+}
+[data-flat] [data-gb-card="hung"] .hx-item::before,
+[data-flat][data-gb-card="hung"] .hx-item::before {
+  height: 2.6rem;
+  background: var(--card-thread);
+}
+[data-flat] .hx-helix .hx-item:first-child::before {
+  height: 3rem;
+  background: linear-gradient(transparent, var(--card-thread));
+}
+
+[data-still] [data-gb-card="hung"] .gb-entry {
+  animation: none;
+}
+
+.hx-foot {
+  text-align: center;
+  font-family: var(--font-display);
+  font-style: italic;
+  color: var(--color-text-muted);
+  padding: 2rem 1rem 4rem;
+}
+
+@media print {
+  [data-gb-card="hung"] .gb-entry {
+    animation: none;
+  }
+  .hx-item {
+    break-inside: avoid;
+  }
+}

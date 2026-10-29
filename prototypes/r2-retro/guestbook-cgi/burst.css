@@ -1,0 +1,180 @@
+/* burst slot: thanks-for-signing. Self-contained: brings its own grey window
+   chrome, colours its sprites from tokens, and restyles nothing else. */
+
+.tfs-window {
+  --tfs-face: light-dark(#c3c3c3, #3c3c3c);
+  --tfs-hi: light-dark(#fff, #777);
+  --tfs-lo: light-dark(#7a7a7a, #000);
+  --tfs-ink: light-dark(#000, #f2f2f2);
+  position: fixed;
+  z-index: 200;
+  left: 50%;
+  top: 50%;
+  width: min(25rem, calc(100vw - 1.5rem));
+  translate: -50% -50%;
+  border: 2px solid;
+  border-color: var(--tfs-hi) var(--tfs-lo) var(--tfs-lo) var(--tfs-hi);
+  outline: 1px solid #000;
+  background: var(--tfs-face);
+  color: var(--tfs-ink);
+  font: 0.95rem/1.4 "Times New Roman", Times, serif;
+  box-shadow: 6px 6px 0 rgb(0 0 0 / 0.35);
+  animation: tfs-open 0.32s steps(4, end) both;
+}
+
+.tfs-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 3px 2px 6px;
+  background: linear-gradient(90deg, #000080, #1084d0);
+  color: #fff;
+  font: bold 0.8rem/1.3 Verdana, Tahoma, sans-serif;
+}
+
+.tfs-x {
+  width: 20px;
+  height: 18px;
+  border: 2px solid;
+  border-color: #fff #404040 #404040 #fff;
+  background: #c3c3c3;
+  color: #000;
+  font: bold 0.8rem/1 Verdana, sans-serif;
+}
+
+.tfs-body {
+  padding: 14px 16px 14px;
+  text-align: center;
+}
+
+.tfs-big {
+  margin: 6px 0;
+  font-size: 1.35rem;
+  font-weight: bold;
+  color: var(--color-text);
+}
+
+.tfs-stage {
+  position: relative;
+  width: 96px;
+  height: 66px;
+  margin: 4px auto 10px;
+}
+
+.tfs-env {
+  position: absolute;
+  inset: 0;
+  animation: tfs-spin 1.2s steps(8, end) infinite;
+}
+
+.tfs-env svg,
+.tfs-heart svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
+}
+
+.tfs-heart {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 16px;
+  margin: -8px 0 0 -9px;
+  opacity: 0;
+  animation: tfs-fly 1.6s steps(10, end) var(--delay, 0s) infinite;
+}
+
+.tfs-buttons {
+  margin-top: 12px;
+}
+
+.tfs-ok {
+  min-height: 32px;
+  padding: 3px 14px;
+  border: 2px solid;
+  border-color: var(--tfs-hi) var(--tfs-lo) var(--tfs-lo) var(--tfs-hi);
+  outline: 1px solid #000;
+  background: var(--tfs-face);
+  color: var(--tfs-ink);
+  font: 0.85rem/1 Verdana, Tahoma, sans-serif;
+}
+
+.tfs-ok:focus-visible {
+  outline: 1px dotted var(--tfs-ink);
+  outline-offset: -5px;
+}
+
+.tfs-window .px-ink {
+  fill: #000;
+}
+
+.tfs-window .px-paper {
+  fill: #fff;
+}
+
+.tfs-window .px-heart {
+  fill: var(--color-primary);
+}
+
+.tfs-window .px-shine {
+  fill: #fff;
+}
+
+@keyframes tfs-open {
+  from {
+    scale: 0.2;
+    opacity: 0;
+  }
+  to {
+    scale: 1;
+    opacity: 1;
+  }
+}
+
+/* A "3D spinning" GIF faked the way GIFs did it: squash in X frame by frame. */
+@keyframes tfs-spin {
+  0%,
+  100% {
+    scale: 1 1;
+  }
+  25% {
+    scale: 0.15 1;
+  }
+  50% {
+    scale: -1 1;
+  }
+  75% {
+    scale: -0.15 1;
+  }
+}
+
+@keyframes tfs-fly {
+  0% {
+    opacity: 1;
+    translate: 0 0;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    translate: var(--dx) var(--dy);
+  }
+}
+
+/* Reduced motion: the window just appears, the envelope rests, and the hearts
+   sit frozen part-way out of it, a still from the animation. */
+@media (prefers-reduced-motion: reduce) {
+  .tfs-window,
+  .tfs-env {
+    animation: none;
+  }
+
+  .tfs-heart {
+    animation: none;
+    opacity: 1;
+    translate: calc(var(--dx) * 0.6) calc(var(--dy) * 0.6);
+  }
+}

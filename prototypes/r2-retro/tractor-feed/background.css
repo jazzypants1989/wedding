@@ -1,0 +1,129 @@
+/* background slot: fanfold-feed. */
+.fanfold-feed {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse at 50% 0%, rgb(255 255 255 / 0.35), transparent 60%),
+    light-dark(color-mix(in srgb, var(--color-background) 55%, #cdc8ba), color-mix(in srgb, var(--color-background) 40%, #050705));
+}
+
+/* One stream of paper: 1.1in of sprocket strip + page, mostly off-screen.
+   A fold every 11in: the perforation, with the paper turning away (darker)
+   above it and towards you (lighter) below. */
+.ff-stream {
+  --ff-ln: 20px;
+  position: absolute;
+  top: -1056px;
+  bottom: -1056px;
+  width: 150px;
+  background:
+    /* folds */
+    linear-gradient(180deg, rgb(0 0 0 / 0.1), transparent 30%, transparent 70%, rgb(255 255 255 / 0.25)) 0 0 / 100% 1056px,
+    linear-gradient(180deg, rgb(0 0 0 / 0.3) 0 1px, transparent 1px) 0 0 / 100% 1056px,
+    /* green bars */
+    repeating-linear-gradient(180deg, #dcefd8 0 60px, transparent 60px 120px),
+    #fbfbf5;
+  background-repeat: repeat-y, repeat-y, repeat, repeat;
+  box-shadow: 0 0 16px rgb(0 0 0 / 0.18);
+  animation: ff-feed var(--ff-period, 13s) linear infinite;
+  animation-play-state: var(--ff-play, running);
+}
+
+.ff-stream::before {
+  /* the sprocket strip: holes on a 0.5in pitch and a perforated edge */
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 34px;
+  background:
+    repeating-linear-gradient(180deg, rgb(0 0 0 / 0.28) 0 4px, transparent 4px 8px) right 0 / 1px 100% no-repeat,
+    radial-gradient(circle at 50% 50%, light-dark(color-mix(in srgb, var(--color-background) 55%, #cdc8ba), #050705) 5px, transparent 5.6px) 0 0 / 34px 40px repeat-y,
+    #fbfbf5;
+}
+
+.ff-left {
+  left: -40px;
+}
+
+.ff-left::before {
+  right: 0;
+  transform: scaleX(-1);
+}
+
+.ff-right {
+  right: -40px;
+}
+
+.ff-right::before {
+  left: 0;
+}
+
+.fanfold-feed[data-streams="left"] .ff-right,
+.fanfold-feed[data-streams="right"] .ff-left,
+.fanfold-feed[data-streams="none"] .ff-stream {
+  display: none;
+}
+
+@keyframes ff-feed {
+  to {
+    translate: 0 1056px;
+  }
+}
+
+@media (max-width: 1100px) {
+  .ff-stream {
+    display: none;
+  }
+}
+
+/* ---- by night: a CRT ---- */
+.ff-crt {
+  display: none;
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(180deg, transparent 0 2px, rgb(0 0 0 / calc(var(--ff-scan, 0.5) * 0.5)) 2px 3px),
+    radial-gradient(ellipse at 50% 50%, transparent 55%, rgb(0 0 0 / 0.65) 100%);
+}
+
+.ff-crt::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 22vh;
+  top: -22vh;
+  background: linear-gradient(180deg, transparent, rgb(70 255 122 / 0.05), transparent);
+  animation: ff-roll 9s linear infinite;
+}
+
+@keyframes ff-roll {
+  to {
+    translate: 0 130vh;
+  }
+}
+
+:root[data-theme="dark"] .ff-stream {
+  display: none;
+}
+
+:root[data-theme="dark"] .ff-crt {
+  display: block;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ff-stream,
+  .ff-crt::after {
+    animation: none;
+  }
+}
+
+@media print {
+  .fanfold-feed {
+    display: none;
+  }
+}

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en" data-mb-layout="spiral">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Memory Book — The Spiral (r2 sketch)</title>
+  <link rel="stylesheet" href="/site/styles/tokens.css">
+  <link rel="stylesheet" href="../shared/base.css">
+  <link rel="stylesheet" href="./book.css">
+  <script src="../shared/theme-init.js"></script>
+</head>
+
+<body>
+  <div class="r2-bar" role="toolbar" aria-label="Memory book actions">
+    <a href="./index.html" data-carry>← Guestbook (the stair)</a>
+    <span class="r2-spacer"></span>
+    <button type="button" class="r2-btn" data-theme-toggle>☀ Light</button>
+    <button type="button" class="r2-btn" id="sp-print">Print / Save as PDF</button>
+  </div>
+
+  <main class="sp-book">
+    <section class="sp-cover">
+      <p class="sp-kicker">The guestbook of</p>
+      <h1 class="sp-names" id="sp-couple"></h1>
+      <p class="sp-date" id="sp-date"></p>
+    </section>
+
+    <section class="sp-front" aria-labelledby="sp-front-h">
+      <h2 class="sp-h2" id="sp-front-h">Everyone, in one line</h2>
+      <p class="sp-front-sub">From the first to sign, at the centre, to the last, on the outside edge.</p>
+      <figure class="sp-spiral" id="sp-spiral"></figure>
+    </section>
+
+    <ol class="sp-notes" id="sp-notes" aria-label="Every note, in the order it was written"></ol>
+  </main>
+
+  <script type="module" src="./book.js"></script>
+</body>
+
+</html>

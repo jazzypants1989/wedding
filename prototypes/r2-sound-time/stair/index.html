@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Guestbook — The Stair (r2 sketch)</title>
+  <link rel="stylesheet" href="/site/styles/tokens.css">
+  <link rel="stylesheet" href="../shared/base.css">
+  <link rel="stylesheet" href="./stair.css">
+  <script src="../shared/theme-init.js"></script>
+</head>
+
+<body>
+  <div class="r2-bar" role="toolbar" aria-label="Sketch controls">
+    <a href="../">← r2 sound/time/space</a>
+    <span class="r2-spacer"></span>
+    <button type="button" class="r2-btn" id="hx-sound" aria-pressed="false">♪ Sound off</button>
+    <button type="button" class="r2-btn" id="hx-flat" aria-pressed="false">☰ Flat</button>
+    <button type="button" class="r2-btn" data-theme-toggle>☀ Light</button>
+    <a href="./book.html" data-carry>Memory book: the spiral →</a>
+  </div>
+  <p class="hx-note r2-note" id="hx-note" hidden></p>
+
+  <header class="hx-head">
+    <p class="hx-kicker" id="hx-couple"></p>
+    <h1 class="hx-title">The Stair</h1>
+    <p class="hx-lede">Every note, hung on a thread around one spiral. Scroll to walk down it; the newest are at the top.
+      <span class="hx-keys">Tab or <kbd>↓</kbd> <kbd>↑</kbd> step one note at a time.</span></p>
+  </header>
+
+  <div class="hx-scroller" id="hx-scroller">
+    <div class="hx-stage" id="hx-stage">
+      <div class="hx-world">
+        <div class="hx-post" aria-hidden="true"></div>
+        <ol class="hx-helix" id="hx-helix" data-gb-card="hung" aria-label="Messages, newest first"></ol>
+      </div>
+      <p class="hx-counter" id="hx-counter" aria-hidden="true"></p>
+    </div>
+  </div>
+  <footer class="hx-foot"><p id="hx-foot"></p></footer>
+
+  <script type="module" src="./stair.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,475 @@
+/* Design review page. Standalone on purpose: it frames the prototypes and
+   must not borrow (or leak) any one design's look. */
+:root {
+  color-scheme: light dark;
+  --bg: #f7f5f2;
+  --panel: #ffffff;
+  --ink: #23201c;
+  --muted: #6b645c;
+  --line: #e2ddd6;
+  --accent: #b5523b;
+  --accent-ink: #ffffff;
+  --radius: 10px;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17151a;
+    --panel: #211e24;
+    --ink: #ece8e3;
+    --muted: #a39b92;
+    --line: #36313a;
+    --accent: #e0846c;
+    --accent-ink: #17151a;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+a {
+  color: var(--accent);
+}
+
+.top {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 1.25rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.top nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.top nav a,
+.brand {
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  text-decoration: none;
+  color: var(--ink);
+}
+
+.brand {
+  font-weight: 700;
+}
+
+.top nav a[aria-current="page"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.hint,
+.eyebrow,
+.tagline,
+.angle {
+  color: var(--muted);
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* ---- overview ---- */
+
+.overview {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 4rem;
+}
+
+.hero h1 {
+  margin: 0 0 0.5rem;
+  font-size: 2.2rem;
+}
+
+.hero p {
+  max-width: 60ch;
+  font-size: 1.1rem;
+  line-height: 1.5;
+}
+
+.hero-actions,
+.intent-actions,
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.family {
+  margin-top: 2.5rem;
+}
+
+.family h2 {
+  margin-bottom: 0.25rem;
+}
+
+.angle {
+  max-width: 75ch;
+  margin-top: 0;
+  line-height: 1.5;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
+}
+
+.card {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.thumb {
+  display: block;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  background: var(--line);
+}
+
+.thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+}
+
+.card-body {
+  padding: 0.75rem 1rem 1rem;
+}
+
+.card-body h3 {
+  margin: 0;
+}
+
+.card-body p {
+  margin: 0.25rem 0 0.75rem;
+  color: var(--muted);
+}
+
+.card-actions a {
+  text-decoration: none;
+}
+
+.star {
+  margin-left: auto;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.star.on {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ---- tour ---- */
+
+.tour {
+  padding: 1rem 1.25rem 2rem;
+}
+
+.tour-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 1600px;
+  margin: 0 auto 1rem;
+}
+
+.tour-count {
+  color: var(--muted);
+}
+
+.tour-split {
+  display: grid;
+  grid-template-columns: minmax(300px, 400px) 1fr;
+  gap: 1.25rem;
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+.intent {
+  align-self: start;
+  position: sticky;
+  top: 4rem;
+  max-height: calc(100vh - 5rem);
+  overflow: auto;
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  line-height: 1.5;
+}
+
+.intent h2 {
+  margin: 0.2rem 0 0;
+  font-size: 1.8rem;
+}
+
+.intent h3 {
+  margin: 1.1rem 0 0.25rem;
+  font-size: 0.95rem;
+}
+
+.intent p,
+.intent ul {
+  margin: 0;
+}
+
+.intent ul {
+  padding-left: 1.1rem;
+}
+
+.intent textarea,
+.summary {
+  width: 100%;
+  margin-bottom: 0.75rem;
+  padding: 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+}
+
+.slots {
+  list-style: none;
+  padding: 0 !important;
+}
+
+.slots li {
+  margin: 0.15rem 0;
+}
+
+.slot-name {
+  display: inline-block;
+  min-width: 6.5rem;
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.linkish {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.tour-text {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.prose {
+  line-height: 1.6;
+  font-size: 1.05rem;
+}
+
+.prose h1 {
+  font-size: 2rem;
+}
+
+.family-list li {
+  margin: 0.4rem 0;
+}
+
+/* ---- viewer (shared by tour and compare) ---- */
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.seg {
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+}
+
+.seg-label {
+  padding: 0 0.6rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.seg button {
+  padding: 0.35rem 0.7rem;
+  border: 0;
+  border-left: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.seg button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.stage iframe {
+  display: block;
+  width: 100%;
+  height: calc(100vh - 11rem);
+  min-height: 520px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+.stage-phone iframe {
+  width: 390px;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.stage-foot {
+  display: flex;
+  justify-content: center;
+  gap: 1.25rem;
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+}
+
+/* ---- compare ---- */
+
+.compare {
+  padding: 1rem 1.25rem 2rem;
+}
+
+.compare-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+}
+
+.compare-head h1 {
+  margin: 0;
+}
+
+.compare-head .toolbar {
+  margin: 0;
+}
+
+.compare-grid {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.compare-grid.cols-2 {
+  grid-template-columns: 1fr 1fr;
+}
+
+.compare-grid.cols-3 {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.pane-head {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.pane-head select {
+  padding: 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+}
+
+.pane-tagline {
+  margin: 0.4rem 0 0.6rem;
+  color: var(--muted);
+}
+
+/* ---- picks ---- */
+
+.picks {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 4rem;
+}
+
+.summary {
+  font-family: ui-monospace, monospace;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 900px) {
+  .tour-split,
+  .compare-grid.cols-2,
+  .compare-grid.cols-3 {
+    grid-template-columns: 1fr;
+  }
+
+  .intent {
+    position: static;
+    max-height: none;
+  }
+}

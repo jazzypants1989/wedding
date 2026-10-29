@@ -1,0 +1,382 @@
+/* The Long Day — guestbook view.
+   card slot `sundial`      : [data-gb-card="sundial"] — each card lit by its own hour.
+     --card-shadow-max  longest shadow, px        {min:0,max:40,step:2}      26  (JS)
+     --card-ink-sepia   colour the ink ages to    colour, theme default
+     --card-lamp        lamplight after dark      colour, default warm amber
+   background `daylight`    : .hr-sky + .hr-orb, the sky of the hour being read.
+     --bg-sky-mix       how much sky vs theme     {min:0,max:100,step:5}     60 (light) / 40 (dark)
+     follow             what the sky follows      {options:["scroll","clock"]} "scroll" (JS)
+   Both read --hr-accent: the anniversary material, or the brand colour in year one. */
+
+:root {
+  --hr-accent: var(--color-primary-dark);
+  --bg-sky-mix: 80%;
+  --card-ink-sepia: light-dark(#6e4b26, #dcc096);
+  --card-lamp: #ffbf66;
+}
+:root[data-theme="dark"] {
+  --bg-sky-mix: 60%;
+}
+/* An anniversary material replaces the accent, lifted for dark backgrounds. */
+:root[data-material] {
+  --hr-accent: light-dark(var(--hr-material), color-mix(in oklab, var(--hr-material) 55%, white));
+}
+/* Text that sits straight on the sky flips to starlight after dark. */
+:root[data-sky="dark"] .hr-hour.is-empty .hr-rail-n,
+:root[data-sky="dark"] .hr-hour.is-empty .hr-rail-ap,
+:root[data-sky="dark"] .hr-hour.is-empty .hr-rail-block,
+:root[data-sky="dark"] .hr-foot {
+  color: #ece8f6;
+}
+:root[data-sky="dark"] .hr-hour {
+  border-top-color: rgba(236, 232, 246, 0.22);
+}
+
+/* ---- background: daylight ---- */
+.hr-sky {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  --sky-top: #7fbeea;
+  --sky-bot: #d9edff;
+  background: linear-gradient(
+    color-mix(in oklab, var(--sky-top) var(--bg-sky-mix), var(--color-background)),
+    color-mix(in oklab, var(--sky-bot) var(--bg-sky-mix), var(--color-background))
+  );
+  overflow: hidden;
+}
+.hr-orb {
+  position: absolute;
+  left: var(--orb-x, 50vw);
+  top: var(--orb-y, 20vh);
+  width: 9rem;
+  height: 9rem;
+  margin: -4.5rem 0 0 -4.5rem;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fffbe6 0 16%, #ffe08a 26%, color-mix(in srgb, #ffd36b 40%, transparent) 38%, transparent 68%);
+  opacity: 0.9;
+}
+.hr-orb.is-moon {
+  width: 3.4rem;
+  height: 3.4rem;
+  margin: -1.7rem 0 0 -1.7rem;
+  background: #f3efe2;
+  box-shadow: inset -0.9rem 0.3rem 0 0 color-mix(in oklab, var(--sky-top) 70%, black), 0 0 2.4rem 0.4rem rgba(243, 239, 226, 0.25);
+  opacity: 0.85;
+}
+
+/* ---- page ---- */
+.hr-page {
+  position: relative;
+  z-index: 1;
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 0 1rem 30vh;
+}
+.r2-bar {
+  z-index: 30;
+}
+.hr-head {
+  margin: 2rem 0 1.5rem;
+  padding: 1.5rem 1.5rem 1.25rem;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-card-bg) 82%, transparent);
+  backdrop-filter: blur(6px);
+}
+.hr-kicker {
+  margin: 0;
+  font-size: var(--text-sm);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.hr-title {
+  margin: 0.2rem 0 0.4rem;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(2.2rem, 7vw, 3.4rem);
+  line-height: 1.05;
+  color: var(--hr-accent);
+}
+.hr-lede {
+  margin: 0 0 0.5rem;
+  max-width: 34rem;
+}
+.hr-lede a {
+  color: var(--hr-accent);
+}
+.hr-anniv {
+  margin: 0;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: var(--text-lg);
+  color: var(--hr-accent);
+}
+
+/* ---- the day: one section per hour ---- */
+.hr-hour {
+  display: grid;
+  grid-template-columns: 4.75rem 1fr;
+  column-gap: 1rem;
+  border-top: 1px solid color-mix(in srgb, var(--color-text) 14%, transparent);
+}
+.hr-rail {
+  position: sticky;
+  top: 3.6rem;
+  align-self: start;
+  display: grid;
+  justify-items: end;
+  padding: 0.5rem 0.6rem 0.55rem;
+  margin-top: 0.75rem;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-card-bg) 80%, transparent);
+  backdrop-filter: blur(4px);
+}
+.hr-rail-n {
+  font-family: var(--font-display);
+  font-size: 2.1rem;
+  line-height: 1;
+  color: var(--hr-accent);
+}
+.hr-rail-ap {
+  font-size: var(--text-xs);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.hr-rail-block {
+  margin-top: 0.3rem;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: var(--text-sm);
+  color: var(--color-text);
+}
+.hr-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+  padding: 1.25rem 0 1.75rem;
+}
+.hr-hour.is-empty .hr-notes {
+  padding: 0.4rem 0;
+  gap: 0;
+}
+.hr-hour.is-empty .hr-rail {
+  position: static;
+  margin-top: 0.3rem;
+  padding: 0.15rem 0.6rem;
+  background: none;
+  backdrop-filter: none;
+  grid-auto-flow: column;
+  align-items: baseline;
+  gap: 0.3rem;
+}
+.hr-hour.is-empty .hr-rail-n {
+  font-size: var(--text-lg);
+  color: var(--color-text-muted);
+}
+.hr-hour.is-empty .hr-rail-block {
+  margin: 0 0 0 0.4rem;
+}
+
+/* ---- card: sundial ---- */
+[data-gb-card="sundial"] .gb-entry {
+  --sun-light: color-mix(in oklab, #ffd98a calc(var(--sun-warm, 0) * 100%), #ffffff);
+  --sun-shade: light-dark(rgba(70, 45, 20, 0.26), rgba(0, 0, 0, 0.55));
+  position: relative;
+  padding: 0.9rem 1.15rem 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(calc(var(--sun-az, 180deg) + 180deg), color-mix(in srgb, var(--sun-light) 42%, transparent), transparent 62%),
+    var(--color-card-bg);
+  box-shadow: var(--sun-dx, 0) var(--sun-dy, 0) var(--sun-blur, 8px) var(--sun-shade);
+}
+[data-gb-card="sundial"] .gb-entry.is-night {
+  background:
+    radial-gradient(130% 100% at 6% 0%, color-mix(in srgb, var(--card-lamp) 30%, transparent), transparent 62%),
+    color-mix(in oklab, var(--color-card-bg) 96%, #1b2150);
+  border-color: color-mix(in srgb, var(--card-lamp) 45%, var(--color-border));
+  box-shadow: 0 0 1.6rem color-mix(in srgb, var(--card-lamp) 30%, transparent);
+}
+.gb-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.hr-time {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--hr-accent);
+}
+.hr-dial {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+.hr-dial-face {
+  fill: none;
+  stroke: color-mix(in srgb, var(--color-text) 30%, transparent);
+  stroke-width: 1;
+}
+.hr-dial-shadow {
+  stroke: var(--color-text);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.hr-dial-pin {
+  fill: var(--hr-accent);
+}
+.hr-moon {
+  fill: color-mix(in srgb, var(--card-lamp) 80%, var(--color-text));
+}
+.gb-message {
+  margin: 0.4rem 0 0.5rem;
+  font-family: var(--font-display);
+  font-size: 1.12rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  /* Iron-gall ink browns with age: fresh this year, sepia by the silver one. */
+  color: color-mix(in oklab, var(--color-text), var(--card-ink-sepia) calc(var(--ink-age, 0) * 80%));
+}
+.gb-sig {
+  margin: 0;
+  text-align: right;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+.gb-sig span:first-child {
+  font-family: var(--font-display);
+  font-size: var(--text-base);
+  color: var(--color-text);
+}
+
+/* ---- now ---- */
+.hr-now {
+  position: relative;
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.6rem 0 0.2rem;
+  border-top: 2px solid var(--hr-accent);
+  scroll-margin-top: 40vh;
+}
+.hr-now-label {
+  justify-self: start;
+  margin-top: -1.35rem;
+  padding: 0.15rem 0.7rem;
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-on-primary);
+  background: var(--hr-accent);
+}
+.hr-now-echo {
+  font-family: var(--font-display);
+  font-style: italic;
+  color: var(--hr-accent);
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-card-bg) 80%, transparent);
+}
+
+.hr-foot {
+  text-align: center;
+  font-family: var(--font-display);
+  font-style: italic;
+  color: var(--color-text-muted);
+  border-top: 1px solid color-mix(in srgb, var(--color-text) 14%, transparent);
+  padding-top: 1rem;
+}
+
+/* ---- the time machine (review control) ---- */
+.hr-machine {
+  position: relative;
+}
+.hr-machine summary {
+  list-style: none;
+}
+.hr-machine summary::-webkit-details-marker {
+  display: none;
+}
+.hr-machine-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.4rem);
+  width: min(22rem, 90vw);
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.9rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-card-bg);
+  box-shadow: var(--shadow-lg);
+}
+.hr-machine-panel label {
+  display: grid;
+  gap: 0.2rem;
+  font-size: var(--text-sm);
+}
+.hr-machine-panel input {
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.3rem 0.5rem;
+}
+.hr-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+/* ---- anniversary: the notes write themselves in again ---- */
+:root[data-anniversary]:not([data-still]) [data-gb-card="sundial"] .gb-entry .gb-message {
+  clip-path: inset(0 100% 0 0);
+}
+:root[data-anniversary]:not([data-still]) [data-gb-card="sundial"] .gb-entry.is-written .gb-message {
+  animation: hr-write 2.2s cubic-bezier(0.4, 0, 0.3, 1) forwards;
+}
+@keyframes hr-write {
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@media (max-width: 40rem) {
+  .hr-hour {
+    grid-template-columns: 3.4rem 1fr;
+    column-gap: 0.6rem;
+  }
+  .hr-rail {
+    padding: 0.35rem 0.4rem;
+  }
+  .hr-rail-n {
+    font-size: 1.6rem;
+  }
+  .hr-rail-block {
+    font-size: var(--text-xs);
+  }
+  .hr-head {
+    padding: 1.1rem;
+  }
+}
+
+@media print {
+  .hr-sky {
+    display: none;
+  }
+  .hr-rail {
+    position: static;
+    backdrop-filter: none;
+  }
+  [data-gb-card="sundial"] .gb-entry .gb-message {
+    clip-path: none !important;
+    animation: none !important;
+  }
+}

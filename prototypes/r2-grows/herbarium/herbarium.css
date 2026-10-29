@@ -1,0 +1,267 @@
+/* Herbarium — the plant itself. Shared by the guestbook (card ornament,
+   meadow band, composer preview) and the memory book. Params arrive as custom
+   properties (CSSOM writes): --hb-sway, --hb-grow. The palette is a param too
+   (data-hb-palette on <html>), defaulting to theme tokens. */
+
+:root {
+  --hb-sway: 1.5deg;
+  --hb-grow: 2.4s;
+  --hb-paper: var(--color-card-bg);
+  --hb-ink: color-mix(in oklab, var(--color-text) 38%, var(--color-text-muted));
+  --hb-leaf: color-mix(in oklab, var(--fx-green-1) 72%, var(--color-background));
+  --hb-leaf-2: color-mix(in oklab, var(--fx-leaf-3) 70%, var(--color-background));
+  --hb-leaf-3: color-mix(in oklab, var(--fx-green-2) 55%, var(--fx-gold-3));
+  --hb-bloom: var(--effect-brand);
+  --hb-bloom-2: var(--fx-rose-2);
+  --hb-bloom-3: var(--fx-cool-2);
+  --hb-bloom-4: var(--fx-gold-1);
+  --hb-gold: var(--fx-gold-1);
+  --hb-berry: var(--effect-brand-dark);
+}
+
+/* Palette param: "pressed" — a real herbarium sheet, faded to tea and rust. */
+:root[data-hb-palette="pressed"] {
+  --hb-ink: light-dark(#4a3b2a, #d9c7a7);
+  --hb-leaf: light-dark(#8d8a5a, #6f6d45);
+  --hb-leaf-2: light-dark(#a1874f, #7d6a3e);
+  --hb-leaf-3: light-dark(#6f7650, #5b6142);
+  --hb-bloom: light-dark(#b8735a, #c98a6e);
+  --hb-bloom-2: light-dark(#a3687a, #b98597);
+  --hb-bloom-3: light-dark(#7d7a9c, #9a97b8);
+  --hb-bloom-4: light-dark(#c29a45, #d8b15c);
+  --hb-berry: light-dark(#6e2f2a, #a8584e);
+  --hb-paper: light-dark(#f3ecdc, #2a241b);
+}
+
+/* "cyanotype" — a sun-print: every plant a white silhouette on Prussian blue. */
+:root[data-hb-palette="cyanotype"] {
+  --hb-ink: #f4f8ff;
+  --hb-leaf: rgb(244 248 255 / 0.28);
+  --hb-leaf-2: rgb(244 248 255 / 0.38);
+  --hb-leaf-3: rgb(244 248 255 / 0.2);
+  --hb-bloom: rgb(244 248 255 / 0.55);
+  --hb-bloom-2: rgb(244 248 255 / 0.4);
+  --hb-bloom-3: rgb(244 248 255 / 0.7);
+  --hb-bloom-4: rgb(244 248 255 / 0.85);
+  --hb-gold: #fff;
+  --hb-berry: #f4f8ff;
+  --hb-paper: #1d3f78;
+}
+
+.hb-svg {
+  overflow: visible;
+}
+
+.hb-stem,
+.hb-stem-static {
+  fill: none;
+  stroke: var(--hb-ink);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+.hb-main {
+  stroke-width: 2.1;
+}
+.hb-fine {
+  stroke-width: 0.9;
+}
+.hb-stem-static {
+  stroke-width: 1.1;
+}
+.hb-leaf {
+  stroke: var(--hb-ink);
+  stroke-width: 0.7;
+  stroke-linejoin: round;
+}
+.hb-leaf.l0 {
+  fill: var(--hb-leaf);
+}
+.hb-leaf.l1 {
+  fill: var(--hb-leaf-2);
+}
+.hb-leaf.l2 {
+  fill: var(--hb-leaf-3);
+}
+.hb-leaf.hb-open {
+  fill: none;
+  stroke: color-mix(in oklab, var(--hb-leaf) 55%, var(--hb-ink));
+  stroke-width: 1;
+}
+.hb-vein {
+  stroke: var(--hb-ink);
+  stroke-width: 0.45;
+  opacity: 0.7;
+}
+.hb-petals path,
+.hb-bud {
+  stroke: var(--hb-ink);
+  stroke-width: 0.6;
+  stroke-linejoin: round;
+}
+.hb-petals.b0 path,
+.hb-bud.b0 {
+  fill: var(--hb-bloom);
+}
+.hb-petals.b1 path,
+.hb-bud.b1 {
+  fill: var(--hb-bloom-2);
+}
+.hb-petals.b2 path,
+.hb-bud.b2 {
+  fill: var(--hb-bloom-3);
+}
+.hb-petals.b3 path,
+.hb-bud.b3 {
+  fill: var(--hb-bloom-4);
+}
+.hb-floret circle {
+  stroke: var(--hb-ink);
+  stroke-width: 0.35;
+  fill: var(--hb-bloom);
+}
+.hb-floret.b1 circle {
+  fill: var(--hb-bloom-2);
+}
+.hb-floret.b2 circle {
+  fill: var(--hb-bloom-3);
+}
+.hb-floret.b3 circle {
+  fill: var(--hb-bloom-4);
+}
+.hb-floret.hb-night circle {
+  fill: var(--hb-paper);
+}
+.hb-inner path {
+  fill-opacity: 0.55;
+}
+.hb-petals.hb-night path,
+.hb-bud.hb-night {
+  fill: var(--hb-paper);
+  stroke-dasharray: 1.2 0.9;
+}
+.hb-sepal {
+  stroke: var(--hb-ink);
+  stroke-width: 0.5;
+  fill: var(--hb-leaf);
+}
+.hb-eye {
+  fill: var(--hb-ink);
+}
+.hb-eye.hb-gold {
+  fill: var(--hb-gold);
+  stroke: var(--hb-ink);
+  stroke-width: 0.6;
+}
+.hb-dots circle {
+  fill: var(--hb-gold);
+}
+.hb-berry {
+  fill: var(--hb-berry);
+  stroke: var(--hb-ink);
+  stroke-width: 0.5;
+}
+.hb-shine {
+  fill: var(--hb-paper);
+  opacity: 0.8;
+}
+.hb-allium path {
+  stroke: var(--hb-ink);
+  stroke-width: 0.5;
+}
+.hb-allium.b0 circle {
+  fill: var(--hb-bloom);
+}
+.hb-allium.b1 circle {
+  fill: var(--hb-bloom-2);
+}
+.hb-allium.b2 circle {
+  fill: var(--hb-bloom-3);
+}
+.hb-allium.b3 circle {
+  fill: var(--hb-bloom-4);
+}
+.hb-wing {
+  fill: var(--hb-bloom-4);
+  stroke: var(--hb-ink);
+  stroke-width: 0.5;
+}
+
+/* ---- Growth: stems draw, leaves and blooms unfold, in delay buckets ---- */
+.hb-stem {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset calc(var(--hb-grow) * 0.45) cubic-bezier(0.3, 0.6, 0.3, 1);
+}
+.hb-leaf,
+.hb-vein,
+.hb-tip {
+  transform: scale(0);
+  transform-origin: 0 0;
+  transition: transform calc(var(--hb-grow) * 0.3) cubic-bezier(0.34, 1.4, 0.5, 1);
+}
+.is-grown .hb-stem {
+  stroke-dashoffset: 0;
+}
+.is-grown .hb-leaf,
+.is-grown .hb-vein,
+.is-grown .hb-tip {
+  transform: scale(1);
+}
+.d1 { transition-delay: calc(var(--hb-grow) * 0.05); }
+.d2 { transition-delay: calc(var(--hb-grow) * 0.1); }
+.d3 { transition-delay: calc(var(--hb-grow) * 0.15); }
+.d4 { transition-delay: calc(var(--hb-grow) * 0.2); }
+.d5 { transition-delay: calc(var(--hb-grow) * 0.25); }
+.d6 { transition-delay: calc(var(--hb-grow) * 0.3); }
+.d7 { transition-delay: calc(var(--hb-grow) * 0.35); }
+.d8 { transition-delay: calc(var(--hb-grow) * 0.4); }
+.d9 { transition-delay: calc(var(--hb-grow) * 0.45); }
+.d10 { transition-delay: calc(var(--hb-grow) * 0.5); }
+.d11 { transition-delay: calc(var(--hb-grow) * 0.55); }
+.d12 { transition-delay: calc(var(--hb-grow) * 0.6); }
+.d13 { transition-delay: calc(var(--hb-grow) * 0.65); }
+.d14 { transition-delay: calc(var(--hb-grow) * 0.7); }
+.d15 { transition-delay: calc(var(--hb-grow) * 0.75); }
+
+/* ---- Sway: each plant on its own slow clock, rooted at (0,0) ---- */
+.is-grown .hb-plant {
+  transform-origin: 0 0;
+  animation: hb-sway 7s ease-in-out infinite alternate;
+  animation-delay: calc(var(--hb-grow) * 0.8);
+}
+.is-grown .hb-plant.s1 { animation-duration: 8.3s; animation-direction: alternate-reverse; }
+.is-grown .hb-plant.s2 { animation-duration: 6.1s; }
+.is-grown .hb-plant.s3 { animation-duration: 9.4s; animation-direction: alternate-reverse; }
+.is-grown .hb-plant.s4 { animation-duration: 7.7s; }
+@keyframes hb-sway {
+  from { transform: rotate(calc(var(--hb-sway) * -1)); }
+  to { transform: rotate(var(--hb-sway)); }
+}
+
+/* Reduced motion and print: fully grown, perfectly still. A design state. */
+[data-motion="reduce"] .hb-stem,
+[data-motion="reduce"] .hb-leaf,
+[data-motion="reduce"] .hb-vein,
+[data-motion="reduce"] .hb-tip {
+  transition: none;
+  stroke-dashoffset: 0;
+  transform: none;
+}
+[data-motion="reduce"] .hb-plant {
+  animation: none !important;
+}
+@media print {
+  .hb-stem {
+    transition: none;
+    stroke-dashoffset: 0;
+  }
+  .hb-leaf,
+  .hb-vein,
+  .hb-tip {
+    transition: none;
+    transform: none;
+  }
+  .hb-plant {
+    animation: none !important;
+  }
+}

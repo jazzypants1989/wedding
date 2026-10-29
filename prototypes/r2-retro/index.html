@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Round 2 — retro web / zine</title>
+  <style>
+    body {
+      max-width: 46rem;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      font: 16px/1.55 "Courier New", Courier, monospace;
+      color: #1b1a18;
+      background: #f4f1e8;
+    }
+
+    h1 {
+      font: 900 2rem/1.1 Impact, "Arial Black", sans-serif;
+      letter-spacing: 0.02em;
+    }
+
+    section {
+      margin: 1.6rem 0;
+      padding: 1rem 1.2rem;
+      background: #fff;
+      border: 2px solid #1b1a18;
+      box-shadow: 4px 4px 0 #1b1a18;
+    }
+
+    h2 {
+      margin: 0 0 0.3rem;
+      font-size: 1.2rem;
+    }
+
+    .slots {
+      font-size: 0.85rem;
+      color: #5a564c;
+    }
+
+    a {
+      color: #a02a0b;
+      font-weight: bold;
+    }
+
+    code {
+      background: #efe9d8;
+      padding: 0 0.2rem;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Round 2 &middot; retro web / zine</h1>
+  <p>Three sketches, each a guestbook page and a memory book. Same fictional guests as every other sketch.
+    Every sketch takes <code>?n=3</code> / <code>?n=300</code>, <code>?theme=dark</code>, and <code>?bar=0</code>
+    (hide the dev bar); the bar's <b>params</b> drawer is built with the site's own <code>buildControl()</code>.
+    Sign the guestbook (or add <code>?fire=1</code>) to see the burst.</p>
+
+  <section>
+    <h2>1. guestbook.cgi</h2>
+    <p>A 1999 personal homepage, done with love: tiled pixel-heart wallpaper, WordArt, a marquee, an
+      under-construction strip ("this marriage is under construction — completion date: never"), a hit counter,
+      a webring, 88&times;31 badges and <code>canon_in_d.mid</code>, synthesised. Each entry is the
+      guestbook.cgi table. The book is the page <i>printed from Navigator</i>: "Page 2 of 7", the URL and the date in
+      the margins.</p>
+    <p><a href="./guestbook-cgi/">guestbook</a> &middot; <a href="./guestbook-cgi/book.html">memory book</a>
+      &middot; <a href="./guestbook-cgi/?palette=netscape&amp;theme=dark">netscape palette, dark</a>
+      &middot; <a href="./guestbook-cgi/SKETCH.md">SKETCH.md</a></p>
+    <p class="slots">background <code>tiled-1999</code> · burst <code>thanks-for-signing</code> · card
+      <code>guestbook-cgi</code> · book <code>netscape-printout</code></p>
+  </section>
+
+  <section>
+    <h2>2. cut-and-paste</h2>
+    <p>A photocopied riot-grrrl zine. Ransom-note headings, every entry a clipping cut from a different paper
+      (bond, notebook, newsprint, graph, a black photocopy, construction paper) keyed off its id, signed in marker,
+      date rubber-stamped. Signing runs the page through the copier. The book is a <b>real zine</b>: paginated by
+      measurement and imposed for saddle-stitch — print double-sided, fold, staple.</p>
+    <p><a href="./cut-and-paste/">guestbook</a> &middot; <a href="./cut-and-paste/book.html">zine</a>
+      &middot; <a href="./cut-and-paste/book.html?print=pages&amp;paper=a4">single A5 pages</a>
+      &middot; <a href="./cut-and-paste/SKETCH.md">SKETCH.md</a></p>
+    <p class="slots">background <code>xerox</code> · burst <code>photocopy</code> · card <code>clipping</code> · book
+      <code>zine-a5</code></p>
+  </section>
+
+  <section>
+    <h2>3. tractor-feed</h2>
+    <p>By day a dot-matrix printout: each entry a torn-off chunk of green-bar continuous form, sprocket holes
+      punched, text struck as pins. By night the same records on a phosphor BBS terminal. Signing prints a receipt.
+      The book opens with a <b>Print Shop banner</b> of the couple's names running sideways across three pages — tape
+      them up — then the whole guestbook as a green-bar listing, strips and bars on every sheet.</p>
+    <p><a href="./tractor-feed/">guestbook</a> &middot; <a href="./tractor-feed/book.html">memory book</a>
+      &middot; <a href="./tractor-feed/?theme=dark">the BBS (dark)</a>
+      &middot; <a href="./tractor-feed/SKETCH.md">SKETCH.md</a></p>
+    <p class="slots">background <code>fanfold-feed</code> · burst <code>print-head</code> · card
+      <code>tractor-feed</code> · book <code>banner-fanfold</code></p>
+  </section>
+
+  <p>Mix-and-match note: the cards compose with any background (each brings its own surface), and every burst
+    draws only its own overlay.</p>
+</body>
+
+</html>

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Admin</title>
+  <link rel="stylesheet" href="/site/styles/tokens.css">
+  <link rel="stylesheet" href="/admin-workspace/app.css">
+  <script type="module" src="/admin-workspace/app.js"></script>
+</head>
+<body>
+  <a class="skip" href="#view">Skip to content</a>
+  <div class="ws">
+    <aside class="sidebar">
+      <a class="brand" href="/admin-workspace/"><span class="brand-mark">J&amp;J</span><span class="brand-text">Admin</span></a>
+      <nav id="sidebar-nav" aria-label="Admin sections"></nav>
+      <div class="side-foot">
+        <button type="button" class="mode" data-action="mode" title="The order follows the wedding date; this flips it for the prototype">
+          <span id="mode-label"></span><small>Switch order</small>
+        </button>
+        <button type="button" class="icon-btn" data-action="theme" aria-label="Toggle light / dark">
+          <svg class="icon" viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M15 12.5A6 6 0 0 1 7.5 5a6 6 0 1 0 7.5 7.5z"/></svg>
+        </button>
+      </div>
+    </aside>
+    <div class="main">
+      <header class="topbar">
+        <nav aria-label="Breadcrumb" class="crumbs-wrap"><ol id="crumbs" class="crumbs"></ol></nav>
+        <div class="top-tools">
+          <button type="button" class="btn btn-sm btn-ghost keys-btn" data-action="help"><kbd>?</kbd> Keys</button>
+          <details class="proto-menu">
+            <summary class="btn btn-sm btn-ghost">Prototype</summary>
+            <div class="proto-pop">
+              <p class="small muted">Not part of the design — controls for trying it.</p>
+              <button type="button" class="btn btn-sm" data-action="expire">Expire session on next action</button>
+              <button type="button" class="btn btn-sm" data-action="expire-now">Expire session now</button>
+              <button type="button" class="btn btn-sm" data-action="theme">Light / dark</button>
+              <button type="button" class="btn btn-sm" data-action="reset">Reset fake data</button>
+            </div>
+          </details>
+        </div>
+      </header>
+      <main id="view" tabindex="-1"></main>
+    </div>
+    <nav id="bottombar" class="bottombar" aria-label="Admin sections"></nav>
+  </div>
+  <div id="dialog-root"></div>
+  <div id="toast-root" aria-live="polite"></div>
+  <div id="route-live" class="sr-only" aria-live="polite"></div>
+</body>
+</html>

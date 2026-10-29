@@ -1,0 +1,645 @@
+/* Page furniture for the guestbook.cgi sketch: marquee, WordArt, the
+   under-construction strip, hit counter, MIDI embed, form, webring, 88x31s.
+   None of this is a slot yet; SKETCH.md proposes where it would live. */
+
+.cgi-page {
+  background: transparent;
+  color: var(--cgi-ink);
+  font-family: var(--cgi-font);
+}
+
+.cgi-page a {
+  color: var(--cgi-link);
+}
+
+.cgi-column {
+  width: min(780px, calc(100% - 16px));
+  margin: 0 auto;
+  padding: 10px 0 40px;
+}
+
+/* ---- sprite colours ---- */
+.px {
+  display: inline-block;
+  image-rendering: pixelated;
+  vertical-align: middle;
+}
+
+.px-heart {
+  fill: var(--color-primary);
+}
+
+.px-shine {
+  fill: #fff;
+}
+
+.px-ink {
+  fill: #000;
+}
+
+.px-caution {
+  fill: #ffd400;
+}
+
+.px-paper {
+  fill: #fff;
+}
+
+/* ---- marquee ---- */
+.cgi-marquee {
+  overflow: hidden;
+  background: #000;
+  color: #ff0;
+  border-bottom: 2px solid var(--color-primary);
+  font: bold 0.95rem/1.9 "Comic Sans MS", "Comic Sans", "Chalkboard SE", cursive;
+  white-space: nowrap;
+}
+
+.cgi-marquee-track {
+  display: flex;
+  width: max-content;
+  animation: cgi-marquee 38s linear infinite;
+}
+
+.cgi-marquee-track span {
+  padding-right: 3rem;
+}
+
+@keyframes cgi-marquee {
+  to {
+    translate: -50% 0;
+  }
+}
+
+/* ---- WordArt ---- */
+.cgi-header {
+  text-align: center;
+  padding-top: 8px;
+}
+
+.cgi-wordart {
+  margin: 0 auto;
+  max-width: 720px;
+  line-height: 0;
+}
+
+.cgi-wordart svg {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.wa-text {
+  font-family: Impact, "Haettenschweiler", "Arial Narrow Bold", "Arial Black", sans-serif;
+  font-weight: 900;
+  letter-spacing: 1px;
+}
+
+.wa-depth {
+  fill: color-mix(in srgb, var(--color-primary-dark) 70%, #000);
+}
+
+.wa-face {
+  stroke: color-mix(in srgb, var(--color-primary-dark) 60%, #000);
+  stroke-width: 1.6;
+  paint-order: stroke;
+}
+
+.wa-s1 {
+  stop-color: light-dark(#fff6c8, #fff6c8);
+}
+
+.wa-s2 {
+  stop-color: var(--fx-gold-1);
+}
+
+.wa-s3 {
+  stop-color: var(--color-primary);
+}
+
+.wa-s4 {
+  stop-color: var(--color-primary-dark);
+}
+
+.cgi-tagline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 4px auto 0;
+  max-width: 34rem;
+  padding: 4px 10px;
+  background: var(--cgi-cell);
+  border: 1px solid var(--cgi-lo);
+  font-style: italic;
+  font-size: 1.05rem;
+}
+
+.cgi-spin {
+  flex: none;
+  width: 22px;
+  height: 20px;
+  display: inline-block;
+  animation: cgi-spin 1.4s steps(8, end) infinite;
+}
+
+.cgi-spin svg {
+  width: 100%;
+  height: 100%;
+}
+
+@keyframes cgi-spin {
+  0%,
+  100% {
+    scale: 1 1;
+  }
+  25% {
+    scale: 0.12 1;
+  }
+  50% {
+    scale: -1 1;
+  }
+  75% {
+    scale: -0.12 1;
+  }
+}
+
+/* ---- rainbow <hr>: the animated-GIF divider, as a gradient ---- */
+.cgi-rainbow {
+  height: 8px;
+  margin: 18px 0;
+  border: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    #ff2a6d 0 16px,
+    #ff9e00 16px 32px,
+    #ffe600 32px 48px,
+    #2ee86a 48px 64px,
+    #19b5fe 64px 80px,
+    #9b5cff 80px 96px
+  );
+  background-size: 96px 8px;
+  image-rendering: pixelated;
+  animation: cgi-rainbow 2s steps(6, end) infinite;
+  box-shadow: 0 1px 0 #000, 0 -1px 0 #000;
+}
+
+@keyframes cgi-rainbow {
+  to {
+    background-position: 96px 0;
+  }
+}
+
+/* ---- under construction ---- */
+.cgi-construction {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 10px 12px;
+  border: 8px solid transparent;
+  border-image: repeating-linear-gradient(-45deg, #111 0 10px, #ffd400 10px 20px) 8;
+  background: light-dark(#fffbe0, #1d1a00);
+  color: light-dark(#000, #ffef8a);
+  text-align: center;
+  font-family: Verdana, Tahoma, sans-serif;
+  font-size: 0.85rem;
+}
+
+.cgi-construction b {
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+}
+
+.cgi-sign {
+  flex: none;
+  width: 44px;
+  height: 44px;
+}
+
+.cgi-sign svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* the little worker digs: a two-frame bob */
+.cgi-sign svg {
+  animation: cgi-dig 0.8s steps(1, end) infinite;
+}
+
+@keyframes cgi-dig {
+  50% {
+    translate: 0 2px;
+  }
+}
+
+/* ---- hit counter + MIDI embed ---- */
+.cgi-counter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  justify-content: center;
+  gap: 14px;
+  margin: 18px 0;
+}
+
+.cgi-counter {
+  padding: 8px 14px;
+  text-align: center;
+  background: var(--cgi-cell);
+  border: 3px double var(--cgi-ink);
+  font-size: 0.95rem;
+}
+
+.cgi-odometer {
+  display: inline-flex;
+  gap: 2px;
+  margin: 4px 0;
+  padding: 3px;
+  background: #222;
+  border: 2px solid;
+  border-color: #000 #666 #666 #000;
+}
+
+.cgi-digit {
+  position: relative;
+  display: inline-block;
+  width: 1.15em;
+  padding: 2px 0;
+  background: linear-gradient(#000, #2a2a2a 48%, #000 52%, #1c1c1c);
+  color: #3dff6e;
+  font: bold 1.5rem/1 "Courier New", Courier, monospace;
+  text-shadow: 0 0 6px rgb(61 255 110 / 0.6);
+  text-align: center;
+}
+
+.cgi-digit::before {
+  content: "8";
+  position: absolute;
+  inset: 2px 0 0;
+  color: rgb(61 255 110 / 0.08);
+  text-shadow: none;
+}
+
+.cgi-midi {
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  min-width: 16rem;
+  padding: 8px 10px;
+  background: var(--cgi-face);
+  border: 2px solid;
+  border-color: var(--cgi-hi) var(--cgi-lo) var(--cgi-lo) var(--cgi-hi);
+  font-family: var(--cgi-ui);
+  font-size: 0.75rem;
+}
+
+.cgi-midi-lcd {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 3px 6px;
+  background: #0d1f0d;
+  color: #7dff9a;
+  border: 2px solid;
+  border-color: var(--cgi-lo) var(--cgi-hi) var(--cgi-hi) var(--cgi-lo);
+  font: 0.8rem/1.2 "Courier New", Courier, monospace;
+}
+
+.cgi-midi-buttons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cgi-midi-note {
+  margin-left: 4px;
+  color: var(--cgi-ink);
+}
+
+/* ---- buttons + form ---- */
+.cgi-btn {
+  min-width: 32px;
+  min-height: 28px;
+  padding: 2px 10px;
+  border: 2px solid;
+  border-color: var(--cgi-hi) var(--cgi-lo) var(--cgi-lo) var(--cgi-hi);
+  outline: 1px solid color-mix(in srgb, var(--cgi-lo) 70%, #000);
+  background: var(--cgi-face);
+  color: var(--cgi-ink);
+  font: 0.85rem/1 var(--cgi-ui);
+  cursor: pointer;
+}
+
+.cgi-btn:active {
+  border-color: var(--cgi-lo) var(--cgi-hi) var(--cgi-hi) var(--cgi-lo);
+}
+
+.cgi-btn:focus-visible {
+  outline: 1px dotted var(--cgi-ink);
+  outline-offset: -5px;
+}
+
+.cgi-btn:disabled {
+  color: color-mix(in srgb, var(--cgi-ink) 40%, transparent);
+  cursor: not-allowed;
+}
+
+.cgi-btn-big {
+  min-height: 34px;
+  padding: 4px 18px;
+  font-weight: bold;
+}
+
+.cgi-h2 {
+  margin: 0 0 10px;
+  text-align: center;
+  font: bold 1.7rem/1.2 var(--cgi-font);
+  color: var(--cgi-head);
+  text-shadow: 2px 2px 0 color-mix(in srgb, var(--cgi-head) 25%, transparent);
+}
+
+.cgi-view-title {
+  margin-top: 22px;
+}
+
+.cgi-form {
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  background: var(--cgi-face);
+  border: 2px solid;
+  border-color: var(--cgi-hi) var(--cgi-lo) var(--cgi-lo) var(--cgi-hi);
+}
+
+.cgi-form-grid {
+  display: grid;
+  grid-template-columns: 7em minmax(0, 1fr);
+  gap: 6px 8px;
+  align-items: start;
+}
+
+.cgi-form-grid label {
+  padding-top: 4px;
+  text-align: right;
+  font-weight: bold;
+}
+
+.cgi-input {
+  width: 100%;
+  padding: 4px 6px;
+  border: 2px solid;
+  border-color: var(--cgi-lo) var(--cgi-hi) var(--cgi-hi) var(--cgi-lo);
+  border-radius: 0;
+  background: var(--cgi-cell);
+  color: var(--cgi-ink);
+  font: 1rem/1.35 var(--cgi-font);
+}
+
+.cgi-input:focus-visible {
+  outline: 2px solid var(--cgi-accent);
+  outline-offset: 1px;
+}
+
+.cgi-input[readonly] {
+  background: color-mix(in srgb, var(--cgi-cell) 70%, var(--cgi-face));
+}
+
+.cgi-form-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.cgi-blink-soft {
+  display: inline-block;
+}
+
+/* ---- webring ---- */
+.cgi-webring {
+  margin: 0 auto;
+  max-width: 34rem;
+  padding: 8px 12px;
+  border: 3px outset var(--cgi-face);
+  background: var(--cgi-cell);
+  text-align: center;
+}
+
+.cgi-webring-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cgi-webring-title svg {
+  width: 16px;
+  height: 15px;
+}
+
+.cgi-webring-links {
+  margin-top: 4px;
+  font-weight: bold;
+}
+
+/* ---- footer + 88x31 badges ---- */
+.cgi-footer {
+  margin-top: 18px;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.cgi-footer > p {
+  display: inline-block;
+  margin: 4px auto 0;
+  padding: 2px 8px;
+  background: var(--cgi-cell);
+}
+
+.cgi-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.b88 {
+  display: inline-flex;
+  width: 88px;
+  height: 31px;
+  overflow: hidden;
+  border: 1px solid #000;
+  font: bold 9px/1.05 Verdana, Tahoma, sans-serif;
+  text-align: center;
+  letter-spacing: -0.01em;
+  image-rendering: pixelated;
+}
+
+.b88-l {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 29px;
+  font-size: 16px;
+  border-right: 1px solid #000;
+}
+
+.b88-l svg {
+  width: 18px;
+  height: 16px;
+}
+
+.b88-r {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 0 2px;
+}
+
+.b88-jj {
+  background: linear-gradient(#ffd9ec, #ff7ab8);
+  color: #5a0030;
+}
+
+.b88-jj .b88-l {
+  background: #fff;
+}
+
+.b88-notepad {
+  background: #c0c0c0;
+  color: #000;
+}
+
+.b88-notepad .b88-l {
+  background: #fff;
+  color: #000080;
+}
+
+.b88-now {
+  background: linear-gradient(#000040, #2a2aa8);
+  color: #fff;
+}
+
+.b88-now .b88-l {
+  background: radial-gradient(circle at 50% 70%, #ffd400 0 35%, #ff7a00 36% 60%, #000040 61%);
+  color: transparent;
+}
+
+.b88-now b {
+  color: #ffd400;
+  font-size: 11px;
+}
+
+.b88-y2k {
+  background: #000;
+  color: #3dff6e;
+  font-family: "Courier New", monospace;
+}
+
+.b88-y2k .b88-l {
+  background: #3dff6e;
+  color: #000;
+}
+
+.b88-tissues {
+  background: linear-gradient(90deg, #e9f6ff, #b9dcff);
+  color: #003366;
+}
+
+.b88-tissues .b88-l {
+  background: #fff;
+  color: #6aa6e0;
+}
+
+.cgi-env {
+  display: inline-block;
+  width: 22px;
+  height: 15px;
+  vertical-align: -2px;
+}
+
+.cgi-env svg {
+  width: 100%;
+  height: 100%;
+}
+
+.cgi-updated {
+  font-size: 0.8rem;
+}
+
+/* A newly signed entry flashes like a fresh <blink>, then settles. */
+.cgi-fresh {
+  animation: cgi-fresh 1.2s steps(6, end) 1;
+}
+
+@keyframes cgi-fresh {
+  0%,
+  33%,
+  66% {
+    outline: 3px solid #ff0;
+  }
+  16%,
+  50%,
+  83%,
+  100% {
+    outline: 3px solid transparent;
+  }
+}
+
+@media (max-width: 480px) {
+  .cgi-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cgi-form-grid label {
+    text-align: left;
+    padding: 0;
+  }
+
+  .cgi-construction {
+    gap: 8px;
+    font-size: 0.78rem;
+  }
+
+  .cgi-sign {
+    width: 32px;
+    height: 32px;
+  }
+
+  .cgi-h2 {
+    font-size: 1.4rem;
+  }
+}
+
+/* Reduced motion: every GIF holds its first frame, the marquee becomes a
+   centred banner that wraps, and the rainbow rule stops scrolling. */
+@media (prefers-reduced-motion: reduce) {
+  .cgi-marquee {
+    white-space: normal;
+    text-align: center;
+  }
+
+  .cgi-marquee-track {
+    width: auto;
+    animation: none;
+    justify-content: center;
+    padding: 0 10px;
+  }
+
+  .cgi-marquee-track span + span {
+    display: none;
+  }
+
+  .cgi-marquee-track span {
+    padding: 0;
+  }
+
+  .cgi-spin,
+  .cgi-sign svg,
+  .cgi-rainbow,
+  .cgi-fresh {
+    animation: none;
+  }
+}

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Guestbook — Player Piano (r2 sketch)</title>
+  <link rel="stylesheet" href="/site/styles/tokens.css">
+  <link rel="stylesheet" href="../shared/base.css">
+  <link rel="stylesheet" href="./roll.css">
+  <script src="../shared/theme-init.js"></script>
+</head>
+
+<body>
+  <div class="r2-bar" role="toolbar" aria-label="Sketch controls">
+    <a href="../">← r2 sound/time/space</a>
+    <span class="r2-spacer"></span>
+    <button type="button" class="r2-btn" id="pp-sound" aria-pressed="false">♪ Sound off</button>
+    <button type="button" class="r2-btn" id="pp-crank" aria-pressed="false">⟳ Crank</button>
+    <button type="button" class="r2-btn" data-theme-toggle>☀ Light</button>
+    <a href="./book.html" data-carry>Memory book: the score →</a>
+  </div>
+  <p class="pp-sound-note r2-note" id="pp-sound-note" hidden></p>
+
+  <main class="pp-page" id="main">
+    <header class="pp-head">
+      <p class="pp-kicker" id="pp-couple"></p>
+      <h1 class="pp-title">Guestbook</h1>
+      <p class="pp-lede">Every name here is a tune. <span class="pp-lede-soft">Scroll, and the roll plays under the bar.</span></p>
+      <details class="pp-how">
+        <summary>How a name becomes music</summary>
+        <p>Each letter of the signer’s name is a note. The letters run A to G, then start again: H is A, I is B, O is A
+          again, and so on, so every name is a little phrase on the white keys. The words of the message set the rhythm:
+          short words are quick, long words linger. Hearts end the phrase on a chord, and a favourite rings a bell.</p>
+        <p>The memory book prints every tune as sheet music, with the letters underneath as lyrics. Anyone can play it on a
+          piano with one finger.</p>
+      </details>
+    </header>
+
+    <form class="pp-composer" id="pp-composer" autocomplete="off">
+      <div class="pp-composer-roll roll-strip" aria-hidden="true">
+        <div class="roll-lanes" id="pp-composer-svg"></div>
+      </div>
+      <div class="pp-composer-fields">
+        <label for="pp-name">Your name <span class="pp-hint">— watch it punch</span></label>
+        <input id="pp-name" name="name" maxlength="60" placeholder="Ada Lovelace">
+        <p class="roll-spelled" id="pp-composer-spelled" aria-live="polite"></p>
+        <label for="pp-msg">Your message</label>
+        <textarea id="pp-msg" name="message" rows="2" maxlength="2000"
+          placeholder="Share a memory, a wish, a bit of advice…"></textarea>
+        <button type="submit" class="pp-sign">Sign the guestbook</button>
+      </div>
+    </form>
+
+    <div class="pp-reading-line" aria-hidden="true"></div>
+    <div class="pp-tracker r2-screen-only" id="pp-tracker" aria-hidden="true">
+      <div class="pp-tracker-bar" id="pp-tracker-bar"></div>
+    </div>
+
+    <h2 class="sr-only">Messages</h2>
+    <div id="pp-feed" class="gb-feed" data-gb-card="roll" role="feed" aria-busy="true"></div>
+    <div id="pp-live" class="sr-only" aria-live="polite"></div>
+    <p class="pp-end" id="pp-end" hidden></p>
+  </main>
+
+  <script type="module" src="./roll.js"></script>
+</body>
+
+</html>

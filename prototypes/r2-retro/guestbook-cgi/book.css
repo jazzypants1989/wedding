@@ -1,0 +1,581 @@
+/* book slot: netscape-printout — the memory book as a 1999 homepage printed
+   from Navigator. Keyed off <html data-mb-layout="netscape-printout">.
+
+   Params (custom properties):
+     --mb-gap     space between entries (default 10pt)
+   Options params (data attributes, see SKETCH.md):
+     data-np-desktop = teal | theme      the desk behind the preview window
+     data-np-links   = blue | ink        whether "links" print blue          */
+
+:root[data-mb-layout="netscape-printout"] {
+  --np-face: light-dark(#c0c0c0, #3b3b3b);
+  --np-hi: light-dark(#fff, #6d6d6d);
+  --np-lo: light-dark(#808080, #111);
+  --np-ink: light-dark(#000, #eee);
+  --np-desk: light-dark(#008080, #0b3a3a);
+  --np-paper: light-dark(#fff, #ebe7df);
+  --np-link: #0000ee;
+  --cgi-font: "Times New Roman", Times, serif;
+  --cgi-ui: Verdana, Tahoma, "DejaVu Sans", sans-serif;
+  --cgi-cell: #fff;
+  --cgi-lo: #808080;
+  --cgi-ink: #000;
+}
+
+:root[data-mb-layout="netscape-printout"][data-np-desktop="theme"] {
+  --np-desk: var(--color-background);
+}
+
+:root[data-mb-layout="netscape-printout"][data-np-links="ink"] {
+  --np-link: #000;
+}
+
+[data-mb-layout="netscape-printout"] body {
+  background: var(--np-desk);
+  color: #000;
+  font-family: var(--cgi-font);
+}
+
+/* ---------------- browser chrome (screen) ---------------- */
+[data-mb-layout="netscape-printout"] .np-chrome {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--np-face);
+  color: var(--np-ink);
+  border: 2px solid;
+  border-color: var(--np-hi) var(--np-lo) var(--np-lo) var(--np-hi);
+  font: 12px/1.3 var(--cgi-ui);
+}
+
+[data-mb-layout="netscape-printout"] .np-titlebar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 3px 4px 3px 8px;
+  background: linear-gradient(90deg, #000080, #1084d0);
+  color: #fff;
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+[data-mb-layout="netscape-printout"] .np-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-mb-layout="netscape-printout"] .np-winbtns {
+  display: flex;
+  gap: 2px;
+}
+
+[data-mb-layout="netscape-printout"] .np-winbtns i {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 16px;
+  background: #c0c0c0;
+  color: #000;
+  font: bold 11px/1 var(--cgi-ui);
+  font-style: normal;
+  border: 1px solid;
+  border-color: #fff #404040 #404040 #fff;
+}
+
+[data-mb-layout="netscape-printout"] .np-menubar {
+  display: flex;
+  gap: 14px;
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--np-lo);
+  box-shadow: 0 1px 0 var(--np-hi);
+}
+
+[data-mb-layout="netscape-printout"] .mb-toolbar {
+  position: static;
+  justify-content: flex-start;
+  gap: 2px;
+  padding: 4px 6px;
+  background: none;
+  backdrop-filter: none;
+  border-bottom: 1px solid var(--np-lo);
+  box-shadow: 0 1px 0 var(--np-hi);
+}
+
+[data-mb-layout="netscape-printout"] .np-tool {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 54px;
+  min-height: 44px;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--np-ink);
+  font: 11px/1.2 var(--cgi-ui);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+[data-mb-layout="netscape-printout"] .np-glyph {
+  font-size: 18px;
+  line-height: 1.1;
+  color: light-dark(#004b8d, #8fc8ff);
+}
+
+[data-mb-layout="netscape-printout"] a.np-tool:hover,
+[data-mb-layout="netscape-printout"] button.np-tool:hover,
+[data-mb-layout="netscape-printout"] a.np-tool:focus-visible,
+[data-mb-layout="netscape-printout"] button.np-tool:focus-visible {
+  border-color: var(--np-hi) var(--np-lo) var(--np-lo) var(--np-hi);
+  outline: none;
+}
+
+[data-mb-layout="netscape-printout"] button.np-tool:active {
+  border-color: var(--np-lo) var(--np-hi) var(--np-hi) var(--np-lo);
+}
+
+[data-mb-layout="netscape-printout"] .np-tool-off {
+  color: color-mix(in srgb, var(--np-ink) 45%, transparent);
+  cursor: default;
+}
+
+[data-mb-layout="netscape-printout"] .np-tool-off .np-glyph {
+  color: inherit;
+}
+
+/* The throbber: a little night sky with a comet crossing it. */
+[data-mb-layout="netscape-printout"] .np-throbber {
+  position: relative;
+  margin-left: auto;
+  width: 46px;
+  height: 46px;
+  overflow: hidden;
+  background:
+    radial-gradient(1px 1px at 20% 30%, #fff 50%, transparent 51%),
+    radial-gradient(1px 1px at 70% 20%, #fff 50%, transparent 51%),
+    radial-gradient(1px 1px at 40% 80%, #fff 50%, transparent 51%),
+    #000040;
+  border: 2px solid;
+  border-color: var(--np-lo) var(--np-hi) var(--np-hi) var(--np-lo);
+  color: #ffd400;
+  font: bold 11px/42px var(--cgi-ui);
+  text-align: center;
+}
+
+[data-mb-layout="netscape-printout"] .np-throbber::after {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 2px;
+  left: -16px;
+  top: 8px;
+  background: linear-gradient(90deg, transparent, #fff);
+  rotate: 25deg;
+  animation: np-comet 2.2s steps(12, end) infinite;
+}
+
+@keyframes np-comet {
+  to {
+    translate: 70px 32px;
+  }
+}
+
+[data-mb-layout="netscape-printout"] .np-location {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 5px;
+}
+
+[data-mb-layout="netscape-printout"] .np-loc-url {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 5px;
+  background: light-dark(#fff, #111);
+  color: var(--np-ink);
+  border: 2px solid;
+  border-color: var(--np-lo) var(--np-hi) var(--np-hi) var(--np-lo);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------------- the paper (screen) ---------------- */
+[data-mb-layout="netscape-printout"] .mb-book {
+  max-width: 8.5in;
+  margin: 18px auto 48px;
+  padding: 0.35in 0.6in 0.35in;
+  background: var(--np-paper);
+  color: #000;
+  box-shadow: 6px 6px 0 rgb(0 0 0 / 0.45);
+}
+
+[data-mb-layout="netscape-printout"] .np-band {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font: 9pt/1.2 var(--cgi-font);
+  color: #000;
+}
+
+[data-mb-layout="netscape-printout"] .np-band-head {
+  margin-bottom: 0.3in;
+}
+
+[data-mb-layout="netscape-printout"] .np-band-foot {
+  margin-top: 0.3in;
+}
+
+[data-mb-layout="netscape-printout"] .np-band span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ---------------- cover = the top of the homepage ---------------- */
+[data-mb-layout="netscape-printout"] .mb-cover {
+  padding: 0 0 6px;
+  margin-bottom: 18px;
+  border-bottom: 0;
+}
+
+[data-mb-layout="netscape-printout"] .np-wordart svg {
+  width: 100%;
+  max-width: 640px;
+  height: auto;
+  overflow: visible;
+}
+
+[data-mb-layout="netscape-printout"] .mb-cover-mono,
+[data-mb-layout="netscape-printout"] .mb-cover-names,
+[data-mb-layout="netscape-printout"] .mb-cover-sub {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+[data-mb-layout="netscape-printout"] .mb-cover-date {
+  margin: 6px 0 0;
+  font: italic 1.15rem/1.3 var(--cgi-font);
+  color: #000;
+}
+
+[data-mb-layout="netscape-printout"] .cgi-rainbow {
+  margin: 14px 0;
+}
+
+[data-mb-layout="netscape-printout"] .np-under {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border: 2px dashed #000;
+  font: 0.8rem/1.3 var(--cgi-ui);
+}
+
+[data-mb-layout="netscape-printout"] .np-under .cgi-sign {
+  width: 30px;
+  height: 30px;
+}
+
+[data-mb-layout="netscape-printout"] .np-counter {
+  margin-top: 12px;
+  font-size: 1rem;
+}
+
+[data-mb-layout="netscape-printout"] .np-odo {
+  display: inline-flex;
+  gap: 2px;
+  vertical-align: middle;
+}
+
+[data-mb-layout="netscape-printout"] .np-odo .cgi-digit {
+  font-size: 1.1rem;
+  border: 1px solid #000;
+}
+
+/* ---------------- sections ---------------- */
+[data-mb-layout="netscape-printout"] .mb-section {
+  margin-bottom: 18px;
+}
+
+[data-mb-layout="netscape-printout"] .mb-section-title {
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+  font: bold 1.6rem/1.2 var(--cgi-font);
+  color: #000080;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+
+[data-mb-layout="netscape-printout"] .mb-section-favorites .mb-section-title::before,
+[data-mb-layout="netscape-printout"] .mb-section-favorites .mb-section-title::after {
+  content: "★";
+  margin: 0 10px;
+  color: #d4a000;
+  text-decoration: none;
+  display: inline-block;
+}
+
+/* ---------------- entries = guestbook.cgi tables ---------------- */
+[data-mb-layout="netscape-printout"] .mb-entry {
+  display: grid;
+  grid-template-columns: 6.2em minmax(0, 1fr);
+  gap: 2px;
+  margin: 0 0 var(--mb-gap, 10pt);
+  padding: 2px;
+  border: 2px solid;
+  border-color: #fff #808080 #808080 #fff;
+  outline: 1px solid #000;
+  border-radius: 0;
+  background: #c0c0c0;
+  font: 1rem/1.35 var(--cgi-font);
+  color: #000;
+}
+
+[data-mb-layout="netscape-printout"] .mb-entry.is-favorite {
+  padding: 2px;
+  margin-bottom: var(--mb-gap, 10pt);
+  border-radius: 0;
+  background: #ffe9a8;
+}
+
+[data-mb-layout="netscape-printout"] .mb-entry::before {
+  content: "Entry #" attr(data-id);
+  grid-column: 1 / -1;
+  grid-row: 1;
+  padding: 1px 6px;
+  background: linear-gradient(90deg, #000080, #1084d0);
+  color: #fff;
+  font: bold 0.75rem/1.4 var(--cgi-ui);
+}
+
+[data-mb-layout="netscape-printout"] .mb-entry.is-favorite::before {
+  content: "Entry #" attr(data-id) "  ★ COOL MESSAGE ★";
+}
+
+[data-mb-layout="netscape-printout"] .mb-entry-head {
+  display: contents;
+}
+
+[data-mb-layout="netscape-printout"] .mb-entry-head::before,
+[data-mb-layout="netscape-printout"] .mb-entry-head::after,
+[data-mb-layout="netscape-printout"] .mb-entry::after {
+  grid-column: 1;
+  padding: 3px 7px;
+  text-align: right;
+  font-weight: bold;
+}
+
+[data-mb-layout="netscape-printout"] .mb-entry-head::before {
+  content: "Name:";
+  grid-row: 2;
+}
+
+[data-mb-layout="netscape-printout"] .mb-entry-head::after {
+  content: "Date:";
+  grid-row: 3;
+}
+
+[data-mb-layout="netscape-printout"] .mb-entry::after {
+  content: "Comments:";
+  grid-row: 4;
+}
+
+[data-mb-layout="netscape-printout"] .mb-entry .monogram,
+[data-mb-layout="netscape-printout"] .mb-entry-fav {
+  display: none;
+}
+
+[data-mb-layout="netscape-printout"] .mb-entry-author,
+[data-mb-layout="netscape-printout"] .mb-entry-date,
+[data-mb-layout="netscape-printout"] .mb-entry-message {
+  grid-column: 2;
+  margin: 0;
+  padding: 3px 7px;
+  background: #fff;
+  border: 1px solid;
+  border-color: #808080 #fff #fff #808080;
+  font-family: var(--cgi-font);
+  color: #000;
+}
+
+[data-mb-layout="netscape-printout"] .mb-entry-author {
+  grid-row: 2;
+  font-size: 1rem;
+  font-weight: bold;
+  color: var(--np-link);
+  text-decoration: underline;
+}
+
+[data-mb-layout="netscape-printout"] .mb-entry-date {
+  grid-row: 3;
+  margin: 0;
+  font-size: 1rem;
+}
+
+[data-mb-layout="netscape-printout"] .mb-entry-message {
+  grid-row: 4;
+  font-size: 1.05rem;
+  line-height: 1.45;
+}
+
+[data-mb-layout="netscape-printout"] .mb-count {
+  margin-top: 14px;
+  font: italic 1rem/1.3 var(--cgi-font);
+  color: #000;
+}
+
+[data-mb-layout="netscape-printout"] .np-tail {
+  text-align: center;
+  font-size: 0.95rem;
+}
+
+[data-mb-layout="netscape-printout"] .np-tail a {
+  color: var(--np-link);
+}
+
+[data-mb-layout="netscape-printout"] .np-ring {
+  margin-bottom: 10px;
+}
+
+[data-mb-layout="netscape-printout"] .np-ring-heart svg {
+  width: 14px;
+  height: 13px;
+  vertical-align: -1px;
+}
+
+[data-mb-layout="netscape-printout"] .np-mail {
+  margin-top: 8px;
+}
+
+@media (max-width: 600px) {
+  [data-mb-layout="netscape-printout"] .mb-book {
+    margin: 8px;
+    padding: 14px 12px;
+  }
+
+  [data-mb-layout="netscape-printout"] .np-menubar,
+  [data-mb-layout="netscape-printout"] .np-tool-off {
+    display: none;
+  }
+
+  [data-mb-layout="netscape-printout"] .mb-entry {
+    grid-template-columns: 5.4em minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-mb-layout="netscape-printout"] .np-throbber::after {
+    animation: none;
+    translate: 30px 14px;
+  }
+}
+
+/* ---------------- print: what Navigator put on paper ---------------- */
+@page {
+  margin: 16mm 15mm 16mm;
+
+  @top-left {
+    font: 9pt "Times New Roman", Times, serif;
+    color: #000;
+  }
+
+  @top-right {
+    font: 9pt "Times New Roman", Times, serif;
+    color: #000;
+  }
+
+  @bottom-left {
+    font: 9pt "Times New Roman", Times, serif;
+    color: #000;
+  }
+
+  @bottom-right {
+    font: 9pt "Times New Roman", Times, serif;
+    color: #000;
+  }
+}
+
+@media print {
+  [data-mb-layout="netscape-printout"] body {
+    background: #fff;
+  }
+
+  [data-mb-layout="netscape-printout"] .np-chrome,
+  [data-mb-layout="netscape-printout"] .np-band {
+    display: none !important;
+  }
+
+  [data-mb-layout="netscape-printout"] .mb-book {
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    background: none;
+    box-shadow: none;
+  }
+
+  /* A printed web page flows; the homepage header is just the top of page 1. */
+  [data-mb-layout="netscape-printout"] .mb-cover {
+    page-break-after: auto;
+    break-after: auto;
+    min-height: 0;
+    display: block;
+  }
+
+  /* Navigator printed with "background images" off: tables keep their
+     borders and lose their fills, which is exactly the look. */
+  [data-mb-layout="netscape-printout"] .mb-entry,
+  [data-mb-layout="netscape-printout"] .mb-entry.is-favorite {
+    background: none;
+    border: 1px solid #000;
+    outline: 0;
+    break-inside: avoid;
+  }
+
+  [data-mb-layout="netscape-printout"] .mb-entry::before {
+    background: none;
+    color: #000;
+    border-bottom: 1px solid #000;
+    font-size: 8pt;
+  }
+
+  [data-mb-layout="netscape-printout"] .mb-entry-author,
+  [data-mb-layout="netscape-printout"] .mb-entry-date,
+  [data-mb-layout="netscape-printout"] .mb-entry-message {
+    background: none;
+    border: 1px solid #999;
+  }
+
+  [data-mb-layout="netscape-printout"] .mb-entry-author {
+    color: var(--np-link);
+  }
+
+  [data-mb-layout="netscape-printout"] .cgi-rainbow {
+    height: 0;
+    background: none;
+    box-shadow: none;
+    border-top: 3px double #000;
+  }
+
+  [data-mb-layout="netscape-printout"] .cgi-digit {
+    background: none;
+    color: #000;
+    text-shadow: none;
+  }
+
+  [data-mb-layout="netscape-printout"] .cgi-digit::before {
+    content: none;
+  }
+
+  [data-mb-layout="netscape-printout"] .np-tail {
+    break-inside: avoid;
+  }
+}

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Guestbook — The Long Day (r2 sketch)</title>
+  <link rel="stylesheet" href="/site/styles/tokens.css">
+  <link rel="stylesheet" href="../shared/base.css">
+  <link rel="stylesheet" href="./hours.css">
+  <script src="../shared/theme-init.js"></script>
+</head>
+
+<body>
+  <div class="hr-sky" id="hr-sky" aria-hidden="true">
+    <div class="hr-orb" id="hr-orb"></div>
+  </div>
+
+  <div class="r2-bar" role="toolbar" aria-label="Sketch controls">
+    <a href="../">← r2 sound/time/space</a>
+    <span class="r2-spacer"></span>
+    <details class="hr-machine" id="hr-machine">
+      <summary class="r2-btn">⏱ Time machine</summary>
+      <div class="hr-machine-panel">
+        <p class="r2-note">Preview the page at any moment. The day you open on, the sky, the ink and the anniversary all follow it.</p>
+        <label>Moment <input type="datetime-local" id="hr-at"></label>
+        <label>Hour <input type="range" id="hr-hour" min="0" max="23.75" step="0.25"></label>
+        <div class="hr-presets" id="hr-presets"></div>
+      </div>
+    </details>
+    <button type="button" class="r2-btn" data-theme-toggle>☀ Light</button>
+    <a href="./book.html" data-carry>Memory book: a Book of Hours →</a>
+  </div>
+
+  <main class="hr-page" id="main">
+    <header class="hr-head">
+      <p class="hr-kicker" id="hr-couple"></p>
+      <h1 class="hr-title">The Long Day</h1>
+      <p class="hr-lede">Every note in the guestbook, laid on a single day by the hour it was written. Midnight is at the
+        top. You have opened it at <a href="#hr-now" id="hr-jump">the hour it is now</a>.</p>
+      <p class="hr-anniv" id="hr-anniv"></p>
+    </header>
+
+    <h2 class="sr-only">Messages, from midnight to midnight</h2>
+    <div id="hr-day" class="hr-day" data-gb-card="sundial"></div>
+    <footer class="hr-foot">
+      <p>Midnight again.</p>
+    </footer>
+  </main>
+
+  <script type="module" src="./hours.js"></script>
+</body>
+
+</html>

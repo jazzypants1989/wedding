@@ -6,6 +6,8 @@
  *
  *   node prototypes/serve.js [port]        (default 4700)
  *
+ * - `/` serves the design review (`prototypes/index.html`, the guided tour and
+ *   comparison page over every prototype), or a plain listing without one.
  * - `/<dir>/…` serves files from `prototypes/<dir>/…`.
  * - `/site/…` serves the real `public/…`, so a sketch can import the site's
  *   tokens, theme CSS, effect modules, effect-controls and the sound lab rather
@@ -37,6 +39,7 @@ const TYPES = {
   ".woff2": "font/woff2",
   ".m4a": "audio/mp4",
   ".md": "text/plain; charset=utf-8",
+  ".jpg": "image/jpeg",
 }
 
 /**
@@ -80,7 +83,7 @@ function resolve(urlPath) {
 http
   .createServer((req, res) => {
     const urlPath = new URL(req.url || "/", "http://x").pathname
-    if (urlPath === "/") {
+    if (urlPath === "/" && !isFile(path.join(ROOT, "index.html"))) {
       const dirs = fs
         .readdirSync(ROOT, { withFileTypes: true })
         .filter((d) => d.isDirectory() && d.name !== "fixtures")

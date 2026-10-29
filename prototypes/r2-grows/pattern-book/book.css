@@ -1,0 +1,278 @@
+/* Pattern Book memory book: weaving drafts. Sizes in cqw of the sheet. */
+
+.pbk-sheet {
+  --sheet-paper: color-mix(in oklab, var(--color-card-bg) 90%, var(--fx-gold-3) 10%);
+  --sheet-ink: var(--wv-ink);
+  font-family: var(--font-body);
+}
+.pbk-sheet h2 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 4.4cqw;
+  text-align: center;
+  margin: 7cqw 0 1.5cqw;
+  color: var(--color-text);
+}
+
+/* ---- One draft ---- */
+.pbk-draft {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  padding: 5cqw 6cqw;
+  column-gap: 4cqw;
+  color: var(--wv-ink);
+}
+.pbk-draft.is-full {
+  grid-template-columns: 1fr 28cqw;
+  grid-template-rows: auto auto auto 1fr;
+  grid-template-areas: "head head" "diag side" "msg msg" "when when";
+  row-gap: 3cqw;
+}
+.pbk-draft.is-half {
+  height: 50%;
+  padding: 4cqw 6cqw 3cqw;
+  grid-template-columns: 50cqw 1fr;
+  grid-template-rows: auto auto 1fr auto;
+  grid-template-areas: "head head" "diag side" "diag msg" "diag when";
+  row-gap: 1.6cqw;
+}
+.is-pair .pbk-draft:nth-child(2) {
+  top: 50%;
+  border-top: 0.2cqw dashed color-mix(in oklab, var(--wv-ink) 30%, transparent);
+}
+.pbk-head {
+  grid-area: head;
+  display: flex;
+  align-items: baseline;
+  gap: 2cqw;
+  border-bottom: 0.15cqw solid currentColor;
+  padding-bottom: 1cqw;
+}
+.pbk-no {
+  font-size: 1.4cqw;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+.pbk-for {
+  font-family: var(--font-display);
+  font-size: 2.8cqw;
+  color: var(--color-text);
+}
+.pbk-fav {
+  margin-left: auto;
+  font-size: 1.4cqw;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--effect-brand-dark);
+}
+.pbk-diagram {
+  grid-area: diag;
+  align-self: start;
+}
+.pbk-side {
+  grid-area: side;
+  text-align: center;
+}
+.pbk-swatch {
+  width: 100%;
+  max-width: 24cqw;
+  margin: 0 auto;
+}
+.is-half .pbk-swatch {
+  max-width: 17cqw;
+}
+.pbk-spec {
+  font-size: 1.25cqw;
+  line-height: 1.45;
+  letter-spacing: 0.06em;
+  margin: 1.2cqw 0 0;
+  opacity: 0.85;
+}
+.pbk-msg {
+  grid-area: msg;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 2.6cqw;
+  line-height: 1.38;
+  color: var(--color-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow: hidden;
+}
+.is-half .pbk-msg {
+  font-size: 2.1cqw;
+}
+.is-mid .pbk-msg {
+  font-size: 2.1cqw;
+}
+.is-long .pbk-msg {
+  font-size: 1.7cqw;
+}
+.is-half.is-mid .pbk-msg {
+  font-size: 1.75cqw;
+}
+.pbk-when {
+  grid-area: when;
+  align-self: end;
+  margin: 0;
+  font-size: 1.3cqw;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+/* ---- Cover ---- */
+.pbk-cover {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4cqw;
+  padding: 6cqw;
+}
+.pbk-cover-cloth {
+  width: 76cqw;
+  filter: drop-shadow(0 0.6cqw 1.2cqw rgb(0 0 0 / 0.25));
+}
+.pbk-cover-cloth .cv-svg {
+  max-height: none;
+}
+.pbk-cartouche {
+  text-align: center;
+  color: var(--wv-ink);
+}
+.pbk-cartouche h1 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 6cqw;
+  line-height: 1.05;
+  margin: 0.6cqw 0 1cqw;
+  color: var(--color-text);
+}
+.pbk-cartouche p {
+  margin: 0;
+  font-size: 1.8cqw;
+}
+.pbk-kicker {
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  font-size: 1.6cqw !important;
+}
+.pbk-small {
+  margin-top: 0.6cqw !important;
+  font-size: 1.5cqw !important;
+  opacity: 0.8;
+}
+
+/* ---- Key ---- */
+.pbk-lede {
+  max-width: 76cqw;
+  margin: 0 auto;
+  text-align: center;
+  font-size: 1.9cqw;
+  line-height: 1.45;
+  color: var(--wv-ink);
+}
+.pbk-key-diagram {
+  display: grid;
+  grid-template-columns: 48cqw 1fr;
+  gap: 4cqw;
+  margin: 4cqw 6cqw 0;
+  align-items: start;
+}
+.pbk-key-notes {
+  margin: 0;
+  padding-left: 2.6cqw;
+  font-size: 1.5cqw;
+  line-height: 1.45;
+  color: var(--wv-ink);
+}
+.pbk-key-notes li {
+  margin-bottom: 1.6cqw;
+}
+.pbk-key-notes b {
+  color: var(--color-text);
+  font-weight: 500;
+}
+.pbk-key-swatch {
+  display: flex;
+  align-items: center;
+  gap: 3cqw;
+  margin: 4cqw 6cqw 0;
+  font-family: var(--font-display);
+  font-size: 2cqw;
+  color: var(--color-text);
+}
+.pbk-key-swatch .wv-swatch {
+  flex: none;
+  width: 22cqw;
+}
+
+/* ---- Register ---- */
+.pbk-register ol {
+  list-style: none;
+  margin: 3cqw 6cqw 0;
+  padding: 0;
+  columns: 2;
+  column-gap: 5cqw;
+  font-size: 1.6cqw;
+  color: var(--wv-ink);
+}
+.pbk-register li {
+  display: flex;
+  align-items: center;
+  gap: 1.2cqw;
+  padding: 0.5cqw 0;
+  break-inside: avoid;
+  border-bottom: 0.1cqw solid color-mix(in oklab, var(--wv-ink) 18%, transparent);
+}
+.pbk-r-no {
+  width: 3cqw;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+.pbk-r-sw {
+  width: 3.6cqw;
+  flex: none;
+}
+.pbk-r-who {
+  flex: 1;
+  font-family: var(--font-display);
+  font-size: 1.8cqw;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pbk-r-p {
+  font-size: 1.3cqw;
+  opacity: 0.75;
+}
+.pbk-colophon {
+  position: absolute;
+  left: 10cqw;
+  right: 10cqw;
+  bottom: 6cqw;
+  text-align: center;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 1.8cqw;
+  line-height: 1.45;
+  color: var(--wv-ink);
+}
+
+@media print {
+  .pbk-sheet {
+    --sheet-paper: #fff;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .pbk-for,
+  .pbk-msg,
+  .pbk-cartouche h1,
+  .pbk-r-who {
+    color: #2a1d16;
+  }
+}

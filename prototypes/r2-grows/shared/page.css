@@ -1,0 +1,119 @@
+/* Stand-in guestbook page layout (mirrors public/pages/guestbook/guestbook.css). */
+body {
+  min-height: 100vh;
+  overflow-x: clip;
+}
+.gb-composer {
+  background: var(--color-card-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md) var(--spacing-lg);
+  box-shadow: var(--shadow-sm);
+}
+.gx-header {
+  padding: 2.2rem 1rem 0.5rem;
+}
+.gx-header .couple-names {
+  font-size: clamp(2rem, 6vw, 3.2rem);
+}
+.gb-section {
+  max-width: var(--container-content);
+  margin: 0 auto;
+  padding: var(--spacing-lg) var(--spacing-md) var(--spacing-xl);
+}
+.gb-title {
+  font-family: var(--font-display);
+  text-align: center;
+  margin-bottom: var(--spacing-xs);
+}
+.gb-intro {
+  text-align: center;
+  color: var(--color-text-muted);
+  margin-bottom: var(--spacing-lg);
+}
+.gb-feed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+.gb-entry {
+  position: relative;
+}
+.gb-message {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.gb-entry-foot {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin-top: var(--spacing-sm);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+.gx-fav {
+  margin-left: auto;
+}
+.gb-composer {
+  margin-bottom: var(--spacing-lg);
+}
+.gx-composer {
+  display: grid;
+  gap: var(--spacing-sm);
+}
+.gx-name-label {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+.gx-name {
+  font: inherit;
+  color: var(--color-text);
+  background: transparent;
+  border: none;
+  border-bottom: 1px dashed var(--color-border);
+  padding: 0.1rem 0.2rem;
+}
+.gb-textarea {
+  width: 100%;
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.6rem 0.75rem;
+  resize: vertical;
+}
+.gx-preview-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+.gx-preview-label {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  margin: 0;
+}
+.gb-composer-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.gx-band {
+  position: relative;
+  margin: 0 calc(50% - 50vw) var(--spacing-lg);
+}
+.gx-band svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}

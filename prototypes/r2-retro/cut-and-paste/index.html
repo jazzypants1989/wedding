@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Guestbook - Jordana &amp; Jesse (the zine)</title>
+  <script src="../shared/theme-boot.js"></script>
+  <link rel="stylesheet" href="/site/styles/tokens.css">
+  <link rel="stylesheet" href="/site/styles/layout.css">
+  <link rel="stylesheet" href="/site/styles/components.css">
+  <link rel="stylesheet" href="/site/styles/social.css">
+  <link rel="stylesheet" href="./doodles.css">
+  <link rel="stylesheet" href="./ransom.css">
+  <!-- slot pieces -->
+  <link rel="stylesheet" href="./background.css">
+  <link rel="stylesheet" href="./card.css">
+  <link rel="stylesheet" href="./burst.css">
+  <!-- page furniture -->
+  <link rel="stylesheet" href="./zine.css">
+  <link rel="stylesheet" href="../shared/kit.css">
+</head>
+
+<body class="zine-page">
+  <a href="#gb-feed" class="skip-link">Skip to the letters</a>
+
+  <main class="zine-column" id="main-content">
+    <header class="zine-mast">
+      <p class="zine-presents">J + J proudly present</p>
+      <h1 class="zine-title" id="zine-title">Guestbook</h1>
+      <p class="zine-issue" id="zine-issue">Issue #1 · April 26 2026 · Portland OR · free / take one</p>
+    </header>
+
+    <p class="zine-note">
+      This is a zine and you're in it. Write us a letter &mdash; we read every single one,
+      then we cut them out and glue them down.
+    </p>
+    <p class="zine-book-link"><a href="./book.html">print the zine &rarr; <span>(fold it, staple it, keep it)</span></a></p>
+
+    <div class="gb-section" data-gb-card="clipping">
+      <form class="zine-composer" id="gb-composer-form">
+        <p class="zine-composer-from">from: <b>Paloma</b></p>
+        <label for="gb-message" class="zine-composer-label">Write in!</label>
+        <textarea id="gb-message" class="zine-textarea" rows="4" maxlength="2000"
+          placeholder="Share a memory, a wish, a bit of advice…"></textarea>
+        <p class="zine-composer-actions">
+          <span class="zine-doodle-arrow" aria-hidden="true"></span>
+          <button type="submit" class="zine-send">Mail it in ✉</button>
+        </p>
+      </form>
+
+      <section id="gb-favorites" class="gb-favorites" aria-label="Favorites" hidden>
+        <h3 class="gb-favorites-title">Favorites <span aria-hidden="true">✨</span></h3>
+        <ul id="gb-favorites-list" class="gb-favorites-list" role="list"></ul>
+      </section>
+
+      <h2 class="zine-letters" id="zine-letters">Letters</h2>
+      <p class="zine-letters-sub">every one of them, newest on top</p>
+      <div id="gb-feed" class="gb-feed" data-gb-card="clipping"></div>
+      <div id="gb-live" class="sr-only" aria-live="polite"></div>
+    </div>
+
+    <footer class="zine-foot">
+      <p>made with scissors, a glue stick &amp; a lot of love &middot; no rights reserved &middot; copy &amp; share</p>
+    </footer>
+  </main>
+
+  <script type="module" src="./main.js"></script>
+</body>
+
+</html>

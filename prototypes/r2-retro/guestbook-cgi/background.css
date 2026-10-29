@@ -1,0 +1,68 @@
+/* background slot: tiled-1999. The tile itself is painted by tiled-1999.js
+   (a data-URI SVG resolved from theme tokens); this is the layer + sparkles. */
+
+.tiled-1999 {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  image-rendering: pixelated;
+}
+
+.t99-sparkle {
+  position: absolute;
+  width: var(--t99-size, 21px);
+  height: var(--t99-size, 21px);
+  translate: -50% -50%;
+  animation: t99-twinkle 2.4s steps(4, jump-none) infinite;
+  animation-delay: var(--t99-delay, 0s);
+}
+
+.t99-sparkle svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.t99-shine {
+  fill: light-dark(color-mix(in srgb, var(--color-primary) 55%, white), #fff);
+}
+
+.t99-glint {
+  fill: var(--fx-gold-1);
+}
+
+/* A GIF has frames, not easing: four hard steps from nothing to full and back. */
+@keyframes t99-twinkle {
+  0% {
+    scale: 0.2;
+    opacity: 0;
+  }
+  35% {
+    scale: 1;
+    opacity: 1;
+  }
+  70% {
+    scale: 0.5;
+    opacity: 0.8;
+  }
+  100% {
+    scale: 0.2;
+    opacity: 0;
+  }
+}
+
+/* Still, not gone: every sparkle rests at a fixed mid-frame. */
+@media (prefers-reduced-motion: reduce) {
+  .t99-sparkle {
+    animation: none;
+    scale: 0.6;
+    opacity: 0.85;
+  }
+}
+
+@media print {
+  .tiled-1999 {
+    display: none;
+  }
+}

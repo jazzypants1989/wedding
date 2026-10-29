@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Round 2 · Grows from the entries</title>
+  <link rel="stylesheet" href="/site/styles/tokens.css">
+  <link rel="stylesheet" href="/site/styles/layout.css">
+  <link rel="stylesheet" href="shared/fonts.css">
+  <link rel="stylesheet" href="herbarium/herbarium.css">
+  <link rel="stylesheet" href="pattern-book/weave.css">
+  <link rel="stylesheet" href="archipelago/island.css">
+  <link rel="stylesheet" href="index.css">
+</head>
+<body>
+  <main class="ix">
+    <header>
+      <p class="ix-kicker">Design round 2 · angle: grows from the entries</p>
+      <h1>The page is made of the guests</h1>
+      <p class="ix-lede">Three sketches in which every note deterministically grows its own artwork from its words: same note, same art, every visit and in print. No <code>Math.random</code> anywhere identity is concerned; the seed is author + message, so the composer can show a guest their art before they sign.</p>
+    </header>
+
+    <section class="ix-same" aria-labelledby="same-h">
+      <h2 id="same-h">One note, three ways</h2>
+      <blockquote id="ix-note"></blockquote>
+      <div class="ix-three">
+        <figure><div id="ix-plant" class="ix-art is-grown"></div><figcaption>a plant</figcaption></figure>
+        <figure><div id="ix-cloth" class="ix-art"></div><figcaption>a woven square</figcaption></figure>
+        <figure><div id="ix-isle" class="ix-art"></div><figcaption>an island</figcaption></figure>
+      </div>
+    </section>
+
+    <ol class="ix-list">
+      <li>
+        <h2>Herbarium</h2>
+        <p>Each note's <em>grammar</em> grows a plant: sentences branch, words leaf, a full stop flowers, <b>!</b> blooms big, <b>?</b> buds, <b>…</b> fruits, a missing full stop leaves a tendril still unfurling. The author's name picks leaf and petal shapes; after-dark notes bloom pale. The feed becomes a meadow; the book is a bound herbarium with mounted specimen sheets, a mock-Latin binomial per guest (<i>Junopsis thanksgivicola</i>), a determination slip, and an index of species.</p>
+        <p class="ix-links"><a href="herbarium/">Guestbook</a> <a href="herbarium/book.html">Memory book</a> <a href="herbarium/?n=3">3 notes</a> <a href="herbarium/?n=300">300 notes</a> <a href="herbarium/?dark=1">dark</a> <a href="herbarium/SKETCH.md">SKETCH.md</a></p>
+      </li>
+      <li>
+        <h2>Pattern Book</h2>
+        <p>Each note is threaded onto an 8-shaft loom: one letter per warp thread, words as runs, so long words weave wide diamonds. The name picks the twill and the yarn. The feed's background is the coverlet, pieced from every square and bordered by cloth woven from the couple's names; unfilled slots are bare warp still on the loom. The book is a period coverlet pattern book. <strong>Every page is a real, loom-ready draft.</strong></p>
+        <p class="ix-links"><a href="pattern-book/">Guestbook</a> <a href="pattern-book/book.html">Memory book</a> <a href="pattern-book/?n=3">3 notes</a> <a href="pattern-book/?n=300">300 notes</a> <a href="pattern-book/?dark=1">dark</a> <a href="pattern-book/SKETCH.md">SKETCH.md</a></p>
+      </li>
+      <li>
+        <h2>Archipelago</h2>
+        <p>Each note raises an island: one hill per sentence, a sea stack per emoji, the summit named for the note's most particular word (“Mt. Sourdough”, “Mt. Thanksgiving”) and as high as the note is long. Islands ring the couple's own; dashed ferry routes join notes that share an uncommon word. The book is an atlas: a general chart, a legend, a plate per island with the note as its <em>sailing directions</em>, and a gazetteer.</p>
+        <p class="ix-links"><a href="archipelago/">Guestbook</a> <a href="archipelago/book.html">Memory book</a> <a href="archipelago/?n=3">3 notes</a> <a href="archipelago/?n=300">300 notes</a> <a href="archipelago/?dark=1">dark</a> <a href="archipelago/SKETCH.md">SKETCH.md</a></p>
+      </li>
+    </ol>
+  </main>
+  <script type="module" src="index.js"></script>
+</body>
+</html>

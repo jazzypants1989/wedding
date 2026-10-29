@@ -1,0 +1,703 @@
+/* book slot: zine-a5 — the memory book as a photocopied, fold-and-staple zine.
+   Keyed off <html data-mb-layout="zine-a5">; zine-a5.js builds the pages.
+
+   Params (custom properties):
+     --mb-tilt   how crooked the clippings are glued      default 1
+     --mb-toner  photocopy grain on every page (0 = clean) default 1
+   Options params (data attributes; both re-paginate):
+     data-zine-paper = letter | a4      half-letter (5.5x8.5in) or A5 pages
+     data-zine-mode  = booklet | pages  imposed for saddle-stitch, or reading order */
+
+:root[data-mb-layout="zine-a5"] {
+  --zp-w: 5.5in;
+  --zp-h: 8.5in;
+  --zine-type: "Courier New", Courier, "Nimbus Mono PS", monospace;
+  --zine-hand: "Marker Felt", "Chalkboard SE", "Segoe Print", "Bradley Hand", "Comic Sans MS", cursive;
+  --zine-ink: #161514;
+  --zine-marker: color-mix(in srgb, var(--color-primary) 56%, #000);
+  --zine-spot: var(--color-primary);
+  --zine-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='f' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' seed='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 16 0 0 0 -12.3'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23f)'/%3E%3C/svg%3E");
+}
+
+:root[data-mb-layout="zine-a5"][data-zine-paper="a4"] {
+  --zp-w: 148.5mm;
+  --zp-h: 210mm;
+}
+
+/* ---------------- the desk (screen) ---------------- */
+[data-mb-layout="zine-a5"] body {
+  background:
+    linear-gradient(90deg, rgb(255 255 255 / 0.09) 1px, transparent 1px) 0 0 / 1in 1in,
+    linear-gradient(180deg, rgb(255 255 255 / 0.09) 1px, transparent 1px) 0 0 / 1in 1in,
+    linear-gradient(90deg, rgb(255 255 255 / 0.04) 1px, transparent 1px) 0 0 / 0.25in 0.25in,
+    linear-gradient(180deg, rgb(255 255 255 / 0.04) 1px, transparent 1px) 0 0 / 0.25in 0.25in,
+    light-dark(#2f6f58, #142a22);
+  color: #f2efe6;
+  font-family: var(--zine-type);
+}
+
+[data-mb-layout="zine-a5"] .mb-toolbar {
+  background: #111;
+  backdrop-filter: none;
+  border-bottom: 3px solid #ffe45c;
+  font-family: var(--zine-type);
+}
+
+[data-mb-layout="zine-a5"] .mb-toolbar .btn {
+  border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
+  font-family: var(--zine-type);
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+[data-mb-layout="zine-a5"] .mb-toolbar .btn-primary {
+  background: #ffe45c;
+  border-color: #ffe45c;
+  color: #111;
+}
+
+[data-mb-layout="zine-a5"] .mb-toolbar .btn-secondary {
+  background: transparent;
+  border-color: #f2efe6;
+  color: #f2efe6;
+}
+
+[data-mb-layout="zine-a5"] .zine-howto {
+  width: min(44rem, calc(100% - 2rem));
+  margin: 1.4rem auto 0;
+  padding: 0.8rem 1.1rem;
+  background: #fffefb;
+  color: var(--zine-ink);
+  font: 0.9rem/1.5 var(--zine-type);
+  rotate: -0.6deg;
+  clip-path: polygon(0 3%, 100% 0, 99.5% 97%, 0.5% 100%);
+}
+
+[data-mb-layout="zine-a5"] .zh-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.9rem;
+  margin-bottom: 0.3rem;
+}
+
+[data-mb-layout="zine-a5"] .zh-k {
+  min-width: 5.5rem;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+[data-mb-layout="zine-a5"] .zh-row a {
+  color: var(--zine-ink);
+}
+
+[data-mb-layout="zine-a5"] .zh-row a[aria-current] {
+  padding: 0 0.3rem;
+  background: #ffe45c;
+  font-weight: bold;
+  text-decoration: none;
+}
+
+[data-mb-layout="zine-a5"] .zh-steps {
+  margin: 0.4rem 0 0 1.4rem;
+  list-style: decimal;
+}
+
+[data-mb-layout="zine-a5"] .mb-book {
+  max-width: none;
+  padding: 1.6rem 0 4rem;
+}
+
+[data-mb-layout="zine-a5"] .zine-sr-cover {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+[data-mb-layout="zine-a5"] .zine-sheets {
+  display: none;
+}
+
+/* Spreads: the cover alone on the right, then facing pairs, the back cover alone. */
+[data-mb-layout="zine-a5"] .zine-reading {
+  display: grid;
+  grid-template-columns: var(--zp-w);
+  justify-content: center;
+  row-gap: 2.2rem;
+}
+
+@media (min-width: 900px) {
+  [data-mb-layout="zine-a5"] .zine-reading {
+    grid-template-columns: repeat(2, var(--zp-w));
+  }
+
+  [data-mb-layout="zine-a5"] .zine-reading > .zp:first-child {
+    grid-column: 2;
+  }
+}
+
+/* ---------------- a page ---------------- */
+[data-mb-layout="zine-a5"] .zp {
+  position: relative;
+  width: var(--zp-w);
+  height: var(--zp-h);
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, rgb(0 0 0 / calc(var(--mb-toner, 1) * 0.07)), transparent 6%, transparent 94%, rgb(0 0 0 / calc(var(--mb-toner, 1) * 0.05))),
+    var(--zine-grain) 0 0 / 200px 200px,
+    #fffefb;
+  color: var(--zine-ink);
+  box-shadow: 0 10px 24px rgb(0 0 0 / 0.35);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* the grain fades with --mb-toner */
+[data-mb-layout="zine-a5"] .zp::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #fffefb;
+  opacity: calc(1 - var(--mb-toner, 1));
+  pointer-events: none;
+}
+
+[data-mb-layout="zine-a5"] .zp-even {
+  box-shadow: inset -14px 0 18px -14px rgb(0 0 0 / 0.35), 0 10px 24px rgb(0 0 0 / 0.35);
+}
+
+[data-mb-layout="zine-a5"] .zp-odd {
+  box-shadow: inset 14px 0 18px -14px rgb(0 0 0 / 0.35), 0 10px 24px rgb(0 0 0 / 0.35);
+}
+
+[data-mb-layout="zine-a5"] .zp-inner {
+  position: absolute;
+  inset: 9mm 9mm 13mm;
+  display: flex;
+  flex-direction: column;
+}
+
+[data-mb-layout="zine-a5"] .zp-head {
+  font-size: 23pt;
+  margin: 0 0 1.5mm;
+}
+
+[data-mb-layout="zine-a5"] .zp-sub {
+  margin: 1mm auto 3mm;
+  padding: 0.3mm 2mm;
+  background: var(--zine-ink);
+  color: #fff;
+  font: italic 7.5pt/1.4 var(--zine-type);
+  text-align: center;
+}
+
+[data-mb-layout="zine-a5"] .zp-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 4mm 4mm;
+  padding: 2mm 1.5mm;
+}
+
+[data-mb-layout="zine-a5"] .zp-folio {
+  position: absolute;
+  bottom: 5mm;
+  display: grid;
+  place-items: center;
+  width: 8mm;
+  height: 7mm;
+  border: 1.5px solid var(--zine-marker);
+  border-radius: 50% 45% 55% 48%;
+  color: var(--zine-marker);
+  font: 9pt/1 var(--zine-hand);
+}
+
+[data-mb-layout="zine-a5"] .zp-folio-even {
+  left: 7mm;
+}
+
+[data-mb-layout="zine-a5"] .zp-folio-odd {
+  right: 7mm;
+}
+
+/* ---------------- clippings ---------------- */
+[data-mb-layout="zine-a5"] .mb-entry {
+  --clip-paper: #fffefb;
+  --clip-rot: -1.2deg;
+  --clip-edge: polygon(0 2%, 3% 0, 97% 1%, 100% 4%, 99% 97%, 96% 100%, 2% 99%, 0 96%);
+  position: relative;
+  isolation: isolate;
+  flex: 1 1 calc(50% - 4mm);
+  display: flex;
+  flex-direction: column;
+  max-width: 100%;
+  margin: 0;
+  padding: 2.6mm 3.2mm 2.2mm;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--zine-ink);
+  rotate: calc(var(--clip-rot) * var(--mb-tilt, 1));
+  filter: drop-shadow(0.4mm 0.6mm 0 rgb(0 0 0 / 0.35));
+  break-inside: avoid;
+}
+
+/* decorate() sorts clippings by length: long letters span the page, one-liners
+   sit two to a row, and a lone emoji is a scrap. */
+[data-mb-layout="zine-a5"] .mb-entry.zp-wide {
+  flex-basis: 100%;
+}
+
+[data-mb-layout="zine-a5"] .mb-entry.zp-tiny {
+  flex: 0 1 auto;
+}
+
+[data-mb-layout="zine-a5"] .mb-entry.is-favorite {
+  padding: 3mm 3.4mm 2.4mm;
+  margin: 0;
+  background: none;
+  border-radius: 0;
+}
+
+[data-mb-layout="zine-a5"] .mb-entry::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--clip-paper);
+  clip-path: var(--clip-edge);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+[data-mb-layout="zine-a5"] .mb-entry-head {
+  display: contents;
+}
+
+[data-mb-layout="zine-a5"] .mb-entry .monogram {
+  display: none;
+}
+
+[data-mb-layout="zine-a5"] .mb-entry-date {
+  order: 0;
+  align-self: flex-end;
+  margin: 0 0 1.2mm;
+  padding: 0 1mm;
+  border: 1.2px solid currentColor;
+  border-radius: 2px;
+  color: color-mix(in srgb, var(--color-primary) 40%, #6b1010);
+  font: bold 6pt/1.4 var(--zine-type);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  rotate: 3deg;
+  opacity: 0.85;
+}
+
+[data-mb-layout="zine-a5"] .mb-entry-message {
+  order: 1;
+  margin: 0;
+  color: inherit;
+  font: 9pt/1.45 var(--zine-type);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+[data-mb-layout="zine-a5"] .mb-entry-author {
+  order: 2;
+  align-self: flex-end;
+  margin-top: 1mm;
+  color: var(--zine-marker);
+  font: 11.5pt/1.1 var(--zine-hand);
+  font-weight: normal;
+  rotate: -3deg;
+}
+
+[data-mb-layout="zine-a5"] .mb-entry-author::before {
+  content: "— ";
+}
+
+[data-mb-layout="zine-a5"] .mb-entry-fav {
+  position: absolute;
+  top: -2.5mm;
+  left: -2mm;
+  width: 7mm;
+  height: 7mm;
+  font-size: 0;
+  background: var(--zine-marker);
+  mask: var(--doodle-star) center / contain no-repeat;
+  rotate: -12deg;
+}
+
+/* the same ten clippings as the card, keyed off the id's last digit */
+[data-mb-layout="zine-a5"] .mb-entry:is([data-id$="1"], [data-id$="6"]) {
+  --clip-paper:
+    linear-gradient(90deg, transparent 5mm, #e8807e 5mm, #e8807e calc(5mm + 1px), transparent calc(5mm + 1px)),
+    repeating-linear-gradient(180deg, transparent 0 calc(13pt - 0.7px), #9cc3e6 calc(13pt - 0.7px) 13pt),
+    #fffefb;
+  --clip-rot: 0.9deg;
+  --clip-edge: polygon(0 0, 100% 0, 100% 100%, 90% 98.5%, 80% 100%, 70% 98.6%, 60% 100%, 50% 98.6%, 40% 100%, 30% 98.6%, 20% 100%, 10% 98.6%, 0 100%);
+  padding-left: 7mm;
+}
+
+[data-mb-layout="zine-a5"] .mb-entry[data-id$="6"] {
+  --clip-rot: -0.7deg;
+}
+
+[data-mb-layout="zine-a5"] .mb-entry:is([data-id$="2"], [data-id$="7"]) {
+  --clip-paper: #efe7d3;
+  --clip-rot: -0.5deg;
+  --clip-edge: polygon(1% 1%, 99% 0, 100% 99%, 0 100%);
+}
+
+[data-mb-layout="zine-a5"] .mb-entry[data-id$="7"] {
+  --clip-rot: 1.6deg;
+}
+
+[data-mb-layout="zine-a5"] .mb-entry:is([data-id$="2"], [data-id$="7"]) .mb-entry-message {
+  font-family: "Times New Roman", Times, serif;
+  font-size: 10pt;
+  text-align: justify;
+  hyphens: auto;
+}
+
+[data-mb-layout="zine-a5"] .mb-entry[data-id$="3"] {
+  --clip-paper: #151413;
+  --clip-rot: 1.8deg;
+  --clip-edge: polygon(2% 0, 100% 3%, 98% 100%, 0 97%);
+  color: #f4f1ea;
+}
+
+[data-mb-layout="zine-a5"] .mb-entry[data-id$="3"] :is(.mb-entry-author, .mb-entry-date) {
+  color: #ffe45c;
+}
+
+[data-mb-layout="zine-a5"] .mb-entry:is([data-id$="4"], [data-id$="9"]) {
+  --clip-paper:
+    repeating-linear-gradient(90deg, transparent 0 2.8mm, rgb(80 150 140 / 0.3) 2.8mm calc(2.8mm + 0.6px)),
+    repeating-linear-gradient(180deg, transparent 0 2.8mm, rgb(80 150 140 / 0.3) 2.8mm calc(2.8mm + 0.6px)),
+    #fffefb;
+  --clip-rot: -2deg;
+  --clip-edge: polygon(0 4%, 6% 0, 100% 1%, 98% 100%, 3% 98%);
+}
+
+[data-mb-layout="zine-a5"] .mb-entry[data-id$="9"] {
+  --clip-rot: 1.3deg;
+}
+
+[data-mb-layout="zine-a5"] .mb-entry:is([data-id$="4"], [data-id$="9"], [data-id$="0"]) .mb-entry-message::first-line {
+  background: linear-gradient(176deg, transparent 18%, rgb(255 228 70 / 0.8) 22%, rgb(255 228 70 / 0.8) 82%, transparent 88%);
+}
+
+[data-mb-layout="zine-a5"] .mb-entry[data-id$="0"] {
+  --clip-rot: -1.4deg;
+}
+
+[data-mb-layout="zine-a5"] .mb-entry[data-id$="5"] {
+  --clip-rot: 1.1deg;
+  --clip-edge: polygon(3% 0, 100% 2%, 97% 50%, 100% 100%, 0 98%, 2% 52%);
+}
+
+[data-mb-layout="zine-a5"] .mb-entry[data-id$="8"] {
+  --clip-paper: color-mix(in srgb, var(--color-primary) 22%, #fff8f2);
+  --clip-rot: -0.9deg;
+}
+
+/* ---------------- cover ---------------- */
+[data-mb-layout="zine-a5"] .zp-cover .zp-body,
+[data-mb-layout="zine-a5"] .zp-back .zp-body {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: center;
+  text-align: center;
+  gap: 0;
+}
+
+[data-mb-layout="zine-a5"] .zc-issue {
+  padding: 0.6mm 2.5mm;
+  background: var(--zine-ink);
+  color: #fff;
+  font: bold 7.5pt/1.4 var(--zine-type);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+[data-mb-layout="zine-a5"] .zc-title {
+  margin: 9mm 0 2mm;
+  font-size: 40pt;
+}
+
+[data-mb-layout="zine-a5"] .zc-title .ransom-vis {
+  gap: 2mm 4mm;
+}
+
+[data-mb-layout="zine-a5"] .zc-heart {
+  width: 46mm;
+  height: 38mm;
+  margin: 4mm 0 2mm;
+  background: var(--zine-spot);
+  mask: var(--doodle-heart) center / contain no-repeat;
+  rotate: -8deg;
+}
+
+[data-mb-layout="zine-a5"] .zc-names {
+  padding: 1mm 4mm;
+  background: var(--zine-ink);
+  color: #fff;
+  font: bold 15pt/1.3 var(--zine-type);
+  rotate: -1.5deg;
+}
+
+[data-mb-layout="zine-a5"] .zc-where {
+  margin-top: 2.5mm;
+  font: 9pt/1.4 var(--zine-type);
+  letter-spacing: 0.12em;
+}
+
+[data-mb-layout="zine-a5"] .zc-count {
+  margin-top: auto;
+  color: var(--zine-marker);
+  font: 13pt/1.2 var(--zine-hand);
+  rotate: -2deg;
+}
+
+[data-mb-layout="zine-a5"] .zc-tag {
+  margin-top: 3mm;
+  padding-top: 2mm;
+  border-top: 1.5px solid var(--zine-ink);
+  font: bold 8pt/1.2 var(--zine-type);
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+/* ---------------- hello page ---------------- */
+[data-mb-layout="zine-a5"] .zp-hello .zp-body {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 4mm;
+}
+
+[data-mb-layout="zine-a5"] .zh-note {
+  padding: 4mm 4.5mm;
+  background: #fffefb;
+  font: 9.5pt/1.55 var(--zine-type);
+  white-space: pre-line;
+  rotate: -0.8deg;
+  filter: drop-shadow(0.4mm 0.6mm 0 rgb(0 0 0 / 0.3));
+}
+
+[data-mb-layout="zine-a5"] .zh-sign {
+  align-self: flex-end;
+  color: var(--zine-marker);
+  font: 13pt/1.2 var(--zine-hand);
+  rotate: -3deg;
+}
+
+[data-mb-layout="zine-a5"] .zh-toc {
+  margin-top: auto;
+  padding: 3mm 0 0;
+  border-top: 2px solid var(--zine-ink);
+  font: 9.5pt/1.7 var(--zine-type);
+}
+
+[data-mb-layout="zine-a5"] .zh-toc-title {
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+}
+
+[data-mb-layout="zine-a5"] .zh-toc-row {
+  display: flex;
+  gap: 2mm;
+}
+
+[data-mb-layout="zine-a5"] .zh-toc-dots {
+  flex: 1;
+  border-bottom: 1.5px dotted var(--zine-ink);
+  margin-bottom: 1.6mm;
+}
+
+/* ---------------- notes + back ---------------- */
+[data-mb-layout="zine-a5"] .zp-notes .zp-body {
+  background: radial-gradient(circle, rgb(0 0 0 / 0.35) 0.5px, transparent 0.8px) 0 0 / 5mm 5mm;
+}
+
+[data-mb-layout="zine-a5"] .zn-prompt {
+  margin-top: auto;
+  margin-left: auto;
+  color: var(--zine-marker);
+  font: 11pt/1.2 var(--zine-hand);
+  rotate: -3deg;
+}
+
+[data-mb-layout="zine-a5"] .zb-end {
+  margin-top: 30mm;
+  font-size: 34pt;
+}
+
+[data-mb-layout="zine-a5"] .zb-sub {
+  margin-top: 3mm;
+  font: italic 10pt/1.4 var(--zine-type);
+}
+
+[data-mb-layout="zine-a5"] .zb-colophon {
+  max-width: 85mm;
+  margin-top: auto;
+  font: 8pt/1.55 var(--zine-type);
+}
+
+[data-mb-layout="zine-a5"] .zb-staple {
+  margin-top: 5mm;
+  color: var(--zine-marker);
+  font: 10pt/1 var(--zine-hand);
+}
+
+/* ---------------- imposed sheets ---------------- */
+[data-mb-layout="zine-a5"] .zs-side {
+  position: relative;
+  display: flex;
+  width: calc(var(--zp-w) * 2);
+  height: var(--zp-h);
+  overflow: hidden;
+}
+
+[data-mb-layout="zine-a5"] .zs-side .zp {
+  box-shadow: none;
+}
+
+[data-mb-layout="zine-a5"] .zs-fold {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  border-left: 0.5pt dashed rgb(0 0 0 / 0.28);
+}
+
+[data-mb-layout="zine-a5"] .zs-tick {
+  position: absolute;
+  left: 50%;
+  width: 0;
+  height: 4mm;
+  border-left: 0.8pt solid #000;
+}
+
+[data-mb-layout="zine-a5"] .zs-tick-top {
+  top: 0;
+}
+
+[data-mb-layout="zine-a5"] .zs-tick-bottom {
+  bottom: 0;
+}
+
+/* staple marks on the outside of the fold, a quarter in from each end */
+[data-mb-layout="zine-a5"] .zs-staple {
+  position: absolute;
+  left: 50%;
+  width: 1.6mm;
+  height: 12mm;
+  translate: -50% -50%;
+  border: 0.8pt solid #000;
+  border-radius: 0.5mm;
+  background: rgb(0 0 0 / 0.08);
+}
+
+[data-mb-layout="zine-a5"] .zs-staple-1 {
+  top: 25%;
+}
+
+[data-mb-layout="zine-a5"] .zs-staple-2 {
+  top: 75%;
+}
+
+/* ---------------- print ---------------- */
+@page zine-booklet-letter {
+  size: 11in 8.5in;
+  margin: 0;
+}
+
+@page zine-booklet-a4 {
+  size: 297mm 210mm;
+  margin: 0;
+}
+
+@page zine-single-letter {
+  size: 5.5in 8.5in;
+  margin: 0;
+}
+
+@page zine-single-a4 {
+  size: 148.5mm 210mm;
+  margin: 0;
+}
+
+@media print {
+  [data-mb-layout="zine-a5"] body {
+    background: none;
+  }
+
+  [data-mb-layout="zine-a5"] .zine-howto,
+  [data-mb-layout="zine-a5"] .mb-toolbar,
+  [data-mb-layout="zine-a5"] .mb-status {
+    display: none !important;
+  }
+
+  [data-mb-layout="zine-a5"] .mb-book {
+    padding: 0;
+    margin: 0;
+  }
+
+  [data-mb-layout="zine-a5"] .mb-cover.zine-sr-cover {
+    display: none;
+  }
+
+  [data-mb-layout="zine-a5"][data-zine-mode="booklet"] .zine-reading {
+    display: none;
+  }
+
+  [data-mb-layout="zine-a5"][data-zine-mode="booklet"] .zine-sheets {
+    display: block;
+  }
+
+  [data-mb-layout="zine-a5"][data-zine-paper="letter"] .zs-side {
+    page: zine-booklet-letter;
+  }
+
+  [data-mb-layout="zine-a5"][data-zine-paper="a4"] .zs-side {
+    page: zine-booklet-a4;
+  }
+
+  [data-mb-layout="zine-a5"] .zs-side {
+    break-after: page;
+  }
+
+  [data-mb-layout="zine-a5"] .zs-side:last-child {
+    break-after: auto;
+  }
+
+  [data-mb-layout="zine-a5"][data-zine-mode="pages"] .zine-reading {
+    display: block;
+    zoom: 1 !important;
+  }
+
+  [data-mb-layout="zine-a5"][data-zine-mode="pages"] .zp,
+  [data-mb-layout="zine-a5"][data-zine-mode="pages"] .zp:is(.zp-even, .zp-odd) {
+    box-shadow: none;
+    break-after: page;
+  }
+
+  [data-mb-layout="zine-a5"][data-zine-mode="pages"][data-zine-paper="letter"] .zp {
+    page: zine-single-letter;
+  }
+
+  [data-mb-layout="zine-a5"][data-zine-mode="pages"][data-zine-paper="a4"] .zp {
+    page: zine-single-a4;
+  }
+}

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Admin · Guided journeys (prototype)</title>
+  <!-- Absolute paths: this page is served for every deep link (/admin-journeys/faces/groups/f1001). -->
+  <link rel="stylesheet" href="/site/styles/tokens.css">
+  <link rel="stylesheet" href="/admin-journeys/styles.css">
+  <script>
+    try {
+      var t = localStorage.getItem("aj-theme")
+      var dark = t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches
+      document.documentElement.dataset.theme = dark ? "dark" : "light"
+    } catch (e) {}
+  </script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <div class="app">
+    <aside id="sidebar" class="sidebar"></aside>
+    <div class="col">
+      <main id="main" tabindex="-1"></main>
+    </div>
+  </div>
+  <div id="actionbar" class="actionbar" hidden></div>
+  <nav id="tabbar" class="tabbar" aria-label="Admin"></nav>
+  <dialog id="route-dialog" class="route-dialog"></dialog>
+  <dialog id="guard-dialog" class="guard-dialog"></dialog>
+  <div id="relogin" class="relogin" hidden></div>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <button id="proto-btn" class="proto-btn" type="button" aria-expanded="false" aria-controls="proto-drawer">Prototype ⚙</button>
+  <div id="proto-drawer" class="proto-drawer" hidden></div>
+  <script type="module" src="/admin-journeys/app.js"></script>
+</body>
+</html>

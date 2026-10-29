@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en" data-mb-layout="zine-a5">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Memory Book - Jordana &amp; Jesse (the zine)</title>
+  <script src="../shared/theme-boot.js"></script>
+  <link rel="stylesheet" href="/site/styles/tokens.css">
+  <link rel="stylesheet" href="/site/styles/layout.css">
+  <link rel="stylesheet" href="/site/styles/components.css">
+  <link rel="stylesheet" href="/site/styles/social.css">
+  <link rel="stylesheet" href="/site/pages/memory-book/memory-book.css">
+  <link rel="stylesheet" href="./doodles.css">
+  <link rel="stylesheet" href="./ransom.css">
+  <link rel="stylesheet" href="./book.css">
+  <link rel="stylesheet" href="../shared/kit.css">
+</head>
+
+<body>
+  <a href="#mb-book" class="skip-link">Skip to content</a>
+
+  <div class="mb-toolbar" role="toolbar" aria-label="Memory book actions">
+    <a href="./" class="btn btn-secondary btn-sm">← Back to guestbook</a>
+    <button type="button" id="mb-print" class="btn btn-primary btn-sm">🖨 Print / Save as PDF</button>
+  </div>
+
+  <main id="mb-book" class="mb-book">
+    <section class="mb-cover">
+      <p class="mb-cover-mono" aria-hidden="true">J&amp;J</p>
+      <h1 class="mb-cover-names">Jordana &amp; Jesse</h1>
+      <p class="mb-cover-date">April 26, 2026 &bull; Portland, OR</p>
+      <p class="mb-cover-sub">Our Guestbook</p>
+    </section>
+
+    <div id="mb-status" class="mb-status" role="status">Gathering every message…</div>
+    <div id="mb-entries" class="mb-entries"></div>
+  </main>
+
+  <script type="module" src="./book.js"></script>
+</body>
+
+</html>

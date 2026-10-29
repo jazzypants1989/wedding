@@ -19,6 +19,7 @@
     "tmp",
     "js",
     "public",
+    "prototypes/*/**/*",
     "tests/unit/reaction-glyphs.test.js",
     "tests/unit/monogram.test.js",
     "tests/unit/emoji.test.js",

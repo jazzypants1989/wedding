@@ -1,0 +1,334 @@
+/* A Book of Hours — book layout, keyed off [data-mb-layout="hours"] on <html>.
+   Params (custom properties, CSSOM-set):
+     --mb-ink       body text                       colour, default var(--color-text)
+     --mb-rubric    times, hour names, drop caps    colour, default brand; the anniversary
+                                                    material replaces it when there is one
+     --mb-dropcap   drop capital size, in lines     {min:0,max:4,step:1}  2 (0 = none)
+   JS params: clock {options:["ticks","none"]} (cover dial), edition {options:["auto","none"]}. */
+
+[data-mb-layout="hours"] {
+  --mb-ink: var(--color-text);
+  --mb-rubric: var(--color-primary-dark);
+  --mb-dropcap: 2;
+}
+[data-mb-layout="hours"][data-material] {
+  --mb-rubric: light-dark(var(--bh-material), color-mix(in oklab, var(--bh-material) 55%, white));
+}
+
+.bh-book {
+  max-width: 42rem;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 5rem;
+  color: var(--mb-ink);
+}
+
+/* ---- Cover ---- */
+.bh-cover {
+  text-align: center;
+  padding: 2.5rem 0 2rem;
+}
+.bh-cover-kicker {
+  margin: 0;
+  font-size: var(--text-sm);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.bh-cover-title {
+  margin: 0.4rem 0 0.2rem;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(2.6rem, 9vw, 4rem);
+  line-height: 1;
+  color: var(--mb-rubric);
+}
+.bh-cover-sub {
+  margin: 0;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: var(--text-lg);
+}
+.bh-clock {
+  margin: 1.25rem auto 0.5rem;
+  max-width: 24rem;
+}
+.bh-clock svg,
+.bh-mini svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.bh-edition {
+  margin: 0;
+  font-size: var(--text-sm);
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+}
+
+/* The dial. */
+.bh-ring {
+  fill: none;
+  stroke: var(--mb-ink);
+  stroke-width: 1.1;
+}
+.bh-ring.is-inner {
+  stroke-width: 0.6;
+  stroke-dasharray: 1.5 2.5;
+}
+.bh-day {
+  fill: none;
+  stroke: color-mix(in srgb, var(--mb-rubric) 28%, transparent);
+  stroke-width: 7;
+}
+.bh-hour-tick {
+  stroke: var(--mb-ink);
+  stroke-width: 1;
+}
+.bh-hour-name {
+  font: italic 11px var(--font-display);
+  fill: var(--mb-rubric);
+  letter-spacing: 0.04em;
+}
+.bh-hour-name.is-off {
+  fill: var(--color-text-muted);
+}
+.bh-tick {
+  stroke: var(--mb-ink);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+}
+.bh-fav {
+  fill: var(--mb-rubric);
+}
+.bh-tick.is-off {
+  stroke: color-mix(in srgb, var(--mb-ink) 22%, transparent);
+}
+.bh-fav.is-off {
+  fill: color-mix(in srgb, var(--mb-ink) 22%, transparent);
+}
+.bh-sector {
+  fill: none;
+  stroke: color-mix(in srgb, var(--mb-rubric) 12%, transparent);
+}
+.bh-noon {
+  font: 500 7.5px var(--font-body);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  fill: var(--color-text-muted);
+}
+
+/* ---- Contents ---- */
+.bh-contents {
+  max-width: 26rem;
+  margin: 1.5rem auto 3rem;
+}
+.bh-h2 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: var(--text-2xl);
+  text-align: center;
+  color: var(--mb-rubric);
+  margin: 0 0 0.75rem;
+}
+.bh-contents ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.bh-contents a {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.3rem 0;
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dotted var(--color-border);
+}
+.bh-toc-name {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  color: var(--mb-rubric);
+}
+.bh-toc-sub {
+  font-style: italic;
+  color: var(--color-text-muted);
+  flex: 1;
+}
+.bh-toc-n {
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Chapters ---- */
+.bh-chapter {
+  margin-bottom: 3.5rem;
+}
+.bh-opener {
+  display: grid;
+  grid-template-columns: 9rem 1fr;
+  gap: 1.25rem;
+  align-items: center;
+  padding-bottom: 1.25rem;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--mb-rubric);
+}
+.bh-mini {
+  margin: 0;
+}
+.bh-mini .bh-hour-name {
+  font-size: 15px;
+}
+.bh-mini .bh-noon {
+  display: none;
+}
+.bh-hour {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(2.6rem, 8vw, 3.6rem);
+  line-height: 1;
+  color: var(--mb-rubric);
+}
+.bh-hour-sub {
+  margin: 0.25rem 0 0;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: var(--text-lg);
+}
+.bh-hour-n {
+  margin: 0.2rem 0 0;
+  font-size: var(--text-xs);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.bh-entry {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr;
+  gap: 1rem;
+  padding: 0.85rem 0 1rem;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.bh-rubric {
+  margin: 0.3rem 0 0;
+  display: grid;
+  justify-items: end;
+  align-content: start;
+  gap: 0.3rem;
+  text-align: right;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mb-rubric);
+}
+.bh-dial {
+  width: 1.3rem;
+  height: 1.3rem;
+}
+.bh-dial-face {
+  fill: none;
+  stroke: color-mix(in srgb, var(--mb-ink) 30%, transparent);
+}
+.bh-dial-shadow {
+  stroke: var(--mb-ink);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.bh-moon {
+  fill: var(--mb-rubric);
+}
+.bh-msg {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* Drop capital, set in the rubric colour. */
+.bh-msg::first-letter {
+  float: left;
+  font-size: calc(var(--mb-dropcap) * 1.55em * 0.95);
+  line-height: 0.8;
+  padding: 0.12em 0.08em 0 0;
+  color: var(--mb-rubric);
+}
+.bh-sig {
+  margin: 0.35rem 0 0;
+  text-align: right;
+  font-family: var(--font-display);
+}
+.bh-sig span {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+.bh-entry.is-favourite .bh-sig::before {
+  content: "✦ ";
+  color: var(--mb-rubric);
+}
+
+@media (max-width: 40rem) {
+  .bh-opener {
+    grid-template-columns: 6rem 1fr;
+  }
+  .bh-entry {
+    grid-template-columns: 1fr;
+    gap: 0.2rem;
+  }
+  .bh-rubric {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+  }
+}
+
+/* ---- Print ---- */
+@page {
+  margin: 16mm 18mm 18mm;
+}
+@media print {
+  [data-mb-layout="hours"] {
+    --mb-ink: #1a1a1a;
+    --color-text-muted: #555;
+    --color-border: #bbb;
+  }
+  [data-mb-layout="hours"]:not([data-material]) {
+    --mb-rubric: #9a2a10;
+  }
+  [data-mb-layout="hours"][data-material] {
+    --mb-rubric: var(--bh-material);
+  }
+  body {
+    background: #fff;
+  }
+  .bh-book {
+    max-width: none;
+    padding: 0;
+  }
+  .bh-cover {
+    min-height: 245mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    break-after: page;
+  }
+  .bh-clock {
+    max-width: 120mm;
+  }
+  .bh-contents {
+    break-after: page;
+  }
+  .bh-contents a {
+    border-bottom-color: #ccc;
+  }
+  .bh-chapter {
+    break-before: page;
+  }
+  .bh-opener {
+    break-after: avoid;
+  }
+}

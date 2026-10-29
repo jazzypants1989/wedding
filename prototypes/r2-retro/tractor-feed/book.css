@@ -1,0 +1,424 @@
+/* book slot: banner-fanfold — a Print Shop banner, then a green-bar listing
+   on continuous-form paper. Keyed off <html data-mb-layout="banner-fanfold">.
+
+   Params (custom properties):
+     --mb-bar      green-bar tint                    default #dcefd8
+     --mb-ink      ribbon colour                     default #202128
+     --mb-dot      pin size on screen, px (1.5=solid) default 0.75
+   Options (decorate() context): bannerPages 0–6 (0 = no banner), bannerText */
+
+:root[data-mb-layout="banner-fanfold"] {
+  --bf-ln: 20px;
+  --bf-size: 15px;
+  --bf-strip: 0.5in;
+  --bf-ink: var(--mb-ink, #202128);
+  --bf-bar: var(--mb-bar, #dcefd8);
+  --bf-paper: #fbfbf5;
+  --bf-type: "Courier New", Courier, "Nimbus Mono PS", monospace;
+  --bf-dot: calc(var(--mb-dot, 0.75) * 1px);
+}
+
+[data-mb-layout="banner-fanfold"] body {
+  background:
+    radial-gradient(ellipse at 50% 0%, rgb(255 255 255 / 0.3), transparent 70%),
+    light-dark(color-mix(in srgb, var(--color-background) 55%, #cdc8ba), #11130f);
+  color: var(--bf-ink);
+  font-family: var(--bf-type);
+}
+
+[data-mb-layout="banner-fanfold"] .mb-toolbar {
+  background: light-dark(linear-gradient(#e2ddce, #c4bead), linear-gradient(#2b2b28, #1b1b19));
+  border-bottom: 0;
+  box-shadow: inset 0 -5px 0 light-dark(#a9a392, #111), 0 6px 14px rgb(0 0 0 / 0.25);
+  backdrop-filter: none;
+}
+
+[data-mb-layout="banner-fanfold"] .mb-toolbar .btn {
+  border-radius: 0;
+  font: bold 14px/1 var(--bf-type);
+  text-transform: uppercase;
+}
+
+[data-mb-layout="banner-fanfold"] .mb-toolbar .btn-primary {
+  background: #202128;
+  border-color: #202128;
+  color: #f2f2ea;
+}
+
+[data-mb-layout="banner-fanfold"] .mb-toolbar .btn-secondary {
+  background: transparent;
+  border: 2px solid light-dark(#202128, #c9c5b5);
+  color: light-dark(#202128, #c9c5b5);
+}
+
+/* ---------------- the stream (screen) ---------------- */
+[data-mb-layout="banner-fanfold"] .bf-paper {
+  display: none;
+}
+
+[data-mb-layout="banner-fanfold"] .mb-book {
+  max-width: 8.5in;
+  margin: 0 auto 4rem;
+  padding: 0 calc(var(--bf-strip) + 0.45in) var(--bf-ln);
+  background:
+    /* folds every 11in: perforation + the paper turning */
+    linear-gradient(180deg, rgb(0 0 0 / 0.32) 0 1px, transparent 1px) 0 0 / 100% 11in repeat-y,
+    linear-gradient(180deg, rgb(0 0 0 / 0.06), transparent 25%, transparent 80%, rgb(255 255 255 / 0.35)) 0 0 / 100% 11in repeat-y,
+    /* strip perforations */
+    repeating-linear-gradient(180deg, rgb(0 0 0 / 0.28) 0 4px, transparent 4px 8px) var(--bf-strip) 0 / 1px 100% no-repeat,
+    repeating-linear-gradient(180deg, rgb(0 0 0 / 0.28) 0 4px, transparent 4px 8px) calc(100% - var(--bf-strip)) 0 / 1px 100% no-repeat,
+    /* sprocket holes */
+    radial-gradient(circle at 50% 50%, light-dark(color-mix(in srgb, var(--color-background) 55%, #cdc8ba), #11130f) 0.075in, transparent calc(0.075in + 0.6px)) 0 0 / var(--bf-strip) 0.5in repeat-y,
+    radial-gradient(circle at 50% 50%, light-dark(color-mix(in srgb, var(--color-background) 55%, #cdc8ba), #11130f) 0.075in, transparent calc(0.075in + 0.6px)) 100% 0 / var(--bf-strip) 0.5in repeat-y,
+    /* green bars */
+    repeating-linear-gradient(180deg, var(--bf-bar) 0 calc(var(--bf-ln) * 3), transparent calc(var(--bf-ln) * 3) calc(var(--bf-ln) * 6))
+      center 0 / calc(100% - var(--bf-strip) * 2 - 2px) 100% no-repeat,
+    var(--bf-paper);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.3);
+  color: var(--bf-ink);
+  font: bold var(--bf-size) / var(--bf-ln) var(--bf-type);
+}
+
+/* ---------------- banner ---------------- */
+[data-mb-layout="banner-fanfold"] .bf-banner {
+  margin-inline: -0.45in;
+}
+
+[data-mb-layout="banner-fanfold"] .bf-banner-page {
+  position: relative;
+  height: 11in;
+  padding: 0.5in 0.15in;
+  background: var(--bf-paper);
+}
+
+[data-mb-layout="banner-fanfold"] .bf-banner-page + .bf-banner-page {
+  border-top: 1px dashed rgb(0 0 0 / 0.3);
+}
+
+[data-mb-layout="banner-fanfold"] .bf-banner-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: var(--bf-ink);
+}
+
+[data-mb-layout="banner-fanfold"] .bf-banner-note {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0.2in;
+  text-align: center;
+  font: bold 11px/1 var(--bf-type);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+/* ---------------- listing ---------------- */
+[data-mb-layout="banner-fanfold"] .bf-cover {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+[data-mb-layout="banner-fanfold"] .bf-head {
+  padding-top: calc(var(--bf-ln) * 3);
+  margin-bottom: calc(var(--bf-ln) * 3);
+  overflow: hidden;
+  white-space: pre;
+}
+
+[data-mb-layout="banner-fanfold"] .mb-status {
+  color: inherit;
+  padding: 0;
+}
+
+[data-mb-layout="banner-fanfold"] .mb-section {
+  margin: 0 0 calc(var(--bf-ln) * 3);
+}
+
+[data-mb-layout="banner-fanfold"] .mb-section-title {
+  margin: 0 0 var(--bf-ln);
+  padding: 0;
+  border: 0;
+  font: inherit;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+[data-mb-layout="banner-fanfold"] .mb-section-title::before {
+  content: "*** ";
+}
+
+[data-mb-layout="banner-fanfold"] .mb-section-title::after {
+  content: " ***";
+}
+
+[data-mb-layout="banner-fanfold"] .mb-entry {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  column-gap: 2ch;
+  margin: 0 0 var(--bf-ln);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  break-inside: avoid;
+}
+
+[data-mb-layout="banner-fanfold"] .mb-entry.is-favorite {
+  margin: 0 0 var(--bf-ln);
+  padding: 0;
+  background: none;
+  border-radius: 0;
+}
+
+[data-mb-layout="banner-fanfold"] .mb-entry-head {
+  display: contents;
+}
+
+[data-mb-layout="banner-fanfold"] .mb-entry-head::before,
+[data-mb-layout="banner-fanfold"] .mb-entry-head::after {
+  grid-column: 1 / -1;
+  height: var(--bf-ln);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+[data-mb-layout="banner-fanfold"] .mb-entry-head::before {
+  content: "================================================================================================================";
+  grid-row: 1;
+}
+
+[data-mb-layout="banner-fanfold"] .mb-entry-head::after {
+  content: "----------------------------------------------------------------------------------------------------------------";
+  grid-row: 3;
+}
+
+[data-mb-layout="banner-fanfold"] .mb-entry::before {
+  content: "ENTRY #" attr(data-id);
+  grid-column: 1;
+  grid-row: 2;
+  white-space: nowrap;
+}
+
+[data-mb-layout="banner-fanfold"] .mb-entry.is-favorite::before {
+  content: "ENTRY #" attr(data-id) " *";
+}
+
+[data-mb-layout="banner-fanfold"] .mb-entry .monogram,
+[data-mb-layout="banner-fanfold"] .mb-entry-fav {
+  display: none;
+}
+
+[data-mb-layout="banner-fanfold"] .mb-entry-author {
+  grid-column: 2;
+  grid-row: 2;
+  font: inherit;
+  text-transform: uppercase;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+[data-mb-layout="banner-fanfold"] .mb-entry-author::before {
+  content: "FROM:\00a0";
+}
+
+[data-mb-layout="banner-fanfold"] .mb-entry-date {
+  grid-column: 3;
+  grid-row: 2;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+[data-mb-layout="banner-fanfold"] .mb-entry-message {
+  grid-column: 1 / -1;
+  grid-row: 4;
+  margin: 0;
+  font: inherit;
+  line-height: var(--bf-ln);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+[data-mb-layout="banner-fanfold"] .mb-count {
+  margin: calc(var(--bf-ln) * 2) 0 calc(var(--bf-ln) * 3);
+  color: inherit;
+  font: inherit;
+}
+
+/* pins, not strokes */
+[data-mb-layout="banner-fanfold"] :is(.mb-entry-message, .mb-entry-author, .mb-entry-date, .bf-head, .mb-section-title, .mb-count),
+[data-mb-layout="banner-fanfold"] .mb-entry::before,
+[data-mb-layout="banner-fanfold"] .mb-entry-head::before,
+[data-mb-layout="banner-fanfold"] .mb-entry-head::after {
+  mask: radial-gradient(circle, #000 var(--bf-dot), transparent calc(var(--bf-dot) + 0.35px)) 0 0 / 2px 2px;
+}
+
+/* screen only: a printed page is 816px wide and must not pick this up */
+@media screen and (max-width: 860px) {
+  [data-mb-layout="banner-fanfold"] {
+    --bf-strip: 26px;
+    --bf-size: 12px;
+    --bf-ln: 17px;
+  }
+
+  [data-mb-layout="banner-fanfold"] .mb-book {
+    margin: 0 6px 3rem;
+    padding: 0 calc(var(--bf-strip) + 10px) var(--bf-ln);
+  }
+
+  [data-mb-layout="banner-fanfold"] .bf-banner {
+    margin-inline: -10px;
+  }
+
+  [data-mb-layout="banner-fanfold"] .bf-banner-page {
+    height: auto;
+    aspect-ratio: 6.6 / 11;
+  }
+
+  [data-mb-layout="banner-fanfold"] .bf-head {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  [data-mb-layout="banner-fanfold"] .mb-entry {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  [data-mb-layout="banner-fanfold"] .mb-entry-author {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+
+  [data-mb-layout="banner-fanfold"] .mb-entry-date {
+    grid-column: 2;
+  }
+
+  [data-mb-layout="banner-fanfold"] .mb-entry-head::after {
+    grid-row: 4;
+  }
+
+  [data-mb-layout="banner-fanfold"] .mb-entry-message {
+    grid-row: 5;
+  }
+}
+
+/* ---------------- print: continuous form ---------------- */
+@page {
+  size: letter;
+  margin: 0;
+}
+
+@media print {
+  :root[data-mb-layout="banner-fanfold"] {
+    --bf-ln: 12pt;
+    --bf-size: 10pt;
+    --bf-strip: 0.5in;
+  }
+
+  [data-mb-layout="banner-fanfold"] body {
+    background: none;
+  }
+
+  [data-mb-layout="banner-fanfold"] .mb-toolbar,
+  [data-mb-layout="banner-fanfold"] .skip-link {
+    display: none !important;
+  }
+
+  /* Repeats on every sheet: strips, perforations, holes and the bars. */
+  [data-mb-layout="banner-fanfold"] .bf-paper {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  [data-mb-layout="banner-fanfold"] .bf-strip {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: var(--bf-strip);
+    background:
+      radial-gradient(circle at 50% 50%, #fff 0.075in, #9a9a92 calc(0.075in + 0.5pt), transparent calc(0.075in + 0.8pt)) 0 0.0in / var(--bf-strip) 0.5in repeat-y;
+  }
+
+  [data-mb-layout="banner-fanfold"] .bf-strip-left {
+    left: 0;
+    border-right: 0.6pt dashed #9a9a92;
+  }
+
+  [data-mb-layout="banner-fanfold"] .bf-strip-right {
+    right: 0;
+    border-left: 0.6pt dashed #9a9a92;
+  }
+
+  [data-mb-layout="banner-fanfold"] .bf-bars {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: var(--bf-strip);
+    right: var(--bf-strip);
+    background: repeating-linear-gradient(180deg, var(--bf-bar) 0 0.5in, transparent 0.5in 1in);
+  }
+
+  [data-mb-layout="banner-fanfold"] .mb-book {
+    max-width: none;
+    margin: 0;
+    padding: 0 calc(var(--bf-strip) + 0.4in);
+    background: none;
+    box-shadow: none;
+  }
+
+  [data-mb-layout="banner-fanfold"] .bf-banner {
+    margin-inline: -0.4in;
+  }
+
+  [data-mb-layout="banner-fanfold"] .bf-banner-page {
+    height: 11in;
+    padding: 0.5in 0.15in;
+    border: 0;
+    break-after: page;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  [data-mb-layout="banner-fanfold"] .bf-banner-page + .bf-banner-page {
+    border: 0;
+  }
+
+  /* every printed page of the listing gets a top and bottom margin, on the
+     paper rather than around it, so the strips run edge to edge */
+  [data-mb-layout="banner-fanfold"] .mb-entries,
+  [data-mb-layout="banner-fanfold"] .bf-head {
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+
+  [data-mb-layout="banner-fanfold"] .mb-entries {
+    padding: 0.5in 0;
+  }
+
+  [data-mb-layout="banner-fanfold"] .bf-head {
+    padding-top: 0.5in;
+    margin-bottom: 0;
+  }
+
+  [data-mb-layout="banner-fanfold"] :is(.mb-entry-message, .mb-entry-author, .mb-entry-date, .bf-head, .mb-section-title, .mb-count),
+  [data-mb-layout="banner-fanfold"] .mb-entry::before,
+  [data-mb-layout="banner-fanfold"] .mb-entry-head::before,
+  [data-mb-layout="banner-fanfold"] .mb-entry-head::after {
+    mask: none;
+  }
+}

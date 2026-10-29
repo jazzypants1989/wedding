@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en" data-mb-layout="hours">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Memory Book — A Book of Hours (r2 sketch)</title>
+  <link rel="stylesheet" href="/site/styles/tokens.css">
+  <link rel="stylesheet" href="../shared/base.css">
+  <link rel="stylesheet" href="./book.css">
+  <script src="../shared/theme-init.js"></script>
+</head>
+
+<body>
+  <div class="r2-bar" role="toolbar" aria-label="Memory book actions">
+    <a href="./index.html" data-carry>← Guestbook (the long day)</a>
+    <span class="r2-spacer"></span>
+    <button type="button" class="r2-btn" data-theme-toggle>☀ Light</button>
+    <button type="button" class="r2-btn" id="bh-print">Print / Save as PDF</button>
+  </div>
+
+  <main class="bh-book">
+    <section class="bh-cover">
+      <p class="bh-cover-kicker" id="bh-couple"></p>
+      <h1 class="bh-cover-title">A Book of Hours</h1>
+      <p class="bh-cover-sub">The guestbook, kept by the hour it was written</p>
+      <figure class="bh-clock" id="bh-clock" role="img"></figure>
+      <p class="bh-edition" id="bh-edition"></p>
+    </section>
+
+    <nav class="bh-contents" aria-labelledby="bh-contents-h">
+      <h2 id="bh-contents-h" class="bh-h2">The hours</h2>
+      <ol id="bh-contents-list"></ol>
+    </nav>
+
+    <div id="bh-chapters"></div>
+  </main>
+
+  <script type="module" src="./book.js"></script>
+</body>
+
+</html>

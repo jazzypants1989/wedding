@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en" data-mb-layout="score">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Memory Book — The Score (r2 sketch)</title>
+  <link rel="stylesheet" href="/site/styles/tokens.css">
+  <link rel="stylesheet" href="../shared/base.css">
+  <link rel="stylesheet" href="./score.css">
+  <script src="../shared/theme-init.js"></script>
+</head>
+
+<body>
+  <div class="r2-bar" role="toolbar" aria-label="Memory book actions">
+    <a href="./index.html" data-carry>← Guestbook (the roll)</a>
+    <span class="r2-spacer"></span>
+    <button type="button" class="r2-btn" data-theme-toggle>☀ Light</button>
+    <button type="button" class="r2-btn" id="sc-print">Print / Save as PDF</button>
+  </div>
+
+  <main class="sc-book" id="sc-book">
+    <section class="sc-cover">
+      <p class="sc-cover-kicker">The guestbook of</p>
+      <h1 class="sc-cover-names" id="sc-couple"></h1>
+      <p class="sc-cover-date" id="sc-date"></p>
+      <div class="sc-cover-band" id="sc-band" aria-hidden="true"></div>
+      <p class="sc-cover-sub">set for music box &amp; one finger</p>
+      <p class="sc-cover-count" id="sc-count"></p>
+    </section>
+
+    <section class="sc-howto">
+      <h2 class="sc-h2">How to play this book</h2>
+      <p>Every name in this book is spelled in notes. The letters run from A to G and then start again, so H is
+        A, I is B, and O is A once more. Play the notes left to right with one finger, on any piano, starting
+        near middle C. The lyrics under each staff are the letters of the name, so you can sing along.</p>
+      <p>The rhythm comes from the message: a short word is a quick note, a long word is a long one. A chord
+        at the end means the note was loved (it had hearts); a small diamond above is a bell, for a favourite.</p>
+      <table class="sc-key">
+        <caption>Which letter is which note</caption>
+        <thead>
+          <tr><th scope="col">Note</th><th scope="col">A</th><th scope="col">B</th><th scope="col">C</th><th scope="col">D</th><th scope="col">E</th><th scope="col">F</th><th scope="col">G</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Letters</th><td>A H O V</td><td>B I P W</td><td>C J Q X</td><td>D K R Y</td><td>E L S Z</td><td>F M T</td><td>G N U</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <div id="sc-score"></div>
+  </main>
+
+  <script type="module" src="./score.js"></script>
+</body>
+
+</html>

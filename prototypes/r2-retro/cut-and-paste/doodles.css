@@ -1,0 +1,10 @@
+/* Hand-drawn marker doodles (drawn for this sketch; nothing to credit), as
+   mask images so a token colour paints them: mask-image: var(--doodle-heart). */
+:root {
+  --doodle-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 40' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 33 C 16 10, 34 4, 54 13' /%3E%3Cpath d='M45 6 L55 13 L46 21' /%3E%3C/svg%3E");
+  --doodle-heart: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 48' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M30 42 C 8 28, 4 10, 17 7 C 24 5, 29 11, 30 16 C 32 10, 38 4, 45 6 C 58 10, 54 28, 30 42' /%3E%3Cpath d='M27 39 C 12 28, 9 15, 15 11' /%3E%3C/svg%3E");
+  --doodle-star: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 58' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M30 4 L36 22 L56 22 L40 33 L47 52 L30 41 L13 52 L20 33 L4 22 L24 22 Z' /%3E%3Cpath d='M33 9 L37 21' /%3E%3C/svg%3E");
+  --doodle-squiggle: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 90 20' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12 Q 11 3, 19 11 T 35 11 T 51 11 T 67 11 T 86 9' /%3E%3C/svg%3E");
+  --doodle-xo: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 40' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9 L24 32 M23 8 L7 31' /%3E%3Cpath d='M46 7 C 34 7, 32 32, 45 33 C 58 34, 59 8, 44 9' /%3E%3C/svg%3E");
+  --doodle-loop: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 80' fill='none' stroke='black' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 46 C 10 14, 120 4, 220 10 C 290 15, 296 56, 200 70 C 120 80, 30 72, 16 52 C 8 40, 30 26, 60 22' /%3E%3C/svg%3E");
+}

@@ -1,0 +1,380 @@
+/* card slot: tractor-feed — every entry is a chunk of continuous-form
+   greenbar paper torn off a dot-matrix printer: sprocket holes punched down
+   both edges, perforations top and bottom, the record printed as a listing.
+   In dark mode the same record is on a phosphor terminal instead.
+
+   Markup is the real feed.js markup. Every rule line and label is generated
+   content; the text sits on a line grid so it lands on the green bars.
+
+   Params (custom properties, CSSOM-written):
+     --card-ink       ribbon colour (paper)       default #23242b
+     --card-bar       green-bar tint              default #dcefd8
+     --card-phosphor  terminal colour (dark)      default #46ff7a
+     --card-dot       pin size, px; 1.5 = solid   default 0.72
+     --card-line      line pitch                  default 20px                  */
+
+[data-gb-card="tractor-feed"] {
+  --tf-ln: var(--card-line, 20px);
+  --tf-strip: 34px;
+  --tf-type: "Courier New", Courier, "Nimbus Mono PS", monospace;
+  --tf-paper: light-dark(#fbfbf5, #070a07);
+  --tf-ink: light-dark(var(--card-ink, #23242b), var(--card-phosphor, #46ff7a));
+  --tf-bar: light-dark(var(--card-bar, #dcefd8), color-mix(in srgb, var(--card-phosphor, #46ff7a) 6%, transparent));
+  --tf-perf: light-dark(rgb(0 0 0 / 0.28), color-mix(in srgb, var(--card-phosphor, #46ff7a) 30%, transparent));
+  --tf-glow: light-dark(transparent, color-mix(in srgb, var(--card-phosphor, #46ff7a) 55%, transparent));
+  --tf-dot: calc(var(--card-dot, 0.72) * 1px);
+}
+
+[data-gb-card="tractor-feed"] .gb-feed,
+.gb-feed[data-gb-card="tractor-feed"] {
+  gap: calc(var(--tf-ln) * 1.5);
+}
+
+[data-gb-card="tractor-feed"] .gb-entry {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  column-gap: 2ch;
+  padding: var(--tf-ln) calc(var(--tf-strip) + 2.2ch);
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--tf-ink);
+  font: bold 15px / var(--tf-ln) var(--tf-type);
+  rotate: 0deg;
+  filter: drop-shadow(0 1px 0 rgb(0 0 0 / 0.18)) drop-shadow(0 3px 6px rgb(0 0 0 / 0.1));
+}
+
+/* Ribbon wear: each record prints a shade lighter or darker, by id. */
+[data-gb-card="tractor-feed"] .gb-entry:is([data-id$="3"], [data-id$="8"]) {
+  --tf-wear: 0.8;
+}
+
+[data-gb-card="tractor-feed"] .gb-entry:is([data-id$="1"], [data-id$="6"]) {
+  --tf-wear: 0.9;
+}
+
+/* The paper: bars + perforations + strips, with sprocket holes punched by a
+   mask, on a pseudo-element so the drop shadow follows the holes. */
+[data-gb-card="tractor-feed"] .gb-entry::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    /* perforation between strip and page, both sides */
+    repeating-linear-gradient(180deg, var(--tf-perf) 0 4px, transparent 4px 8px) var(--tf-strip) 0 / 1px 100% no-repeat,
+    repeating-linear-gradient(180deg, var(--tf-perf) 0 4px, transparent 4px 8px) calc(100% - var(--tf-strip)) 0 / 1px 100% no-repeat,
+    /* torn perforations, top and bottom */
+    repeating-linear-gradient(90deg, var(--tf-perf) 0 4px, transparent 4px 8px) 0 2px / 100% 1px no-repeat,
+    repeating-linear-gradient(90deg, var(--tf-perf) 0 4px, transparent 4px 8px) 0 calc(100% - 2px) / 100% 1px no-repeat,
+    /* green bars: three lines on, three off, only on the page area */
+    repeating-linear-gradient(180deg, var(--tf-bar) 0 calc(var(--tf-ln) * 3), transparent calc(var(--tf-ln) * 3) calc(var(--tf-ln) * 6))
+      center top / calc(100% - var(--tf-strip) * 2 - 2px) 100% no-repeat,
+    var(--tf-paper);
+  mask:
+    linear-gradient(#000 0 0) center / calc(100% - var(--tf-strip) * 2) 100% no-repeat,
+    radial-gradient(circle at 50% 50%, transparent 5px, #000 5.6px) left top / var(--tf-strip) calc(var(--tf-ln) * 2) repeat-y,
+    radial-gradient(circle at 50% 50%, transparent 5px, #000 5.6px) right top / var(--tf-strip) calc(var(--tf-ln) * 2) repeat-y;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+[data-gb-card="tractor-feed"] .gb-entry-head {
+  display: contents;
+}
+
+/* ===== rule ===== */
+[data-gb-card="tractor-feed"] .gb-entry-head::before,
+[data-gb-card="tractor-feed"] .gb-entry-head::after {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  white-space: nowrap;
+  height: var(--tf-ln);
+}
+
+[data-gb-card="tractor-feed"] .gb-entry-head::before {
+  content: "================================================================================================================================";
+  grid-row: 1;
+}
+
+[data-gb-card="tractor-feed"] .gb-entry-head::after {
+  content: "--------------------------------------------------------------------------------------------------------------------------------";
+  grid-row: 3;
+}
+
+[data-gb-card="tractor-feed"] .gb-entry::after {
+  content: "ENTRY #" attr(data-id);
+  grid-column: 1;
+  grid-row: 2;
+  white-space: nowrap;
+}
+
+[data-gb-card="tractor-feed"] .gb-byline {
+  grid-column: 2;
+  grid-row: 2;
+  min-width: 0;
+  gap: 0;
+}
+
+[data-gb-card="tractor-feed"] .gb-byline::before {
+  content: "FROM:\00a0";
+  flex: none;
+}
+
+[data-gb-card="tractor-feed"] .monogram {
+  display: none;
+}
+
+[data-gb-card="tractor-feed"] .gb-author {
+  color: inherit;
+  font: inherit;
+  text-transform: uppercase;
+}
+
+[data-gb-card="tractor-feed"] .gb-time {
+  grid-column: 3;
+  grid-row: 2;
+  color: inherit;
+  font: inherit;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+[data-gb-card="tractor-feed"] .gb-message {
+  grid-column: 1 / -1;
+  grid-row: 4;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  font-weight: bold;
+  line-height: var(--tf-ln);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+[data-gb-card="tractor-feed"] .gb-entry-foot {
+  grid-column: 1 / -1;
+  grid-row: 5;
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0 1ch;
+  margin-top: var(--tf-ln);
+}
+
+/* The ribbon: pins, not strokes. A dot-grid mask turns each glyph into a
+   matrix of struck dots; --card-dot 1.5 makes it solid again. */
+[data-gb-card="tractor-feed"] .gb-message,
+[data-gb-card="tractor-feed"] .gb-entry::after,
+[data-gb-card="tractor-feed"] .gb-entry-head::before,
+[data-gb-card="tractor-feed"] .gb-entry-head::after {
+  opacity: var(--tf-wear, 1);
+  mask: radial-gradient(circle, #000 var(--tf-dot), transparent calc(var(--tf-dot) + 0.35px)) 0 0 / 2px 2px;
+  text-shadow: 0 0 6px var(--tf-glow);
+}
+
+[data-gb-card="tractor-feed"] .gb-byline,
+[data-gb-card="tractor-feed"] .gb-time {
+  mask: radial-gradient(circle, #000 var(--tf-dot), transparent calc(var(--tf-dot) + 0.35px)) 0 0 / 2px 2px;
+  opacity: var(--tf-wear, 1);
+  text-shadow: 0 0 6px var(--tf-glow);
+}
+
+/* Controls print as bracketed options: [ ♥ 4 ]  [ 1 REPLY ]  [ SHARE ] */
+[data-gb-card="tractor-feed"] .reaction-pill,
+[data-gb-card="tractor-feed"] .gb-share,
+[data-gb-card="tractor-feed"] .comment-toggle {
+  min-height: calc(var(--tf-ln) * 2);
+  margin: 0;
+  padding: 0 0.5ch;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--tf-ink);
+  font: bold 15px / var(--tf-ln) var(--tf-type);
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+[data-gb-card="tractor-feed"] .reaction-pill::before,
+[data-gb-card="tractor-feed"] .gb-share::before,
+[data-gb-card="tractor-feed"] .comment-toggle::before {
+  content: "[";
+}
+
+[data-gb-card="tractor-feed"] .reaction-pill::after,
+[data-gb-card="tractor-feed"] .gb-share::after,
+[data-gb-card="tractor-feed"] .comment-toggle::after {
+  content: "]";
+}
+
+[data-gb-card="tractor-feed"] .gb-entry-foot {
+  text-shadow: 0 0 6px var(--tf-glow);
+}
+
+[data-gb-card="tractor-feed"] .reaction-count {
+  color: inherit;
+}
+
+[data-gb-card="tractor-feed"] .reaction-glyph {
+  filter: grayscale(1) contrast(1.4);
+}
+
+[data-gb-card="tractor-feed"] .reaction-pill.reaction-mine {
+  background: var(--tf-ink);
+  color: var(--tf-paper);
+}
+
+[data-gb-card="tractor-feed"] .reaction-pill.reaction-mine .reaction-glyph {
+  filter: grayscale(1) invert(1) contrast(2);
+}
+
+[data-gb-card="tractor-feed"] .reaction-pill:focus-visible,
+[data-gb-card="tractor-feed"] .gb-share:focus-visible,
+[data-gb-card="tractor-feed"] .comment-toggle:focus-visible {
+  outline: 2px solid var(--tf-ink);
+  outline-offset: -2px;
+}
+
+/* ---------- dark: the same record on a phosphor terminal ---------- */
+:root[data-theme="dark"] [data-gb-card="tractor-feed"] .gb-entry {
+  filter: none;
+}
+
+:root[data-theme="dark"] [data-gb-card="tractor-feed"] .gb-entry::before {
+  background:
+    repeating-linear-gradient(180deg, transparent 0 2px, rgb(0 0 0 / 0.35) 2px 3px),
+    repeating-linear-gradient(180deg, var(--tf-bar) 0 calc(var(--tf-ln) * 3), transparent calc(var(--tf-ln) * 3) calc(var(--tf-ln) * 6)),
+    var(--tf-paper);
+  mask: none;
+  border: 1px solid color-mix(in srgb, var(--card-phosphor, #46ff7a) 35%, transparent);
+  border-radius: 10px;
+  box-shadow: inset 0 0 40px color-mix(in srgb, var(--card-phosphor, #46ff7a) 10%, transparent);
+}
+
+:root[data-theme="dark"] [data-gb-card="tractor-feed"] .gb-entry {
+  padding-inline: 2.4ch;
+}
+
+/* ---------- Favorites: a STARRED.TXT listing ---------- */
+[data-gb-card="tractor-feed"] .gb-favorites {
+  margin: 0 0 calc(var(--tf-ln) * 2);
+  padding: var(--tf-ln) 2.4ch;
+  border: 3px double var(--tf-ink);
+  border-radius: 0;
+  background: var(--tf-paper);
+  color: var(--tf-ink);
+  font: bold 15px / var(--tf-ln) var(--tf-type);
+  text-shadow: 0 0 6px var(--tf-glow);
+}
+
+[data-gb-card="tractor-feed"] .gb-favorites-title {
+  margin: 0 0 var(--tf-ln);
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+[data-gb-card="tractor-feed"] .gb-favorites-title::before {
+  content: "*** ";
+}
+
+[data-gb-card="tractor-feed"] .gb-favorites-title::after {
+  content: " ***";
+  display: inline;
+  height: auto;
+  margin: 0;
+  background: none;
+}
+
+[data-gb-card="tractor-feed"] .gb-favorites-title span {
+  display: none;
+}
+
+[data-gb-card="tractor-feed"] .gb-favorites-list {
+  display: grid;
+  gap: var(--tf-ln);
+}
+
+[data-gb-card="tractor-feed"] .gb-fav {
+  display: grid;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+[data-gb-card="tractor-feed"] .gb-fav .gb-byline {
+  order: 2;
+  justify-content: flex-end;
+}
+
+[data-gb-card="tractor-feed"] .gb-fav .gb-byline::before {
+  content: "--\00a0";
+}
+
+[data-gb-card="tractor-feed"] .gb-fav-message {
+  order: 1;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  white-space: pre-line;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  line-clamp: 5;
+  overflow: hidden;
+}
+
+@media (max-width: 560px) {
+  [data-gb-card="tractor-feed"] {
+    --tf-strip: 22px;
+  }
+
+  [data-gb-card="tractor-feed"] .gb-entry {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding-inline: calc(var(--tf-strip) + 1.2ch);
+    font-size: 13.5px;
+  }
+
+  [data-gb-card="tractor-feed"] .gb-entry::after {
+    grid-column: 1;
+  }
+
+  [data-gb-card="tractor-feed"] .gb-time {
+    grid-column: 2;
+  }
+
+  [data-gb-card="tractor-feed"] .gb-byline {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+
+  [data-gb-card="tractor-feed"] .gb-entry-head::after {
+    grid-row: 4;
+  }
+
+  [data-gb-card="tractor-feed"] .gb-message {
+    grid-row: 5;
+  }
+
+  [data-gb-card="tractor-feed"] .gb-entry-foot {
+    grid-row: 6;
+  }
+
+  [data-gb-card="tractor-feed"] .gb-entry::before {
+    mask:
+      linear-gradient(#000 0 0) center / calc(100% - var(--tf-strip) * 2) 100% no-repeat,
+      radial-gradient(circle at 50% 50%, transparent 3.6px, #000 4.2px) left top / var(--tf-strip) calc(var(--tf-ln) * 2) repeat-y,
+      radial-gradient(circle at 50% 50%, transparent 3.6px, #000 4.2px) right top / var(--tf-strip) calc(var(--tf-ln) * 2) repeat-y;
+  }
+
+  :root[data-theme="dark"] [data-gb-card="tractor-feed"] .gb-entry {
+    padding-inline: 1.4ch;
+  }
+}

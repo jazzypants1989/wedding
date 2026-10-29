@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>~*~ Jordana &amp; Jesse's Wedding Guestbook ~*~</title>
+  <script src="../shared/theme-boot.js"></script>
+  <!-- The real guestbook's stylesheet stack, so the card is proven against the real cascade. -->
+  <link rel="stylesheet" href="/site/styles/tokens.css">
+  <link rel="stylesheet" href="/site/styles/layout.css">
+  <link rel="stylesheet" href="/site/styles/components.css">
+  <link rel="stylesheet" href="/site/styles/social.css">
+  <!-- slot pieces -->
+  <link rel="stylesheet" href="./background.css">
+  <link rel="stylesheet" href="./card.css">
+  <link rel="stylesheet" href="./burst.css">
+  <!-- page furniture (see SKETCH.md: it does not fit the four slots yet) -->
+  <link rel="stylesheet" href="./furniture.css">
+  <link rel="stylesheet" href="../shared/kit.css">
+</head>
+
+<body class="cgi-page">
+  <a href="#gb-feed" class="skip-link">Skip to the guestbook entries</a>
+
+  <div class="cgi-marquee" aria-hidden="true">
+    <div class="cgi-marquee-track">
+      <span>♥ Welcome to our guestbook!! ♥ Thank U for coming to our wedding ♥ Please sign before you leave!! ♥ Tell all your friends ♥ No flames please ;-) ♥</span>
+      <span>♥ Welcome to our guestbook!! ♥ Thank U for coming to our wedding ♥ Please sign before you leave!! ♥ Tell all your friends ♥ No flames please ;-) ♥</span>
+    </div>
+  </div>
+
+  <main class="cgi-column" id="main-content">
+    <header class="cgi-header">
+      <h1 class="cgi-wordart" id="cgi-wordart">
+        <span class="sr-only" id="cgi-title-text">Jordana &amp; Jesse's Wedding Guestbook</span>
+      </h1>
+      <p class="cgi-tagline">
+        <span class="cgi-spin" id="cgi-heart-l"></span>
+        Thank you for visiting our little corner of the Information Superhighway!
+        <span class="cgi-spin" id="cgi-heart-r"></span>
+      </p>
+    </header>
+
+    <hr class="cgi-rainbow">
+
+    <section class="cgi-construction" aria-label="Under construction">
+      <span class="cgi-sign" id="cgi-sign-l"></span>
+      <p>
+        <b>This marriage is UNDER CONSTRUCTION!</b><br>
+        Est. 04&middot;26&middot;2026 &mdash; completion date: <i>never</i> &hearts;
+      </p>
+      <span class="cgi-sign" id="cgi-sign-r"></span>
+    </section>
+
+    <div class="cgi-counter-row">
+      <div class="cgi-counter">
+        <p>This guestbook has been signed</p>
+        <p class="cgi-odometer" id="cgi-odometer"></p>
+        <p>times since April 26, 2026!</p>
+      </div>
+      <div class="cgi-midi" id="cgi-midi">
+        <p class="cgi-midi-lcd"><span id="cgi-midi-file">canon_in_d.mid</span> <span id="cgi-midi-time">0:00</span></p>
+        <div class="cgi-midi-buttons">
+          <button type="button" id="cgi-midi-play" class="cgi-btn" aria-label="Play background music">&#9654;</button>
+          <button type="button" id="cgi-midi-stop" class="cgi-btn" aria-label="Stop background music">&#9632;</button>
+          <span class="cgi-midi-note" id="cgi-midi-note">sound is off until you press play</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="gb-section" data-gb-card="guestbook-cgi">
+      <form class="cgi-form" id="gb-composer-form">
+        <h2 class="cgi-h2"><span class="cgi-blink-soft">✍</span> Sign My Guestbook! <span class="cgi-blink-soft">✍</span></h2>
+        <div class="cgi-form-grid">
+          <label for="gb-name">Your Name:</label>
+          <input id="gb-name" class="cgi-input" value="Paloma (that's you)" readonly>
+          <label for="gb-message">Comments:</label>
+          <textarea id="gb-message" class="cgi-input" rows="4" maxlength="2000"
+            placeholder="Share a memory, a wish, a bit of advice…"></textarea>
+        </div>
+        <p class="cgi-form-buttons">
+          <button type="submit" class="cgi-btn cgi-btn-big">Sign Guestbook!</button>
+          <button type="reset" class="cgi-btn">Clear</button>
+        </p>
+      </form>
+
+      <section id="gb-favorites" class="gb-favorites" aria-label="Favorites" hidden>
+        <h3 class="gb-favorites-title">Favorites <span aria-hidden="true">✨</span></h3>
+        <ul id="gb-favorites-list" class="gb-favorites-list" role="list"></ul>
+      </section>
+
+      <h2 class="cgi-h2 cgi-view-title">View My Guestbook</h2>
+      <div id="gb-feed" class="gb-feed" data-gb-card="guestbook-cgi"></div>
+      <div id="gb-live" class="sr-only" aria-live="polite"></div>
+    </div>
+
+    <hr class="cgi-rainbow">
+
+    <nav class="cgi-webring" aria-label="The Wedding Webring">
+      <p class="cgi-webring-title"><span id="cgi-ring-heart"></span> This site is a proud member of the <b>J&amp;J Wedding Webring</b> <span id="cgi-ring-heart2"></span></p>
+      <p class="cgi-webring-links">
+        <a href="#">&lt;&lt; Prev: RSVP</a> |
+        <a href="#">Random</a> |
+        <a href="./book.html">Memory Book</a> |
+        <a href="#">Next: Gallery &gt;&gt;</a>
+      </p>
+    </nav>
+
+    <footer class="cgi-footer">
+      <div class="cgi-badges" aria-label="Badges">
+        <span class="b88 b88-jj"><span class="b88-l" id="b88-heart"></span><span class="b88-r">J+J<br>2026</span></span>
+        <span class="b88 b88-notepad"><span class="b88-l">✎</span><span class="b88-r">made with<br>NOTEPAD</span></span>
+        <span class="b88 b88-now"><span class="b88-l">☀</span><span class="b88-r">Get Married<br><b>NOW!</b></span></span>
+        <span class="b88 b88-y2k"><span class="b88-l">✓</span><span class="b88-r">Y2K<br>COMPLIANT</span></span>
+        <span class="b88 b88-tissues"><span class="b88-l">☁</span><span class="b88-r">best viewed<br>w/ tissues</span></span>
+      </div>
+      <p>Best viewed in any browser at 800&times;600 or higher. <span class="cgi-env" id="cgi-mail"></span> <a href="#">E-mail the happy couple!</a></p>
+      <p class="cgi-updated">Last updated: <span id="cgi-updated"></span> &middot; &copy; 2026 J&amp;J &middot; <a href="./book.html">Print the memory book</a></p>
+    </footer>
+  </main>
+
+  <script type="module" src="./main.js"></script>
+</body>
+
+</html>

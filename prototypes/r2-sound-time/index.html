@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Round 2 · Sound / time / space</title>
+  <link rel="stylesheet" href="/site/styles/tokens.css">
+  <link rel="stylesheet" href="./shared/base.css">
+  <link rel="stylesheet" href="./index.css">
+  <script src="./shared/theme-init.js"></script>
+</head>
+
+<body>
+  <main class="ix">
+    <p class="ix-kicker">Design round 2 · guestbook &amp; memory book</p>
+    <h1>Sound, time, space</h1>
+    <p class="ix-lede">Three sketches that use the one thing only the guestbook has, the guests’ own words, and
+      give it a dimension the rest of the site doesn’t have. Each sketch has a guestbook view and a printable
+      memory book. All of them use the shared fictional fixture.</p>
+
+    <ol class="ix-list">
+      <li>
+        <h2><a href="./player-piano/">Player Piano</a></h2>
+        <p>Every name is spelled in notes. The guestbook is one long punched roll, and your scroll is the crank: holes
+          crossing the brass bar light up, and play if you turn sound on. The memory book is <a
+            href="./player-piano/book.html">the score</a>: every guest engraved as a line of sheet music, with the letters
+          of their name as the lyrics.</p>
+        <p class="ix-slots">card <code>roll</code> · background <code>tracker</code> · burst <code>punch</code> · book <code>score</code></p>
+      </li>
+      <li>
+        <h2><a href="./hours/">The Long Day</a></h2>
+        <p>The whole guestbook laid on one 24-hour day by the minute each note was written. The page opens at your own
+          hour, under that hour’s sky, and each card is lit by the real sun over Portland when it was written. The ink
+          ages with the anniversaries. The memory book is <a href="./hours/book.html">a Book of Hours</a>.</p>
+        <p class="ix-slots">card <code>sundial</code> · background <code>daylight</code> · book <code>hours</code> ·
+          try the ⏱ Time machine, or <a href="./hours/?at=2027-04-26T22:00">the first anniversary at 10 pm</a></p>
+      </li>
+      <li>
+        <h2><a href="./stair/">The Stair</a></h2>
+        <p>Notes hung on threads around a spiral stair in CSS 3D. Scroll to walk down it; the far notes show their
+          signer’s name on the back. It is flat and still under reduced motion. The memory book is <a
+            href="./stair/book.html">the spiral</a>: every name on one continuous line, from the first to sign out to
+          the last.</p>
+        <p class="ix-slots">card <code>hung</code> · background <code>stair</code> · book <code>spiral</code></p>
+      </li>
+    </ol>
+
+    <p class="ix-params">Review params on any page: <code>?n=3</code> or <code>?n=300</code> entries ·
+      <code>?theme=dark</code> · <code>?fx=garden</code> (any effect theme) · <code>?motion=reduce</code> ·
+      <code>?at=2031-04-26T19:40</code> (time sketches)</p>
+    <p><button type="button" class="r2-btn" data-theme-toggle>☀ Light</button></p>
+  </main>
+  <script type="module" src="./index.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,262 @@
+/* Page furniture for the tractor-feed sketch: the printer, the Print Shop
+   banner, the BBS composer. Not a slot (see SKETCH.md). */
+
+.tf-page {
+  --tf-type: "Courier New", Courier, "Nimbus Mono PS", monospace;
+  --tf-ink: light-dark(#23242b, #46ff7a);
+  --tf-paper: light-dark(#fbfbf5, #070a07);
+  --tf-glow: light-dark(transparent, rgb(70 255 122 / 0.55));
+  background: transparent;
+  color: var(--tf-ink);
+  font: bold 15px/20px var(--tf-type);
+}
+
+.tf-column {
+  width: min(52rem, calc(100% - 1rem));
+  margin: 0 auto;
+  padding: 0 0 4rem;
+}
+
+/* ---- the printer ---- */
+.tf-housing {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 10px 18px 14px;
+  border-radius: 0 0 14px 14px;
+  background: light-dark(linear-gradient(#e2ddce, #c4bead), linear-gradient(#2b2b28, #1b1b19));
+  box-shadow: inset 0 -6px 0 light-dark(#a9a392, #111), 0 8px 18px rgb(0 0 0 / 0.25);
+  color: light-dark(#4a463c, #9b9785);
+  font: bold 11px/1.2 Verdana, Tahoma, sans-serif;
+  letter-spacing: 0.08em;
+}
+
+.tf-brand {
+  font-size: 14px;
+  letter-spacing: 0.12em;
+}
+
+.tf-brand small {
+  font-size: 9px;
+  letter-spacing: 0.2em;
+}
+
+.tf-leds {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9px;
+}
+
+.tf-leds i {
+  width: 8px;
+  height: 8px;
+  margin-left: 8px;
+  border-radius: 50%;
+  background: #4a3a2a;
+}
+
+.tf-leds i.on {
+  background: #3dff6e;
+  box-shadow: 0 0 6px #3dff6e;
+}
+
+/* ---- the Print Shop banner, on a strip of continuous form ---- */
+.tf-banner {
+  position: relative;
+  margin: 0 22px;
+  padding: 26px 52px 22px;
+  background:
+    radial-gradient(circle at 50% 50%, light-dark(#cdc8ba, #050705) 5px, transparent 5.6px) left top / 34px 40px repeat-y,
+    radial-gradient(circle at 50% 50%, light-dark(#cdc8ba, #050705) 5px, transparent 5.6px) right top / 34px 40px repeat-y,
+    repeating-linear-gradient(180deg, rgb(0 0 0 / 0.25) 0 4px, transparent 4px 8px) 34px 0 / 1px 100% no-repeat,
+    repeating-linear-gradient(180deg, rgb(0 0 0 / 0.25) 0 4px, transparent 4px 8px) calc(100% - 34px) 0 / 1px 100% no-repeat,
+    var(--tf-paper);
+  box-shadow: 0 6px 14px rgb(0 0 0 / 0.18);
+  line-height: 0;
+}
+
+.tf-banner svg {
+  width: 100%;
+  height: auto;
+  fill: var(--tf-ink);
+  filter: drop-shadow(0 0 4px var(--tf-glow));
+}
+
+.tf-runline {
+  margin: 14px 0 26px;
+  text-align: center;
+  white-space: pre-wrap;
+  text-shadow: 0 0 6px var(--tf-glow);
+}
+
+/* ---- BBS composer ---- */
+.tf-bbs {
+  margin: 0 0 40px;
+  padding: 0 0 12px;
+  border: 4px double var(--tf-ink);
+  background: light-dark(#f3f1e6, #050805);
+  color: var(--tf-ink);
+  text-shadow: 0 0 6px var(--tf-glow);
+}
+
+.tf-bbs-title {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0 2ch;
+  margin-bottom: 10px;
+  padding: 0 1ch;
+  background: var(--tf-ink);
+  color: var(--tf-paper);
+  text-shadow: none;
+}
+
+.tf-bbs-line {
+  display: block;
+  padding: 0 2ch;
+}
+
+.tf-bbs-input {
+  display: flex;
+  gap: 1ch;
+  margin: 8px 2ch 0;
+  padding: 6px 1ch;
+  border: 1px solid color-mix(in srgb, var(--tf-ink) 50%, transparent);
+}
+
+.tf-textarea {
+  flex: 1;
+  min-height: 60px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--tf-ink);
+  font: bold 15px/20px var(--tf-type);
+  caret-color: var(--tf-ink);
+  caret-shape: block;
+  resize: vertical;
+  text-shadow: inherit;
+}
+
+.tf-textarea::placeholder {
+  color: color-mix(in srgb, var(--tf-ink) 55%, transparent);
+}
+
+.tf-textarea:focus-visible {
+  outline: none;
+}
+
+.tf-bbs-input:focus-within {
+  outline: 2px solid var(--tf-ink);
+  outline-offset: 2px;
+}
+
+.tf-bbs-actions {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 2ch;
+  margin: 12px 2ch 0;
+}
+
+.tf-key {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 1.2ch;
+  border: 2px solid var(--tf-ink);
+  background: transparent;
+  color: var(--tf-ink);
+  font: bold 15px/20px var(--tf-type);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.tf-key-go {
+  background: var(--tf-ink);
+  color: var(--tf-paper);
+}
+
+.tf-key:hover {
+  outline: 2px solid var(--tf-ink);
+  outline-offset: 2px;
+}
+
+.tf-key:focus-visible {
+  outline: 3px dashed var(--tf-ink);
+  outline-offset: 3px;
+}
+
+.tf-h2 {
+  margin: 0 0 20px;
+  font: bold 15px/20px var(--tf-type);
+  text-align: center;
+  text-shadow: 0 0 6px var(--tf-glow);
+}
+
+.tf-h2::before,
+.tf-h2::after {
+  content: " >>> ";
+}
+
+.tf-eof {
+  margin-top: 30px;
+  text-align: center;
+  text-shadow: 0 0 6px var(--tf-glow);
+}
+
+/* the newly printed record */
+.tf-fresh {
+  animation: tf-feed 0.9s steps(9, end) 1;
+}
+
+@keyframes tf-feed {
+  from {
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tf-fresh {
+    animation: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .tf-page,
+  .tf-textarea,
+  .tf-key {
+    font-size: 13.5px;
+  }
+
+  .tf-housing {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .tf-banner {
+    margin: 0 8px;
+    padding: 18px 30px 14px;
+  }
+}
+
+.tf-banner-stack {
+  display: none;
+}
+
+@media (max-width: 560px) {
+  .tf-banner-wide {
+    display: none;
+  }
+
+  .tf-banner-stack {
+    display: grid;
+    gap: 10px;
+  }
+}

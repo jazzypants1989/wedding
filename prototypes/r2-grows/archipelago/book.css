@@ -1,0 +1,281 @@
+/* Archipelago memory book: an atlas. Sizes in cqw of the sheet. */
+
+.abk-sheet {
+  --sheet-paper: var(--ar-sea);
+  --sheet-ink: var(--ar-ink);
+  font-family: var(--font-body);
+}
+.abk-h {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 4.4cqw;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-align: center;
+  margin: 8cqw 0 2cqw;
+  color: var(--ar-ink);
+}
+
+/* ---- Cover: cartouche over the general chart ---- */
+.abk-cover {
+  display: flex;
+  flex-direction: column;
+  padding: 5cqw;
+  gap: 2.5cqw;
+}
+.abk-cartouche {
+  text-align: center;
+  color: var(--ar-ink);
+  border: 0.3cqw double var(--ar-ink);
+  border-width: 0.8cqw;
+  padding: 2cqw 3cqw;
+}
+.abk-cartouche p {
+  margin: 0;
+  font-size: 1.7cqw;
+  letter-spacing: 0.35em;
+  text-transform: uppercase;
+}
+.abk-cartouche h1 {
+  margin: 0.6cqw 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 6cqw;
+  line-height: 1.05;
+  color: var(--ar-accent);
+}
+.abk-cartouche .abk-small {
+  font-size: 1.35cqw;
+  letter-spacing: 0.12em;
+}
+.abk-general {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.abk-general .ar-map {
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+}
+
+/* ---- Legend ---- */
+.abk-lede {
+  max-width: 70cqw;
+  margin: 0 auto;
+  text-align: center;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 2.2cqw;
+  line-height: 1.45;
+  color: var(--ar-ink);
+}
+.abk-legend-list {
+  margin: 4cqw 12cqw 0;
+  display: grid;
+  gap: 1.4cqw;
+  color: var(--ar-ink);
+}
+.abk-legend-list div {
+  display: grid;
+  grid-template-columns: 22cqw 1fr;
+  gap: 3cqw;
+  border-bottom: 0.12cqw solid color-mix(in oklab, var(--ar-ink) 25%, transparent);
+  padding-bottom: 1.6cqw;
+}
+.abk-legend-list dt {
+  font-family: var(--font-display);
+  font-size: 2.3cqw;
+  color: var(--ar-accent);
+}
+.abk-legend-list dd {
+  margin: 0;
+  font-size: 1.8cqw;
+  line-height: 1.45;
+}
+
+.abk-samples {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3cqw;
+  margin: 6cqw 10cqw 0;
+}
+.abk-samples figure {
+  margin: 0;
+  text-align: center;
+}
+.abk-samples .ar-chart {
+  box-shadow: 0 0 0 0.15cqw color-mix(in oklab, var(--ar-ink) 40%, transparent);
+}
+.abk-samples figcaption {
+  margin-top: 1cqw;
+  font-size: 1.25cqw;
+  line-height: 1.35;
+  color: var(--ar-ink);
+}
+.abk-samples q {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1.5cqw;
+}
+
+/* ---- Plates ---- */
+.abk-plate {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  gap: 4cqw;
+  padding: 6cqw;
+  color: var(--ar-ink);
+}
+.abk-plate.is-full {
+  grid-template-rows: auto 1fr;
+}
+.abk-plate.is-full .abk-map {
+  width: 72cqw;
+  margin: 0 auto;
+}
+.abk-plate.is-half {
+  height: 50%;
+  grid-template-columns: 46cqw 1fr;
+  padding: 5cqw 6cqw;
+  align-items: start;
+}
+.is-pair .abk-plate:nth-child(2) {
+  top: 50%;
+  border-top: 0.2cqw solid color-mix(in oklab, var(--ar-ink) 25%, transparent);
+}
+.abk-map .ar-chart {
+  box-shadow: 0 0 0 0.25cqw var(--ar-ink);
+}
+.abk-text {
+  min-width: 0;
+}
+.abk-plate-no {
+  margin: 0;
+  font-size: 1.3cqw;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+.abk-name {
+  margin: 0.6cqw 0 0.8cqw;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 4.2cqw;
+  line-height: 1.05;
+  color: var(--ar-ink);
+}
+.is-fav .abk-name {
+  color: var(--ar-accent);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-size: 3.6cqw;
+}
+.abk-survey {
+  margin: 0;
+  font-size: 1.5cqw;
+}
+.abk-survey strong {
+  font-weight: 500;
+}
+.abk-facts {
+  margin: 1.6cqw 0 0;
+  font-size: 1.45cqw;
+}
+.abk-facts div {
+  display: flex;
+  gap: 1.2cqw;
+  padding: 0.4cqw 0;
+  border-top: 0.1cqw solid color-mix(in oklab, var(--ar-ink) 20%, transparent);
+}
+.abk-facts dt {
+  width: 11cqw;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 1.15cqw;
+  opacity: 0.75;
+}
+.abk-facts dd {
+  margin: 0;
+  font-family: var(--font-display);
+  font-style: italic;
+}
+.abk-dir-h {
+  margin: 2cqw 0 0.4cqw;
+  font-size: 1.2cqw;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+.abk-dir {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 2.3cqw;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--color-text);
+}
+.is-mid .abk-dir {
+  font-size: 1.95cqw;
+}
+.is-long .abk-dir {
+  font-size: 1.7cqw;
+}
+
+/* ---- Gazetteer ---- */
+.abk-gaz ol {
+  list-style: none;
+  margin: 3cqw 6cqw 0;
+  padding: 0;
+  columns: 2;
+  column-gap: 5cqw;
+  font-size: 1.5cqw;
+  color: var(--ar-ink);
+}
+.abk-gaz li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.8cqw;
+  padding: 0.45cqw 0;
+  break-inside: avoid;
+}
+.abk-g-name {
+  font-family: var(--font-display);
+  font-size: 1.75cqw;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 22cqw;
+}
+.abk-g-kind {
+  font-size: 1.1cqw;
+  font-style: italic;
+  opacity: 0.7;
+}
+.abk-dots {
+  flex: 1;
+  min-width: 1cqw;
+  border-bottom: 0.15cqw dotted color-mix(in oklab, var(--ar-ink) 45%, transparent);
+}
+.abk-g-ref,
+.abk-g-pl {
+  font-variant-numeric: tabular-nums;
+  font-size: 1.3cqw;
+}
+
+@media print {
+  .abk-sheet {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  :root:not([data-ar-palette]) .abk-sheet {
+    --sheet-paper: #fff;
+  }
+  .abk-dir {
+    color: #2a1d16;
+  }
+}

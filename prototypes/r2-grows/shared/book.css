@@ -1,0 +1,67 @@
+/* Shared sheet geometry for the three memory-book sketches.
+   A sheet is a fixed-proportion page whose type is sized in container units
+   (cqw), so the same rules lay out a phone preview, a desktop preview and a
+   printed page identically. 184 × 247 mm fits inside both A4 and US Letter at
+   12 mm margins, so one layout prints on either without reflow. */
+
+@page {
+  margin: 12mm;
+}
+
+body {
+  margin: 0;
+  background: color-mix(in oklab, var(--color-background) 88%, var(--color-text) 12%);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  overflow-x: clip;
+}
+
+.mb-book {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+  padding: 2rem 1rem 4rem;
+}
+
+.mb-sheet {
+  --sheet-paper: var(--color-card-bg);
+  --sheet-ink: var(--color-text);
+  position: relative;
+  width: min(184mm, 100%);
+  aspect-ratio: 184 / 247;
+  container-type: inline-size;
+  overflow: hidden;
+  background: var(--sheet-paper);
+  color: var(--sheet-ink);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08), 0 8px 30px rgb(0 0 0 / 0.12);
+  break-inside: avoid;
+}
+
+.mb-status {
+  color: var(--color-text-muted);
+}
+
+@media print {
+  /* The book always prints ink-on-paper, whatever the screen theme is. */
+  :root,
+  :root[data-theme] {
+    color-scheme: light !important;
+  }
+  body {
+    background: #fff;
+  }
+  .mb-book {
+    display: block;
+    padding: 0;
+  }
+  .mb-sheet {
+    width: 184mm;
+    margin: 0 auto;
+    box-shadow: none;
+    break-after: page;
+  }
+  .mb-sheet:last-child {
+    break-after: auto;
+  }
+}

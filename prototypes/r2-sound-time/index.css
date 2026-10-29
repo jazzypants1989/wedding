@@ -1,0 +1,55 @@
+.ix {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 3rem 1.25rem 4rem;
+}
+.ix-kicker {
+  margin: 0;
+  font-size: var(--text-sm);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.ix h1 {
+  margin: 0.2rem 0 0.6rem;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(2.4rem, 8vw, 3.6rem);
+  line-height: 1;
+}
+.ix-lede {
+  color: var(--color-text-muted);
+}
+.ix-list {
+  list-style: none;
+  padding: 0;
+  margin: 2rem 0;
+  display: grid;
+  gap: 1.25rem;
+}
+.ix-list li {
+  padding: 1.1rem 1.25rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-card-bg);
+}
+.ix-list h2 {
+  margin: 0 0 0.3rem;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: var(--text-xl);
+}
+.ix-list a {
+  color: var(--color-primary-dark);
+}
+.ix-list p {
+  margin: 0 0 0.4rem;
+}
+.ix-slots,
+.ix-params {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+code {
+  font-size: 0.9em;
+}

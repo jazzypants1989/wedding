@@ -1,0 +1,121 @@
+/* Pattern Book — the cloth. Shared by guestbook and book.
+   Params: --wv-weave (seconds the shuttle takes), palette via data-wv-palette. */
+
+:root {
+  --wv-weave: 2.2s;
+  --wv-warp: color-mix(in oklab, var(--color-card-bg) 78%, var(--color-background));
+  --wv-0: var(--effect-brand);
+  --wv-1: var(--fx-gold-1);
+  --wv-2: var(--fx-rose-3);
+  --wv-3: var(--fx-cool-1);
+  --wv-4: var(--fx-green-1);
+  --wv-5: var(--fx-leaf-1);
+  --wv-ink: color-mix(in oklab, var(--color-text) 45%, var(--color-text-muted));
+  --wv-pinked: polygon(0.0% 0.0%, 5.0% 2.2%, 10.0% 0.0%, 15.0% 2.2%, 20.0% 0.0%, 25.0% 2.2%, 30.0% 0.0%, 35.0% 2.2%, 40.0% 0.0%, 45.0% 2.2%, 50.0% 0.0%, 55.0% 2.2%, 60.0% 0.0%, 65.0% 2.2%, 70.0% 0.0%, 75.0% 2.2%, 80.0% 0.0%, 85.0% 2.2%, 90.0% 0.0%, 95.0% 2.2%, 100.0% 0.0%, 97.8% 5.0%, 100.0% 10.0%, 97.8% 15.0%, 100.0% 20.0%, 97.8% 25.0%, 100.0% 30.0%, 97.8% 35.0%, 100.0% 40.0%, 97.8% 45.0%, 100.0% 50.0%, 97.8% 55.0%, 100.0% 60.0%, 97.8% 65.0%, 100.0% 70.0%, 97.8% 75.0%, 100.0% 80.0%, 97.8% 85.0%, 100.0% 90.0%, 97.8% 95.0%, 100.0% 100.0%, 95.0% 97.8%, 90.0% 100.0%, 85.0% 97.8%, 80.0% 100.0%, 75.0% 97.8%, 70.0% 100.0%, 65.0% 97.8%, 60.0% 100.0%, 55.0% 97.8%, 50.0% 100.0%, 45.0% 97.8%, 40.0% 100.0%, 35.0% 97.8%, 30.0% 100.0%, 25.0% 97.8%, 20.0% 100.0%, 15.0% 97.8%, 10.0% 100.0%, 5.0% 97.8%, 0.0% 100.0%, 2.2% 95.0%, 0.0% 90.0%, 2.2% 85.0%, 0.0% 80.0%, 2.2% 75.0%, 0.0% 70.0%, 2.2% 65.0%, 0.0% 60.0%, 2.2% 55.0%, 0.0% 50.0%, 2.2% 45.0%, 0.0% 40.0%, 2.2% 35.0%, 0.0% 30.0%, 2.2% 25.0%, 0.0% 20.0%, 2.2% 15.0%, 0.0% 10.0%, 2.2% 5.0%);
+}
+
+/* Palette param: historic coverlet dyes on undyed cotton. */
+:root[data-wv-palette="indigo"] {
+  --wv-warp: light-dark(#f1ece0, #d9d2c2);
+  --wv-0: #22356b; --wv-1: #2f4a8a; --wv-2: #1d2a52; --wv-3: #3b5ba0; --wv-4: #283e78; --wv-5: #4766ad;
+}
+:root[data-wv-palette="madder"] {
+  --wv-warp: light-dark(#f1ece0, #d9d2c2);
+  --wv-0: #9c2f25; --wv-1: #b0472c; --wv-2: #7d2420; --wv-3: #22356b; --wv-4: #8a3a2a; --wv-5: #c0653a;
+}
+:root[data-wv-palette="undyed"] {
+  --wv-warp: light-dark(#efe6d2, #cfc4ad);
+  --wv-0: #8a7a5c; --wv-1: #6f6249; --wv-2: #a08d68; --wv-3: #5b5040; --wv-4: #7c6d52; --wv-5: #9b8a6a;
+}
+
+.wv-cloth {
+  display: block;
+  overflow: hidden;
+}
+.wv-cloth.c0 { --wv-weft: var(--wv-0); }
+.wv-cloth.c1 { --wv-weft: var(--wv-1); }
+.wv-cloth.c2 { --wv-weft: var(--wv-2); }
+.wv-cloth.c3 { --wv-weft: var(--wv-3); }
+.wv-cloth.c4 { --wv-weft: var(--wv-4); }
+.wv-cloth.c5 { --wv-weft: var(--wv-5); }
+.wv-cloth.a-c0 { --wv-acc: var(--wv-0); }
+.wv-cloth.a-c1 { --wv-acc: var(--wv-1); }
+.wv-cloth.a-c2 { --wv-acc: var(--wv-2); }
+.wv-cloth.a-c3 { --wv-acc: var(--wv-3); }
+.wv-cloth.a-c4 { --wv-acc: var(--wv-4); }
+.wv-cloth.a-c5 { --wv-acc: var(--wv-5); }
+.wv-gap {
+  fill: color-mix(in oklab, var(--wv-weft) 30%, #140f0c);
+}
+.wv-weft {
+  fill: var(--wv-weft);
+}
+.wv-accent {
+  fill: var(--wv-acc);
+}
+.wv-warp {
+  fill: var(--wv-warp);
+}
+.wv-st-dk {
+  stop-color: #000;
+  stop-opacity: 0.3;
+}
+.wv-st-lt {
+  stop-color: #fff;
+  stop-opacity: 0.22;
+}
+
+/* The draft: ink squares on a fine grid, letters under the threading. */
+.wv-draft {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.wv-grid {
+  fill: none;
+  stroke: color-mix(in oklab, var(--wv-ink) 35%, transparent);
+  stroke-width: 0.5;
+}
+.wv-ink {
+  fill: var(--wv-ink);
+}
+.wv-dd {
+  fill: var(--wv-weft);
+}
+.wv-dd.wv-dd-acc {
+  fill: var(--wv-acc);
+}
+.wv-letters text {
+  font: 500 8px var(--font-body);
+  fill: var(--wv-ink);
+  text-anchor: middle;
+  text-transform: uppercase;
+}
+.wv-letters .wv-l-acc {
+  font-weight: 700;
+  fill: var(--effect-brand-dark);
+}
+.wv-mirror {
+  stroke: var(--effect-brand-dark);
+  stroke-width: 0.8;
+  stroke-dasharray: 2 2;
+}
+
+/* Weaving in: the cloth is revealed pick by pick, top to bottom. */
+.wv-weavable .wv-cloth {
+  clip-path: inset(0 0 100% 0);
+}
+.is-grown.wv-weavable .wv-cloth,
+.is-grown .wv-weavable .wv-cloth {
+  clip-path: inset(0 0 0 0);
+  transition: clip-path var(--wv-weave) steps(24, end);
+}
+[data-motion="reduce"] .wv-weavable .wv-cloth {
+  clip-path: none;
+  transition: none;
+}
+@media print {
+  .wv-weavable .wv-cloth {
+    clip-path: none !important;
+  }
+}

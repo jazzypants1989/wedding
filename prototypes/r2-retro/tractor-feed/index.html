@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GUESTBK.TXT - Jordana &amp; Jesse</title>
+  <script src="../shared/theme-boot.js"></script>
+  <link rel="stylesheet" href="/site/styles/tokens.css">
+  <link rel="stylesheet" href="/site/styles/layout.css">
+  <link rel="stylesheet" href="/site/styles/components.css">
+  <link rel="stylesheet" href="/site/styles/social.css">
+  <!-- slot pieces -->
+  <link rel="stylesheet" href="./background.css">
+  <link rel="stylesheet" href="./card.css">
+  <link rel="stylesheet" href="./burst.css">
+  <!-- page furniture -->
+  <link rel="stylesheet" href="./furniture.css">
+  <link rel="stylesheet" href="../shared/kit.css">
+</head>
+
+<body class="tf-page">
+  <a href="#gb-feed" class="skip-link">Skip to the entries</a>
+
+  <main class="tf-column" id="main-content">
+    <header class="tf-printer">
+      <div class="tf-housing" aria-hidden="true">
+        <span class="tf-brand">J&amp;J-2600 <small>DOT MATRIX</small></span>
+        <span class="tf-leds"><i class="on"></i>ON LINE <i class="on"></i>POWER <i></i>PAPER OUT</span>
+      </div>
+      <h1 class="tf-banner" id="tf-banner"><span class="sr-only" id="tf-banner-text">Jordana &amp; Jesse</span></h1>
+      <p class="tf-runline" id="tf-runline">*** GUESTBK.TXT ***</p>
+    </header>
+
+    <div class="gb-section" data-gb-card="tractor-feed">
+      <form class="tf-bbs" id="gb-composer-form">
+        <p class="tf-bbs-title"><span>J&amp;J GUESTBOOK BBS v1.0</span><span class="tf-bbs-node">NODE 1 &middot; 2400 BAUD</span></p>
+        <p class="tf-bbs-line">LOGGED IN AS: <b>PALOMA</b></p>
+        <label for="gb-message" class="tf-bbs-line">ENTER YOUR MESSAGE. PRESS &lt;PRINT&gt; WHEN DONE.</label>
+        <div class="tf-bbs-input">
+          <span class="tf-prompt" aria-hidden="true">&gt;</span>
+          <textarea id="gb-message" class="tf-textarea" rows="3" maxlength="2000"
+            placeholder="Share a memory, a wish, a bit of advice…"></textarea>
+        </div>
+        <p class="tf-bbs-actions">
+          <a href="./book.html" class="tf-key">[B]OOK: PRINT IT ALL</a>
+          <button type="submit" class="tf-key tf-key-go">[P]RINT</button>
+        </p>
+      </form>
+
+      <section id="gb-favorites" class="gb-favorites" aria-label="Favorites" hidden>
+        <h3 class="gb-favorites-title">Favorites <span aria-hidden="true">✨</span></h3>
+        <ul id="gb-favorites-list" class="gb-favorites-list" role="list"></ul>
+      </section>
+
+      <h2 class="tf-h2">LISTING: ALL ENTRIES, NEWEST FIRST</h2>
+      <div id="gb-feed" class="gb-feed" data-gb-card="tractor-feed"></div>
+      <div id="gb-live" class="sr-only" aria-live="polite"></div>
+    </div>
+
+    <p class="tf-eof">*** END OF FILE *** <span id="tf-count"></span> RECORDS ***</p>
+  </main>
+
+  <script type="module" src="./main.js"></script>
+</body>
+
+</html>

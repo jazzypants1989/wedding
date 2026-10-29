@@ -1,0 +1,231 @@
+/* Page furniture for the cut-and-paste zine: masthead, intro strip,
+   composer, section heads. Not a slot (see SKETCH.md). */
+
+.zine-page {
+  background: transparent;
+  color: var(--color-text);
+  font-family: "Courier New", Courier, monospace;
+  --zine-ink: light-dark(#141312, #f1ede4);
+  --zine-marker: light-dark(
+    color-mix(in srgb, var(--color-primary) 56%, #000),
+    color-mix(in srgb, var(--color-primary) 85%, #fff)
+  );
+  --zine-hand: "Marker Felt", "Chalkboard SE", "Segoe Print", "Bradley Hand", "Comic Sans MS", cursive;
+}
+
+.zine-column {
+  width: min(62rem, calc(100% - 1.5rem));
+  margin: 0 auto;
+  padding: 2.2rem 0 4rem;
+}
+
+/* ---- masthead ---- */
+.zine-mast {
+  text-align: center;
+  margin-bottom: 1.6rem;
+}
+
+.zine-presents {
+  display: inline-block;
+  margin-bottom: 0.6rem;
+  padding: 0.1rem 0.5rem;
+  background: var(--zine-ink);
+  color: light-dark(#fff, #111);
+  font: bold 0.85rem/1.4 "Courier New", monospace;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  rotate: -1.5deg;
+}
+
+.zine-title {
+  margin: 0 auto;
+  font-size: clamp(3rem, 12vw, 7.2rem);
+  font-weight: 400;
+}
+
+.zine-issue {
+  display: inline-block;
+  margin-top: 1rem;
+  padding: 0.35rem 0.9rem;
+  border-top: 3px solid #141312;
+  border-bottom: 3px solid #141312;
+  background: light-dark(#fffefb, #ece8de);
+  color: #141312;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+  font: bold 0.82rem/1.4 "Courier New", monospace;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+/* ---- intro strip: a typed slip glued on crooked ---- */
+.zine-note {
+  max-width: 34rem;
+  margin: 0 auto 0.6rem;
+  padding: 0.7rem 1rem;
+  background: light-dark(#fffefb, #ece8de);
+  color: #1b1a18;
+  font: 1rem/1.55 "Courier New", monospace;
+  rotate: 0.8deg;
+  clip-path: polygon(0 3%, 100% 0, 99% 96%, 1% 100%);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.zine-book-link {
+  text-align: center;
+  margin: 1rem 0 2rem;
+  rotate: -2deg;
+}
+
+.zine-book-link a {
+  color: var(--zine-marker);
+  font: 1.45rem/1.2 var(--zine-hand);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+
+.zine-book-link span {
+  font-size: 1rem;
+}
+
+/* ---- composer: a strip of notebook paper ---- */
+.zine-composer {
+  position: relative;
+  max-width: 38rem;
+  margin: 0 auto 3.2rem;
+  padding: 1.1rem 1.2rem 0.9rem 3rem;
+  background:
+    linear-gradient(90deg, transparent 2.2rem, #e8807e 2.2rem, #e8807e calc(2.2rem + 1.5px), transparent calc(2.2rem + 1.5px)),
+    repeating-linear-gradient(180deg, transparent 0 calc(1.6rem - 1px), #9cc3e6 calc(1.6rem - 1px) 1.6rem),
+    light-dark(#fffefb, #ece8de);
+  background-position: 0 0, 0 0.4rem, 0 0;
+  color: #1b1a18;
+  rotate: -0.6deg;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 93% 98.5%, 86% 100%, 79% 98.7%, 72% 100%, 65% 98.6%, 58% 100%, 51% 98.8%, 44% 100%, 37% 98.6%, 30% 100%, 23% 98.7%, 16% 100%, 9% 98.6%, 0 100%);
+  filter: drop-shadow(1px 2px 0 rgb(0 0 0 / 0.2));
+}
+
+.zine-composer-from {
+  position: absolute;
+  top: 0.55rem;
+  right: 1.1rem;
+  font: 1rem/1 var(--zine-hand);
+  color: color-mix(in srgb, var(--color-primary) 56%, #000);
+}
+
+.zine-composer-label {
+  display: block;
+  margin-bottom: 0.2rem;
+  font: bold 1.5rem/1.6rem "Courier New", monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.zine-textarea {
+  display: block;
+  width: 100%;
+  min-height: 6.4rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #1b1a18;
+  font: 1.02rem/1.6rem "Courier New", monospace;
+  resize: vertical;
+}
+
+.zine-textarea::placeholder {
+  color: #6b675f;
+}
+
+.zine-textarea:focus-visible {
+  outline: 2px dashed color-mix(in srgb, var(--color-primary) 56%, #000);
+  outline-offset: 4px;
+}
+
+.zine-composer-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+.zine-doodle-arrow {
+  width: 3.4rem;
+  height: 2rem;
+  background: color-mix(in srgb, var(--color-primary) 56%, #000);
+  mask: var(--doodle-arrow) center / contain no-repeat;
+  rotate: 12deg;
+}
+
+.zine-send {
+  min-height: 44px;
+  padding: 0.35rem 1rem;
+  border: 3px solid #1b1a18;
+  border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
+  background: #ffe45c;
+  color: #1b1a18;
+  font: bold 1.05rem/1 "Courier New", monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  rotate: 1.5deg;
+}
+
+.zine-send:hover {
+  background: #ffd62a;
+}
+
+.zine-send:focus-visible {
+  outline: 3px dashed #1b1a18;
+  outline-offset: 3px;
+}
+
+/* ---- section head ---- */
+.zine-letters {
+  margin: 0 auto;
+  font-size: clamp(2.2rem, 7vw, 3.6rem);
+  font-weight: 400;
+}
+
+.zine-letters-sub {
+  width: fit-content;
+  margin: 0.7rem auto 1.8rem;
+  padding: 0.1rem 0.6rem;
+  background: var(--zine-ink);
+  color: light-dark(#fff, #111);
+  text-align: center;
+  font: italic 0.95rem/1.4 "Courier New", monospace;
+}
+
+.zine-foot {
+  margin-top: 2rem;
+  text-align: center;
+  color: var(--zine-ink);
+  font: 0.85rem/1.5 "Courier New", monospace;
+}
+
+.zine-foot p {
+  display: inline-block;
+  padding: 0.3rem 0.7rem;
+  border: 2px dashed currentColor;
+  background: light-dark(#fffefb, #111);
+}
+
+/* A fresh letter lands with a slap (motion only). */
+.zine-fresh {
+  animation: zine-slap 0.45s steps(4, end) 1;
+}
+
+@keyframes zine-slap {
+  from {
+    scale: 1.25;
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zine-fresh {
+    animation: none;
+  }
+}

@@ -1,0 +1,413 @@
+/* card slot: clipping — every entry is something cut out and glued down:
+   typewritten on white bond, notebook paper, newsprint, graph paper, a black
+   photocopy, pink construction paper. The author signs in marker, the date is
+   rubber-stamped, and a doodle sits in the margin.
+
+   Deterministic per entry with no JS: the variant is keyed off the LAST DIGIT
+   of data-id ([data-id$="7"]), which the real feed already renders. Same entry,
+   same clipping, every visit and in print.
+
+   Params (custom properties, CSSOM-written):
+     --card-marker  signature + doodle colour  default primary darkened to stay ≥4.5:1 on paper
+     --card-tilt    rotation multiplier        default 1   (0 = everything straight)
+     --card-type    typewriter size            default 1rem
+     --card-cols    column min width           default 19rem                         */
+
+[data-gb-card="clipping"] {
+  --clip-marker: var(--card-marker, color-mix(in srgb, var(--color-primary) 56%, #000));
+  --clip-tilt: var(--card-tilt, 1);
+  --clip-type: "Courier New", Courier, "Nimbus Mono PS", monospace;
+  --clip-hand: "Marker Felt", "Chalkboard SE", "Segoe Print", "Bradley Hand", "Comic Sans MS", cursive;
+  --clip-ink: #1b1a18;
+  --clip-white: light-dark(#fffefb, #ece8de);
+}
+
+[data-gb-card="clipping"] .gb-feed,
+.gb-feed[data-gb-card="clipping"] {
+  display: block;
+  columns: 2 var(--card-cols, 19rem);
+  column-gap: 2.4rem;
+}
+
+[data-gb-card="clipping"] .gb-entry {
+  --clip-paper: var(--clip-white);
+  --clip-rot: -1.2deg;
+  --clip-edge: polygon(0 2%, 3% 0, 48% 1.5%, 97% 0, 100% 3%, 99% 52%, 100% 97%, 96% 100%, 51% 98.5%, 2% 100%, 0 96%, 1% 49%);
+  --clip-doodle: var(--doodle-heart);
+  position: relative;
+  isolation: isolate;
+  /* inline-flex: a monolithic box, so a column break never slices a clipping
+     (or flings its margin doodle into the next column) */
+  display: inline-flex;
+  width: 100%;
+  vertical-align: top;
+  flex-direction: column;
+  break-inside: avoid;
+  margin: 0 0 1.7rem;
+  padding: 1rem 1.15rem 0.8rem;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--clip-ink);
+  rotate: calc(var(--clip-rot) * var(--clip-tilt));
+  filter: drop-shadow(1px 2px 0 rgb(0 0 0 / 0.2)) drop-shadow(0 6px 8px rgb(0 0 0 / 0.08));
+}
+
+/* The paper itself: a pseudo-element, so the scissor-cut clip-path does not
+   clip the drop shadow on the entry. */
+[data-gb-card="clipping"] .gb-entry::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--clip-paper);
+  clip-path: var(--clip-edge);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* Margin doodle, painted in marker through a mask. */
+[data-gb-card="clipping"] .gb-entry::after {
+  content: "";
+  position: absolute;
+  left: -0.9rem;
+  bottom: -0.7rem;
+  width: 3.2rem;
+  height: 2.4rem;
+  background: var(--clip-marker);
+  mask: var(--clip-doodle) center / contain no-repeat;
+  rotate: -8deg;
+  pointer-events: none;
+}
+
+[data-gb-card="clipping"] .gb-entry-head {
+  display: contents;
+}
+
+/* Rubber-stamped date, top right. */
+[data-gb-card="clipping"] .gb-time {
+  order: 0;
+  align-self: flex-end;
+  margin: -0.2rem -0.3rem 0.55rem 0;
+  padding: 0.1rem 0.4rem;
+  border: 2px solid currentColor;
+  border-radius: 3px;
+  color: color-mix(in srgb, var(--color-primary) 40%, #6b1010);
+  font: bold 0.68rem/1.3 var(--clip-type);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  rotate: 3deg;
+  opacity: 0.82;
+}
+
+[data-gb-card="clipping"] .gb-message {
+  order: 1;
+  margin: 0;
+  color: inherit;
+  font: var(--card-type, 1rem) / 1.55 var(--clip-type);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  text-shadow: 0 0 0.6px currentColor;
+}
+
+/* Signed in marker, bottom right. */
+[data-gb-card="clipping"] .gb-byline {
+  order: 2;
+  align-self: flex-end;
+  margin: 0.45rem 0.1rem 0 0;
+  gap: 0;
+  rotate: -3deg;
+}
+
+[data-gb-card="clipping"] .gb-byline::before {
+  content: "—";
+  margin-right: 0.3rem;
+  color: var(--clip-marker);
+  font: 1.3rem/1 var(--clip-hand);
+}
+
+[data-gb-card="clipping"] .gb-author {
+  color: var(--clip-marker);
+  font: 1.35rem/1.1 var(--clip-hand);
+}
+
+[data-gb-card="clipping"] .monogram {
+  display: none;
+}
+
+[data-gb-card="clipping"] .gb-entry-foot {
+  order: 3;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.35rem;
+}
+
+/* Controls are marker scribbles on the clipping. */
+[data-gb-card="clipping"] .reaction-pill,
+[data-gb-card="clipping"] .gb-share,
+[data-gb-card="clipping"] .comment-toggle {
+  min-height: 36px;
+  margin: 0;
+  padding: 0 0.55rem;
+  border: 2px solid color-mix(in srgb, var(--clip-ink) 70%, transparent);
+  border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
+  background: transparent;
+  color: var(--clip-ink);
+  font: 0.95rem/1 var(--clip-hand);
+}
+
+[data-gb-card="clipping"] .reaction-pill.reaction-mine {
+  border-color: var(--clip-marker);
+  background: color-mix(in srgb, var(--clip-marker) 14%, transparent);
+}
+
+[data-gb-card="clipping"] .gb-share {
+  border-color: transparent;
+  font-size: 0;
+}
+
+[data-gb-card="clipping"] .gb-share::after {
+  content: "pass it on →";
+  font-size: 0.95rem;
+}
+
+[data-gb-card="clipping"] .reaction-pill:focus-visible,
+[data-gb-card="clipping"] .gb-share:focus-visible,
+[data-gb-card="clipping"] .comment-toggle:focus-visible {
+  outline: 2px dashed var(--clip-marker);
+  outline-offset: 2px;
+}
+
+/* ---------- the ten clippings ---------- */
+
+/* 1, 6: torn from a spiral notebook */
+[data-gb-card="clipping"] .gb-entry:is([data-id$="1"], [data-id$="6"]) {
+  --clip-paper:
+    linear-gradient(90deg, transparent 1.9rem, #e8807e 1.9rem, #e8807e calc(1.9rem + 1.5px), transparent calc(1.9rem + 1.5px)),
+    repeating-linear-gradient(180deg, transparent 0 calc(1.55rem - 1px), #9cc3e6 calc(1.55rem - 1px) 1.55rem),
+    var(--clip-white);
+  --clip-rot: 0.9deg;
+  --clip-edge: polygon(0 0, 100% 0, 100% 100%, 92% 99%, 85% 100%, 77% 98.6%, 70% 100%, 62% 99%, 54% 100%, 46% 98.8%, 38% 100%, 30% 99%, 22% 100%, 14% 98.7%, 7% 100%, 0 99%);
+  --clip-doodle: var(--doodle-heart);
+  padding-left: 2.4rem;
+}
+
+[data-gb-card="clipping"] .gb-entry[data-id$="6"] {
+  --clip-rot: -0.7deg;
+  --clip-doodle: var(--doodle-star);
+}
+
+/* 2, 7: newsprint, stapled */
+[data-gb-card="clipping"] .gb-entry:is([data-id$="2"], [data-id$="7"]) {
+  --clip-paper: light-dark(#efe7d3, #ddd3bd);
+  --clip-rot: -0.5deg;
+  --clip-edge: polygon(1% 1%, 99% 0, 100% 99%, 0 100%);
+  --clip-doodle: var(--doodle-star);
+}
+
+[data-gb-card="clipping"] .gb-entry[data-id$="7"] {
+  --clip-rot: 1.6deg;
+  --clip-doodle: var(--doodle-arrow);
+}
+
+[data-gb-card="clipping"] .gb-entry:is([data-id$="2"], [data-id$="7"]) .gb-entry-head::before {
+  content: "";
+  position: absolute;
+  top: 0.35rem;
+  left: 50%;
+  width: 2.2rem;
+  height: 0.4rem;
+  translate: -50% 0;
+  rotate: -4deg;
+  border: 2px solid #8d9196;
+  border-bottom: 0;
+  background: linear-gradient(#e9ecef, #a7abb0);
+  box-shadow: 0 1px 0 rgb(0 0 0 / 0.25);
+}
+
+[data-gb-card="clipping"] .gb-entry:is([data-id$="2"], [data-id$="7"]) .gb-message {
+  font-family: "Times New Roman", Times, serif;
+  font-size: calc(var(--card-type, 1rem) * 1.08);
+  text-align: justify;
+  hyphens: auto;
+}
+
+/* 3: a black photocopy — white type, cut with a light edge */
+[data-gb-card="clipping"] .gb-entry[data-id$="3"] {
+  --clip-paper: #151413;
+  --clip-rot: 1.8deg;
+  --clip-edge: polygon(2% 0, 100% 3%, 98% 100%, 0 97%);
+  --clip-doodle: var(--doodle-squiggle);
+  color: #f4f1ea;
+  filter: drop-shadow(1px 2px 0 rgb(0 0 0 / 0.3)) drop-shadow(0 0 0.5px rgb(255 255 255 / 0.6));
+}
+
+[data-gb-card="clipping"] .gb-entry[data-id$="3"] .gb-time {
+  color: #ffe45c;
+}
+
+[data-gb-card="clipping"] .gb-entry[data-id$="3"] .gb-author {
+  color: #ffe45c;
+}
+
+[data-gb-card="clipping"] .gb-entry[data-id$="3"] .gb-byline::before {
+  color: #ffe45c;
+}
+
+[data-gb-card="clipping"] .gb-entry[data-id$="3"] :is(.reaction-pill, .gb-share, .comment-toggle) {
+  color: #f4f1ea;
+  border-color: rgb(255 255 255 / 0.6);
+}
+
+[data-gb-card="clipping"] .gb-entry[data-id$="3"] .gb-share {
+  border-color: transparent;
+}
+
+/* 4, 9: graph paper, first line run through with a highlighter */
+[data-gb-card="clipping"] .gb-entry:is([data-id$="4"], [data-id$="9"]) {
+  --clip-paper:
+    repeating-linear-gradient(90deg, transparent 0 11px, rgb(80 150 140 / 0.28) 11px 12px),
+    repeating-linear-gradient(180deg, transparent 0 11px, rgb(80 150 140 / 0.28) 11px 12px),
+    var(--clip-white);
+  --clip-rot: -2.2deg;
+  --clip-edge: polygon(0 4%, 6% 0, 100% 1%, 98% 100%, 3% 98%);
+  --clip-doodle: var(--doodle-xo);
+}
+
+[data-gb-card="clipping"] .gb-entry[data-id$="9"] {
+  --clip-rot: 1.3deg;
+  --clip-doodle: var(--doodle-squiggle);
+}
+
+[data-gb-card="clipping"] .gb-entry:is([data-id$="4"], [data-id$="9"], [data-id$="0"]) .gb-message::first-line {
+  background: linear-gradient(176deg, transparent 18%, rgb(255 228 70 / 0.75) 22%, rgb(255 228 70 / 0.75) 82%, transparent 88%);
+}
+
+/* 0, 5: white bond, straight off the typewriter */
+[data-gb-card="clipping"] .gb-entry[data-id$="0"] {
+  --clip-rot: -1.4deg;
+  --clip-doodle: var(--doodle-arrow);
+}
+
+[data-gb-card="clipping"] .gb-entry[data-id$="5"] {
+  --clip-rot: 1.1deg;
+  --clip-edge: polygon(3% 0, 100% 2%, 97% 50%, 100% 100%, 0 98%, 2% 52%);
+  --clip-doodle: var(--doodle-heart);
+}
+
+/* 8: pink construction paper (the theme's primary, pale) */
+[data-gb-card="clipping"] .gb-entry[data-id$="8"] {
+  --clip-paper: color-mix(in srgb, var(--color-primary) 22%, light-dark(#fff8f2, #efe2da));
+  --clip-rot: -0.9deg;
+  --clip-edge: polygon(0 0, 100% 2%, 99% 98%, 1% 100%);
+  --clip-doodle: var(--doodle-xo);
+}
+
+/* ---------- Favorites: a Dymo label and a marker loop ---------- */
+[data-gb-card="clipping"] .gb-favorites {
+  position: relative;
+  margin: 0 0 2.6rem;
+  padding: 1.6rem 1.3rem 1.2rem;
+  border: 3px solid var(--clip-marker);
+  border-radius: 255px 18px 225px 18px / 18px 225px 18px 255px;
+  background: none;
+}
+
+[data-gb-card="clipping"] .gb-favorites-title {
+  position: absolute;
+  top: -1.05rem;
+  left: 50%;
+  translate: -50% 0;
+  rotate: -2deg;
+  margin: 0;
+  padding: 0.2rem 0.9rem 0.25rem;
+  border-radius: 4px;
+  background: linear-gradient(#2a2a2a, #121212);
+  color: #f2f2f2;
+  font: bold 1rem/1.2 "Arial Rounded MT Bold", "Helvetica Neue", Arial, sans-serif;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  text-shadow: 0 -1px 0 rgb(0 0 0 / 0.8), 0 1px 0 rgb(255 255 255 / 0.25);
+  white-space: nowrap;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+[data-gb-card="clipping"] .gb-favorites-title span {
+  display: none;
+}
+
+[data-gb-card="clipping"] .gb-favorites-title::before {
+  content: "★ ";
+  color: #ffe45c;
+}
+
+[data-gb-card="clipping"] .gb-favorites-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 1.4rem;
+}
+
+[data-gb-card="clipping"] .gb-fav {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  padding: 1rem 1.1rem 0.8rem;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--clip-ink);
+  rotate: calc(-1deg * var(--clip-tilt));
+  filter: drop-shadow(1px 2px 0 rgb(0 0 0 / 0.2));
+}
+
+[data-gb-card="clipping"] .gb-fav:nth-child(even) {
+  rotate: calc(1.3deg * var(--clip-tilt));
+}
+
+[data-gb-card="clipping"] .gb-fav::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--clip-white);
+  clip-path: polygon(0 2%, 98% 0, 100% 97%, 2% 100%);
+}
+
+[data-gb-card="clipping"] .gb-fav-message {
+  order: 1;
+  margin: 0;
+  color: var(--clip-ink);
+  font: var(--card-type, 1rem) / 1.55 var(--clip-type);
+  white-space: pre-line;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+  line-clamp: 6;
+  overflow: hidden;
+}
+
+[data-gb-card="clipping"] .gb-fav .gb-byline {
+  order: 2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-gb-card="clipping"] .reaction-pill {
+    transition: none;
+  }
+}
+
+@media (max-width: 520px) {
+  [data-gb-card="clipping"] .gb-feed,
+  .gb-feed[data-gb-card="clipping"] {
+    columns: 1;
+  }
+
+  [data-gb-card="clipping"] .gb-entry {
+    margin-inline: 0.5rem;
+  }
+}

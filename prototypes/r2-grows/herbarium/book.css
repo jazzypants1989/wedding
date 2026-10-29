@@ -1,0 +1,333 @@
+/* Herbarium memory book: mounted sheets. All sizes in cqw of the sheet, so the
+   screen preview and the printed page are the same layout. */
+
+.hbk-sheet {
+  --sheet-paper: var(--hb-paper);
+  --sheet-ink: var(--hb-ink);
+  font-family: var(--font-body);
+}
+/* Pressed specimens do not sway. */
+.mb-book .hb-plant {
+  animation: none !important;
+}
+.hb-strap {
+  fill: var(--sheet-paper);
+  stroke: color-mix(in oklab, var(--hb-ink) 55%, transparent);
+  stroke-width: 0.4;
+}
+.hbk-sheet .hb-svg {
+  width: 100%;
+  height: 100%;
+}
+.hbk-sheet h2 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 4.4cqw;
+  text-align: center;
+  margin: 7cqw 0 1.5cqw;
+}
+
+/* ---- One specimen ---- */
+.hbk-spec {
+  position: absolute;
+  inset: 0;
+}
+.hbk-plant {
+  position: absolute;
+  left: 2cqw;
+  top: 5cqw;
+  width: 66cqw;
+  height: 120cqw;
+}
+.hbk-label {
+  position: absolute;
+  right: 5cqw;
+  bottom: 6cqw;
+  width: 44cqw;
+  max-height: 96cqw;
+  overflow: hidden;
+  padding: 2.4cqw 2.6cqw;
+  background: color-mix(in oklab, var(--sheet-paper) 92%, var(--hb-ink) 8%);
+  border: 0.25cqw double var(--hb-ink);
+  border-width: 0.7cqw;
+  font-size: 1.75cqw;
+  line-height: 1.35;
+  color: var(--hb-ink);
+}
+.hbk-label p {
+  margin: 0;
+}
+.hbk-label-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1cqw;
+  font-size: 1.35cqw;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  border-bottom: 0.15cqw solid currentColor;
+  padding-bottom: 0.8cqw;
+  margin-bottom: 1.2cqw !important;
+}
+.hbk-binomial {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 3.1cqw;
+  line-height: 1.1;
+  margin-bottom: 0.8cqw !important;
+  color: var(--sheet-ink);
+}
+.hbk-coll strong {
+  font-weight: 500;
+}
+.hbk-when {
+  font-size: 1.45cqw;
+  opacity: 0.8;
+}
+.hbk-notes-h {
+  margin-top: 1.4cqw !important;
+  font-size: 1.25cqw;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+.hbk-notes {
+  font-family: var(--font-display);
+  font-size: 2.3cqw;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin-top: 0.4cqw !important;
+}
+.is-mid .hbk-notes {
+  font-size: 2cqw;
+}
+.is-long .hbk-notes {
+  font-size: 1.62cqw;
+  line-height: 1.4;
+}
+.hbk-det {
+  position: absolute;
+  left: 5cqw;
+  bottom: 5cqw;
+  max-width: 40cqw;
+  margin: 0;
+  padding: 0.8cqw 1.4cqw;
+  font-size: 1.3cqw;
+  line-height: 1.4;
+  color: var(--hb-ink);
+  background: var(--sheet-paper);
+  border: 0.12cqw solid color-mix(in oklab, var(--hb-ink) 50%, transparent);
+  transform: rotate(-1.2deg);
+}
+.hbk-det span {
+  font-style: italic;
+  font-family: var(--font-display);
+}
+.hbk-stamp-wrap {
+  position: absolute;
+  right: 6cqw;
+  top: 6cqw;
+  width: 19cqw;
+  transform: rotate(-14deg);
+  opacity: 0.85;
+}
+.hbk-stamp {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.hbk-stamp circle {
+  fill: none;
+  stroke: var(--effect-brand-dark);
+  stroke-width: 2.2;
+}
+.hbk-stamp text {
+  fill: var(--effect-brand-dark);
+  font: 500 9.4px var(--font-body);
+  letter-spacing: 0.08em;
+}
+.hbk-stamp .hbk-stamp-mid {
+  font: 400 17px var(--font-display);
+  text-anchor: middle;
+  letter-spacing: 0.12em;
+}
+.hbk-stamp .hbk-stamp-sub {
+  font-size: 8px;
+  text-anchor: middle;
+}
+
+/* ---- Two to a sheet ---- */
+.is-pair .hbk-spec {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 50%;
+}
+.is-pair .hbk-spec:first-child {
+  top: 0;
+}
+.is-pair .hbk-spec:nth-child(2) {
+  top: 50%;
+  border-top: 0.2cqw dashed color-mix(in oklab, var(--hb-ink) 30%, transparent);
+}
+.hbk-spec.is-half .hbk-plant {
+  left: 3cqw;
+  top: 4cqw;
+  width: 42cqw;
+  height: 54cqw;
+}
+.hbk-spec.is-half .hbk-label {
+  right: 5cqw;
+  top: 6cqw;
+  bottom: auto;
+  width: 46cqw;
+  max-height: 52cqw;
+}
+.hbk-spec.is-half .hbk-det {
+  bottom: 3.5cqw;
+  left: 5cqw;
+}
+
+/* ---- Cover: the wreath of everyone ---- */
+.hbk-cover {
+  display: grid;
+  place-items: center;
+}
+.hbk-wreath {
+  position: absolute;
+  left: 2cqw;
+  top: calc(50% - 48cqw);
+  width: 96cqw;
+  height: 96cqw;
+  overflow: visible;
+}
+.hbk-cover-text {
+  position: relative;
+  width: 40cqw;
+  text-align: center;
+  color: var(--hb-ink);
+}
+.hbk-cover-kicker {
+  font-size: 1.8cqw;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  margin: 0 0 1cqw;
+}
+.hbk-cover h1 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 5.6cqw;
+  line-height: 1.05;
+  margin: 0 0 1.4cqw;
+  color: var(--sheet-ink);
+}
+.hbk-cover-sub,
+.hbk-cover-place {
+  font-size: 1.7cqw;
+  margin: 0.4cqw 0 0;
+  opacity: 0.85;
+}
+
+/* ---- Key ---- */
+.hbk-lede {
+  max-width: 74cqw;
+  margin: 0 auto;
+  text-align: center;
+  font-size: 2cqw;
+  line-height: 1.45;
+  color: var(--hb-ink);
+}
+.hbk-small {
+  font-size: 1.6cqw;
+  margin-top: 4cqw;
+}
+.hbk-key-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3cqw 2cqw;
+  margin: 5cqw 6cqw 0;
+}
+.hbk-key-cell {
+  margin: 0;
+  text-align: center;
+}
+.hbk-key-plant {
+  height: 30cqw;
+  border-bottom: 0.2cqw solid color-mix(in oklab, var(--hb-leaf) 60%, transparent);
+}
+.hbk-key-cell figcaption {
+  margin-top: 1.2cqw;
+  font-size: 1.45cqw;
+  line-height: 1.35;
+  color: var(--hb-ink);
+}
+.hbk-key-cell q {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 2.1cqw;
+  color: var(--sheet-ink);
+}
+
+/* ---- Index ---- */
+.hbk-index ol {
+  list-style: none;
+  margin: 3cqw 6cqw 0;
+  padding: 0;
+  columns: 2;
+  column-gap: 5cqw;
+  font-size: 1.55cqw;
+  color: var(--hb-ink);
+}
+.hbk-index li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6cqw;
+  break-inside: avoid;
+  padding: 0.55cqw 0;
+}
+.hbk-index i {
+  font-family: var(--font-display);
+  font-size: 1.8cqw;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 24cqw;
+}
+.hbk-dots {
+  flex: 1;
+  border-bottom: 0.15cqw dotted color-mix(in oklab, var(--hb-ink) 50%, transparent);
+  min-width: 1cqw;
+}
+.hbk-ix-who {
+  font-size: 1.3cqw;
+  opacity: 0.8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 14cqw;
+}
+.hbk-ix-p {
+  font-variant-numeric: tabular-nums;
+}
+.hbk-colophon {
+  position: absolute;
+  bottom: 6cqw;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 1.4cqw;
+  font-style: italic;
+  color: var(--hb-ink);
+  opacity: 0.8;
+}
+
+@media print {
+  .hbk-sheet {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  :root:not([data-hb-palette]) .hbk-sheet {
+    --sheet-paper: #fff;
+  }
+}

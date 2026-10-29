@@ -1,0 +1,279 @@
+/* The Score — book layout, keyed off [data-mb-layout="score"] on <html>.
+   A hymnal of names: one engraved staff per guest, letters as lyrics.
+   Params (custom properties, CSSOM-set):
+     --mb-ink       staff + notes         colour, default var(--color-text)
+     --mb-rubric    names + headings      colour, default var(--color-primary-dark)
+     --mb-staff-size  staff scale         {min:0.7,max:1.4,step:0.05}  1
+   JS params: order {options:["signed","alphabetical"]}, coverBand {options:["roll","none"]},
+   scale {options:["cryptogram","pentatonic"]} (shared with the roll card). */
+
+[data-mb-layout="score"] {
+  --mb-ink: var(--color-text);
+  --mb-rubric: var(--color-primary-dark);
+  --mb-staff-size: 1;
+  --mb-paper: var(--color-background);
+}
+
+.sc-book {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 5rem;
+}
+
+/* ---- Cover ---- */
+.sc-cover {
+  text-align: center;
+  padding: 3rem 0 3rem;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 2.5rem;
+}
+.sc-cover-kicker {
+  margin: 0;
+  font-size: var(--text-sm);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.sc-cover-names {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(2.4rem, 8vw, 3.6rem);
+  line-height: 1.05;
+  margin: 0.4rem 0 0.3rem;
+  color: var(--mb-rubric);
+}
+.sc-cover-date {
+  margin: 0 0 2rem;
+  color: var(--color-text-muted);
+}
+.sc-cover-band {
+  margin: 0 auto 1.5rem;
+  max-width: 32rem;
+  padding: 0.9rem;
+  border-top: 2px solid var(--mb-ink);
+  border-bottom: 2px solid var(--mb-ink);
+}
+.sc-cover-band svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 20rem;
+}
+.sc-band-hole {
+  fill: var(--mb-ink);
+}
+.sc-cover-sub {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: var(--text-xl);
+  margin: 0;
+}
+.sc-cover-count {
+  margin: 0.4rem 0 0;
+  font-size: var(--text-sm);
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+}
+
+/* ---- How to ---- */
+.sc-howto {
+  max-width: 34rem;
+  margin: 0 auto 3rem;
+  font-size: var(--text-base);
+  color: var(--color-text);
+}
+.sc-h2 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: var(--text-2xl);
+  text-align: center;
+  color: var(--mb-rubric);
+  margin: 0 0 0.25rem;
+}
+.sc-key {
+  margin: 1.5rem auto 0;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  text-align: center;
+}
+.sc-key caption {
+  font-size: var(--text-xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  padding-bottom: 0.5rem;
+}
+.sc-key th,
+.sc-key td {
+  border: 1px solid var(--color-border);
+  padding: 0.3rem 0.5rem;
+}
+.sc-key thead th {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 400;
+}
+.sc-key td {
+  letter-spacing: 0.1em;
+}
+
+/* ---- Sections + entries ---- */
+.sc-section {
+  margin-bottom: 3rem;
+}
+.sc-section-sub {
+  text-align: center;
+  margin: 0 0 2rem;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+.sc-entry {
+  break-inside: avoid;
+  page-break-inside: avoid;
+  padding: 1.1rem 0 1.4rem;
+  border-bottom: 1px solid var(--color-text-10);
+}
+.sc-entry-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 0.75rem;
+}
+.sc-name {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: var(--text-xl);
+  color: var(--mb-rubric);
+}
+.sc-meta {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+}
+.sc-staff {
+  margin: 0.3rem 0 0.4rem;
+}
+.sc-staff svg {
+  display: block;
+  width: calc(var(--w, 400px) * var(--mb-staff-size));
+  max-width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.sc-line,
+.sc-ledger,
+.sc-stem {
+  stroke: var(--mb-ink);
+  stroke-width: 0.9;
+}
+.sc-stem {
+  stroke-width: 1.1;
+}
+.sc-ledger {
+  stroke-width: 1.1;
+}
+.sc-fill,
+.sc-head,
+.sc-dot,
+.sc-flag {
+  fill: var(--mb-ink);
+}
+.sc-head.is-hollow {
+  fill: var(--mb-paper);
+  stroke: var(--mb-ink);
+  stroke-width: 1.4;
+}
+.sc-clef path {
+  fill: none;
+  stroke: var(--mb-ink);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.sc-bell {
+  fill: none;
+  stroke: var(--mb-rubric);
+  stroke-width: 1.2;
+}
+.sc-bell-label {
+  font: italic 7px var(--font-display);
+  fill: var(--mb-rubric);
+}
+.sc-lyric {
+  font: 500 8.5px var(--font-body);
+  fill: var(--color-text-muted);
+  letter-spacing: 0.02em;
+}
+.sc-msg {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.08rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.sc-entry.is-favourite .sc-msg {
+  font-size: 1.15rem;
+}
+
+.sc-coda {
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-style: italic;
+}
+.sc-coda p {
+  margin: 0.2rem 0;
+}
+.sc-coda-mark svg {
+  width: 2.4rem;
+  height: auto;
+}
+.sc-coda-sub {
+  font-family: var(--font-body);
+  font-style: normal;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+/* ---- Print: black ink, rubrics stay red-brown, the cover gets its own page ---- */
+@page {
+  margin: 16mm 16mm 18mm;
+}
+@media print {
+  [data-mb-layout="score"] {
+    --mb-ink: #1a1a1a;
+    --mb-rubric: #8a2a12;
+    --mb-paper: #fff;
+    --color-text: #1a1a1a;
+    --color-text-muted: #555;
+    --color-border: #bbb;
+  }
+  body {
+    background: #fff;
+  }
+  .sc-book {
+    max-width: none;
+    padding: 0;
+  }
+  .sc-cover {
+    break-after: page;
+    border-bottom: 0;
+    min-height: 240mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .sc-howto {
+    break-after: page;
+  }
+  .sc-section + .sc-section {
+    break-before: page;
+  }
+  .sc-entry {
+    border-bottom-color: #ddd;
+  }
+}

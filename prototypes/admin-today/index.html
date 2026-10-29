@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Admin · Today (prototype)</title>
+  <link rel="icon" href="data:,">
+  <!-- Absolute URLs: this page is served at every deep path (/admin-today/faces/groups/f1203). -->
+  <link rel="stylesheet" href="/site/styles/tokens.css">
+  <link rel="stylesheet" href="/admin-today/styles.css">
+  <script type="module" src="/admin-today/app.js"></script>
+</head>
+<body>
+  <a class="skip" href="#view">Skip to content</a>
+  <div id="app" class="app">
+    <aside class="sidebar" aria-label="Admin">
+      <div class="brand"><span class="brand-mark">J&amp;J</span><span class="brand-sub">Admin</span></div>
+      <button type="button" id="search-btn" class="search-btn">
+        <svg class="ic" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM21 21l-5-5"/></svg>
+        <span>Jump to…</span><kbd>/</kbd>
+      </button>
+      <nav id="side-nav" aria-label="Sections"></nav>
+      <div id="side-foot" class="side-foot"></div>
+    </aside>
+    <div class="main">
+      <header class="topbar">
+        <a class="brand-mark" href="/admin-today" aria-label="Today">J&amp;J</a>
+        <span id="topbar-title" class="topbar-title"></span>
+        <button type="button" id="topbar-search" class="icon-btn" aria-label="Jump to">
+          <svg class="ic" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM21 21l-5-5"/></svg>
+        </button>
+      </header>
+      <main id="view" tabindex="-1"></main>
+    </div>
+    <nav id="bottombar" class="bottombar" aria-label="Sections"></nav>
+  </div>
+  <div id="dialog-layer" class="layer" hidden></div>
+  <div id="overlay-layer" class="layer layer-top" hidden></div>
+  <div id="guard-layer" class="layer layer-top" hidden></div>
+  <div id="relogin" class="layer layer-top" hidden></div>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <div class="devstrip" aria-label="Prototype controls">
+    <span class="dev-tag">Prototype · fake data</span>
+    <code id="dev-route" title="The real path this screen would have"></code>
+    <button type="button" id="dev-mode" title="Switch the site's timeline mode"></button>
+    <button type="button" id="dev-expire" title="Simulate the 30-minute idle timeout">Expire session</button>
+    <button type="button" id="dev-reset">Reset</button>
+  </div>
+</body>
+</html>

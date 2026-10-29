@@ -1,0 +1,184 @@
+/* The Spiral — book layout, keyed off [data-mb-layout="spiral"] on <html>.
+   Params (custom properties, CSSOM-set):
+     --mb-ink        names + text           colour, default var(--color-text)
+     --mb-rubric     numbers, favourites    colour, default brand
+     --mb-columns    notes per row          {min:1,max:3,step:1}   2
+   JS params: order {options:["signed","alphabetical"]} (sketch: signed only). */
+
+[data-mb-layout="spiral"] {
+  --mb-ink: var(--color-text);
+  --mb-rubric: var(--color-primary-dark);
+  --mb-columns: 2;
+}
+
+.sp-book {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 5rem;
+  color: var(--mb-ink);
+}
+
+.sp-cover {
+  text-align: center;
+  padding: 2.5rem 0 1rem;
+}
+.sp-kicker {
+  margin: 0;
+  font-size: var(--text-sm);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.sp-names {
+  margin: 0.3rem 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(2.4rem, 8vw, 3.6rem);
+  line-height: 1.05;
+  color: var(--mb-rubric);
+}
+.sp-date {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.sp-front {
+  text-align: center;
+  padding: 1.5rem 0 3rem;
+}
+.sp-h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: var(--text-2xl);
+  color: var(--mb-rubric);
+}
+.sp-front-sub {
+  margin: 0.2rem 0 1rem;
+  font-style: italic;
+  color: var(--color-text-muted);
+}
+.sp-spiral {
+  margin: 0 auto;
+  max-width: 36rem;
+}
+.sp-spiral svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.sp-text {
+  font-family: var(--font-display);
+  fill: var(--mb-ink);
+}
+.sp-n.is-fav {
+  fill: var(--mb-rubric);
+}
+.sp-sep {
+  fill: var(--color-text-muted);
+}
+.sp-guide {
+  fill: none;
+  stroke: color-mix(in srgb, var(--mb-ink) 12%, transparent);
+  stroke-width: 0.4;
+}
+.sp-centre {
+  fill: none;
+  stroke: var(--mb-rubric);
+  stroke-width: 0.8;
+}
+.sp-mono {
+  font-family: var(--font-display);
+  fill: var(--mb-rubric);
+}
+
+/* ---- the notes ---- */
+.sp-notes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  columns: var(--mb-columns) 18rem;
+  column-gap: 2.5rem;
+}
+.sp-note {
+  break-inside: avoid;
+  page-break-inside: avoid;
+  padding: 0 0 1.6rem;
+}
+.sp-note-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--mb-ink) 18%, transparent);
+  padding-bottom: 0.3rem;
+  margin-bottom: 0.45rem;
+}
+.sp-no {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  line-height: 1;
+  color: var(--mb-rubric);
+  font-variant-numeric: oldstyle-nums;
+}
+.sp-mini {
+  width: 1.6rem;
+  height: 1.6rem;
+  margin-left: auto;
+}
+.sp-mini path {
+  fill: none;
+  stroke: color-mix(in srgb, var(--mb-ink) 35%, transparent);
+  stroke-width: 4;
+}
+.sp-mini circle {
+  fill: var(--mb-rubric);
+}
+.sp-msg {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.sp-sig {
+  margin: 0.3rem 0 0;
+  text-align: right;
+  font-family: var(--font-display);
+}
+.sp-sig span {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+.sp-note.is-favourite .sp-no::after {
+  content: " ✦";
+  font-size: var(--text-base);
+}
+
+@page {
+  margin: 16mm;
+}
+@media print {
+  [data-mb-layout="spiral"] {
+    --mb-ink: #1a1a1a;
+    --mb-rubric: #8a2a12;
+    --color-text-muted: #555;
+  }
+  body {
+    background: #fff;
+  }
+  .sp-book {
+    max-width: none;
+    padding: 0;
+  }
+  .sp-cover {
+    padding-top: 0;
+  }
+  .sp-front {
+    break-after: page;
+  }
+  .sp-spiral {
+    max-width: 150mm;
+  }
+}

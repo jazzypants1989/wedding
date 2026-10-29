@@ -1,0 +1,106 @@
+/* Archipelago on the guestbook: the chart band and each card's inset. */
+
+.gx-band {
+  margin-left: calc(50% - min(560px, 50vw - 0.5rem));
+  margin-right: calc(50% - min(560px, 50vw - 0.5rem));
+}
+.ar-frame-wrap {
+  box-shadow: 0 6px 22px rgb(0 0 0 / 0.14);
+}
+.ar-map {
+  max-height: 80vh;
+}
+.ar-cap {
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  margin-top: var(--spacing-sm);
+}
+.ar-isle {
+  cursor: pointer;
+}
+.has-lit .ar-isle:not(.is-lit) {
+  opacity: 0.4;
+  transition: opacity 0.3s;
+}
+.ar-isle.is-lit .ar-coast,
+.ar-isle:hover .ar-coast,
+.ar-isle:focus-visible .ar-coast {
+  stroke: var(--ar-accent);
+  stroke-width: 2.2;
+}
+.ar-t-isle.is-lit {
+  fill: var(--ar-accent);
+}
+
+.gx-preview {
+  flex: none;
+  width: 120px;
+  height: 120px;
+  border: 1px solid var(--color-border);
+}
+.gx-preview.is-empty {
+  background: var(--ar-sea);
+}
+
+.ar-inset {
+  border: 1px solid color-mix(in oklab, var(--ar-ink) 40%, transparent);
+  outline: 3px solid var(--ar-sea);
+  outline-offset: -4px;
+}
+.ar-inset-name {
+  margin: 0.3rem 0 0;
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  line-height: 1.2;
+  text-align: center;
+  color: var(--ar-ink);
+}
+.ar-inset-name span {
+  display: block;
+  font-style: italic;
+  font-size: 0.7rem;
+  opacity: 0.85;
+}
+.gb-entry.is-fav .ar-inset-name {
+  color: var(--ar-accent);
+  letter-spacing: 0.06em;
+}
+
+@media (max-width: 1099.98px) {
+  .gb-entry {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    column-gap: var(--spacing-md);
+  }
+  .gb-entry-head {
+    grid-column: 1 / -1;
+  }
+  .gb-message {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .gb-entry-foot {
+    grid-column: 1;
+    grid-row: 3;
+  }
+  .gb-entry .gx-orn {
+    grid-column: 2;
+    grid-row: 2 / 4;
+    width: 84px;
+  }
+  .gb-entry .ar-inset-name span {
+    display: none;
+  }
+}
+@media (min-width: 1100px) {
+  .gb-entry .gx-orn {
+    position: absolute;
+    top: 0;
+    right: -176px;
+    width: 150px;
+  }
+  .gb-entry {
+    min-height: 9.5rem;
+  }
+}

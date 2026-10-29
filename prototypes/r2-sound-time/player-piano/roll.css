@@ -1,0 +1,438 @@
+/* Player Piano — guestbook view.
+   card slot  `roll`    : [data-gb-card="roll"] — each entry carries its own punched
+                          strip; strips butt together into one continuous roll.
+   background `tracker` : the fixed brass tracker bar + reading line (.pp-tracker,
+                          .pp-reading-line). It plays whatever crosses it.
+   burst      `punch`   : the composer's leader strip punching as a name is typed.
+   Params are custom properties (set by CSSOM, never style=):
+     --card-unit   one eighth-note of roll, px            {min:6,max:16,step:1}   10
+     --card-paper  roll paper                             colour, theme default
+     --card-hole   punched hole                           colour, theme default
+     --bg-tracker-y where the bar sits, % of viewport     {min:25,max:60,step:1}  42 */
+
+:root {
+  --lane-w: 15px;
+  --perf: 14px;
+  --lyric-w: 17px;
+  --card-unit: 12px;
+  --roll-w: calc(var(--perf) * 2 + 14 * var(--lane-w) + var(--lyric-w));
+  --bg-tracker-y: 42;
+  --tracker-y: calc(var(--bg-tracker-y) * 1vh);
+  --card-paper: color-mix(in srgb, var(--color-card-bg) 88%, var(--fx-gold-3) 12%);
+  --card-hole: light-dark(#33261f, #07050b);
+  --brass-1: light-dark(#b8892c, #e6c46a);
+  --brass-2: light-dark(#7a5a14, #a07c2a);
+}
+
+@media (max-width: 40rem) {
+  :root {
+    --lane-w: 6.5px;
+    --perf: 7px;
+    --lyric-w: 11px;
+    --card-unit: 9px;
+  }
+}
+
+.pp-sound-note {
+  margin: 0;
+  padding: 0.35rem 0.75rem;
+  text-align: right;
+}
+
+.pp-page {
+  max-width: 62rem;
+  margin: 0 auto;
+  padding: 0 1rem 50vh;
+}
+
+/* ---- Head ---- */
+.pp-head {
+  padding: 2.5rem 0 1.5rem;
+  margin-left: calc(var(--roll-w) + 1.25rem);
+}
+.pp-kicker {
+  margin: 0;
+  font-size: var(--text-sm);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.pp-title {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(2.4rem, 7vw, 4rem);
+  line-height: 1;
+  margin: 0.25rem 0 0.5rem;
+}
+.pp-lede {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  margin: 0 0 0.75rem;
+}
+.pp-lede-soft {
+  color: var(--color-text-muted);
+}
+.pp-how {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  max-width: 36rem;
+}
+.pp-how summary {
+  cursor: pointer;
+  color: var(--color-text);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+/* ---- The roll: every strip shares one geometry ---- */
+.roll-strip {
+  position: relative;
+  width: var(--roll-w);
+  padding: 0 var(--perf);
+  background-color: var(--card-paper);
+  /* Sprocket holes down both edges: the paper is pulled by them. */
+  background-image:
+    radial-gradient(circle, var(--color-background) 1.6px, transparent 2.1px),
+    radial-gradient(circle, var(--color-background) 1.6px, transparent 2.1px);
+  background-size: var(--perf) 11px;
+  background-repeat: repeat-y;
+  background-position: left top, right top;
+  box-shadow:
+    inset 1px 0 0 color-mix(in srgb, var(--color-text) 10%, transparent),
+    inset -1px 0 0 color-mix(in srgb, var(--color-text) 10%, transparent);
+}
+.roll-lanes {
+  position: relative;
+}
+.roll-lanes svg {
+  display: block;
+  overflow: visible;
+}
+.roll-strip .hole,
+.pp-composer .hole {
+  fill: var(--card-hole);
+}
+.roll-strip .hole.is-chord {
+  fill: color-mix(in srgb, var(--card-hole) 70%, var(--color-primary));
+}
+.roll-strip .hole.is-on {
+  fill: var(--brass-1);
+  filter: drop-shadow(0 0 4px var(--brass-1));
+}
+/* The name is sung: each letter lights as its note passes the bar. */
+.gb-author [data-i],
+.roll-spelled [data-i] {
+  transition: color 0.35s, text-shadow 0.35s;
+}
+.gb-author [data-i].is-on {
+  color: var(--color-primary);
+  text-shadow: 0 0 10px color-mix(in srgb, var(--brass-1) 70%, transparent);
+  transition: none;
+}
+.roll-spelled [data-i].is-on {
+  color: var(--color-text);
+  font-weight: 500;
+  transition: none;
+}
+.roll-strip .lyric {
+  fill: var(--color-text-muted);
+  font: 500 8px var(--font-body);
+}
+.roll-strip .bell {
+  fill: none;
+  stroke: var(--brass-1);
+  stroke-width: 1.4;
+}
+.roll-strip .c-line {
+  stroke: color-mix(in srgb, var(--color-text) 9%, transparent);
+  stroke-width: 1;
+}
+
+/* ---- Composer: the roll's leader ---- */
+.pp-composer {
+  display: grid;
+  grid-template-columns: var(--roll-w) 1fr;
+  column-gap: 1.25rem;
+}
+.pp-composer-roll {
+  min-height: 100%;
+  padding-top: 2.5rem;
+  /* The tapered leader every roll starts with. */
+  clip-path: polygon(22% 0, 78% 0, 100% 1.75rem, 100% 100%, 0 100%, 0 1.75rem);
+}
+.pp-composer-roll::before {
+  content: "J & J · No. 426";
+  position: absolute;
+  top: 0.55rem;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font: 500 0.6rem var(--font-body);
+  letter-spacing: 0.12em;
+  color: var(--color-text-muted);
+}
+.pp-composer .hole {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.pp-composer .hole.is-new {
+  animation: pp-punch 0.32s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+@keyframes pp-punch {
+  from {
+    transform: scale(0.1);
+    fill: var(--color-primary);
+  }
+}
+.pp-composer-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 1.25rem;
+  margin-bottom: 2.5rem;
+  background: var(--color-card-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+.pp-composer-fields label {
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.pp-hint {
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+.pp-composer-fields input,
+.pp-composer-fields textarea {
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.65rem;
+}
+.pp-composer-fields input {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+}
+.pp-sign {
+  align-self: flex-end;
+  margin-top: 0.4rem;
+  font: inherit;
+  font-weight: 500;
+  color: var(--color-on-primary);
+  background: var(--color-primary);
+  border: 0;
+  border-radius: var(--radius-full);
+  padding: 0.55rem 1.2rem;
+  cursor: pointer;
+}
+
+/* ---- Feed rows ---- */
+[data-gb-card="roll"] .gb-entry {
+  display: grid;
+  grid-template-columns: var(--roll-w) 1fr;
+  column-gap: 1.25rem;
+  align-items: start;
+}
+[data-gb-card="roll"] .gb-entry > .roll-strip {
+  align-self: stretch;
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-top: 1px dashed color-mix(in srgb, var(--color-text) 22%, transparent);
+}
+.gb-body {
+  position: sticky;
+  top: calc(var(--tracker-y) - 1.4rem);
+  z-index: 2;
+  margin-bottom: 1.5rem;
+  padding: 1rem 1.15rem 0.9rem;
+  background: var(--color-card-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  transition: border-color 0.25s, box-shadow 0.25s;
+}
+[data-gb-card="roll"] .gb-entry.is-playing .gb-body {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-faint), var(--shadow-md);
+}
+[data-gb-card="roll"] .gb-entry.is-favourite .gb-body {
+  border-color: var(--brass-1);
+}
+.gb-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.6rem;
+}
+.gb-author {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+}
+.gb-time {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+.gb-fav {
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--brass-1);
+}
+.gb-message {
+  margin: 0.35rem 0 0.6rem;
+  font-family: var(--font-display);
+  font-size: 1.08rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.gb-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.75rem;
+}
+.roll-spelled {
+  margin: 0;
+  font-size: var(--text-xs);
+  letter-spacing: 0.18em;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.roll-play {
+  margin-left: auto;
+  font: inherit;
+  font-size: var(--text-xs);
+  color: var(--color-text);
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  padding: 0.2rem 0.65rem;
+  cursor: pointer;
+}
+.roll-play:hover {
+  border-color: var(--color-primary);
+}
+.gb-hearts {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+/* ---- background: the tracker bar ---- */
+.pp-tracker {
+  position: fixed;
+  top: var(--tracker-y);
+  left: var(--tracker-x, 0);
+  width: var(--roll-w);
+  height: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+.pp-tracker-bar {
+  position: absolute;
+  left: -6px;
+  right: -6px;
+  top: -5px;
+  height: 10px;
+  border-radius: 5px;
+  background: linear-gradient(var(--brass-1), var(--brass-2));
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+.pp-tine {
+  position: absolute;
+  top: 3px;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--brass-2) 70%, black);
+  transition: background 0.4s, box-shadow 0.4s;
+}
+.pp-tine.is-on {
+  background: #fff8e0;
+  box-shadow: 0 0 6px 2px var(--brass-1);
+  transition: none;
+}
+.pp-reading-line {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: var(--tracker-y);
+  border-top: 1px dashed color-mix(in srgb, var(--brass-1) 55%, transparent);
+  z-index: 0;
+  pointer-events: none;
+}
+[data-gb-card="roll"] .gb-entry,
+.pp-composer {
+  position: relative;
+  z-index: 1;
+}
+
+.pp-end {
+  margin: 0;
+  display: grid;
+  grid-template-columns: var(--roll-w) 1fr;
+  column-gap: 1.25rem;
+  position: relative;
+  z-index: 1;
+}
+.pp-end .roll-strip {
+  height: 5rem;
+  clip-path: polygon(0 0, 100% 0, 100% 60%, 50% 100%, 0 60%);
+}
+.pp-end span {
+  align-self: center;
+  font-family: var(--font-display);
+  color: var(--color-text-muted);
+}
+
+/* ---- Reduced motion: still roll, same design. Sound and crank are off. ---- */
+[data-still] .pp-composer .hole.is-new {
+  animation: none;
+}
+[data-still] .pp-tine,
+[data-still] .gb-author [data-i],
+[data-still] .roll-spelled [data-i],
+[data-still] .gb-body {
+  transition: none;
+}
+[data-still] .roll-strip .hole.is-on {
+  filter: none;
+}
+
+@media (max-width: 40rem) {
+  .pp-head {
+    margin-left: 0;
+  }
+  .pp-composer,
+  [data-gb-card="roll"] .gb-entry,
+  .pp-end {
+    column-gap: 0.75rem;
+  }
+  .gb-body {
+    padding: 0.8rem 0.85rem 0.7rem;
+  }
+  .gb-message {
+    font-size: 1rem;
+  }
+  .roll-strip .lyric {
+    font-size: 6.5px;
+  }
+}
+
+@media print {
+  .pp-tracker,
+  .pp-reading-line,
+  .pp-composer,
+  .roll-play {
+    display: none;
+  }
+  .gb-body {
+    position: static;
+  }
+  [data-gb-card="roll"] .gb-entry {
+    break-inside: avoid;
+  }
+}
