@@ -231,8 +231,9 @@ let reviewFaceId = null
  *  so the field falls back to the group's suggestion. @type {string | null} */
 let reviewNameDraft = null
 
-/** Overview ordering. `size` is the server's own (largest first, so the most
- *  progress per confirm); `varied` sorts by the weld score, which is a weak
+/** Overview ordering. `size` is the server's own (clearest first — groups that
+ *  are mostly accept-routed faces — then largest, so the most progress per
+ *  confirm and the hard leftovers last); `varied` sorts by the weld score, which is a weak
  *  signal spent where being wrong is free — see the file header.
  *  @type {"size" | "varied"} */
 let groupOrder = "size"
@@ -628,8 +629,9 @@ async function loadMoreSetAside() {
  * The groups in the order the overview lists them AND the order prev/next walks
  * — one function, so the two can never disagree about what "the next group" is.
  *
- * `size` needs no sort: the server already returns largest first, which is the
- * order that buys the most identified faces per confirm. `varied` spends the
+ * `size` needs no sort: the server already returns clearest-then-largest, which
+ * buys the most identified faces per confirm and keeps the viewpoint-clustered
+ * leftovers (profiles, backs of heads) at the end. `varied` spends the
  * weld score (see the file header) as an ordering, which is the only way a weak
  * signal is worth having — a wrong guess costs the admin the sequence they work
  * in and nothing else.
@@ -701,7 +703,7 @@ function groupsMarkup() {
       <label class="faces-groups-sort">
         Order
         <select class="faces-groups-sort-select" aria-label="Order the groups">
-          <option value="size" ${groupOrder === "size" ? "selected" : ""}>Biggest first</option>
+          <option value="size" ${groupOrder === "size" ? "selected" : ""}>Clearest first</option>
           <option value="varied" ${groupOrder === "varied" ? "selected" : ""}>
             Most varied first
           </option>
@@ -715,6 +717,12 @@ function groupsMarkup() {
       ${groups.map((group, index) => overviewRowMarkup(group, index, groups.length))}
     </ul>
   `
+}
+
+/** Why a group has no suggested name: nobody named yet, or nobody close enough.
+ *  @param {Types.FaceGroup} group */
+function noSuggestionText(group) {
+  return group.abstained ? "no confident match" : "no suggestion yet"
 }
 
 /**
@@ -738,7 +746,7 @@ function overviewRowMarkup(group, index, total) {
   const suggestion = group.suggestion
   const label =
     `Review group ${index + 1} of ${total}, ${group.size} face${group.size === 1 ? "" : "s"}` +
-    (suggestion ? `, suggested ${suggestion.personName}` : ", no suggestion yet")
+    (suggestion ? `, suggested ${suggestion.personName}` : `, ${noSuggestionText(group)}`)
   return html`
     <li>
       <button type="button" class="face-overview-row" data-group-key="${String(group.key)}"
@@ -750,7 +758,7 @@ function overviewRowMarkup(group, index, total) {
             ${more > 0 ? html`<span class="face-overview-more">+${more} not shown here</span>` : ""}
           </span>
           <span class="face-overview-suggestion">
-            ${suggestion ? html`suggested: ${suggestion.personName}` : "no suggestion yet"}
+            ${suggestion ? html`suggested: ${suggestion.personName}` : noSuggestionText(group)}
           </span>
         </span>
         <span class="face-overview-go" aria-hidden="true">Review →</span>
@@ -801,7 +809,8 @@ function reviewMarkup(group) {
         </h3>
         <div class="face-review-name">
           <input type="text" class="face-review-name-input" list="faces-people-roster"
-            placeholder="Who is this?" value="${nameValue}" autocomplete="off"
+            placeholder="${group.abstained ? "No confident match. Who is this?" : "Who is this?"}"
+            value="${nameValue}" autocomplete="off"
             aria-label="Person name for this group" maxlength="200" />
           <button type="button" class="btn btn-primary btn-sm face-review-confirm"
             ${assignable.length === 0 ? "disabled" : ""}>

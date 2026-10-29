@@ -451,7 +451,38 @@ describe("overview + queue: on-demand grouping and matching", () => {
     assert.strictEqual(qBody.truncated, false)
   })
 
-  it("after one face is confirmed, every group gets a prototype suggestion and the queue ranks by unlocks", async (t) => {
+  it("orders mostly-clear groups before bigger mostly-hard ones, keyed by a stable face id", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+
+    // A big group of `ask` faces (the viewpoint pile) and a smaller `accept` one.
+    const hard = [0, 1, 2].map((i) => seedFace(seedMedia(), [0.02 * i, 1, 0, 0], { route: "ask" }))
+    const clear = [0, 1].map((i) => seedFace(seedMedia(), [1, 0.02 * i, 0, 0], { route: "accept" }))
+
+    const body = await json(await asAdmin("/api/admin/faces/overview"))
+    assert.strictEqual(body.groups.length, 2)
+    const [first, second] = body.groups
+    assert.deepStrictEqual([...first.faceIds].sort((a, b) => a - b), clear, "clear group leads despite being smaller")
+    assert.strictEqual(first.mostlyClear, true)
+    assert.strictEqual(second.mostlyClear, false)
+    assert.deepStrictEqual([...second.faceIds].sort((a, b) => a - b), hard)
+    for (const group of body.groups) {
+      assert.strictEqual(group.key, Math.min(...group.faceIds), "key is the lowest shown face id")
+    }
+
+    // Naming the clear group must not re-point the hard group's key.
+    const personA = seedPerson({ display_name: "Person Clear" })
+    const assignRes = await asAdmin("/api/admin/faces/assign", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ faceIds: clear, personId: personA }),
+    })
+    assert.strictEqual(assignRes.status, 200)
+    const after = await json(await asAdmin("/api/admin/faces/overview"))
+    assert.strictEqual(after.groups.length, 1)
+    assert.strictEqual(after.groups[0].key, second.key, "same group, same key, across a reload")
+  })
+
+  it("after one face is confirmed, only groups close to that person get a suggestion, and the queue ranks by unlocks", async (t) => {
     if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
 
     const personA = seedPerson({ display_name: "Person A" })
@@ -483,10 +514,16 @@ describe("overview + queue: on-demand grouping and matching", () => {
     assert.strictEqual(overview.counts.unidentified, 3)
     // faceA1 left its group; the remaining groups are {faceA2} and {faceB1,faceB2}.
     assert.strictEqual(overview.groups.length, 2)
-    for (const group of overview.groups) {
-      assert.ok(group.suggestion, "a confirmed identity exists, so every group gets a suggestion")
-      assert.strictEqual(group.suggestion.personId, personA)
-    }
+    // A's leftover is Person A. B is someone else entirely (orthogonal), and
+    // matchFace's nearest-prototype answer for it — Person A again — is exactly
+    // the wrong name the confidence bar exists to withhold.
+    const leftA = overview.groups.find((/** @type {any} */ g) => g.faceIds.includes(faceA2))
+    assert.ok(leftA.suggestion, "same person as the confirmed face -> suggested")
+    assert.strictEqual(leftA.suggestion.personId, personA)
+    assert.strictEqual(leftA.abstained, false)
+    const groupB = overview.groups.find((/** @type {any} */ g) => g.faceIds.includes(faceB1))
+    assert.strictEqual(groupB.suggestion, null, "nobody close enough -> no suggestion")
+    assert.strictEqual(groupB.abstained, true, "...and the UI can say 'no confident match'")
 
     const queue = await json(await asAdmin("/api/admin/faces/queue"))
     assertNoDescriptor(queue)

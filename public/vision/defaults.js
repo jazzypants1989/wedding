@@ -173,6 +173,30 @@ const VISION_CONFIG = {
      * where over-including in a persisted cluster means welding two people.
      */
     sameBandCutoff: 0.64,
+    /**
+     * The bar a GROUP's suggested name must clear, or the group is shown with
+     * no suggestion ("no confident match") instead of the nearest person's.
+     *
+     * `matchFace` always returns its nearest prototype — there is no "nobody"
+     * in its answer. Before this bar, a group the recogniser could not place
+     * (a pile of profiles and backs of heads, clustered by viewpoint rather
+     * than by person) still arrived labelled with whoever's prototype its
+     * centroid happened to land nearest, and the bulk-confirm button sat right
+     * beside that wrong name.
+     *
+     * `suggestMaxDistance` reuses the published verification distance, like
+     * `sameBandCutoff`: beyond it the reference model itself would call the
+     * pair different people, so it is a reference point, not a fitted value.
+     * It also guards a lone prototype, whose margin is Infinity.
+     */
+    suggestMaxDistance: 0.64,
+    /**
+     * Minimum lead of the best person over the runner-up (cosine distance).
+     * ⚠ **UNTUNED placeholder**, deliberately on the abstaining side: a missing
+     * suggestion costs a typed name, a wrong one costs a wrong bulk confirm.
+     * In the tuning pass's list below.
+     */
+    suggestMinMargin: 0.05,
   },
 
   propagate: {
@@ -234,6 +258,9 @@ const VISION_CONFIG = {
  *    far enough is unnameable long before it stops being detectable.
  * 5. `propagate` and `assign` last of all — both are vetoes and priority
  *    signals rather than identity decisions, so they are the least sensitive.
+ *    `assign.suggestMinMargin` is the untuned one: derive it from the margins
+ *    of groups whose suggestion the human accepted against those they renamed,
+ *    and put the bar where a wrong suggestion stops being common.
  *
  * **Then bump `PROFILE` in route.js**, and re-grade. `media_faces.route_profile`
  * exists exactly so that old rows say which table they were graded under

@@ -1440,9 +1440,12 @@ export interface FaceGroupWeld {
   ratio: number
 }
 
-/** One unnamed cluster from GET /api/admin/faces/overview, largest first. */
+/** One unnamed cluster from GET /api/admin/faces/overview, clearest then
+ *  largest first. */
 export interface FaceGroup {
-  key: string
+  /** The group's lowest shown face id: stable across reloads while that face
+   *  stays unnamed, so a route can carry it. */
+  key: number
   /** The faces a BULK confirm may name — set-aside members are absent, so a
    *  bulk confirm cannot carry one the server would refuse anyway. */
   faceIds: number[]
@@ -1455,6 +1458,12 @@ export interface FaceGroup {
    *  exemption from the bulk routing check. */
   setAsideMedia: FaceChipEntry[]
   suggestion: FaceGroupSuggestion | null
+  /** People exist to suggest, but none cleared `assign.suggest*` — so the
+   *  group shows "no confident match" rather than the nearest wrong name. */
+  abstained: boolean
+  /** A strict majority of the cluster routed `accept`; the server sorts these
+   *  first. */
+  mostlyClear: boolean
   /** The FULL cluster size: `media.length + setAsideMedia.length`. */
   size: number
   /** How many of `size` were withheld by routing — `setAsideMedia.length`. */

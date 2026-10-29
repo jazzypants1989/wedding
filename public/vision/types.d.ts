@@ -24,7 +24,7 @@ export interface VisionDefaults {
   route: Record<string, number>
   group: { cutoff: number; cannotLinkWithinPhoto: boolean }
   describe: { mirrorAverage: boolean }
-  assign: { sameBandCutoff: number }
+  assign: { sameBandCutoff: number; suggestMaxDistance: number; suggestMinMargin: number }
   propagate: { minIou: number; iouMargin: number; corroborationCutoff: number }
 }
 
@@ -496,6 +496,17 @@ export interface MatchResult {
 
 /** Ranks `descriptor` against every prototype by cosine distance. */
 export function matchFace(descriptor: Float32Array, prototypes: readonly Prototype[]): MatchResult
+
+/** The bar a match must clear to be offered as a suggestion (`assign.suggest*`). */
+export interface ConfidenceBar {
+  /** Best distance must be at or below this. */
+  maxDistance: number
+  /** Best must lead the runner-up by at least this. Infinity (unopposed) passes. */
+  minMargin: number
+}
+
+/** `match.best` if it clears `bar`, else null — "no confident match". */
+export function confidentMatch(match: MatchResult, bar: ConfidenceBar): MatchCandidate | null
 
 export interface AssignOptions {
   /** Cost of leaving a face unassigned. A candidate is only taken when it beats this. */

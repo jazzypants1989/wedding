@@ -73,6 +73,18 @@ export function matchFace(descriptor, prototypes) {
   return { candidates, best, margin }
 }
 
+/** @type {Types.confidentMatch} */
+export function confidentMatch(match, bar) {
+  const best = match.best
+  if (!best) return null
+  // Negated comparisons so a NaN anywhere abstains rather than passes. An
+  // unopposed match (margin Infinity) clears the margin test by design; the
+  // distance bar is what stops a lone, distant prototype.
+  if (!(best.distance <= bar.maxDistance)) return null
+  if (!(match.margin >= bar.minMargin)) return null
+  return best
+}
+
 /**
  * Exact joint assignment for k <= EXACT_FACE_LIMIT faces.
  *

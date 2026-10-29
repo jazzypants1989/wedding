@@ -90,7 +90,7 @@ import {
 } from "../../db/face-assignments.js"
 import { now } from "../../db/utils.js"
 import { groupFaces, distanceMatrix, centroid } from "../../public/vision/group.js"
-import { buildPrototypes, matchFace } from "../../public/vision/assign.js"
+import { buildPrototypes, matchFace, confidentMatch } from "../../public/vision/assign.js"
 import { propagateWithinFrames } from "../../public/vision/must-link.js"
 import { getDefaults } from "../../public/vision/defaults.js"
 
@@ -390,9 +390,14 @@ export async function overview(req, res) {
   const routeCounts = routeStateCounts()
   const groupDefaults = getDefaults("group")
   const cutoff = /** @type {number} */ (groupDefaults.cutoff)
+  const assignDefaults = getDefaults("assign")
+  const suggestBar = {
+    maxDistance: /** @type {number} */ (assignDefaults.suggestMaxDistance),
+    minMargin: /** @type {number} */ (assignDefaults.suggestMinMargin),
+  }
   const byVersion = loadUnidentifiedByModelVersion()
 
-  /** @type {Array<{ faceIds: number[], media: Array<ReturnType<typeof chipOf>>, setAsideMedia: Array<ReturnType<typeof chipOf>>, suggestion: { personId: number, personName: string, margin: number } | null, size: number, shown: number, setAside: number, weld: { diameter: number, ratio: number } | null }>} */
+  /** @type {Array<{ faceIds: number[], media: Array<ReturnType<typeof chipOf>>, setAsideMedia: Array<ReturnType<typeof chipOf>>, suggestion: { personId: number, personName: string, margin: number } | null, abstained: boolean, mostlyClear: boolean, size: number, shown: number, setAside: number, weld: { diameter: number, ratio: number } | null }>} */
   const rawGroups = []
 
   for (const [modelVersion, { faces, set }] of byVersion) {
@@ -433,23 +438,36 @@ export async function overview(req, res) {
 
       /** @type {{ personId: number, personName: string, margin: number } | null} */
       let suggestion = null
+      // True when there WAS someone to suggest but nobody cleared the bar — the
+      // UI says "no confident match" rather than "no suggestion yet".
+      let abstained = false
       if (prototypes.length > 0) {
         // The centroid is over the FULL cluster, not the shown subset: the
         // suggestion is about who this group is, and a face being too small to
         // show is not a reason to drop its evidence.
         const vec = centroid(set, cluster.members)
         const match = matchFace(vec, prototypes)
-        if (match.best) {
-          const info = meta.get(match.best.label)
-          if (info) suggestion = { personId: info.personId, personName: info.personName, margin: match.margin }
-        }
+        // matchFace always names its nearest prototype; the bar is what lets a
+        // group the recogniser cannot place arrive with no name on it.
+        const best = confidentMatch(match, suggestBar)
+        const info = best ? meta.get(best.label) : undefined
+        if (info) suggestion = { personId: info.personId, personName: info.personName, margin: match.margin }
+        else abstained = true
       }
+
+      // "Mostly clear": a strict majority of the WHOLE cluster routed `accept`.
+      // Set-aside and ungraded members count against it — neither is evidence
+      // the faces are nameable. Ordering only (see the sort below).
+      const clear = cluster.members.filter((i) => faces[i].route_state === "accept").length
+      const mostlyClear = clear * 2 > cluster.size
 
       rawGroups.push({
         faceIds: shownMembers.map((i) => faces[i].id),
         media: shownMembers.map((i) => chipOf(faces[i], chips)),
         setAsideMedia: heldBackMembers.map((i) => chipOf(faces[i], chips)),
         suggestion,
+        abstained,
+        mostlyClear,
         size: cluster.size,
         shown: shownMembers.length,
         setAside: heldBackMembers.length,
@@ -458,11 +476,20 @@ export async function overview(req, res) {
     }
   }
 
-  // Largest first, globally across every model_version partition — matching
-  // group.js's own per-partition ordering, just merged.
-  rawGroups.sort((a, b) => b.size - a.size)
-  const groups = rawGroups.map((g, index) => ({
-    key: index,
+  // Clearest first, then largest, globally across every model_version
+  // partition. Size alone put the worst group on top: once the nameable faces
+  // are named they leave the pool, and what re-clusters out of the leftovers is
+  // big precisely BECAUSE it is profiles and backs of heads grouped by
+  // viewpoint. Mostly-accept groups lead (still biggest first, so the most
+  // progress per confirm); mostly-hard groups follow, also biggest first.
+  // Before routing existed every face is ungraded, so this degrades to size.
+  rawGroups.sort((a, b) => Number(b.mostlyClear) - Number(a.mostlyClear) || b.size - a.size)
+  const groups = rawGroups.map((g) => ({
+    /** The group's lowest shown face id. Stable across reloads for as long as
+     *  that face stays unnamed — unlike the list position it replaced, which
+     *  re-pointed at a different cluster after every naming — so a route can
+     *  carry it. Groups are disjoint, so it is unique. */
+    key: Math.min(...g.faceIds),
     faceIds: g.faceIds,
     media: g.media,
     /** The cluster members routing held back, as chips. Never in `faceIds` and
@@ -471,6 +498,10 @@ export async function overview(req, res) {
      *  only route that will name one. */
     setAsideMedia: g.setAsideMedia,
     suggestion: g.suggestion,
+    /** People exist to suggest, but none cleared the confidence bar. */
+    abstained: g.abstained,
+    /** A strict majority of the cluster routed `accept`. */
+    mostlyClear: g.mostlyClear,
     /** Total cluster size, INCLUDING faces not shown — so the UI can say
      *  "3 more too small to show" rather than silently disagreeing with
      *  itself about how big the group is. */

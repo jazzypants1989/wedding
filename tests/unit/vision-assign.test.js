@@ -12,7 +12,7 @@
 import { test } from "node:test"
 import assert from "node:assert"
 
-import { assignPhoto, buildPrototypes, matchFace } from "../../public/vision/assign.js"
+import { assignPhoto, buildPrototypes, matchFace, confidentMatch } from "../../public/vision/assign.js"
 import { cosineDistance } from "../../public/vision/group.js"
 
 /** @param {number} angle */
@@ -230,4 +230,38 @@ test("assignPhoto: restricts exact search to k closest prototypes when there are
     sameFaceSuspicionCutoff: 0.05,
   })
   assert.equal(result.assignments[0].label, "near")
+})
+
+test("confidentMatch: offers the best only when it is close enough and clearly ahead", () => {
+  const bar = { maxDistance: 0.64, minMargin: 0.05 }
+  const cand = (/** @type {string} */ label, /** @type {number} */ distance) => ({ label, distance })
+  // Close and clearly ahead -> offered.
+  const good = { candidates: [cand("a", 0.2), cand("b", 0.5)], best: cand("a", 0.2), margin: 0.3 }
+  assert.deepStrictEqual(confidentMatch(good, bar), cand("a", 0.2))
+  // Nearest prototype but far away -> abstain. This is the group the
+  // recogniser cannot place, which used to arrive with a wrong name on it.
+  const far = { candidates: [cand("a", 0.9), cand("b", 1.1)], best: cand("a", 0.9), margin: 0.2 }
+  assert.strictEqual(confidentMatch(far, bar), null)
+  // Close, but a near-tie with the runner-up -> abstain.
+  const tie = { candidates: [cand("a", 0.3), cand("b", 0.32)], best: cand("a", 0.3), margin: 0.02 }
+  assert.strictEqual(confidentMatch(tie, bar), null)
+  // Unopposed (one prototype, margin Infinity): the distance bar decides alone.
+  assert.ok(confidentMatch({ candidates: [cand("a", 0.3)], best: cand("a", 0.3), margin: Infinity }, bar))
+  assert.strictEqual(
+    confidentMatch({ candidates: [cand("a", 0.8)], best: cand("a", 0.8), margin: Infinity }, bar),
+    null,
+  )
+  // Nothing to rank, or a NaN anywhere -> abstain, never pass.
+  assert.strictEqual(confidentMatch({ candidates: [], best: null, margin: NaN }, bar), null)
+  assert.strictEqual(confidentMatch({ candidates: [cand("a", NaN)], best: cand("a", NaN), margin: 1 }, bar), null)
+})
+
+test("confidentMatch over real matchFace output: orthogonal person abstains, same person passes", () => {
+  const bar = { maxDistance: 0.64, minMargin: 0.05 }
+  const prototypes = [{ label: "A", vector: Float32Array.from([1, 0, 0, 0]) }]
+  const sameish = matchFace(Float32Array.from([1, 0.05, 0, 0]), prototypes)
+  assert.strictEqual(confidentMatch(sameish, bar)?.label, "A")
+  const other = matchFace(Float32Array.from([0, 1, 0, 0]), prototypes)
+  assert.strictEqual(other.best?.label, "A", "matchFace itself always names someone")
+  assert.strictEqual(confidentMatch(other, bar), null)
 })
