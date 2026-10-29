@@ -1007,7 +1007,8 @@ export interface ThankYouCard {
   view_count: number
   /** Timestamp of the most recent envelope open (beacon), independent of viewed_at. */
   last_viewed_at: string | null
-  reply_emoji: ReactionEmoji | null
+  /** Any single emoji, as its glyph (public/components/emoji.js). */
+  reply_emoji: string | null
   reply_message: string | null
   replied_at: string | null
   reply_seen_at: string | null
@@ -1022,7 +1023,8 @@ export interface ThankYouCard {
 export interface ThankYouCardReply {
   id: number
   card_id: number
-  emoji: ReactionEmoji | null
+  /** Any single emoji, as its glyph (public/components/emoji.js). */
+  emoji: string | null
   message: string | null
   created_at: string
 }

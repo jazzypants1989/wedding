@@ -379,10 +379,10 @@ describe("Digital thank-you cards (Phase 3 public API)", () => {
 
     it("valid emoji only → 200", async () => {
       const { token } = seedSentCard()
-      const res = await postReply(token, { emoji: "cheers" })
+      const res = await postReply(token, { emoji: "🥂" })
       assert.strictEqual(res.status, 200)
       assert.strictEqual(res.data.success, true)
-      assert.strictEqual(res.data.reply.emoji, "cheers")
+      assert.strictEqual(res.data.reply.emoji, "🥂")
       assert.strictEqual(res.data.reply.message, null)
       assert.ok(res.data.reply.replied_at)
     })
@@ -397,9 +397,9 @@ describe("Digital thank-you cards (Phase 3 public API)", () => {
 
     it("both emoji and message → 200", async () => {
       const { token } = seedSentCard()
-      const res = await postReply(token, { emoji: "fire", message: "Loved it" })
+      const res = await postReply(token, { emoji: "🔥", message: "Loved it" })
       assert.strictEqual(res.status, 200)
-      assert.strictEqual(res.data.reply.emoji, "fire")
+      assert.strictEqual(res.data.reply.emoji, "🔥")
       assert.strictEqual(res.data.reply.message, "Loved it")
     })
 
@@ -407,6 +407,28 @@ describe("Digital thank-you cards (Phase 3 public API)", () => {
       const { token } = seedSentCard()
       const res = await postReply(token, { emoji: "banana" })
       assert.strictEqual(res.status, 400)
+    })
+
+    it("any single emoji → 200, stored as the glyph (issue #8)", async () => {
+      const { token } = seedSentCard()
+      const res = await postReply(token, { emoji: "👨‍👩‍👧" })
+      assert.strictEqual(res.status, 200)
+      assert.strictEqual(res.data.reply.emoji, "👨‍👩‍👧")
+    })
+
+    it("a legacy reaction key (a cached page) maps to its glyph", async () => {
+      const { token } = seedSentCard()
+      const res = await postReply(token, { emoji: "heart_eyes" })
+      assert.strictEqual(res.status, 200)
+      assert.strictEqual(res.data.reply.emoji, "😍")
+    })
+
+    it("two emoji, emoji + text, or a lone modifier → 400", async () => {
+      for (const emoji of ["😀😀", "hi 😀", "🏽", 5]) {
+        const { token } = seedSentCard()
+        const res = await postReply(token, { emoji })
+        assert.strictEqual(res.status, 400, JSON.stringify(emoji))
+      }
     })
 
     it("over-length message → 400", async () => {
@@ -448,12 +470,12 @@ describe("Digital thank-you cards (Phase 3 public API)", () => {
 
       const second = await postReply(token, { emoji: "laugh", message: "Actually, this!" })
       assert.strictEqual(second.status, 200)
-      assert.strictEqual(second.data.reply.emoji, "laugh")
+      assert.strictEqual(second.data.reply.emoji, "😂")
       assert.strictEqual(second.data.reply.message, "Actually, this!")
 
       // GET reflects the latest reply, not the first.
       const fetched = await getCard(token)
-      assert.strictEqual(fetched.data.reply.emoji, "laugh")
+      assert.strictEqual(fetched.data.reply.emoji, "😂")
       assert.strictEqual(fetched.data.reply.message, "Actually, this!")
     })
 
@@ -1086,7 +1108,7 @@ describe("Digital thank-you cards (Phase 3 public API)", () => {
         const original = (await json(await asAdmin(`/api/admin/thank-you/${card.id}`))).card
         assert.strictEqual(original.status, "viewed")
         assert.ok(original.viewed_at, "original keeps its viewed_at")
-        assert.strictEqual(original.reply_emoji, "heart", "original keeps its reply")
+        assert.strictEqual(original.reply_emoji, "❤️", "original keeps its reply")
       })
 
       it("409s resending a draft (never delivered)", async (t) => {
@@ -1125,7 +1147,7 @@ describe("Digital thank-you cards (Phase 3 public API)", () => {
         // Original is completely intact: still 'sent' (not rewound), reply kept.
         const original = (await json(await asAdmin(`/api/admin/thank-you/${card.id}`))).card
         assert.strictEqual(original.status, "sent", "original stays sent — never rewound to draft")
-        assert.strictEqual(original.reply_emoji, "heart", "original keeps its reply emoji")
+        assert.strictEqual(original.reply_emoji, "❤️", "original keeps its reply emoji")
         assert.strictEqual(original.reply_message, "thank you!", "original keeps its reply message")
 
         // The count reflects ONLY the original — the fresh draft clone must not
@@ -1158,13 +1180,13 @@ describe("Digital thank-you cards (Phase 3 public API)", () => {
 
         const detail = await json(await asAdmin(`/api/admin/thank-you/${card.id}`))
         assert.strictEqual(detail.replies.length, 2, "full thread has both replies")
-        assert.strictEqual(detail.replies[0].emoji, "heart", "oldest reply first")
+        assert.strictEqual(detail.replies[0].emoji, "❤️", "oldest reply first")
         assert.strictEqual(detail.replies[0].message, "First reply!")
-        assert.strictEqual(detail.replies[1].emoji, "cheers", "newest reply last")
+        assert.strictEqual(detail.replies[1].emoji, "🥂", "newest reply last")
         assert.strictEqual(detail.replies[1].message, null)
 
         // Latest-reply columns on the card == reply #2 exactly.
-        assert.strictEqual(detail.card.reply_emoji, "cheers")
+        assert.strictEqual(detail.card.reply_emoji, "🥂")
         assert.strictEqual(detail.card.reply_message, null, "emoji-only reply cleared the message")
         // Engagement counters ride along on the card object.
         assert.strictEqual(typeof detail.card.view_count, "number")
@@ -1317,7 +1339,7 @@ describe("Digital thank-you cards (Phase 3 public API)", () => {
 
         // Precondition: the reply surfaces (unread + latest columns set).
         const before = await json(await asAdmin(`/api/admin/thank-you/${card.id}`))
-        assert.strictEqual(before.card.reply_emoji, "heart")
+        assert.strictEqual(before.card.reply_emoji, "❤️")
         assert.strictEqual(before.replies.length, 1)
         assert.strictEqual(
           (await json(await asAdmin("/api/admin/thank-you/counts"))).unreadReplies,
@@ -1340,7 +1362,7 @@ describe("Digital thank-you cards (Phase 3 public API)", () => {
         // The append-only history rows are RETAINED (removable from view, kept).
         const after = await json(await asAdmin(`/api/admin/thank-you/${card.id}`))
         assert.strictEqual(after.replies.length, 1, "reply history row is retained")
-        assert.strictEqual(after.replies[0].emoji, "heart")
+        assert.strictEqual(after.replies[0].emoji, "❤️")
 
         // Dropped off the unread badge.
         assert.strictEqual(
@@ -1655,8 +1677,8 @@ describe("Digital thank-you cards (Phase 3 public API)", () => {
       const a = seedSentCard({ message: "Card A" })
       const b = seedSentCard({ message: "Card B" })
       // Reply to A first, then B — B is newer, so it must lead the feed.
-      setCardReply(a.cardId, { emoji: "heart", message: "Loved it, thank you!" })
-      setCardReply(b.cardId, { emoji: "cheers", message: "Cheers!" })
+      setCardReply(a.cardId, { emoji: "❤️", message: "Loved it, thank you!" })
+      setCardReply(b.cardId, { emoji: "🥂", message: "Cheers!" })
 
       const res = await asAdmin("/api/admin/thank-you/replies")
       assert.strictEqual(res.status, 200)
@@ -1670,10 +1692,10 @@ describe("Digital thank-you cards (Phase 3 public API)", () => {
       const idxA = data.replies.findIndex((/** @type {any} */ r) => r.cardId === a.cardId)
       const idxB = data.replies.findIndex((/** @type {any} */ r) => r.cardId === b.cardId)
       assert.ok(idxB < idxA, "newer reply (B) is listed before older (A)")
-      // Both start unread; each carries the guest name + emoji glyph key.
+      // Both start unread; each carries the guest name + the reply glyph.
       assert.strictEqual(forA[0].unread, true)
       assert.strictEqual(forB[0].unread, true)
-      assert.strictEqual(forA[0].emoji, "heart")
+      assert.strictEqual(forA[0].emoji, "❤️")
       assert.ok(typeof forA[0].guestName === "string" && forA[0].guestName.length > 0)
 
       // Acknowledge card A → its reply flips to read; B stays unread.

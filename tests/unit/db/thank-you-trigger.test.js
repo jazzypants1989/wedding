@@ -1,143 +1,145 @@
 /**
- * @file Unit tests keeping the SQLite reply-emoji CHECK triggers in sync with the
- * REACTION_EMOJI enum. Two complementary angles:
- *   1. Source parse (bidirectional set-equality): read the enumerated `NOT IN
- *      (...)` list straight out of db/schema.js — no regex, string methods only —
- *      and assert it equals REACTION_EMOJI_VALUES. Catches drift in either
- *      direction (a trigger value the enum dropped, or an enum value the trigger
- *      forgot).
- *   2. Runtime probe: spin up an in-memory DB, run the migrations, and prove the
- *      triggers actually accept every enum value and reject a non-member.
+ * @file Unit tests for the thank-you reply-emoji triggers and the
+ * `reply_emoji_glyphs` migration (issue #8).
+ *
+ * Replies used to be one of six REACTION_EMOJI keys, enforced by `NOT IN (…)`
+ * triggers. They now take any single emoji, stored as its glyph: the app
+ * validates (public/components/emoji.js), and the triggers are a size backstop.
+ * Two angles:
+ *   1. Fresh database: the final triggers accept glyphs (including long ZWJ
+ *      sequences) and reject empty or oversized values.
+ *   2. Pinned database: a database still at the key-only state, holding key
+ *      rows, comes through the migration with every key rewritten to its glyph
+ *      and the new triggers in place.
  */
 
 import { describe, it, before, after } from "node:test"
 import assert from "node:assert"
-import fs from "node:fs"
-import path from "node:path"
 import { DatabaseSync } from "node:sqlite"
 
 import { createTables, runMigrations } from "../../../db/schema.js"
 import { REACTION_EMOJI_VALUES } from "../../../types.js"
+import { LEGACY_REPLY_GLYPHS } from "../../../public/components/emoji.js"
 
-const SCHEMA_PATH = path.join(import.meta.dirname, "..", "..", "..", "db", "schema.js")
-
-/**
- * Extract every `<field> NOT IN ( … )` value list that follows an emoji field in
- * the schema source. Pure string scanning (no regex): find each occurrence of
- * the marker, slice to the closing paren, split on commas and strip quotes.
- * @param {string} source
- * @returns {string[][]} one array of literal values per matched list
- */
-function extractEmojiInLists(source) {
-  const marker = "emoji NOT IN ("
-  /** @type {string[][]} */
-  const lists = []
-  let from = 0
-  while (true) {
-    const at = source.indexOf(marker, from)
-    if (at === -1) break
-    const open = at + marker.length
-    const close = source.indexOf(")", open)
-    if (close === -1) break
-    const inner = source.slice(open, close)
-    const values = inner
-      .split(",")
-      .map((part) => {
-        const trimmed = part.trim()
-        // Strip the surrounding single quotes without a regex.
-        if (trimmed.startsWith("'") && trimmed.endsWith("'")) {
-          return trimmed.slice(1, -1)
-        }
-        return trimmed
-      })
-      .filter((v) => v.length > 0)
-    lists.push(values)
-    from = close + 1
-  }
-  return lists
+/** @param {DatabaseSync} db @returns {number} a sent card's id */
+function seedCard(db) {
+  const guestId = Number(
+    db
+      .prepare(
+        `INSERT INTO guests (name, email, phone, party_size, invite_code, status, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run("Trigger Test", null, null, 2, "TRGTEST1", "pending", null).lastInsertRowid,
+  )
+  return Number(
+    db
+      .prepare(
+        `INSERT INTO thank_you_cards (token, guest_id, message, theme, status)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run("TRGTOKEN", guestId, "hi", "classic", "sent").lastInsertRowid,
+  )
 }
 
-describe("reply-emoji CHECK triggers stay in sync with REACTION_EMOJI", () => {
-  it("every enumerated NOT IN (...) list in the schema equals REACTION_EMOJI_VALUES", () => {
-    const source = fs.readFileSync(SCHEMA_PATH, "utf8")
-    const lists = extractEmojiInLists(source)
+/** @param {DatabaseSync} db @param {number} cardId @param {string | null} emoji */
+function insertReply(db, cardId, emoji) {
+  db.prepare(
+    `INSERT INTO thank_you_card_replies (card_id, emoji, message, created_at)
+     VALUES (?, ?, ?, ?)`,
+  ).run(cardId, emoji, null, "2026-01-01 00:00:00")
+}
 
-    // Card insert + update triggers and the replies-table insert trigger → 3.
-    assert.ok(lists.length >= 3, `found ${lists.length} emoji NOT IN lists (expected ≥ 3)`)
+/** @returns {DatabaseSync} */
+function freshDb() {
+  const db = new DatabaseSync(":memory:")
+  db.exec("PRAGMA foreign_keys = ON")
+  createTables(db)
+  runMigrations(db)
+  return db
+}
 
-    const expected = [...REACTION_EMOJI_VALUES].sort()
-    for (const list of lists) {
-      assert.deepEqual(
-        [...list].sort(),
-        expected,
-        "a schema emoji allowlist drifted from REACTION_EMOJI",
-      )
+describe("reply-emoji triggers: any single emoji, size-bounded", () => {
+  /** @type {DatabaseSync} */
+  let db
+  /** @type {number} */
+  let cardId
+
+  before(() => {
+    db = freshDb()
+    cardId = seedCard(db)
+  })
+
+  after(() => {
+    db.close()
+  })
+
+  it("accepts glyphs on thank_you_cards.reply_emoji, including long sequences", () => {
+    for (const emoji of ["❤️", "🥹", "👨‍👩‍👧‍👦", "🏴󠁧󠁢󠁳󠁣󠁴󠁿", "1️⃣"]) {
+      assert.doesNotThrow(() => {
+        db.prepare(`UPDATE thank_you_cards SET reply_emoji = ? WHERE id = ?`).run(emoji, cardId)
+      }, `emoji ${JSON.stringify(emoji)} should be accepted`)
     }
   })
 
-  describe("runtime enforcement", () => {
-    /** @type {DatabaseSync} */
-    let db
-    /** @type {number} */
-    let cardId
-
-    before(() => {
-      db = new DatabaseSync(":memory:")
-      db.exec("PRAGMA foreign_keys = ON")
-      createTables(db)
-      runMigrations(db)
-
-      const guestId = Number(
-        db
-          .prepare(
-            `INSERT INTO guests (name, email, phone, party_size, invite_code, status, notes)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          )
-          .run("Trigger Test", null, null, 2, "TRGTEST1", "pending", null).lastInsertRowid,
-      )
-      cardId = Number(
-        db
-          .prepare(
-            `INSERT INTO thank_you_cards (token, guest_id, message, theme, status)
-             VALUES (?, ?, ?, ?, ?)`,
-          )
-          .run("TRGTOKEN", guestId, "hi", "classic", "sent").lastInsertRowid,
-      )
-    })
-
-    after(() => {
-      db.close()
-    })
-
-    it("accepts every REACTION_EMOJI value on thank_you_cards.reply_emoji", () => {
-      for (const emoji of REACTION_EMOJI_VALUES) {
-        assert.doesNotThrow(() => {
-          db.prepare(`UPDATE thank_you_cards SET reply_emoji = ? WHERE id = ?`).run(emoji, cardId)
-        }, `emoji "${emoji}" should be accepted`)
-      }
-    })
-
-    it("rejects a non-member emoji on thank_you_cards.reply_emoji", () => {
+  it("rejects empty and oversized values on both columns", () => {
+    for (const bad of ["", "x".repeat(17)]) {
       assert.throws(() => {
-        db.prepare(`UPDATE thank_you_cards SET reply_emoji = ? WHERE id = ?`).run("banana", cardId)
-      })
-    })
+        db.prepare(`UPDATE thank_you_cards SET reply_emoji = ? WHERE id = ?`).run(bad, cardId)
+      }, `card reply ${JSON.stringify(bad)} should be rejected`)
+      assert.throws(() => insertReply(db, cardId, bad), `reply ${JSON.stringify(bad)} should be rejected`)
+    }
+  })
 
-    it("accepts every REACTION_EMOJI value on thank_you_card_replies.emoji and rejects others", () => {
-      for (const emoji of REACTION_EMOJI_VALUES) {
-        assert.doesNotThrow(() => {
-          db.prepare(
-            `INSERT INTO thank_you_card_replies (card_id, emoji, message, created_at)
-             VALUES (?, ?, ?, ?)`,
-          ).run(cardId, emoji, null, "2026-01-01 00:00:00")
-        }, `reply emoji "${emoji}" should be accepted`)
-      }
-      assert.throws(() => {
-        db.prepare(
-          `INSERT INTO thank_you_card_replies (card_id, emoji, message, created_at)
-           VALUES (?, ?, ?, ?)`,
-        ).run(cardId, "banana", null, "2026-01-01 00:00:00")
-      })
+  it("still allows NULL (a message-only reply)", () => {
+    assert.doesNotThrow(() => insertReply(db, cardId, null))
+    assert.doesNotThrow(() => {
+      db.prepare(`UPDATE thank_you_cards SET reply_emoji = NULL WHERE id = ?`).run(cardId)
     })
+  })
+})
+
+describe("reply_emoji_glyphs migration over a key-only database", () => {
+  it("rewrites every legacy key to its glyph and installs the new triggers", () => {
+    const db = freshDb()
+    const cardId = seedCard(db)
+
+    // Pin the pre-migration state: the key-only triggers, and no ledger row.
+    const keys = REACTION_EMOJI_VALUES.map((k) => `'${k}'`).join(", ")
+    db.exec(`
+      DROP TRIGGER check_tyc_reply_emoji_insert;
+      DROP TRIGGER check_tyc_reply_emoji_update;
+      DROP TRIGGER check_tycr_emoji_insert;
+      CREATE TRIGGER check_tyc_reply_emoji_update BEFORE UPDATE ON thank_you_cards
+      FOR EACH ROW WHEN NEW.reply_emoji IS NOT NULL AND NEW.reply_emoji NOT IN (${keys})
+      BEGIN SELECT RAISE(ABORT, 'Invalid reply emoji'); END;
+      CREATE TRIGGER check_tycr_emoji_insert BEFORE INSERT ON thank_you_card_replies
+      FOR EACH ROW WHEN NEW.emoji IS NOT NULL AND NEW.emoji NOT IN (${keys})
+      BEGIN SELECT RAISE(ABORT, 'Invalid reply emoji'); END;
+      DELETE FROM migrations WHERE name = 'reply_emoji_glyphs';
+    `)
+    db.prepare(`UPDATE thank_you_cards SET reply_emoji = 'cheers' WHERE id = ?`).run(cardId)
+    for (const key of REACTION_EMOJI_VALUES) insertReply(db, cardId, key)
+    insertReply(db, cardId, null)
+    // The old trigger is really in place: a glyph is refused before migrating.
+    assert.throws(() => insertReply(db, cardId, "🥹"))
+
+    runMigrations(db)
+
+    const card = /** @type {{ reply_emoji: string }} */ (
+      db.prepare(`SELECT reply_emoji FROM thank_you_cards WHERE id = ?`).get(cardId)
+    )
+    assert.strictEqual(card.reply_emoji, LEGACY_REPLY_GLYPHS.cheers)
+    const replies = /** @type {Array<{ emoji: string | null }>} */ (
+      db.prepare(`SELECT emoji FROM thank_you_card_replies ORDER BY id`).all()
+    )
+    assert.deepStrictEqual(
+      replies.map((r) => r.emoji),
+      [...REACTION_EMOJI_VALUES.map((k) => LEGACY_REPLY_GLYPHS[k]), null],
+    )
+    // New triggers: glyphs in, oversize out.
+    assert.doesNotThrow(() => insertReply(db, cardId, "🥹"))
+    assert.throws(() => insertReply(db, cardId, "x".repeat(17)))
+    assert.ok(db.prepare(`SELECT 1 FROM migrations WHERE name = 'reply_emoji_glyphs'`).get())
+    db.close()
   })
 })

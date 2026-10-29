@@ -422,3 +422,15 @@ export interface MyThankYouCard {
  * out, when there's nothing waiting, or when #main-content is absent.
  */
 export function initThanksBanner(): Promise<void>
+
+/** Exactly one emoji: one grapheme, made only of emoji parts, with at least one
+ *  pictograph (public/components/emoji.js). */
+export function isSingleEmoji(value: unknown): value is string
+
+/** A stored reply emoji as a glyph: legacy keys (`heart`) map to their glyph;
+ *  anything else is already a glyph. Empty string for null/empty. */
+export function replyGlyph(value: string | null | undefined): string
+
+/** The last single emoji in free text (what the reply form's "any emoji" box
+ *  keeps when a keyboard inserts more than one character), or null. */
+export function lastEmojiIn(text: string): string | null

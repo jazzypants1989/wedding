@@ -6,12 +6,11 @@
  *  The badge count is refreshed by main.js's existing ~3-min poll (no 2nd timer).
  *  No regex (CLAUDE.md). */
 /** @import * as Types from "./types.js" */
-/** @import * as GlobalTypes from "../../../types.js" */
 
 import { api, html, getElement } from "../utils.js"
 import { formatRelative } from "../../components/relative-time.js"
 import { renderMonogram } from "../../components/monogram.js"
-import { REACTION_GLYPHS } from "../../components/reaction-bar.js"
+import { replyGlyph } from "../../components/emoji.js"
 import { computeWorklist, requestThankYouMailbox } from "./thank-you.js"
 
 /** How many previews each section shows. */
@@ -63,9 +62,7 @@ function renderReplies(replies, unreadTotal) {
   el.innerHTML = html`
     <ul class="inbox-list" role="list">
       ${shown.map((r) => {
-        const glyph = r.emoji
-          ? REACTION_GLYPHS[/** @type {GlobalTypes.ReactionEmoji} */ (r.emoji)]
-          : "💬"
+        const glyph = replyGlyph(r.emoji) || "💬"
         const snippet = r.message
           ? r.message.length > 70
             ? r.message.slice(0, 67) + "…"

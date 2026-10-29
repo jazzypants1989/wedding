@@ -1941,4 +1941,74 @@ export function runMigrations(db) {
 
     record.run("add_face_ledger_integrity")
   }
+
+  // Thank-you card replies take ANY single emoji (issue #8), stored as the
+  // glyph itself rather than one of six reaction keys. The app validates
+  // (public/components/emoji.js — one grapheme, emoji parts only); the triggers
+  // become a backstop on size, since "is this an emoji" is not a question
+  // SQLite can answer. Existing key rows are rewritten to their glyphs so the
+  // column means one thing. (Rewriting reply_emoji bumps those cards'
+  // updated_at through auto_updated_at_thank_you_cards; nothing orders by it.)
+  //
+  // Explicitly transactional, because migrations are not (TRAPS.md): dropping
+  // the old triggers and failing before the new ones exist would leave the
+  // columns unguarded with no ledger row. Old triggers go FIRST — the old
+  // UPDATE trigger would refuse the glyph rewrite.
+  if (!applied.get("reply_emoji_glyphs")) {
+    const glyphCase = (/** @type {string} */ col) => `CASE ${col}
+        WHEN 'heart' THEN '❤️' WHEN 'clap' THEN '👏' WHEN 'laugh' THEN '😂'
+        WHEN 'heart_eyes' THEN '😍' WHEN 'cheers' THEN '🥂' WHEN 'fire' THEN '🔥'
+        ELSE ${col} END`
+    const sizeBad = (/** @type {string} */ col) =>
+      `NEW.${col} IS NOT NULL AND (length(NEW.${col}) < 1 OR length(NEW.${col}) > 16)`
+    let committed = false
+    try {
+      db.exec("BEGIN")
+      db.exec(`
+        DROP TRIGGER IF EXISTS check_tyc_reply_emoji_insert;
+        DROP TRIGGER IF EXISTS check_tyc_reply_emoji_update;
+        DROP TRIGGER IF EXISTS check_tycr_emoji_insert;
+
+        UPDATE thank_you_cards SET reply_emoji = ${glyphCase("reply_emoji")}
+        WHERE reply_emoji IS NOT NULL;
+        UPDATE thank_you_card_replies SET emoji = ${glyphCase("emoji")}
+        WHERE emoji IS NOT NULL;
+
+        CREATE TRIGGER check_tyc_reply_emoji_insert
+        BEFORE INSERT ON thank_you_cards
+        FOR EACH ROW
+        WHEN ${sizeBad("reply_emoji")}
+        BEGIN
+          SELECT RAISE(ABORT, 'Invalid reply emoji');
+        END;
+
+        CREATE TRIGGER check_tyc_reply_emoji_update
+        BEFORE UPDATE ON thank_you_cards
+        FOR EACH ROW
+        WHEN ${sizeBad("reply_emoji")}
+        BEGIN
+          SELECT RAISE(ABORT, 'Invalid reply emoji');
+        END;
+
+        CREATE TRIGGER check_tycr_emoji_insert
+        BEFORE INSERT ON thank_you_card_replies
+        FOR EACH ROW
+        WHEN ${sizeBad("emoji")}
+        BEGIN
+          SELECT RAISE(ABORT, 'Invalid reply emoji');
+        END;
+      `)
+      record.run("reply_emoji_glyphs")
+      db.exec("COMMIT")
+      committed = true
+    } finally {
+      if (!committed) {
+        try {
+          db.exec("ROLLBACK")
+        } catch {
+          /* already rolled back */
+        }
+      }
+    }
+  }
 }

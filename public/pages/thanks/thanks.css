@@ -544,6 +544,47 @@
   outline-offset: 2px;
 }
 
+/* "Any emoji" box at the end of the pill row: the guest's own emoji keyboard
+   fills it. Pill-shaped and pill-sized so it reads as one more choice; it holds
+   a single glyph, so it stays narrow. */
+.tc-emoji-any {
+  width: 6.5rem;
+  min-height: 44px;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 2px dashed color-mix(in srgb, var(--tc-accent, var(--color-primary)) 45%, transparent);
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--tc-ink, var(--color-text));
+  font: inherit;
+  font-size: 1.5rem;
+  line-height: 1;
+  text-align: center;
+}
+
+.tc-emoji-any::placeholder {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.tc-emoji-any:focus-visible {
+  outline: 3px solid var(--tc-accent, var(--color-primary));
+  outline-offset: 2px;
+}
+
+.tc-emoji-any.tc-emoji-on {
+  border-style: solid;
+  border-color: var(--tc-accent, var(--color-primary));
+  background: color-mix(in srgb, var(--tc-accent, var(--color-primary)) 24%, transparent);
+  transform: none;
+}
+
+.tc-emoji-hint {
+  min-height: 1.2em;
+  margin: calc(-1 * var(--spacing-sm)) 0 var(--spacing-sm);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
 .tc-reply-label {
   display: block;
   margin-bottom: var(--spacing-xs);

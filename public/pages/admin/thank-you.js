@@ -59,7 +59,7 @@ import { getDefaultConfig, mergeConfig } from "../../effects/config.js"
 import { EFFECT_THEMES, resolveTheme } from "../../effects/themes.js"
 import { LABELS, getHint } from "../../effects/control-meta.js"
 import { buildControl } from "../../components/effect-controls.js"
-import { REACTION_GLYPHS } from "../../components/reaction-bar.js"
+import { replyGlyph } from "../../components/emoji.js"
 
 /** Live-preview debounce + effect stack cap. */
 const PREVIEW_DEBOUNCE_MS = 160
@@ -579,9 +579,7 @@ function renderMailbox(replies) {
 
 /** @param {Types.ThankYouRecentReply} r @returns {string} */
 function mailboxItem(r) {
-  const glyph = r.emoji
-    ? REACTION_GLYPHS[/** @type {GlobalTypes.ReactionEmoji} */ (r.emoji)]
-    : "💬"
+  const glyph = replyGlyph(r.emoji) || "💬"
   return html`
     <div class="tc-mailbox-item ${r.unread ? "is-unread" : ""}" role="listitem">
       ${renderMonogram(r.guestName)}
@@ -815,7 +813,7 @@ function cardRow(card) {
   const replyCell = card.replied_at
     ? html`<button type="button" class="tc-reply-cell ${unread ? "is-unread" : ""}"
         data-action="reply-seen" title="Mark reply as seen">
-        <span class="tc-reply-emoji">${card.reply_emoji ? REACTION_GLYPHS[card.reply_emoji] : "💬"}</span>
+        <span class="tc-reply-emoji">${replyGlyph(card.reply_emoji) || "💬"}</span>
         <span class="tc-reply-excerpt">${excerpt(card.reply_message, 40)}</span>
       </button>`
     : html`<span class="text-muted">-</span>`
@@ -1146,7 +1144,7 @@ function renderCardDetail(card) {
           ${replies.map(
             (r) => html`<div class="tc-reply-item">
               <span class="tc-reply-item-emoji" aria-hidden="true"
-                >${r.emoji ? REACTION_GLYPHS[r.emoji] : "💬"}</span>
+                >${replyGlyph(r.emoji) || "💬"}</span>
               <div class="tc-reply-item-body">
                 <div>${r.message || html`<span class="text-muted">(no message)</span>`}</div>
                 <span class="tc-reply-item-time">${formatRelative(r.created_at)}</span>

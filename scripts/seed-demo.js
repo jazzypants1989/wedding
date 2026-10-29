@@ -1127,8 +1127,9 @@ const cardSpecs = [
     // A multi-entry reply thread (oldest → newest); the card's latest columns
     // mirror the last entry, and it stays unread for the admin badge.
     replies: [
-      { emoji: "heart", message: "These are so soft! Thank you both. 💕", repliedHoursAgo: 165 },
-      { emoji: "heart_eyes", message: "We cried a little opening this. Thank you both for EVERYTHING — see you at Thanksgiving! 🥹💕", repliedHoursAgo: 40 },
+      // Stored as glyphs: card replies take any single emoji (issue #8).
+      { emoji: "❤️", message: "These are so soft! Thank you both. 💕", repliedHoursAgo: 165 },
+      { emoji: "🥹", message: "We cried a little opening this. Thank you both for EVERYTHING — see you at Thanksgiving! 🥹💕", repliedHoursAgo: 40 },
     ],
   },
 ]

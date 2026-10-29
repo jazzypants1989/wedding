@@ -21,12 +21,8 @@ import {
 import { getMediaByFileKey } from "../db/media.js"
 import { getGuestById } from "./guests/data.js"
 import * as email from "../services/email.js"
-import {
-  validateCardToken,
-  validateReactionEmoji,
-  ValidationError,
-  NotFoundError,
-} from "../core/validation.js"
+import { validateCardToken, ValidationError, NotFoundError } from "../core/validation.js"
+import { isSingleEmoji, replyGlyph } from "../public/components/emoji.js"
 import { LIMITS, MEDIA_STATUS, THANK_YOU_CARD_STATUS, SERVER } from "../types.js"
 import { log, AUDIT_ACTIONS } from "../core/utils.js"
 
@@ -84,17 +80,18 @@ function parseEffectsConfig(json) {
 }
 
 /**
- * Validate the optional reply emoji. Returns undefined when the field wasn't
- * provided at all (absent/null); throws when provided but not a recognized
- * REACTION_EMOJI key.
+ * Validate the optional reply emoji: any single emoji, stored as its glyph.
+ * Returns undefined when the field wasn't provided at all (absent/null); throws
+ * when provided but not exactly one emoji. A legacy reaction key (`heart`) — what
+ * a page cached from before the free picker still sends — maps to its glyph.
  * @param {unknown} raw
  * @returns {string | undefined}
  */
 function validateOptionalEmoji(raw) {
   if (raw === undefined || raw === null) return undefined
-  const result = validateReactionEmoji(raw)
-  if (!result.valid) throw new ValidationError(result.error)
-  return result.value
+  const glyph = typeof raw === "string" ? replyGlyph(raw) : raw
+  if (!isSingleEmoji(glyph)) throw new ValidationError("Reply emoji must be a single emoji")
+  return glyph
 }
 
 /**
