@@ -39,8 +39,8 @@ settled; it is not a bug to fix.
 | --- | ------------------------------------------------ | ------- | -------------------------------------------------------------------------------- | ------------------------- |
 | 1   | Faces UI review (devloop dogfood)                | wedding | `SCREENSHOT-PROXY.md` · `VISION-STATUS.md` · `/capture-issues` skill             | Medium — owner-driven     |
 | 2   | Devloop burrs + docs                             | make-a  | `ORCHESTRATOR-HANDOFF.md` · `IMPLEMENTATION-PLAN.md` · session 1's notes         | Small                     |
-| 3   | Fix the faces UI issues + small vision hardening | wedding | `VISION-STATUS.md` · `TRAPS.md` · `/fix-issues` skill · the `.claude/issues-faces` store | Medium–large     |
-| 4   | The non-vision backlog                           | wedding | `/fix-issues` skill · `../archive/00-overview.md` · the `.claude/issues` store              | Small–medium              |
+| 3   | Fix the faces UI issues + small vision hardening | wedding | **`HANDOFF-session-3.md`** (supersedes the rest for this row) · `DESIGN-SLOTS.md` · `/fix-issues` skill | **In progress** — see below |
+| 4   | ~~The non-vision backlog~~ — merged into 3       | wedding | —                                                                                            | Absorbed 2026-10-28       |
 | 5   | Deploy                                           | wedding | **`TRAPS.md` §migrations** · `DECISIONS-vision.md` §10 · `scripts/deploy.js`     | Medium — **highest risk** |
 | 6   | The production face pass                         | wedding | **`TRAPS.md` §production** · `DECISIONS-vision.md` §8–§10 · `export-face-work.js` header | Medium — **never run** |
 | 7   | Doc closeout + archive                           | wedding | This file · `VISION-STATUS.md` · `docs/post-wedding/`                            | Small                     |
@@ -106,6 +106,16 @@ overlay" regression is worth fixing.
 
 ## 3 — Fix the faces UI issues, plus small vision hardening
 
+> **Status 2026-10-29 — in progress; read `HANDOFF-session-3.md` first.** The
+> owner widened this session to all twelve issues (session 4's too). Done: 6 of
+> 12 issues fixed and awaiting acceptance (site #8 #9 #10 #12 #14 #15), faces #2
+> half done, carried items 2 (T18), 3 (`--expect-engine`, extended to
+> weights) and 4 (duplicate-hash fan-out), and the per-face chip variant. Left:
+> the owner's picks from the design review (`node prototypes/serve.js`), which
+> unblock the admin redesign (faces #1 #3 #4) and the guestbook/memory-book
+> redesign (#11 #13); and **carried item 1, the tuning pass, deferred at the
+> owner's request until they can watch it** (it also finishes faces #2).
+
 **Goal.** Work session 1's issue list, and clear three carried items while the
 context is loaded.
 
@@ -146,6 +156,9 @@ cache, so a CSS/JS edit is invisible until the server restarts. This has cost
 real time twice.
 
 ## 4 — The non-vision backlog
+
+> **Merged into session 3 on 2026-10-28** at the owner's request; its issues are
+> tracked in `HANDOFF-session-3.md`. Kept below for the record.
 
 **Goal.** The issues about the rest of the app, which have been parked since
 July.
