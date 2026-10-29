@@ -7,14 +7,19 @@ import {
   getFormElement,
   getInputElement,
   getButtonElement,
+  getTypedElement,
   getErrorMessage,
 } from "../utils.js"
+import { showSuccess } from "./utils.js"
 
 const loginSection = getElement("login-section")
 const dashboardSection = getElement("dashboard-section")
 const loginForm = getFormElement("login-form")
 const loginError = getElement("login-error")
 const logoutBtn = getElement("logout-btn")
+const reauthModal = getTypedElement("reauth-modal", HTMLDialogElement)
+const reauthForm = getFormElement("reauth-form")
+const reauthError = getElement("reauth-error")
 
 /** @type {Types.VoidCallback} */
 let onLoginSuccess = () => {}
@@ -54,6 +59,69 @@ export function showLogin() {
   loginSection.hidden = false
   dashboardSection.classList.remove("active")
   getInputElement("password").value = ""
+}
+
+/**
+ * A 401 arrived. Mid-session — the dashboard is up — sign back in over it, so
+ * nothing the admin was doing is lost: not the tab, not a half-typed name, not
+ * the open dialog or the group under review. Only a cold start (dashboard never
+ * shown) drops to the full login screen.
+ * @type {Types.VoidCallback}
+ */
+function handleAuthRequired() {
+  if (!dashboardSection.classList.contains("active")) {
+    showLogin()
+    return
+  }
+  if (reauthModal.open) return
+  reauthError.hidden = true
+  getInputElement("reauth-password").value = ""
+  // showModal stacks it above any dialog already open, which stays open behind.
+  reauthModal.showModal()
+}
+
+/**
+ * POST the password; resolves on success, throws a readable error otherwise.
+ * Shared by the login screen and the sign-back-in dialog.
+ * @param {string} password
+ */
+async function postLogin(password) {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 30000)
+  try {
+    const res = await fetch("/api/admin/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password }),
+      signal: controller.signal,
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || "Login failed")
+    state.csrfToken = getCookie("csrf")
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
+/** @param {SubmitEvent} e */
+async function handleReauthSubmit(e) {
+  e.preventDefault()
+  reauthError.hidden = true
+  const submitBtn = getButtonElement("reauth-submit")
+  submitBtn.disabled = true
+  try {
+    await postLogin(getInputElement("reauth-password").value)
+    reauthModal.close()
+    // Deliberately NOT onLoginSuccess: that reloads every tab and lands on the
+    // Inbox, which is exactly the lost place this dialog exists to prevent.
+    // Whatever request hit the 401 did not happen, so say so.
+    showSuccess("Signed back in. If something didn't save just now, try it once more.")
+  } catch (err) {
+    reauthError.textContent = getErrorMessage(err)
+    reauthError.hidden = false
+  } finally {
+    submitBtn.disabled = false
+  }
 }
 
 /** @type {Types.showDashboard} */
@@ -109,31 +177,14 @@ async function handleLoginSubmit(e) {
   const submitBtn = getButtonElement("login-form-submit")
   submitBtn.disabled = true
 
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 30000)
-
   try {
-    const res = await fetch("/api/admin/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
-      signal: controller.signal,
-    })
-
-    const data = await res.json()
-
-    if (!res.ok) {
-      throw new Error(data.error || "Login failed")
-    }
-
-    state.csrfToken = getCookie("csrf")
+    await postLogin(password)
     showDashboard()
     onLoginSuccess()
   } catch (err) {
     loginError.textContent = getErrorMessage(err)
     loginError.hidden = false
   } finally {
-    clearTimeout(timeoutId)
     submitBtn.disabled = false
   }
 }
@@ -142,8 +193,14 @@ async function handleLoginSubmit(e) {
 export function initAuth(loginCallback, logoutCallback = () => {}) {
   onLoginSuccess = loginCallback
   onLoggedOut = logoutCallback
-  state.onAuthRequired = showLogin
+  state.onAuthRequired = handleAuthRequired
   loginForm.addEventListener("submit", handleLoginSubmit)
+  reauthForm.addEventListener("submit", (e) => void handleReauthSubmit(e))
+  getButtonElement("reauth-signout").addEventListener("click", () => {
+    reauthModal.close()
+    state.csrfToken = null
+    showLogin()
+  })
 
   logoutBtn.addEventListener("click", async () => {
     try {

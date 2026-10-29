@@ -462,6 +462,13 @@ export async function serveStatic(req, res) {
   if (urlPath === "/") {
     // Root serves the home page
     normalizedPath = path.join(publicDir, "pages", "index.html")
+  } else if (urlPath.startsWith("/admin/") && !path.extname(urlPath)) {
+    // The admin is one page with client-side routes (/admin/faces/groups/f12):
+    // every extensionless path under it serves the same shell and the router
+    // reads location.pathname. Without this a reload or a shared deep link
+    // 404s. Assets are absolute (/pages/admin/…), so depth is harmless, and the
+    // caches below key on the file, so every route shares one cached shell.
+    normalizedPath = path.join(publicDir, "pages", "admin", "index.html")
   } else if (!path.extname(urlPath)) {
     // Paths without extensions are page routes (e.g., /rsvp, /admin)
     normalizedPath = path.join(

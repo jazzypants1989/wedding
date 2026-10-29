@@ -1089,6 +1089,29 @@
     </form>
   </dialog>
 
+  <!-- Session expired mid-work: sign back in over the dashboard instead of
+       tearing it down, so every tab, draft, open dialog and review position
+       survives. auth.js opens it; the full login screen is only for a cold
+       start or an explicit sign-out. -->
+  <dialog id="reauth-modal" aria-labelledby="reauth-modal-title">
+    <div class="modal-header">
+      <h2 id="reauth-modal-title">Sign back in</h2>
+    </div>
+    <p>Your session timed out. Sign in again to pick up exactly where you left off.</p>
+    <div id="reauth-error" class="alert alert-error" role="alert" hidden></div>
+    <form id="reauth-form">
+      <input type="text" name="username" value="admin" autocomplete="username" hidden aria-hidden="true">
+      <div class="form-group">
+        <label for="reauth-password">Password</label>
+        <input type="password" id="reauth-password" name="password" required autocomplete="current-password">
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" id="reauth-signout">Sign out instead</button>
+        <button type="submit" class="btn btn-primary" id="reauth-submit">Sign in</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="delete-modal" aria-labelledby="delete-modal-title">
     <div class="modal-header flex-between">
       <h2 id="delete-modal-title">Archive Guest</h2>

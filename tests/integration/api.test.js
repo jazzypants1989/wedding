@@ -1193,6 +1193,26 @@ csvtest-noname@example.com,1`
       const jsType = res.headers.get("content-type")
       assert.ok(jsType && jsType.includes("javascript"))
     })
+
+    it("serves the admin shell for any extensionless /admin/* route, with its headers", async () => {
+      const shell = await fetch(`${BASE_URL}/admin`)
+      const shellHtml = await shell.text()
+      for (const route of ["/admin/faces", "/admin/faces/groups/f123", "/admin/inbox/"]) {
+        const res = await fetch(`${BASE_URL}${route}`)
+        assert.strictEqual(res.status, 200, route)
+        assert.ok(res.headers.get("content-type")?.includes("text/html"), route)
+        assert.ok(res.headers.get("content-security-policy"), `${route} keeps the CSP`)
+        assert.strictEqual(res.headers.get("x-frame-options"), "DENY", `${route} stays unframeable`)
+        assert.strictEqual(await res.text(), shellHtml, `${route} is the same shell as /admin`)
+      }
+    })
+
+    it("does not widen the fallback: assets under /admin/ and look-alike paths still 404", async () => {
+      for (const route of ["/admin/missing.js", "/administrator", "/admin-x/faces"]) {
+        const res = await fetch(`${BASE_URL}${route}`)
+        assert.strictEqual(res.status, 404, route)
+      }
+    })
   })
 
   // ==================== Manual SMS ====================
