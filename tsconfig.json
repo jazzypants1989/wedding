@@ -22,6 +22,7 @@
     "tests/unit/reaction-glyphs.test.js",
     "tests/unit/monogram.test.js",
     "tests/unit/emoji.test.js",
+    "tests/unit/chip-variant.test.js",
     "tests/unit/dresscode-descriptor.test.js",
     "tests/unit/effect-themes.test.js",
     "tests/unit/vision-align.test.js",

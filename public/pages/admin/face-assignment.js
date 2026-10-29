@@ -111,6 +111,7 @@ import {
   getErrorMessage,
 } from "../utils.js"
 import { openConfirm } from "./confirm.js"
+import { chipVariant } from "./chip-variant.js"
 
 /** Fallback CSS-pixel size for a face chip, used only when the element has not
  *  been laid out yet. Every chip's real size is read from its own container
@@ -824,7 +825,7 @@ function reviewMarkup(group) {
 
       <div class="face-review-main">
         <div class="face-review-stage">
-          ${current ? faceChipImgMarkup(current.entry, REVIEW_STAGE_PAD) : ""}
+          ${current ? faceChipImgMarkup(current.entry, REVIEW_STAGE_PAD, Infinity) : ""}
         </div>
         <div class="face-review-side">
           <p class="face-review-facepos">
@@ -924,7 +925,7 @@ function stripChipMarkup(face, index, total, state) {
   return html`<button type="button" class="${classes.join(" ")}"
     data-face-id="${face.entry.faceId}" aria-pressed="${state.selected ? "true" : "false"}"
     aria-label="${label}">
-    ${faceChipImgMarkup(face.entry, 1)}
+    ${faceChipImgMarkup(face.entry, 1, CHIP_PX.strip)}
   </button>`
 }
 
@@ -2111,6 +2112,12 @@ function handlePersonRowClick(row, target) {
 
 // ---- face chip (shared render path for Groups + Ask queue) ----------------
 
+/** Chip sizes in CSS px, mirrored from admin.css (`.face-chip`,
+ *  `.face-overview-chips .face-chip`, `.face-review-strip .face-chip`). Used
+ *  only to choose a variant, so drift costs a sharper-or-blurrier chip, never a
+ *  broken one. */
+const CHIP_PX = Object.freeze({ chip: 96, overview: 64, strip: 76 })
+
 /**
  * One face, cropped down from the media's `display` variant to just the face's
  * box. The box is in the ORIGINAL photo's pixel coordinates, so the crop is
@@ -2144,18 +2151,25 @@ function handlePersonRowClick(row, target) {
  * review filmstrip and the review stage. Only the container differs, and
  * positionFaceChipImage reads its size off the container rather than a
  * constant, so a fourth size needs CSS and nothing else.
+ * Which copy loads is decided per chip by chipVariant (chip-variant.js): the
+ * reasoning above is why `display` is the default, and a chip whose face
+ * already fills it from `thumb` skips the bigger fetch.
  * @param {Types.FaceChipEntry} entry
  * @param {number} pad crop the box widened by this factor about its centre
+ * @param {number} cssPx the chip's CSS size (CHIP_PX); Infinity = always `display`
  */
-function faceChipImgMarkup(entry, pad) {
+function faceChipImgMarkup(entry, pad, cssPx) {
   // Both can be absent if the media row vanished between the queries that
   // built this payload. Same degradation as a missing width/height: the chip
   // renders without a crop rather than the row disappearing.
   const box = entry.box ?? { x: 0, y: 0, w: 0, h: 0 }
+  // `thumb` when it already has the pixels this chip needs (a large face in a
+  // small chip), so the 1600px copy is fetched only where it buys sharpness.
+  const variant = chipVariant(entry, pad, cssPx, window.devicePixelRatio || 1)
   // A `display` variant is not guaranteed — an image the browser could not
   // decode at upload time is stored original-only — so fall back to `thumb`
   // once, exactly as the per-photograph view does. Blurry beats blank.
-  return html`<img class="face-chip-img" src="/media/${entry.fileKey ?? ""}/display" alt=""
+  return html`<img class="face-chip-img" src="/media/${entry.fileKey ?? ""}/${variant}" alt=""
     data-fallback="/media/${entry.fileKey ?? ""}/thumb"
     data-orig-w="${entry.width ?? ""}" data-orig-h="${entry.height ?? ""}"
     data-box-x="${box.x}" data-box-y="${box.y}" data-box-w="${box.w}" data-box-h="${box.h}"
@@ -2166,13 +2180,13 @@ function faceChipImgMarkup(entry, pad) {
  *  because the whole row is one `<button>` and a control may not nest inside
  *  one. @param {Types.FaceChipEntry} entry */
 function faceChipMarkup(entry) {
-  return html`<span class="face-chip">${faceChipImgMarkup(entry, 1)}</span>`
+  return html`<span class="face-chip">${faceChipImgMarkup(entry, 1, CHIP_PX.overview)}</span>`
 }
 
 /** @param {Types.FaceChipEntry} entry @param {{ dimmed: boolean }} opts */
 function renderFaceChip(entry, opts) {
   return html`<div class="face-chip ${opts.dimmed ? "is-dimmed" : ""}"
-    data-face-id="${entry.faceId}">${faceChipImgMarkup(entry, 1)}</div>`
+    data-face-id="${entry.faceId}">${faceChipImgMarkup(entry, 1, CHIP_PX.chip)}</div>`
 }
 
 /** Wire every `.face-chip-img` under `container` to position itself once its

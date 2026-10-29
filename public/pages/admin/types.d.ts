@@ -1734,3 +1734,13 @@ export function loadFaceAssignment(): Promise<void>
  *  autocomplete), and the per-photograph dialog's own listeners — that dialog
  *  lives OUTSIDE `#faces-body` and so inherits none of its delegation. */
 export function initFaceAssignment(): void
+
+/** The variant a face chip loads: `thumb` when its pixels already cover the
+ *  chip at this device pixel ratio, else `display`. Unknown geometry, or an
+ *  unbounded size (`Infinity`, the review stage), always means `display`. */
+export function chipVariant(
+  entry: Pick<FaceChipEntry, "box" | "width" | "height">,
+  pad: number,
+  cssPx: number,
+  dpr: number,
+): "thumb" | "display"
