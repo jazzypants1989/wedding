@@ -10,7 +10,7 @@ reason it exists:
 - The owner wants guests and the couple to **mix and match**. That only works if
   every idea arrives as an interchangeable part, not as a page.
 
-## The four slots
+## The five slots
 
 A page design is one choice per slot. Each slot has one job and one mechanism.
 
@@ -18,7 +18,8 @@ A page design is one choice per slot. Each slot has one job and one mechanism.
 | ------------ | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------ |
 | `background` | Ambient life behind the content: sky, garden, paper, pattern                              | A **registry effect** (`public/effects/registry.js`), started by the effect manager                         | guestbook (and others later)   |
 | `burst`      | A response to a guest's action: signing, reacting, opening a note                         | A **registry effect** that exposes a `fire(detail)` method in addition to `start()`/`stop()`                | guestbook, gallery             |
-| `card`       | How one guestbook entry looks: notecard, polaroid, letter, zine clipping, 1999 table row | **CSS keyed off `data-gb-card="<id>"`** on the feed container. Markup stays the same; the style changes     | guestbook, memory book         |
+| `card`       | How one guestbook entry looks: notecard, polaroid, letter, zine clipping, 1999 table row | **CSS keyed off `data-gb-card="<id>"`** on the feed container, plus an optional `ornament(entry)` hook (below) | guestbook, memory book         |
+| `arrangement`| Where entries sit relative to each other: a feed, a 24-hour day, a spiral, a map         | A **layout function** `arrange(feedEl, entries)` that may reorder or position cards; markup and order in the DOM stay readable | guestbook, memory book         |
 | `book`       | The memory book's whole layout: cover, chapters, pagination, index                        | **A stylesheet keyed off `data-mb-layout="<id>"`** on `<html>`, plus an optional `decorate(root)` JS hook   | memory book                    |
 
 Rules that hold for every slot:
@@ -79,9 +80,24 @@ and the drift tests fail if any is missing:
 3. `core/effect-config-schema.js`: a server-side bound for every key
 4. `public/effects/control-meta.js`: a `LABELS` entry and `HINTS` for its params
 
-`card` and `book` pieces will get a small sibling registry when the first one is
-built (id → label, params with hints, stylesheet). It follows the same rules,
-and it is not designed ahead of a real piece.
+`card`, `arrangement` and `book` pieces will get a small sibling registry when
+the first one is built (id → label, params with hints, stylesheet, hooks). It
+follows the same rules, and it is not designed ahead of a real piece.
+
+### Added after round 2's sketches (2026-10-29)
+
+Two independent sketch agents hit the same two gaps, so the contract grew:
+
+- **`ornament(entry) → SVG string`** on a `card`. Art drawn for each entry
+  (a plant, a woven swatch, an island, a punched roll) has nowhere to live in
+  CSS. The hook returns one `aria-hidden` element appended to the card. It must
+  be deterministic per entry (seeded from author + message), and it is never
+  the only carrier of information. The text stays the text.
+- **`arrangement`** as a fifth slot. Some designs change WHERE entries sit (by
+  the minute they were written, around a stair, on a chart), which no other
+  slot can express. The DOM keeps entries in feed order, so keyboard and screen
+  reader users read the guestbook the normal way, and `arrange` positions them
+  visually. Under reduced motion or in print it may fall back to the plain feed.
 
 ## The mixer (built after the picks)
 
