@@ -324,11 +324,18 @@ function updateRow(row, item) {
 
   const barSlot = row.querySelector(".upload-bar-slot")
   if (barSlot instanceof HTMLElement) {
-    barSlot.innerHTML =
-      item.state === "uploading"
-        ? html`<div class="upload-bar"><div class="upload-bar-fill"
-            style="width:${Math.round(item.progress * 100)}%"></div></div>`
-        : ""
+    if (item.state !== "uploading") {
+      barSlot.innerHTML = ""
+    } else {
+      // Kept across updates so the width transition animates. The width is a
+      // CSSOM write: a `style=` attribute is blocked by the CSP and the fill
+      // would sit at full width (T18).
+      if (!barSlot.firstElementChild) {
+        barSlot.innerHTML = html`<div class="upload-bar"><div class="upload-bar-fill"></div></div>`
+      }
+      const fill = barSlot.querySelector(".upload-bar-fill")
+      if (fill instanceof HTMLElement) fill.style.width = `${Math.round(item.progress * 100)}%`
+    }
   }
 
   const caption = row.querySelector(".upload-caption")

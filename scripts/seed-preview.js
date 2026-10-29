@@ -14,7 +14,11 @@ import { createTables, runMigrations } from "../db/schema.js"
 import { ensureUploadDirs, itemDir, variantDiskPath } from "../core/media-storage.js"
 import { makeJpeg, makeMp4 } from "../tests/media-fixtures.js"
 
-const DB_PATH = path.join(import.meta.dirname, "..", "data", "wedding.db")
+// Honour DATABASE_PATH exactly as db/connection.js and core/media-storage.js do:
+// the upload stubs below land under the DATABASE_PATH-derived tree, so the rows
+// must too, or a "scratch" seed writes rows into the real DB.
+const DB_PATH =
+  process.env.DATABASE_PATH || path.join(import.meta.dirname, "..", "data", "wedding.db")
 const BASE_URL = "http://localhost:3000"
 
 // --gallery N seeds ~N media rows (+ tiny on-disk fixtures) for the grid perf

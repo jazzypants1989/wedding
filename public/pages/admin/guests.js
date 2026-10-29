@@ -141,7 +141,7 @@ function renderGuests(guests, pagination) {
           ${guest.email || guest.phone
             ? join([guest.email, guest.phone], raw("<br>"))
             : raw(
-                '<span style="color: var(--color-text-muted)">No contact</span>',
+                '<span class="text-muted">No contact</span>',
               )}
         </td>
         <td>

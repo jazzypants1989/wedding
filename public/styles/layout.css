@@ -211,12 +211,19 @@ button {
   margin-bottom: -15%;
 }
 
-/* Content pages (rsvp/guestbook/gallery) cap the hero so the page's actual
-   content is visible in the first viewport. */
+/* Content pages (rsvp/guestbook/gallery) show only the artwork's wave band so
+   the page's actual content is visible in the first viewport. The waves fill
+   the top ~60% of each frame over a transparent lower band (top-mobile ends at
+   59%, top-desktop at 62%), so the crop is an aspect ratio of that band,
+   anchored top. The landing page's -15% tuck is dropped here: at desktop widths
+   it pulled the names up over the waves. A height cap here would cut the
+   wave dips back off, which was the original bug. */
 .hero-small .hero-image {
-  max-height: 200px;
+  height: auto;
+  aspect-ratio: 828 / 360;
   object-fit: cover;
-  object-position: center bottom;
+  object-position: center top;
+  margin-bottom: 0;
 }
 
 .couple-names {
@@ -527,7 +534,8 @@ main {
   }
 
   .hero-small .hero-image {
-    max-height: 300px;
+    aspect-ratio: 2880 / 610;
+    max-height: 420px;
   }
 
   .couple-photo {

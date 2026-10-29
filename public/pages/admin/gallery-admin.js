@@ -620,7 +620,13 @@ function renderUploadTray() {
             ? `${succeeded} added · ${failed} failed`
             : `${failed} upload${failed === 1 ? "" : "s"} failed`
           : "Uploads complete"
-  getElement("gallery-upload-list").innerHTML = html`${items.map(uploadRow)}`
+  const list = getElement("gallery-upload-list")
+  list.innerHTML = html`${items.map(uploadRow)}`
+  // Bar widths are CSSOM writes after render: a `style=` attribute in the
+  // template is blocked by the CSP and the fill would sit at full width (T18).
+  for (const fill of list.querySelectorAll(".upload-bar-fill")) {
+    if (fill instanceof HTMLElement) fill.style.width = `${fill.dataset.progress}%`
+  }
 }
 
 /** @param {Components.UploadQueueItem} item @returns {string} */
@@ -631,7 +637,7 @@ function uploadRow(item) {
   const bar =
     item.state === "uploading"
       ? html`<div class="upload-bar">
-          <div class="upload-bar-fill" style="width:${Math.round(item.progress * 100)}%"></div>
+          <div class="upload-bar-fill" data-progress="${Math.round(item.progress * 100)}"></div>
         </div>`
       : ""
   let actions = html`<button type="button" class="upload-action" data-action="remove"

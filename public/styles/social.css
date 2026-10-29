@@ -229,6 +229,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  gap: var(--spacing-md); /* counter ↔ the full-size Sign button (#15) */
   margin-top: var(--spacing-sm);
 }
 
@@ -691,6 +692,46 @@
   font-size: 0.85rem;
   line-height: 1;
   user-select: none;
+}
+
+/* Hue buckets for .monogram, set by renderMonogram (bucket centres, 30° apart).
+   Classes rather than an inline custom property, because the CSP blocks style
+   attributes. */
+.mono-h0 {
+  --mono-hue: 15;
+}
+.mono-h1 {
+  --mono-hue: 45;
+}
+.mono-h2 {
+  --mono-hue: 75;
+}
+.mono-h3 {
+  --mono-hue: 105;
+}
+.mono-h4 {
+  --mono-hue: 135;
+}
+.mono-h5 {
+  --mono-hue: 165;
+}
+.mono-h6 {
+  --mono-hue: 195;
+}
+.mono-h7 {
+  --mono-hue: 225;
+}
+.mono-h8 {
+  --mono-hue: 255;
+}
+.mono-h9 {
+  --mono-hue: 285;
+}
+.mono-h10 {
+  --mono-hue: 315;
+}
+.mono-h11 {
+  --mono-hue: 345;
 }
 
 /* Author + monogram grouped so the timestamp can sit at the far edge. */

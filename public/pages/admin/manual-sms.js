@@ -139,7 +139,7 @@ function renderListView() {
         <td>${guest.name}</td>
         <td><span class="msms-phone">${guest.phone}</span></td>
         <td class="hide-mobile">
-          <span class="text-muted" style="font-size:0.8rem"
+          <span class="text-muted msms-preview-text"
             >${previewText}</span
           >
         </td>

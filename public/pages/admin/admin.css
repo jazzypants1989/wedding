@@ -698,6 +698,11 @@ tr:hover td {
   font-size: var(--text-md);
 }
 
+/* Message preview in the manual-SMS list (was an inline style the CSP blocked). */
+.msms-preview-text {
+  font-size: 0.8rem;
+}
+
 .msms-phone {
   font-family: monospace;
   font-size: var(--text-sm);

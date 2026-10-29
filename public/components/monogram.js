@@ -76,7 +76,10 @@ export function monogramData(name) {
 /** @type {Types.renderMonogram} */
 export function renderMonogram(name) {
   const { initial, hue } = monogramData(name)
-  return html`<span class="monogram" style="--mono-hue: ${hue}" aria-hidden="true"
+  // The hue travels as one of 12 classes (30° buckets, social.css), not an
+  // inline --mono-hue style attribute: the CSP has no style-src-attr allowance,
+  // so an inline style silently never applies and every avatar rendered blue.
+  return html`<span class="monogram mono-h${Math.floor(hue / 30)}" aria-hidden="true"
     >${initial}</span
   >`
 }
