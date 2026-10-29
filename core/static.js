@@ -7,7 +7,7 @@ import { gzipSync } from "node:zlib"
 import { addSecurityHeaders } from "./http.js"
 import { escapeHtml } from "./utils.js"
 import { SERVER } from "../types.js"
-import { formatWeddingDate } from "../content.js"
+import { formatWeddingDate, isRegistryShown } from "../content.js"
 import { getContent, getMode, resolveSiteContent } from "./site-content.js"
 import { resolveEffectConfig, getEffectConfigOverride } from "./effect-config.js"
 
@@ -268,6 +268,8 @@ function rebuildContentTokens() {
     "effectConfig": serializeEffectConfig(),
     "registry.url": content.registry.url,
     "registry.label": content.registry.label,
+    // <body data-registry> on the landing page; CSS hides #registry on "hidden".
+    "registry.visibility": isRegistryShown(MODE, content.registry) ? "shown" : "hidden",
     "memories.title": content.memories.title,
     "memories.body": content.memories.body,
     "footer.eventHeading": content.footer.eventHeading,
@@ -354,8 +356,11 @@ function githubLi(url) {
 function renderNav(currentPath, variant) {
   const content = getContent()
   const onHome = currentPath === "/"
+  const registryShown = isRegistryShown(MODE, content.registry)
   let items = ""
   for (const link of content.nav[MODE]) {
+    // A hidden registry takes its nav links with it, wherever the nav lists them.
+    if (!registryShown && link.href === "#registry") continue
     const isAnchor = link.href.startsWith("#")
     const href = isAnchor && !onHome ? "/" + link.href : link.href
     const isActive = (link.href === "#" && onHome) || (!isAnchor && currentPath === link.href)

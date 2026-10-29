@@ -122,6 +122,18 @@ function reqUrl(value, field, max) {
 }
 
 /**
+ * Optional boolean; absent → false (a client that predates the field).
+ * @param {unknown} value
+ * @param {string} field
+ * @returns {boolean}
+ */
+function optBool(value, field) {
+  if (value === undefined) return false
+  if (typeof value !== "boolean") throw new ValidationError(field + " must be true or false")
+  return value
+}
+
+/**
  * Optional URL that may be cleared to `null` (empty/absent → null).
  * @param {unknown} value
  * @param {string} field
@@ -375,6 +387,7 @@ export function buildOverride(body) {
       frameNote: reqStr(registry.frameNote, "Registry frame note", CAP.body),
       url: reqUrl(registry.url, "Registry URL", CAP.url),
       label: reqStr(registry.label, "Registry label", CAP.label),
+      showAfterWedding: optBool(registry.showAfterWedding, "Registry after-wedding toggle"),
     },
     memories: {
       title: reqStr(memories.title, "Memories title", CAP.heading),

@@ -721,3 +721,9 @@ code {
 [data-mode="post"] #dress-code {
   display: none;
 }
+
+/* Post-wedding, the registry goes unless the couple kept it
+   (registry.showAfterWedding). Hidden, its iframe never lazy-loads. */
+[data-registry="hidden"] #registry {
+  display: none;
+}

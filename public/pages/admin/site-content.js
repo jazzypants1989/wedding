@@ -497,6 +497,7 @@ function populate(c) {
   setTa("sc-registry-framenote", c.registry.frameNote)
   setVal("sc-registry-url", c.registry.url)
   setVal("sc-registry-label", c.registry.label)
+  getInputElement("sc-registry-after").checked = c.registry.showAfterWedding
   setVal("sc-memories-title", c.memories.title)
   setTa("sc-memories-body", c.memories.body)
   setVal("sc-footer-event-heading", c.footer.eventHeading)
@@ -561,6 +562,7 @@ function collectForm() {
       frameNote: taVal("sc-registry-framenote"),
       url: val("sc-registry-url"),
       label: val("sc-registry-label"),
+      showAfterWedding: getInputElement("sc-registry-after").checked,
     },
     memories: {
       title: val("sc-memories-title"),

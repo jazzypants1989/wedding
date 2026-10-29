@@ -17,7 +17,8 @@
 
 .gallery-switcher {
   display: flex;
-  gap: var(--spacing-xs);
+  flex-wrap: wrap;
+  gap: var(--spacing-sm) var(--spacing-md);
   justify-content: center;
   margin-bottom: var(--spacing-lg);
 }
@@ -28,7 +29,7 @@
   background: var(--color-card-bg);
   color: var(--color-text);
   font: inherit;
-  padding: var(--spacing-xs) var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-lg);
   border-radius: var(--radius-full);
   cursor: pointer;
 }
@@ -380,10 +381,18 @@
 }
 
 @media (min-width: 1024px) {
+  /* The full-height side panel shares the topbar's z-index and comes later in
+     the DOM, so without this it sat over the topbar's right end and swallowed
+     clicks on Share / Copy link and the slideshow button. */
+  .lightbox-topbar {
+    z-index: 3;
+  }
   .lightbox-panel {
     top: 0;
     left: auto;
     width: 360px;
+    /* Clear the topbar, which now overlaps the panel's top edge. */
+    padding-top: calc(var(--spacing-xl) + var(--spacing-md));
     background: rgba(0, 0, 0, 0.35);
     display: flex;
     flex-direction: column;

@@ -111,6 +111,10 @@ export const CONTENT = Object.freeze({
       "HoneyFund website will load in a frame below, but you can click on the link if that's too cramped.",
     url: "https://www.honeyfund.com/site/north-pence-04-26-2026",
     label: "Open registry in a new window",
+    // Off → after the wedding the section and every nav link to it disappear;
+    // the registry is a pre-wedding thing. Couples who want it kept up can turn
+    // this on from the admin Site Content tab.
+    showAfterWedding: false,
   },
   // Post-wedding retrospective block (CSS-gated to post mode). Buttons stay in
   // the HTML; only the heading + intro line are content.
@@ -183,6 +187,11 @@ export function formatWeddingDateShort(iso = CONTENT.weddingDate) {
     day: "2-digit",
     timeZone: "America/Los_Angeles",
   })
+}
+
+/** @type {Types.isRegistryShown} */
+export function isRegistryShown(mode, registry = CONTENT.registry) {
+  return mode === "pre" || registry.showAfterWedding
 }
 
 /** @type {Types.getTimelineMode} */

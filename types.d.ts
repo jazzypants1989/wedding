@@ -1160,6 +1160,8 @@ export interface SiteContent {
     readonly frameNote: string
     readonly url: string
     readonly label: string
+    /** Keep the registry section + nav links up in post mode. */
+    readonly showAfterWedding: boolean
   }
   readonly memories: {
     readonly title: string
@@ -1196,6 +1198,9 @@ export function diffFromDefaults(full: SiteContent, base?: SiteContent): SiteCon
 export function getContent(): SiteContent
 export function getMode(now?: number): TimelineMode
 export function getTimelineMode(now?: number, weddingDate?: string): TimelineMode
+/** Whether the registry section and its nav links render: always before the
+ *  wedding, afterwards only when the couple opted in. */
+export function isRegistryShown(mode: TimelineMode, registry?: SiteContent["registry"]): boolean
 
 /** Deep-partial of SiteContent — the shape stored as a runtime override in
  *  app_state (`site_content`) and merged over CONTENT defaults. */
@@ -1211,7 +1216,14 @@ export type SiteContentOverride = {
   theme?: string
   schedule?: Partial<{ title: string; items: SiteContentScheduleItem[] }>
   dressCode?: Partial<{ title: string; body: string; images: SiteContentImage[] }>
-  registry?: Partial<{ title: string; body: string; frameNote: string; url: string; label: string }>
+  registry?: Partial<{
+    title: string
+    body: string
+    frameNote: string
+    url: string
+    label: string
+    showAfterWedding: boolean
+  }>
   memories?: Partial<{ title: string; body: string }>
   contactEmail?: string | null
   nav?: Partial<{

@@ -1,10 +1,16 @@
 /**
- * @file Unit tests for content.js — timeline mode + date formatting
+ * @file Unit tests for content.js — timeline mode, registry visibility + date formatting
  */
 
 import { describe, it, afterEach } from "node:test"
 import assert from "node:assert"
-import { getTimelineMode, formatWeddingDate, formatWeddingDateShort, CONTENT } from "../../content.js"
+import {
+  getTimelineMode,
+  formatWeddingDate,
+  formatWeddingDateShort,
+  isRegistryShown,
+  CONTENT,
+} from "../../content.js"
 
 const WEDDING_MS = Date.parse(CONTENT.weddingDate)
 
@@ -54,5 +60,24 @@ describe("formatWeddingDate", () => {
 
   it("derives the short date", () => {
     assert.strictEqual(formatWeddingDateShort(), "04/26/2026")
+  })
+})
+
+describe("isRegistryShown", () => {
+  const kept = { ...CONTENT.registry, showAfterWedding: true }
+  const dropped = { ...CONTENT.registry, showAfterWedding: false }
+
+  it("always shows the registry before the wedding", () => {
+    assert.strictEqual(isRegistryShown("pre", dropped), true)
+    assert.strictEqual(isRegistryShown("pre", kept), true)
+  })
+
+  it("hides it after the wedding unless the couple kept it", () => {
+    assert.strictEqual(isRegistryShown("post", dropped), false)
+    assert.strictEqual(isRegistryShown("post", kept), true)
+  })
+
+  it("defaults to dropping it after the wedding", () => {
+    assert.strictEqual(isRegistryShown("post"), false)
   })
 })
