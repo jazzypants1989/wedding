@@ -27,11 +27,12 @@
   <link rel="stylesheet" href="/styles/layout.css">
   <link rel="stylesheet" href="/styles/components.css">
   <link rel="stylesheet" href="/styles/social.css">
+  <link rel="stylesheet" href="/styles/note-flower.css">
   <link rel="stylesheet" href="/pages/guestbook/guestbook.css">
   <script src="/components/theme-init.js"></script>
 </head>
 
-<body data-mode="{{mode}}">
+<body class="gb-page" data-mode="{{mode}}">
   <a href="#main-content" class="skip-link">Skip to content</a>
 
   <div class="hero hero-small">
@@ -83,19 +84,24 @@
     <section class="content-section gb-section">
       <h2 class="gb-title">Guestbook</h2>
       <span class="gb-flourish" aria-hidden="true"></span>
-      <p class="gb-intro">Leave us a note — we read every one 💗</p>
-      <p class="gb-intro gb-memory-book">
-        <a href="/memory-book" class="gb-memory-book-link">📖 Print the memory book →</a>
-        <span class="gb-memory-book-sub">Every note on this page, laid out as a keepsake you can print and hold onto.</span>
-      </p>
+      <p class="gb-intro">Leave us a note.</p>
+      <p class="gb-memory-book"><a href="/memory-book" class="gb-memory-book-link">Print the memory book</a></p>
+      <!-- One flower per note, newest at the front. Decorative: tapping one opens
+           its note, and every card below carries the same flower. It stands on
+           the composer, where the next one grows. -->
+      <div id="gb-meadow" class="gb-meadow" aria-hidden="true"></div>
 
       <div class="card gb-composer">
         <div id="guest-identity" class="guest-identity" hidden></div>
         <form id="gb-composer-form">
           <label for="gb-message" class="sr-only">Your message</label>
-          <textarea id="gb-message" class="gb-textarea" rows="3" maxlength="2000"
-            placeholder="Share a memory, a wish, a bit of advice…"></textarea>
+          <div class="gb-compose-row">
+            <textarea id="gb-message" class="gb-textarea" rows="3" maxlength="2000"
+              placeholder="Share a memory, a wish, a bit of advice…"></textarea>
+            <div id="gb-flower-preview" class="gb-flower-preview is-empty" aria-hidden="true"></div>
+          </div>
           <div class="gb-composer-actions">
+            <p class="gb-flower-hint" aria-hidden="true">Sentences grow: <span><b class="gb-mark">.</b> tulips</span> <span><b class="gb-mark">!</b> blooms</span> <span><b class="gb-mark">?</b> buds</span></p>
             <span id="gb-hint" class="composer-hint" aria-hidden="true"></span>
             <span id="gb-counter" class="char-counter" aria-hidden="true">0/2000</span>
             <button type="submit" class="btn btn-primary" id="gb-submit">Sign the guestbook</button>
@@ -108,7 +114,7 @@
       <div id="gb-error" class="alert alert-error" role="alert" hidden></div>
 
       <section id="gb-favorites" class="gb-favorites" aria-label="Favorites" hidden>
-        <h3 class="gb-favorites-title">Favorites <span aria-hidden="true">✨</span></h3>
+        <h3 class="gb-favorites-title">Favorites</h3>
         <ul id="gb-favorites-list" class="gb-favorites-list" role="list"></ul>
       </section>
 
@@ -123,9 +129,7 @@
       <div id="gb-live" class="sr-only" aria-live="polite"></div>
 
       <div id="gb-empty" class="empty-state gb-empty" hidden>
-        <span class="gb-empty-flourish" aria-hidden="true"></span>
         <p class="gb-empty-lead">No messages yet.</p>
-        <p class="gb-empty-prompt" id="gb-empty-prompt" aria-hidden="true">Share a memory…</p>
         <button type="button" class="auth-link" id="gb-empty-cta">Be the first to sign!</button>
       </div>
 

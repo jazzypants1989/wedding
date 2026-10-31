@@ -22,6 +22,9 @@ export function get(req, res) {
     // scalars (content.js is the single source).
     mode: getMode(),
     coupleDisplay: getContent().couple.display,
+    // Whether /guestbook shows the pinned Favorites strip (the feed already
+    // honours it server-side; exposed for any page that wants the flag).
+    guestbook: { showFavorites: getContent().guestbook.showFavorites },
     // Public "moments shared" tally for the landing Memories line: approved,
     // visible guest photos + guestbook notes. Two cheap indexed COUNT(*)s; the
     // landing renders their sum, or nothing if the whole config fetch fails.

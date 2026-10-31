@@ -122,6 +122,9 @@ export const CONTENT = Object.freeze({
     title: "Memories",
     body: "The big day has come and gone — relive it with us!",
   },
+  // Off → no Favorites strip atop /guestbook and no Favorites-first section in
+  // the memory book. Pinning a note still gilds its flower either way.
+  guestbook: { showFavorites: false },
   // null → fall back to SERVER.contactEmail (env), matching the gallery
   // report-photo address today (public/pages/gallery/lightbox.js).
   contactEmail: null,

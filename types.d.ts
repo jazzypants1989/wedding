@@ -434,6 +434,8 @@ export interface GuestbookFeedRow {
   author_name: string
   author_trusted: 0 | 1
   is_own: 0 | 1
+  /** Admin-pinned (a Favorite). */
+  is_pinned: 0 | 1
 }
 
 /** Public /api/guestbook response entry (booleans, no account_id leaked).
@@ -446,6 +448,9 @@ export interface GuestbookFeedEntry {
   status: ContentStatus
   created_at: string
   is_own: boolean
+  /** Admin-pinned: the note's flower is gilded whether or not the Favorites
+   *  strip is shown (SiteContent.guestbook.showFavorites). */
+  pinned: boolean
   reactions?: ReactionSummary
   comment_count?: number
 }
@@ -658,6 +663,8 @@ export interface AccountSummary {
   created_at: string
   guest_name: string | null
   post_count: number
+  /** Of those, how many wait for review (the Accounts list's second line). */
+  pending_count: number
 }
 
 export interface BlocklistEntry {
@@ -1036,6 +1043,13 @@ export interface ThankYouCardWithGuest extends ThankYouCard {
   guest_name: string
 }
 
+/** Admin card LIST row: also the recipient's contact, so the batch-send flow
+ *  can pre-pick each card's channel and show who it goes to before sending. */
+export interface ThankYouCardListRow extends ThankYouCardWithGuest {
+  guest_email: string | null
+  guest_phone: string | null
+}
+
 /** Public token-auth surface row: joined recipient name, never the gift amount. */
 export interface PublicThankYouCard extends ThankYouCard {
   recipient_name: string
@@ -1171,6 +1185,11 @@ export interface SiteContent {
     readonly title: string
     readonly body: string
   }
+  readonly guestbook: {
+    /** Show the admin-pinned Favorites strip atop /guestbook and lead the
+     *  memory book with them. Off by default; pinning still gilds a flower. */
+    readonly showFavorites: boolean
+  }
   readonly contactEmail: string | null
   readonly nav: {
     readonly pre: readonly SiteContentNavLink[]
@@ -1229,6 +1248,7 @@ export type SiteContentOverride = {
     showAfterWedding: boolean
   }>
   memories?: Partial<{ title: string; body: string }>
+  guestbook?: Partial<{ showFavorites: boolean }>
   contactEmail?: string | null
   nav?: Partial<{
     pre: SiteContentNavLink[]

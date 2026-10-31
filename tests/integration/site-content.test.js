@@ -53,6 +53,17 @@ async function contentJson(res) {
   return /** @type {ContentResp} */ (await res.json())
 }
 
+/** @param {Response} res @returns {Promise<{ content: import("../../types.js").SiteContent }>} */
+async function siteContentJson(res) {
+  return /** @type {{ content: import("../../types.js").SiteContent }} */ (await res.json())
+}
+
+/** @returns {Promise<{ guestbook: { showFavorites: boolean } }>} */
+async function favoritesConfig() {
+  const res = await fetch(`${BASE_URL}/api/config`)
+  return /** @type {{ guestbook: { showFavorites: boolean } }} */ (await res.json())
+}
+
 /** @returns {Promise<ConfigResp>} */
 async function configJson() {
   return /** @type {ConfigResp} */ (await (await fetch(`${BASE_URL}/api/config`)).json())
@@ -211,6 +222,45 @@ describe("admin site-content editor", () => {
     )
     const homeHtml = await (await fetch(`${BASE_URL}/`)).text()
     assert.ok(homeHtml.includes("Just RSVP"), "new nav label should render")
+  })
+
+  it("guestbook Favorites default off, round-trip through PUT, and reach /api/config", { skip: !hasAdmin }, async () => {
+    const auth = await adminLogin()
+    await adminFetch("/api/admin/site-content", { method: "DELETE" }, auth)
+    const before = await favoritesConfig()
+    assert.deepStrictEqual(before.guestbook, { showFavorites: false }, "off by default")
+
+    // A body that predates the field is still valid and keeps it off.
+    const legacy = await adminFetch(
+      "/api/admin/site-content",
+      { method: "PUT", body: JSON.stringify(sampleBody()) },
+      auth,
+    )
+    assert.strictEqual(legacy.status, 200)
+    assert.strictEqual((await siteContentJson(legacy)).content.guestbook.showFavorites, false)
+
+    const body = { ...sampleBody(), guestbook: { showFavorites: true } }
+    const put = await adminFetch(
+      "/api/admin/site-content",
+      { method: "PUT", body: JSON.stringify(body) },
+      auth,
+    )
+    assert.strictEqual(put.status, 200)
+    assert.strictEqual((await siteContentJson(put)).content.guestbook.showFavorites, true)
+    assert.deepStrictEqual(readStoredOverride().guestbook, { showFavorites: true })
+    const after = await favoritesConfig()
+    assert.deepStrictEqual(after.guestbook, { showFavorites: true })
+  })
+
+  it("rejects a non-boolean guestbook Favorites toggle", { skip: !hasAdmin }, async () => {
+    const auth = await adminLogin()
+    const body = { ...sampleBody(), guestbook: { showFavorites: "yes" } }
+    const res = await adminFetch(
+      "/api/admin/site-content",
+      { method: "PUT", body: JSON.stringify(body) },
+      auth,
+    )
+    assert.strictEqual(res.status, 400)
   })
 
   it("rejects a missing required field", { skip: !hasAdmin }, async () => {

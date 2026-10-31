@@ -49,7 +49,8 @@ export function getGuestbookFeed({ callerId = null, before = null, limit }) {
   const beforeFilter = before !== null ? sql`AND e.id < ${before}` : sql.empty
 
   return sql`SELECT e.id, e.account_id, e.message, e.status, e.created_at,
-      a.name AS author_name, a.trusted AS author_trusted, ${isOwn} AS is_own
+      a.name AS author_name, a.trusted AS author_trusted, ${isOwn} AS is_own,
+      (e.pinned_at IS NOT NULL) AS is_pinned
     FROM guestbook_entries e
     JOIN accounts a ON a.id = e.account_id
     WHERE e.deleted_at IS NULL AND a.deleted_at IS NULL
@@ -70,7 +71,8 @@ export function getGuestbookFeedEntryById(id, callerId = null) {
       : sql.empty
   const isOwn = callerId !== null ? sql`(e.account_id = ${callerId})` : sql`0`
   return sql`SELECT e.id, e.account_id, e.message, e.status, e.created_at,
-      a.name AS author_name, a.trusted AS author_trusted, ${isOwn} AS is_own
+      a.name AS author_name, a.trusted AS author_trusted, ${isOwn} AS is_own,
+      (e.pinned_at IS NOT NULL) AS is_pinned
     FROM guestbook_entries e
     JOIN accounts a ON a.id = e.account_id
     WHERE e.id = ${id} AND e.deleted_at IS NULL AND a.deleted_at IS NULL
@@ -98,7 +100,8 @@ export function getPinnedGuestbook({ callerId = null, limit }) {
   const isOwn =
     callerId !== null ? sql`(e.account_id = ${callerId})` : sql`0`
   return sql`SELECT e.id, e.account_id, e.message, e.status, e.created_at,
-      a.name AS author_name, a.trusted AS author_trusted, ${isOwn} AS is_own
+      a.name AS author_name, a.trusted AS author_trusted, ${isOwn} AS is_own,
+      1 AS is_pinned
     FROM guestbook_entries e
     JOIN accounts a ON a.id = e.account_id
     WHERE e.pinned_at IS NOT NULL AND e.status = 'approved'
@@ -119,7 +122,7 @@ export function getGuestbookModerationQueue({ limit, offset }) {
   // Oldest-first so the admin clears the backlog in arrival order. A soft-deleted
   // author's pending items drop out — the admin removed that person.
   return sql`SELECT e.id, e.account_id, e.message, e.status, e.created_at,
-      a.name AS author_name, a.trusted AS author_trusted, 0 AS is_own
+      a.name AS author_name, a.trusted AS author_trusted, 0 AS is_own, 0 AS is_pinned
     FROM guestbook_entries e
     JOIN accounts a ON a.id = e.account_id
     WHERE e.status = 'pending' AND e.deleted_at IS NULL AND a.deleted_at IS NULL

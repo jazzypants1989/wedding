@@ -18,6 +18,10 @@ export interface PublicConfig {
   /** Timeline mode + couple display name for client-side use. */
   mode: string
   coupleDisplay: string
+  /** Guestbook display options from site content. */
+  guestbook: {
+    showFavorites: boolean
+  }
   /** Public "moments shared" tally (approved guest photos + guestbook notes). */
   counts: {
     photos: number

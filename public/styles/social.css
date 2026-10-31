@@ -875,12 +875,11 @@
   overflow: hidden;
 }
 
-/* Elevated empty state: an ink-flourish divider + a rotating prompt line. */
+/* Empty state, and the ink-flourish divider under the guestbook title. */
 .gb-empty {
   text-align: center;
 }
 
-.gb-empty-flourish,
 .gb-flourish {
   position: relative;
   display: block;
@@ -889,7 +888,6 @@
   margin: 0 auto var(--spacing-sm);
 }
 
-.gb-empty-flourish::before,
 .gb-flourish::before {
   content: "";
   position: absolute;
@@ -907,7 +905,6 @@
   );
 }
 
-.gb-empty-flourish::after,
 .gb-flourish::after {
   content: "";
   position: absolute;
@@ -921,21 +918,4 @@
 
 .gb-empty-lead {
   margin: 0;
-}
-
-.gb-empty-prompt {
-  margin: var(--spacing-2xs) 0 var(--spacing-sm);
-  color: var(--color-text-muted);
-  font-style: italic;
-  transition: opacity 0.3s ease;
-}
-
-.gb-empty-prompt.gb-empty-prompt-out {
-  opacity: 0;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .gb-empty-prompt {
-    transition: none;
-  }
 }

@@ -70,6 +70,24 @@ function post(path, message, auth) {
   )
 }
 
+/**
+ * Switch the Favorites strip (site content `guestbook.showFavorites`) on or off
+ * by round-tripping the effective content through the admin editor.
+ * @param {import("../helpers.js").AdminAuth} adminAuth
+ * @param {boolean} on
+ */
+async function setShowFavorites(adminAuth, on) {
+  const got = await adminFetch("/api/admin/site-content", {}, adminAuth)
+  const { content } = /** @type {{ content: Record<string, unknown> }} */ (await got.json())
+  content.guestbook = { showFavorites: on }
+  const put = await adminFetch(
+    "/api/admin/site-content",
+    { method: "PUT", body: JSON.stringify(content) },
+    adminAuth,
+  )
+  assert.strictEqual(put.status, 200)
+}
+
 /** GET /api/guestbook as an anonymous visitor. */
 async function anonFeed(query = "") {
   const res = await fetch(`${BASE_URL}/api/guestbook${query}`)
@@ -491,6 +509,14 @@ describe("Guestbook", () => {
   })
 
   describe("pinned Favorites (Feature 2)", () => {
+    before(async () => {
+      if (hasAdmin) await setShowFavorites(await adminLogin(), true)
+    })
+
+    after(async () => {
+      if (hasAdmin) await setShowFavorites(await adminLogin(), false)
+    })
+
     it("pin surfaces an approved entry in the feed's pinned array; unpin removes it", async () => {
       if (!hasAdmin) return
       const owner = signIn({ trusted: 1, name: "Fav Author" })
@@ -519,6 +545,34 @@ describe("Guestbook", () => {
 
       feed = await anonFeed()
       assert.strictEqual(feed.data.pinned.length, 0, "unpinned → gone from pinned array")
+      const row = feed.data.entries.find((/** @type {{ id: number }} */ e) => e.id === entryId)
+      assert.strictEqual(row.pinned, false, "unpinned → the feed row is no longer flagged")
+    })
+
+    it("with the strip switched off, the pinned array is empty but the row stays flagged", async () => {
+      if (!hasAdmin) return
+      const owner = signIn({ trusted: 1 })
+      const entryId = seedEntry(owner.accountId, "approved")
+      const adminAuth = await adminLogin()
+      const pinRes = await adminFetch(
+        `/api/admin/guestbook/${entryId}/pin`,
+        { method: "POST" },
+        adminAuth,
+      )
+      assert.strictEqual(pinRes.status, 200)
+
+      await setShowFavorites(adminAuth, false)
+      try {
+        const feed = await anonFeed()
+        assert.deepStrictEqual(feed.data.pinned, [], "no strip while the setting is off")
+        const row = feed.data.entries.find((/** @type {{ id: number }} */ e) => e.id === entryId)
+        assert.strictEqual(row.pinned, true, "pinning still marks the note (its flower is gilded)")
+        const one = await fetch(`${BASE_URL}/api/guestbook/${entryId}`)
+        const single = /** @type {{ pinned: boolean }} */ (await one.json())
+        assert.strictEqual(single.pinned, true)
+      } finally {
+        await setShowFavorites(adminAuth, true)
+      }
     })
 
     it("pinned array is capped at 6, newest-pinned-first", async () => {

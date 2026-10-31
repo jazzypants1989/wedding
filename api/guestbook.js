@@ -21,6 +21,7 @@ import {
 import { LIMITS, CONTENT_STATUS, TARGET_TYPE } from "../types.js"
 import { log, AUDIT_ACTIONS } from "../core/utils.js"
 import { enrichSocial } from "./enrich.js"
+import { getContent } from "../core/site-content.js"
 
 const DEFAULT_LIMIT = 20
 const MAX_LIMIT = 50
@@ -65,6 +66,7 @@ function toFeedEntry(row) {
     status: row.status,
     created_at: row.created_at,
     is_own: !!row.is_own,
+    pinned: !!row.is_pinned,
   }
 }
 
@@ -91,12 +93,14 @@ export async function list(req, res) {
   const nextCursor = rows.length === limit ? rows[rows.length - 1].id : null
 
   // The admin-pinned "Favorites" strip rides along on the FIRST page only (no
-  // cursor). Pinned entries also remain in the main chronological feed — the
-  // duplication is intentional and simpler (the strip is a separate, distinctly
-  // styled section, like a pinned post above a timeline).
+  // cursor), and only when the couple has it switched on (site content,
+  // guestbook.showFavorites; off by default). Pinned entries also remain in the
+  // main chronological feed, flagged `pinned`, so their flowers are gilded
+  // either way — the duplication is intentional and simpler (the strip is a
+  // separate, distinctly styled section, like a pinned post above a timeline).
   /** @type {GlobalTypes.GuestbookFeedEntry[]} */
   let pinned = []
-  if (before === null) {
+  if (before === null && getContent().guestbook.showFavorites) {
     pinned = getPinnedGuestbook({ callerId, limit: PINNED_LIMIT }).map(toFeedEntry)
     enrichSocial(pinned, TARGET_TYPE.GUESTBOOK, callerId)
   }
@@ -169,6 +173,7 @@ export async function create(req, res, { account }) {
       status: entry.status,
       created_at: entry.created_at,
       is_own: true,
+      pinned: false,
     },
     status,
   })

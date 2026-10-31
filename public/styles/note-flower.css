@@ -1,0 +1,185 @@
+/* Note flowers (public/components/note-flower.js): the plant each guestbook note
+   grows. Theme tokens only, so it follows every effect theme and light/dark.
+   Static by design — nothing here animates. A page that wants the one-time
+   grow-in adds .nf-waiting to the wrapper and removes it on scroll-in. */
+
+:root {
+  --nf-paper: var(--color-card-bg);
+  --nf-ink: color-mix(in oklab, var(--color-text) 38%, var(--color-text-muted));
+  --nf-leaf: color-mix(in oklab, var(--fx-green-1) 64%, var(--color-background));
+  --nf-leaf-2: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--fx-green-2) 70%, var(--fx-cool-2)) 56%,
+    var(--color-background)
+  );
+  --nf-leaf-3: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--fx-green-1) 72%, var(--fx-gold-3)) 66%,
+    var(--color-background)
+  );
+  /* The petals: a cottage-garden spread, so a meadow of many authors reads as
+     many flowers. The first three follow the effect theme; the rest are
+     garden hues with a lifted dark-mode twin. */
+  --nf-bloom: var(--effect-brand);
+  --nf-bloom-2: var(--fx-rose-2);
+  --nf-bloom-3: var(--fx-cool-2);
+  --nf-bloom-4: light-dark(#e6bf3e, #f0d270);
+  --nf-bloom-5: light-dark(#9c4a8c, #d898c8);
+  --nf-bloom-6: light-dark(#a596d8, #c3b6f0);
+  --nf-bloom-7: light-dark(#fbf4e6, #f3ebdc);
+  --nf-bloom-8: light-dark(#ec9a63, #f4b688);
+  --nf-gold: var(--fx-gold-1);
+  --nf-berry: var(--effect-brand-dark);
+}
+
+.nf-svg {
+  display: block;
+  overflow: visible;
+}
+
+.nf-stem,
+.nf-fine {
+  fill: none;
+  stroke: var(--nf-ink);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.nf-stem {
+  stroke-width: 1.5;
+}
+.nf-main {
+  stroke-width: 2.1;
+}
+.nf-fine {
+  stroke-width: 0.9;
+}
+/* Midribs and petal creases: the paper showing through, so a leaf reads as
+   folded and a tulip as a cup, without another colour. */
+.nf-vein,
+.nf-crease {
+  fill: none;
+  stroke: var(--nf-paper);
+  stroke-linecap: round;
+  stroke-width: 0.7;
+  opacity: 0.45;
+}
+
+.nf-leaf,
+.nf-cup,
+.nf-petals,
+.nf-bud,
+.nf-sepal,
+.nf-dot,
+.nf-berry {
+  stroke: var(--nf-ink);
+  stroke-linejoin: round;
+}
+.nf-leaf {
+  stroke-width: 0.7;
+}
+.nf-leaf.nf-l0 {
+  fill: var(--nf-leaf);
+}
+.nf-leaf.nf-l1 {
+  fill: var(--nf-leaf-2);
+}
+.nf-leaf.nf-l2 {
+  fill: var(--nf-leaf-3);
+}
+.nf-leaf.nf-open {
+  fill: color-mix(in oklab, var(--nf-leaf) 35%, transparent);
+  stroke: color-mix(in oklab, var(--nf-leaf) 55%, var(--nf-ink));
+  stroke-width: 1;
+}
+.nf-cup,
+.nf-petals,
+.nf-bud {
+  stroke-width: 0.6;
+}
+.nf-dot {
+  stroke-width: 0.35;
+}
+.nf-b0 {
+  --nf-tint: var(--nf-bloom);
+}
+.nf-b1 {
+  --nf-tint: var(--nf-bloom-2);
+}
+.nf-b2 {
+  --nf-tint: var(--nf-bloom-3);
+}
+.nf-b3 {
+  --nf-tint: var(--nf-bloom-4);
+}
+.nf-b4 {
+  --nf-tint: var(--nf-bloom-5);
+}
+.nf-b5 {
+  --nf-tint: var(--nf-bloom-6);
+}
+.nf-b6 {
+  --nf-tint: var(--nf-bloom-7);
+}
+.nf-b7 {
+  --nf-tint: var(--nf-bloom-8);
+}
+.nf-petals,
+.nf-bud,
+.nf-dot {
+  fill: var(--nf-tint);
+}
+/* A tulip's back petals sit a shade deeper than the one in front. */
+.nf-cup {
+  fill: color-mix(in oklab, var(--nf-tint) 78%, var(--nf-ink));
+}
+.nf-sepal {
+  stroke-width: 0.5;
+  fill: var(--nf-leaf);
+}
+.nf-berry {
+  stroke-width: 0.5;
+  fill: var(--nf-berry);
+}
+.nf-shine {
+  fill: var(--nf-paper);
+  opacity: 0.8;
+}
+.nf-eye {
+  fill: var(--nf-ink);
+}
+.nf-eye.nf-gold {
+  fill: var(--nf-gold);
+  stroke: var(--nf-ink);
+  stroke-width: 0.6;
+}
+
+/* One-time grow-in: each flower is revealed from its root up, once, by a
+   class flip on its wrapper. One element per card, never per leaf. */
+.nf-grow > .nf-svg {
+  clip-path: inset(-30% -30% -10% -30%);
+  transform-origin: 50% 100%;
+  transition:
+    clip-path 900ms cubic-bezier(0.3, 0.6, 0.3, 1),
+    transform 900ms cubic-bezier(0.34, 1.3, 0.5, 1);
+}
+.nf-grow.nf-waiting > .nf-svg {
+  clip-path: inset(100% -30% -10% -30%);
+  transform: scale(0.85);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nf-grow > .nf-svg {
+    transition: none;
+  }
+  .nf-grow.nf-waiting > .nf-svg {
+    clip-path: none;
+    transform: none;
+  }
+}
+
+@media print {
+  .nf-grow.nf-waiting > .nf-svg {
+    clip-path: none;
+    transform: none;
+  }
+}

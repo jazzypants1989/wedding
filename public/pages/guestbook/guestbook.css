@@ -1,4 +1,58 @@
-/** Guestbook page-specific layout. Shared cards/composer/auth live in social.css. */
+/** Guestbook page-specific layout. Shared cards/composer/auth live in social.css;
+    the rules here refine them for this page only (it loads after social.css). */
+
+/* The page itself: a faint paper grain, and early light pooled behind the
+   meadow (see .gb-meadow::before). Static backgrounds that scroll with the
+   page, so nothing repaints. */
+.gb-page {
+  --gb-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.45 0 0 0 0 0.38 0 0 0 0 0.33 0 0 0 0.11 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  background: var(--gb-grain) var(--color-background);
+  overflow-x: clip;
+}
+
+/* Pressed-flower sprays in the lower corners of a wide screen: fixed, still,
+   behind everything, and only where the margin is wide enough that they
+   never sit under the notes. */
+.gb-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  display: none;
+  pointer-events: none;
+}
+
+.gb-spray {
+  position: absolute;
+  bottom: -12px;
+  width: calc((100vw - var(--container-content)) / 2 - 24px);
+  max-width: 380px;
+  height: min(82vh, 680px);
+  opacity: 0.55;
+}
+
+.gb-spray-left {
+  left: 0;
+}
+
+.gb-spray-right {
+  right: 0;
+}
+
+@media (min-width: 1180px) {
+  .gb-backdrop {
+    display: block;
+  }
+}
+
+@media print {
+  .gb-page {
+    background: none;
+  }
+
+  .gb-backdrop {
+    display: none;
+  }
+}
 
 .gb-section {
   max-width: var(--container-content);
@@ -13,46 +67,365 @@
 }
 
 .gb-intro {
+  margin: 0;
   text-align: center;
   color: var(--color-text-muted);
-  margin-bottom: var(--spacing-lg);
+  text-wrap: balance;
 }
 
-/* Memory-book pointer: a visible link with a one-line explanation beneath it,
-   so the feature isn't a mystery until clicked. */
+/* Memory-book pointer: one quiet link under the intro. */
 .gb-memory-book {
-  margin-bottom: var(--spacing-lg);
+  margin: var(--spacing-2xs) 0 0;
+  text-align: center;
+  font-size: var(--text-sm);
 }
 
 .gb-memory-book-link {
-  color: var(--color-primary);
-  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 var(--spacing-xs);
+  color: var(--color-primary-dark);
+  text-decoration-color: color-mix(in oklab, currentColor 35%, transparent);
+  text-underline-offset: 0.2em;
 }
 
-.gb-memory-book-sub {
+.gb-memory-book-link:hover {
+  text-decoration-color: currentColor;
+}
+
+/* ---- The meadow: every recent note's flower in one still bed, standing on
+   the composer where the next one grows. Its soil fades into the page. ---- */
+.gb-meadow {
+  position: relative;
+  margin: var(--spacing-sm) calc(-1 * var(--spacing-md)) 0;
+}
+
+/* Light over the garden: a wide blush behind the flowers with apricot and
+   lavender at its edges, fading out well before the first card. */
+.gb-meadow::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  left: 50%;
+  top: -200px;
+  bottom: -200px;
+  width: min(100vw, 1500px);
+  translate: -50% 0;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      ellipse 40% 36% at 50% 54%,
+      color-mix(in oklab, var(--fx-rose-2) 30%, transparent),
+      transparent
+    ),
+    radial-gradient(
+      ellipse 21% 30% at 27% 58%,
+      color-mix(in oklab, var(--nf-bloom-8) 26%, transparent),
+      transparent
+    ),
+    radial-gradient(
+      ellipse 21% 30% at 73% 55%,
+      color-mix(in oklab, var(--nf-bloom-6) 28%, transparent),
+      transparent
+    );
+}
+
+:root[data-theme="dark"] .gb-meadow::before {
+  opacity: 0.55;
+}
+
+/* The stage keeps the bed's proportions and never grows past 40vh tall; the
+   plants are laid on it in percentages, so it scales as one picture. */
+.gb-meadow-stage {
+  position: relative;
+  width: min(100%, calc(40vh * var(--meadow-ratio, 4)));
+  margin-inline: auto;
+  overflow-x: clip;
+}
+
+.gb-meadow-bed {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.gb-meadow-plant {
+  position: absolute;
+  cursor: pointer;
+  animation: gb-sway-1 7s ease-in-out infinite alternate both;
+}
+
+.gb-meadow-svg {
   display: block;
-  margin-top: var(--spacing-2xs);
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* A breeze, not a dance: each plant leans a degree or two from its root and
+   back. Transform-only, so the compositor runs it without repainting. Three
+   strengths, so neighbours never move in lockstep. */
+.gb-sway0 {
+  animation-name: gb-sway-0;
+  animation-duration: 6.4s;
+}
+
+.gb-sway2 {
+  animation-name: gb-sway-2;
+  animation-duration: 7.6s;
+}
+
+@keyframes gb-sway-0 {
+  from {
+    transform: rotate(-1.1deg);
+  }
+  to {
+    transform: rotate(1.4deg);
+  }
+}
+
+@keyframes gb-sway-1 {
+  from {
+    transform: rotate(-1.6deg);
+  }
+  to {
+    transform: rotate(1.8deg);
+  }
+}
+
+@keyframes gb-sway-2 {
+  from {
+    transform: rotate(-2.2deg);
+  }
+  to {
+    transform: rotate(2.4deg);
+  }
+}
+
+.gb-meadow-still .gb-meadow-plant {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gb-meadow-plant {
+    animation: none;
+  }
+}
+
+@media print {
+  .gb-meadow-plant {
+    animation: none;
+  }
+}
+
+.gb-depth2 {
+  opacity: 0.55;
+}
+
+.gb-depth3 {
+  opacity: 0.78;
+}
+
+.gb-soil,
+.gb-soil-end {
+  stop-color: var(--nf-leaf);
+  stop-opacity: 0.22;
+}
+
+.gb-soil-end {
+  stop-opacity: 0;
+}
+
+.gb-meadow-mound {
+  fill: color-mix(in oklab, var(--nf-leaf) 30%, transparent);
+}
+
+.gb-meadow-seed {
+  fill: var(--nf-ink);
+  opacity: 0.55;
+}
+
+/* ---- Composer: a writing card. The card is the field; the flower you are
+   growing stands at its right edge on a line of soil. ---- */
+.gb-composer {
+  position: relative;
+  margin-bottom: var(--spacing-lg);
+  padding: var(--spacing-md) var(--spacing-lg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-card-bg);
+  box-shadow: var(--shadow-sm);
+  transition:
+    border-color var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease;
+}
+
+.gb-composer:focus-within {
+  border-color: color-mix(in oklab, var(--color-primary) 70%, var(--color-border));
+  box-shadow:
+    0 0 0 3px var(--color-primary-faint),
+    var(--shadow-md);
+}
+
+.gb-composer .guest-identity {
+  margin: calc(-1 * var(--spacing-xs)) 0 var(--spacing-xs);
+  padding-bottom: var(--spacing-xs);
+  border-bottom: 1px solid color-mix(in oklab, var(--color-border) 60%, transparent);
+}
+
+.gb-compose-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--spacing-md);
+}
+
+.gb-composer .gb-textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 150px;
+  padding: var(--spacing-xs) 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  /* Written in the same ink the posted card will use (.content-section p). */
+  color: var(--color-text-muted);
+  font-size: 1.0625rem;
+  line-height: 1.65;
+  resize: none;
+  field-sizing: content;
+  max-height: 60vh;
+}
+
+/* The card carries the focus ring; the field inside it stays clean. */
+.gb-composer .gb-textarea:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.gb-composer .gb-textarea::placeholder {
+  color: color-mix(in oklab, var(--color-text-muted) 80%, transparent);
+}
+
+.gb-flower-preview {
+  flex: none;
+  width: 120px;
+  height: 150px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+/* Before the first word: a seed on the soil. */
+.gb-flower-preview.is-empty::before {
+  content: "";
+  width: 12px;
+  height: 8px;
+  margin-bottom: 1px;
+  border-radius: 50% 50% 45% 45%;
+  background: var(--nf-ink);
+  opacity: 0.55;
+}
+
+/* The rule under the writing is the ground: the flower you are growing
+   stands right on it. */
+.gb-composer-actions {
+  flex-wrap: wrap;
+  margin-top: 0;
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid color-mix(in oklab, var(--nf-leaf) 45%, var(--color-border));
+}
+
+/* The counter only speaks up near the limit (utils.announceCharsRemaining
+   sets the phase); "0/2000" under an empty note is noise. */
+.gb-section .char-counter:not([data-char-phase="warn"], [data-char-phase="full"]) {
+  display: none;
+}
+
+/* The one quiet line that explains the flowers: left of the actions. */
+.gb-flower-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15rem 0.6rem;
+  margin: 0 auto 0 0;
   font-size: var(--text-sm);
   color: var(--color-text-muted);
 }
 
-/* A little life on the feed: entries lift gently on hover, and each card
-   carries a faint oversized close-quote in its emptiest corner. */
-.gb-entry {
-  position: relative;
-  transition: transform var(--duration-fast) ease-out, box-shadow var(--duration-fast) ease-out;
+.gb-flower-hint > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
 }
 
-.gb-entry::after {
-  content: "”";
-  position: absolute;
-  right: var(--spacing-md);
-  bottom: calc(-1 * var(--spacing-sm));
+/* Each mark set as a small key, so a lone full stop is visible. */
+.gb-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 1.5em;
+  height: 1.5em;
+  border-radius: var(--radius-full);
+  background: var(--color-primary-faint);
   font-family: var(--font-display);
-  font-size: 4rem;
+  font-size: 1em;
+  font-weight: 400;
   line-height: 1;
-  color: color-mix(in srgb, var(--color-primary) 22%, transparent);
-  pointer-events: none;
+  color: var(--color-primary-dark);
+}
+
+/* On a keyboard device the ⌘↵ hint shares the row; the flower hint keeps the
+   left slot and the shortcut sits beside the counter. */
+@media (hover: hover) and (pointer: fine) {
+  .gb-composer-actions .composer-hint {
+    margin-right: 0;
+  }
+}
+
+/* ---- Feed cards ---- */
+.gb-feed {
+  gap: var(--spacing-md);
+}
+
+/* Each card's flower stands in its own column at the right edge, rooted at
+   the card's foot. It is sized to the words beside it, never the other way
+   round: the slot is as tall as the message and actions, and the flower is
+   drawn inside it, so a tall plant never pads a short card with empty space.
+   Grid placement only — the flower is the one extra element in the card. */
+.gb-entry {
+  --gb-flower-w: 6.5rem;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--gb-flower-w);
+  column-gap: var(--spacing-md);
+  padding: var(--spacing-md) var(--spacing-lg);
+  transition:
+    transform var(--duration-fast) ease-out,
+    box-shadow var(--duration-fast) ease-out,
+    border-color var(--duration-fast) ease-out;
+}
+
+.gb-entry > * {
+  grid-column: 1;
+}
+
+.gb-entry > .gb-entry-head {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.gb-entry > .gb-message {
+  grid-row: 2;
+}
+
+.gb-entry > .gb-pending-chip {
+  grid-row: 3;
+}
+
+.gb-entry > .gb-entry-foot {
+  grid-row: 4;
 }
 
 .gb-entry:hover {
@@ -60,18 +433,296 @@
   box-shadow: var(--shadow-md);
 }
 
-/* The composer glows softly while the guest is writing. */
-.gb-composer:focus-within {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px var(--color-primary-faint);
+.gb-entry:focus-within {
+  border-color: color-mix(in oklab, var(--color-primary) 45%, var(--color-border));
+}
+
+.gb-entry-head {
+  margin-bottom: var(--spacing-xs);
+}
+
+.gb-time {
+  font-variant-numeric: tabular-nums;
+}
+
+.gb-message {
+  font-size: 1.0625rem;
+  line-height: 1.65;
+  text-wrap: pretty;
+  overflow-wrap: break-word;
+}
+
+.gb-flower {
+  grid-column: 2;
+  grid-row: 2 / 5;
+  position: relative;
+  min-height: 4.5rem;
+  pointer-events: none;
+}
+
+.gb-flower .nf-svg {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  translate: -50% 0;
+}
+
+/* One quiet row of actions: reactions, the comment toggle, then the text
+   actions at the far end. An opened thread takes the full width below. */
+.gb-entry-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--spacing-2xs);
+  margin-top: var(--spacing-sm);
+}
+
+/* The six reactions read as one small tray: a hairline capsule, the glyphs
+   set close inside it. */
+.gb-entry-foot .reaction-bar {
+  flex-wrap: nowrap;
+  gap: 0;
+  padding: 1px;
+  border: 1px solid color-mix(in oklab, var(--color-border) 75%, transparent);
+  border-radius: var(--radius-full);
+}
+
+.gb-entry-foot .comment-thread {
+  display: contents;
+}
+
+.gb-entry-foot .comment-body {
+  order: 1;
+  flex-basis: 100%;
+  margin: var(--spacing-sm) 0 var(--spacing-xs) var(--spacing-xs);
+}
+
+/* Reactions nobody has chosen yet wait as bare glyphs; a soft disc appears on
+   hover, and stays for the guest's own. */
+.gb-entry-foot .reaction-pill,
+.gb-entry-foot .comment-toggle {
+  justify-content: center;
+  min-width: 40px;
+  padding: 0 0.45rem;
+  border-color: transparent;
+  background: transparent;
+}
+
+.gb-entry-foot .reaction-pill:hover,
+.gb-entry-foot .comment-toggle:hover {
+  border-color: transparent;
+  background: color-mix(in oklab, var(--color-text-muted) 10%, transparent);
+}
+
+/* A mouse doesn't need a thumb-sized target: the tray tightens on desktop. */
+@media (hover: hover) and (pointer: fine) {
+  .gb-entry-foot .reaction-pill {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 0 0.4rem;
+  }
+
+  .gb-entry .gb-entry-foot :is(.comment-toggle, .gb-share, .gb-pin, .gb-delete) {
+    min-height: 38px;
+  }
+}
+
+.gb-entry-foot .reaction-pill.reaction-mine {
+  border-color: color-mix(in oklab, var(--color-primary) 60%, transparent);
+  background: var(--color-primary-faint);
+}
+
+.gb-entry-foot .comment-toggle {
+  color: var(--color-text-muted);
+}
+
+.gb-entry-foot .comment-toggle[aria-expanded="true"] {
+  color: var(--color-primary-dark);
+}
+
+/* Share / Pin / Delete: small text buttons with real touch targets, pushed to
+   the end of the row. */
+.gb-entry-foot .gb-share,
+.gb-entry-foot .gb-pin,
+.gb-entry-foot .gb-delete {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 var(--spacing-sm);
+  border-radius: var(--radius-full);
+  font-size: var(--text-sm);
+}
+
+/* The comment toggle takes the slack, so the text actions sit at the end. */
+.gb-entry-foot .comment-toggle {
+  margin-right: auto;
+}
+
+.gb-entry-foot .gb-share {
+  color: var(--color-text-muted);
+}
+
+.gb-entry-foot .gb-share:hover {
+  color: var(--color-primary-dark);
+}
+
+.gb-pin[aria-pressed="true"] {
+  color: var(--color-primary-dark);
+  font-weight: 600;
+}
+
+.gb-pin[aria-pressed="true"]::before {
+  content: "";
+  width: 0.5em;
+  height: 0.5em;
+  margin-right: 0.4em;
+  border-radius: 50%;
+  background: var(--nf-gold);
+  box-shadow: 0 0 0 1px var(--nf-ink);
+}
+
+.gb-entry :is(button, a):focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* A held-for-approval note: the same card, drawn in pencil. */
+.gb-entry-pending {
+  opacity: 1;
+  border: 1px dashed color-mix(in oklab, var(--color-status-pending-text) 55%, var(--color-border));
+  background: color-mix(in oklab, var(--color-card-bg) 70%, var(--color-background));
+}
+
+.gb-entry-pending .gb-pending-chip {
+  justify-self: start;
+}
+
+/* The guest's own new note settles in under the composer, once. */
+.gb-entry-new {
+  animation: gb-land 700ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+@keyframes gb-land {
+  from {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.985);
+    box-shadow: 0 0 0 3px var(--color-primary-faint), var(--shadow-md);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---- States ---- */
+.gb-section .loading {
+  min-height: 120px;
+}
+
+.gb-empty {
+  padding: var(--spacing-lg) var(--spacing-md);
+}
+
+.gb-empty-lead {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  color: var(--color-text);
+}
+
+.gb-loadmore-wrap {
+  margin-top: var(--spacing-lg);
+}
+
+/* ---- Phones ---- */
+@media (max-width: 480px) {
+  .gb-section {
+    padding-inline: var(--spacing-sm);
+  }
+
+  .gb-meadow {
+    margin-inline: calc(-1 * var(--spacing-sm));
+  }
+
+  .gb-composer {
+    padding: var(--spacing-sm) var(--spacing-md);
+  }
+
+  .gb-composer .gb-textarea {
+    min-height: 110px;
+  }
+
+  .gb-flower-preview {
+    width: 84px;
+    height: 110px;
+  }
+
+  .gb-flower-preview .nf-svg {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+  }
+
+  .gb-entry {
+    --gb-flower-w: 4.25rem;
+    padding: var(--spacing-md);
+    column-gap: var(--spacing-sm);
+  }
+
+  /* The tray spans the column, its six glyphs evenly spaced; the comment
+     toggle and Share share the line below. */
+  .gb-entry-foot .reaction-bar {
+    flex: 1 1 100%;
+  }
+
+  .gb-entry-foot .reaction-pill {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0;
+  }
+
+  .gb-entry-foot .comment-toggle {
+    margin-left: calc(-1 * var(--spacing-xs));
+  }
+
+  .gb-flower-hint {
+    flex-basis: 100%;
+    margin-bottom: var(--spacing-xs);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .gb-entry {
+  .gb-entry,
+  .gb-composer {
     transition: none;
   }
 
   .gb-entry:hover {
     transform: none;
   }
+
+  .gb-entry-new {
+    animation: none;
+  }
+}
+
+/* ---- A card's comment thread: a quiet field under the note ---- */
+.gb-entry .comment-empty {
+  display: none;
+}
+
+.gb-entry .comment-input {
+  min-height: 2.75rem;
+  border-color: color-mix(in oklab, var(--color-border) 80%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklab, var(--color-text-muted) 4%, var(--color-card-bg));
+  line-height: 1.5;
+  resize: none;
+  field-sizing: content;
+  max-height: 40vh;
 }

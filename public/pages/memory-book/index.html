@@ -17,6 +17,7 @@
   <link rel="stylesheet" href="/styles/layout.css">
   <link rel="stylesheet" href="/styles/components.css">
   <link rel="stylesheet" href="/styles/social.css">
+  <link rel="stylesheet" href="/styles/note-flower.css">
   <link rel="stylesheet" href="/pages/memory-book/memory-book.css">
   <script src="/components/theme-init.js"></script>
 </head>
@@ -27,7 +28,7 @@
   <!-- Screen-only toolbar; hidden when printing (see memory-book.css @media print). -->
   <div class="mb-toolbar" role="toolbar" aria-label="Memory book actions">
     <a href="/guestbook" class="btn btn-secondary btn-sm">← Back to guestbook</a>
-    <button type="button" id="mb-print" class="btn btn-primary btn-sm">🖨 Print / Save as PDF</button>
+    <button type="button" id="mb-print" class="btn btn-primary btn-sm">Print / Save as PDF</button>
   </div>
 
   <noscript>
@@ -42,6 +43,7 @@
       <p class="mb-cover-mono" aria-hidden="true">{{couple.monogram}}</p>
       <h1 class="mb-cover-names">{{couple.display}}</h1>
       <p class="mb-cover-date">{{weddingDate}} &bull; {{location}}</p>
+      <div id="mb-cover-flower" class="mb-cover-flower" aria-hidden="true"></div>
       <p class="mb-cover-sub">Our Guestbook</p>
     </section>
 

@@ -1,6 +1,13 @@
 /* Memory Book — a print-first keepsake of the guestbook.
    On screen: a centered, book-like column with a Print button.
-   In print: clean @page margins, page breaks that never split an entry. */
+   In print: clean @page margins, page numbers, page breaks that never split
+   an entry, and white paper whatever the screen theme. */
+
+:root {
+  /* The book's ink: the same warm dark the flowers are drawn in. */
+  --mb-ink: color-mix(in oklab, var(--color-text) 28%, var(--color-text-muted));
+  --mb-rule: color-mix(in oklab, var(--color-border) 70%, transparent);
+}
 
 body {
   background: var(--color-background);
@@ -21,7 +28,7 @@ body {
   padding: 0.75rem 1rem;
   background: color-mix(in srgb, var(--color-background) 88%, transparent);
   backdrop-filter: blur(6px);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--mb-rule);
 }
 
 .mb-noscript {
@@ -34,43 +41,73 @@ body {
 .mb-book {
   max-width: 40rem;
   margin: 0 auto;
-  padding: 2rem 1.5rem 4rem;
+  padding: 2rem 1.5rem 5rem;
+}
+
+/* On a wide screen the book is shown as what it will print as: a sheet of
+   paper on the desk. */
+@media screen and (min-width: 760px) {
+  .mb-book {
+    max-width: 44rem;
+    margin: 2.5rem auto 4rem;
+    padding: 1rem 4rem 4rem;
+    border: 1px solid var(--mb-rule);
+    border-radius: var(--radius-sm);
+    background: var(--color-card-bg);
+    box-shadow: var(--shadow-md);
+  }
 }
 
 /* ---- Cover ---- */
 .mb-cover {
   text-align: center;
-  padding: 3rem 1rem 2.5rem;
-  border-bottom: 2px solid var(--color-border);
-  margin-bottom: 2.5rem;
+  padding: 4rem 1rem 3rem;
+  margin-bottom: 3rem;
 }
 
 .mb-cover-mono {
   font-family: var(--font-display);
-  font-size: 3.5rem;
-  letter-spacing: 0.08em;
-  margin: 0 0 0.5rem;
-  color: var(--color-text);
+  font-size: 1.1rem;
+  letter-spacing: 0.3em;
+  margin: 0 0 1.75rem;
+  color: var(--color-text-muted);
 }
 
 .mb-cover-names {
   font-family: var(--font-display);
-  font-size: 2.5rem;
-  margin: 0 0 0.5rem;
+  font-size: clamp(2.25rem, 7vw, 3.25rem);
+  font-weight: 400;
+  margin: 0 0 0.75rem;
   line-height: 1.1;
+  text-wrap: balance;
 }
 
 .mb-cover-date {
-  font-size: 1.05rem;
+  font-size: 1rem;
+  letter-spacing: 0.04em;
   color: var(--color-text-muted);
-  margin: 0 0 1.25rem;
+  margin: 0;
 }
 
+/* A short rule between the date and the title, like a title page. */
 .mb-cover-sub {
   font-family: var(--font-display);
   font-size: 1.35rem;
   letter-spacing: 0.04em;
-  margin: 0;
+  margin: 1.75rem 0 0;
+  color: var(--mb-ink);
+}
+
+/* The couple's own flower stands between the date and the title, on a short
+   rule of ground. Rules are borders, not backgrounds, so they survive
+   "background graphics" off. */
+.mb-cover-flower {
+  display: flex;
+  justify-content: center;
+  width: 7rem;
+  min-height: 2rem;
+  margin: 2rem auto 0;
+  border-bottom: 1px solid color-mix(in oklab, var(--color-primary) 60%, transparent);
 }
 
 .mb-status {
@@ -87,71 +124,144 @@ body {
 .mb-section-title {
   font-family: var(--font-display);
   font-size: 1.5rem;
+  font-weight: 400;
   text-align: center;
   margin: 0 0 1.5rem;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid var(--color-border);
+  color: var(--mb-ink);
 }
 
+.mb-section-title::after {
+  content: "";
+  display: block;
+  width: 2.5rem;
+  margin: 0.75rem auto 0;
+  border-top: 1px solid var(--color-primary);
+}
+
+/* The note, then its signature; the note's flower stands beside both
+   (public/components/note-flower.js). */
 .mb-entry {
   break-inside: avoid;
   page-break-inside: avoid;
-  padding: 1.25rem 0;
-  border-bottom: 1px solid var(--color-text-10);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 1.5rem;
+  padding: 1.75rem 0;
+  border-bottom: 1px solid var(--mb-rule);
 }
 
-.mb-entry.is-favorite {
-  background: var(--color-text-3);
-  border-radius: var(--radius-md);
-  padding: 1.25rem 1rem;
-  margin-bottom: 0.75rem;
-}
-
-.mb-entry-head {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.6rem;
-  flex-wrap: wrap;
-}
-
-.mb-entry-author {
-  font-weight: 600;
-  font-size: 1.05rem;
-}
-
-.mb-entry-fav {
-  font-size: 0.9rem;
-}
-
-.mb-entry-date {
-  margin-left: auto;
-  font-size: 0.85rem;
-  color: var(--color-text-muted);
+.mb-entry:last-child {
+  border-bottom: none;
 }
 
 .mb-entry-message {
-  font-family: var(--font-display);
-  font-size: 1.15rem;
-  line-height: 1.6;
+  grid-column: 1;
   margin: 0;
+  font-size: 1.125rem;
+  line-height: 1.7;
+  color: var(--mb-ink);
   white-space: pre-wrap;
   overflow-wrap: break-word;
+  text-wrap: pretty;
+}
+
+.mb-entry-sign {
+  grid-column: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+  margin: 0.85rem 0 0;
+}
+
+.mb-entry-author {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  color: var(--color-text);
+}
+
+.mb-entry-date {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.mb-entry-flower {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: end;
+  display: flex;
+  justify-content: center;
+  min-width: 64px;
+}
+
+.mb-entry.is-favorite {
+  padding: 1.75rem 1.25rem;
+  margin-bottom: 0.75rem;
+  border: 1px solid color-mix(in oklab, var(--nf-gold) 45%, var(--color-border));
+  border-radius: var(--radius-md);
+  background: color-mix(in oklab, var(--nf-gold) 6%, transparent);
 }
 
 .mb-count {
   text-align: center;
   color: var(--color-text-muted);
   font-size: 0.9rem;
-  margin-top: 2rem;
+  letter-spacing: 0.04em;
+  margin-top: 3rem;
+}
+
+@media (max-width: 480px) {
+  .mb-book {
+    padding: 1.5rem 1rem 4rem;
+  }
+
+  .mb-cover {
+    padding: 2.5rem 0.5rem 2rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .mb-entry {
+    column-gap: 0.75rem;
+    padding: 1.4rem 0;
+  }
+
+  .mb-entry-message {
+    font-size: 1.05rem;
+  }
+
+  .mb-entry-flower .nf-svg {
+    max-width: 72px;
+    max-height: 96px;
+    width: auto;
+    height: auto;
+  }
 }
 
 /* ---- Print ---- */
 @page {
-  margin: 18mm 16mm;
+  margin: 20mm 18mm 22mm;
+
+  @bottom-center {
+    content: counter(page);
+    font-family: "Jost", sans-serif;
+    font-size: 9pt;
+    color: #777;
+  }
+}
+
+/* No number on the cover. */
+@page :first {
+  @bottom-center {
+    content: none;
+  }
 }
 
 @media print {
+  /* Paper is white whatever the screen theme: flip every light-dark() token. */
+  html {
+    color-scheme: light !important;
+  }
   .mb-toolbar,
   .skip-link {
     display: none !important;
@@ -160,33 +270,60 @@ body {
     background: #fff;
     color: #1a1a1a;
   }
+  :root {
+    --mb-ink: #2b2523;
+    --mb-rule: #d9d2cb;
+  }
+  /* A comfortable measure on the page, centred between the margins. */
   .mb-book {
-    max-width: none;
-    margin: 0;
+    max-width: 150mm;
+    margin: 0 auto;
     padding: 0;
   }
   .mb-cover {
-    /* The cover gets its own printed page. */
+    /* The cover gets its own printed page, its title set low and centred. */
+    break-after: page;
     page-break-after: always;
-    border-bottom: none;
-    min-height: 60vh;
+    min-height: 220mm;
+    margin: 0;
+    padding: 0;
     display: flex;
     flex-direction: column;
     justify-content: center;
   }
-  .mb-entry,
-  .mb-entry-message,
+  .mb-cover-names {
+    font-size: 34pt;
+  }
   .mb-cover-names,
   .mb-cover-mono {
     color: #1a1a1a;
   }
-  .mb-entry-date,
   .mb-cover-date,
-  .mb-count {
+  .mb-count,
+  .mb-entry-date {
     color: #555;
+  }
+  .mb-section + .mb-section {
+    break-before: page;
+  }
+  .mb-entry {
+    padding: 7mm 0;
+  }
+  .mb-entry-message {
+    font-size: 11.5pt;
+    line-height: 1.6;
+    orphans: 3;
+    widows: 3;
+  }
+  .mb-entry-author {
+    font-size: 12pt;
   }
   .mb-entry.is-favorite {
     background: none;
-    border: 1px solid #ccc;
+    border-color: #d8c48a;
+  }
+  .nf-svg {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
   }
 }

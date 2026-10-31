@@ -363,6 +363,7 @@ export function buildOverride(body) {
   const couple = obj(body.couple, "couple")
   const registry = obj(body.registry, "registry")
   const memories = obj(body.memories, "memories")
+  const guestbook = obj(body.guestbook, "guestbook")
   const nav = obj(body.nav, "nav")
   const footer = obj(body.footer, "footer")
   const copy = obj(body.copy, "copy")
@@ -392,6 +393,9 @@ export function buildOverride(body) {
     memories: {
       title: reqStr(memories.title, "Memories title", CAP.heading),
       body: reqStr(memories.body, "Memories body", CAP.body),
+    },
+    guestbook: {
+      showFavorites: optBool(guestbook.showFavorites, "Guestbook Favorites toggle"),
     },
     contactEmail: optEmail(body.contactEmail),
     nav: {

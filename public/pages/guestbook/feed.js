@@ -3,6 +3,7 @@
 
 import {
   html,
+  raw,
   api,
   formatDate,
   getCoupleName,
@@ -15,7 +16,7 @@ import {
   announceCharsRemaining,
   shareUrl,
 } from "../utils.js"
-import { requireAccount, session } from "../../components/guest-session.js"
+import { requireAccount, session, onSessionChange } from "../../components/guest-session.js"
 import { showToast } from "../../components/toast.js"
 import { fireConfetti, miniSparkle, setButtonLoading } from "../../components/celebrate.js"
 import { showNote } from "../../components/notice.js"
@@ -27,17 +28,12 @@ import {
   postShortcutAria,
 } from "../../components/comment-thread.js"
 import { renderMonogram } from "../../components/monogram.js"
+import { flowerSVG } from "../../components/note-flower.js"
+import { initMeadow, MEADOW_MAX } from "./meadow.js"
+import { initBackdrop } from "./backdrop.js"
 
 const PAGE_SIZE = 20
 const MAX_AUTO_FETCHES = 5
-
-/** Rotating composer-prompt lines for the empty state (Feature 4). */
-const EMPTY_PROMPTS = [
-  "Share a memory…",
-  "A wish for the years ahead…",
-  "A bit of advice…",
-  "A favorite moment from the day…",
-]
 
 /** @type {number | null} */
 let nextCursor = null
@@ -47,8 +43,20 @@ let autoFetches = 0
 let renderedCount = 0
 /** Host mode: the couple, admin-logged-in and not signed in as a guest, can pin. */
 let hostMode = false
-/** @type {ReturnType<typeof setInterval> | null} */
-let emptyPromptTimer = null
+
+/** A flower's largest size, in CSS px. The composer preview draws at it; a card
+ *  draws the same flower, shrunk if need be to the height of its words
+ *  (guestbook.css), so the flower a guest watches grow is the one they get. */
+const FLOWER_SIZE = { scale: 0.75, maxW: 120, maxH: 150 }
+/** Every entry on the page by id (feed, deep link, own posts), so a pin or
+ *  unpin can re-gild the flower that's already drawn. */
+const entriesById = /** @type {Map<number, Types.GuestbookFeedEntry>} */ (new Map())
+/** Entries in feed order — paged in, plus the guest's own new posts — for the
+ *  meadow. A deep-linked entry is prepended to the DOM but not to this. */
+let feedEntries = /** @type {Types.GuestbookFeedEntry[]} */ ([])
+let redrawMeadow = () => {}
+/** @type {IntersectionObserver | null} One observer reveals every card's flower once. */
+let growObserver = null
 
 /** The couple's admin `csrf` cookie value, if present (readable — not HttpOnly). */
 function adminCsrfCookie() {
@@ -61,6 +69,17 @@ function adminCsrfCookie() {
 /** Host mode: an admin session present and no guest signed in (guest wins). */
 function isHostMode() {
   return !session.account && adminCsrfCookie() !== null
+}
+
+/** A card's flower: gilded while the note is pinned. @param {Types.GuestbookFeedEntry} entry */
+function cardFlower(entry) {
+  return flowerSVG(entry, { ...FLOWER_SIZE, gold: entry.pinned })
+}
+
+/** The couple's pin toggle on a card (host mode only). @param {Types.GuestbookFeedEntry} entry */
+function pinButton(entry) {
+  return html`<button type="button" class="gb-pin" data-gb-action="${entry.pinned ? "unpin" : "pin"}"
+    data-id="${entry.id}" aria-pressed="${entry.pinned ? "true" : "false"}">Pin</button>`
 }
 
 /** @param {Types.GuestbookFeedEntry} entry */
@@ -81,6 +100,9 @@ function renderEntry(entry) {
         )}</time>
       </header>
       <p class="gb-message">${entry.message}</p>
+      <span class="gb-flower nf-grow" aria-hidden="true"
+        >${raw(cardFlower(entry))}</span
+      >
       ${entry.status === "pending" && entry.is_own
         ? html`<p class="status-badge status-pending gb-pending-chip">
             Awaiting approval — only you can see this
@@ -93,10 +115,7 @@ function renderEntry(entry) {
           ? html`<button type="button" class="gb-share" data-gb-action="share"
               data-id="${entry.id}" aria-label="Share this message">Share</button>`
           : ""}
-        ${hostMode && entry.status === "approved"
-          ? html`<button type="button" class="gb-pin" data-gb-action="pin"
-              data-id="${entry.id}" aria-label="Pin to Favorites">Pin ✨</button>`
-          : ""}
+        ${hostMode && entry.status === "approved" ? pinButton(entry) : ""}
         ${entry.is_own
           ? html`<button type="button" class="gb-delete" data-gb-action="delete"
               data-id="${entry.id}">Delete</button>`
@@ -120,7 +139,7 @@ function renderFavorite(entry) {
       <p class="gb-fav-message">${entry.message}</p>
       ${hostMode
         ? html`<button type="button" class="gb-unpin" data-gb-action="unpin"
-            data-id="${entry.id}" aria-label="Remove from Favorites">Unpin</button>`
+            data-id="${entry.id}">Unpin</button>`
         : ""}
     </li>
   `
@@ -139,7 +158,8 @@ function renderFavorites(pinned) {
   section.hidden = false
 }
 
-/** Refetch the first page purely to refresh the Favorites strip after a pin/unpin. */
+/** Refetch the first page purely to refresh the Favorites strip after a pin/unpin.
+ *  (The server sends an empty strip while the couple has Favorites switched off.) */
 async function refreshFavorites() {
   try {
     const data = /** @type {Types.GuestbookFeedResponse} */ (
@@ -149,6 +169,25 @@ async function refreshFavorites() {
   } catch {
     // Non-fatal: the strip refreshes on next full page load.
   }
+}
+
+/**
+ * Re-gild a note everywhere it's already drawn: its card's flower, the card's
+ * pin toggle, and the meadow if the note stands in it.
+ * @param {number} id @param {boolean} pinned
+ */
+function setEntryPinned(id, pinned) {
+  const entry = entriesById.get(id)
+  if (!entry) return
+  entry.pinned = pinned
+  const card = getElement("gb-feed").querySelector(`.gb-entry[data-id="${id}"]`)
+  if (card) {
+    const slot = card.querySelector(".gb-flower")
+    if (slot) slot.innerHTML = cardFlower(entry)
+    const toggle = card.querySelector(".gb-pin")
+    if (toggle) toggle.outerHTML = String(pinButton(entry))
+  }
+  if (feedEntries.slice(0, MEADOW_MAX).includes(entry)) redrawMeadow()
 }
 
 /**
@@ -169,10 +208,16 @@ function addEntries(entries, prepend) {
     // Skip an entry already on the page — a ?entry= deep link prepends a row that
     // a later pagination page could otherwise re-append as a duplicate.
     if (feed.querySelector(`.gb-entry[data-id="${entry.id}"]`)) continue
+    entriesById.set(entry.id, entry)
     const wrapper = document.createElement("div")
     wrapper.innerHTML = renderEntry(entry)
     const card = wrapper.firstElementChild
     if (card) {
+      const flower = card.querySelector(".gb-flower")
+      if (growObserver && flower) {
+        flower.classList.add("nf-waiting")
+        growObserver.observe(flower)
+      }
       frag.appendChild(card)
       added += 1
     }
@@ -185,40 +230,7 @@ function addEntries(entries, prepend) {
 }
 
 function updateEmptyState() {
-  const empty = getElement("gb-empty")
-  const isEmpty = renderedCount === 0
-  empty.hidden = !isEmpty
-  if (isEmpty) startEmptyPromptRotation()
-  else stopEmptyPromptRotation()
-}
-
-/** Cycle the empty-state prompt line with a gentle crossfade. Static (no timer,
- *  no fade) under prefers-reduced-motion. */
-function startEmptyPromptRotation() {
-  if (emptyPromptTimer !== null) return
-  const el = document.getElementById("gb-empty-prompt")
-  if (!el) return
-  const reduce =
-    typeof window.matchMedia === "function" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  el.textContent = EMPTY_PROMPTS[0]
-  if (reduce) return
-  let i = 0
-  emptyPromptTimer = setInterval(() => {
-    i = (i + 1) % EMPTY_PROMPTS.length
-    el.classList.add("gb-empty-prompt-out")
-    setTimeout(() => {
-      el.textContent = EMPTY_PROMPTS[i]
-      el.classList.remove("gb-empty-prompt-out")
-    }, 300)
-  }, 3600)
-}
-
-function stopEmptyPromptRotation() {
-  if (emptyPromptTimer !== null) {
-    clearInterval(emptyPromptTimer)
-    emptyPromptTimer = null
-  }
+  getElement("gb-empty").hidden = renderedCount !== 0
 }
 
 /**
@@ -246,8 +258,9 @@ function onFeedClick(e) {
 }
 
 /**
- * Admin-only pin/unpin toggle for the Favorites strip. Posts with the admin
- * `csrf` cookie (host mode), then refreshes the strip.
+ * Admin-only pin/unpin. Posts with the admin `csrf` cookie (host mode), re-gilds
+ * the note's flower in place, then refreshes the Favorites strip (empty while
+ * the couple has the strip switched off).
  * @param {number} id @param {boolean} pinned @param {HTMLElement} btn
  */
 async function setPinned(id, pinned, btn) {
@@ -258,11 +271,13 @@ async function setPinned(id, pinned, btn) {
       csrf: true,
       csrfCookie: "csrf",
     })
+    setEntryPinned(id, pinned)
     await refreshFavorites()
-    showToast(pinned ? "Pinned to Favorites ✨" : "Removed from Favorites")
+    showToast(pinned ? "Pinned" : "Unpinned")
   } catch (err) {
     showToast(getErrorMessage(err), { variant: "error" })
   } finally {
+    // The card's toggle may have been replaced; this is a no-op then.
     btn.removeAttribute("disabled")
   }
 }
@@ -325,6 +340,9 @@ async function deleteEntry(id, btn) {
     if (article) article.remove()
     renderedCount = Math.max(0, renderedCount - 1)
     updateEmptyState()
+    const before = feedEntries.length
+    feedEntries = feedEntries.filter((e) => e.id !== id)
+    if (feedEntries.length !== before) redrawMeadow()
   } catch (err) {
     showError(getErrorMessage(err))
   }
@@ -359,9 +377,14 @@ async function loadPage(isAuto) {
     const data = /** @type {Types.GuestbookFeedResponse} */ (
       await api(`/api/guestbook${query}`)
     )
-    // The pinned "Favorites" strip only ships on the first page.
+    // The pinned "Favorites" strip only ships on the first page, and is empty
+    // unless the couple has it switched on. Cards gild from `entry.pinned`.
     if (data.pinned) renderFavorites(data.pinned)
     addEntries(data.entries, false)
+    // The meadow holds the newest MEADOW_MAX; later pages don't change it.
+    const meadowWasFull = feedEntries.length >= MEADOW_MAX
+    feedEntries.push(...data.entries)
+    if (!meadowWasFull) redrawMeadow()
     nextCursor = data.nextCursor
     setLoadMoreState(btn, "reset")
     if (nextCursor === null) {
@@ -378,6 +401,16 @@ async function loadPage(isAuto) {
     loading = false
     if (firstPaint) loadingEl.hidden = true
   }
+}
+
+/** The guest's own new card settles in under the composer, once. Its flower
+ *  then grows like every other card's (reduced motion: it's simply there).
+ *  @param {number} id */
+function landNewCard(id) {
+  const card = getElement("gb-feed").querySelector(`.gb-entry[data-id="${id}"]`)
+  if (!(card instanceof HTMLElement)) return
+  card.classList.add("gb-entry-new")
+  card.addEventListener("animationend", () => card.classList.remove("gb-entry-new"), { once: true })
 }
 
 /** @param {Types.ContentStatus} status */
@@ -437,19 +470,49 @@ async function submitPost(message) {
     composer.dispatchEvent(new Event("input", { bubbles: true }))
     composer.focus()
     addEntries([data.entry], true)
+    feedEntries.unshift(data.entry)
+    landNewCard(data.entry.id)
+    redrawMeadow()
     // Announce only this own post (the feed itself is not a live region, 2.15).
     getElement("gb-live").textContent =
       data.status === "pending"
         ? "Your message was posted and is awaiting approval."
         : "Your message was posted."
     celebrate(data.status)
+    // One note at a time: a held post explains itself; a live one may nudge.
     if (data.status === "pending") showPendingNote()
-    showGalleryNudge()
+    else showGalleryNudge()
   } catch (err) {
     showError(getErrorMessage(err))
   } finally {
     setButtonLoading(btn, false)
   }
+}
+
+/**
+ * The composer grows the guest's flower as they type: seeded from their account
+ * name and the trimmed message, exactly what the posted card will draw.
+ * @param {HTMLTextAreaElement} messageEl
+ */
+function initFlowerPreview(messageEl) {
+  const preview = getElement("gb-flower-preview")
+  let queued = false
+  const paint = () => {
+    queued = false
+    const message = messageEl.value.trim()
+    preview.classList.toggle("is-empty", message === "")
+    preview.innerHTML = message
+      ? flowerSVG({ author_name: session.account?.name ?? "", message }, FLOWER_SIZE)
+      : ""
+  }
+  const schedule = () => {
+    if (queued) return
+    queued = true
+    requestAnimationFrame(paint)
+  }
+  messageEl.addEventListener("input", schedule)
+  onSessionChange(schedule)
+  paint()
 }
 
 /** @param {Event} e */
@@ -487,6 +550,33 @@ export function initFeed() {
   }
   messageEl.addEventListener("input", updateCounter)
   updateCounter()
+  initFlowerPreview(messageEl)
+
+  // Each card's flower grows in once, the first time it scrolls into view.
+  // Under reduced motion there is no observer, and every flower is simply there.
+  const reduce =
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  if (!reduce) {
+    growObserver = new IntersectionObserver(
+      (records) => {
+        for (const record of records) {
+          if (!record.isIntersecting) continue
+          record.target.classList.remove("nf-waiting")
+          growObserver?.unobserve(record.target)
+        }
+      },
+      { rootMargin: "0px 0px -10% 0px" },
+    )
+  }
+
+  redrawMeadow = initMeadow(
+    getElement("gb-meadow"),
+    () => feedEntries,
+    (id) => void openEntry(id),
+  )
+  redrawMeadow()
+  initBackdrop()
 
   // Same accelerator as the comment composer (components/comment-thread.js):
   // Cmd/Ctrl+Enter signs, bare Enter keeps its paragraph break — entries here

@@ -1,13 +1,15 @@
 /** @file /memory-book — a print-first keepsake that gathers EVERY approved
  *  guestbook entry (paging the public feed until exhausted) into an elegant
- *  book layout. Admin-pinned Favorites lead, then the rest chronologically.
+ *  book layout. When the couple has Favorites switched on (site content), the
+ *  admin-pinned notes lead; then the rest, newest first. A pinned note's flower
+ *  is gilded either way.
  *  Public-read only (same data as /guestbook); no auth, no mutations. The
  *  "Print / Save as PDF" button just calls window.print(); print styling lives
  *  in memory-book.css (@page + page-break rules). No regex (CLAUDE.md). */
 /** @import * as Types from "./types.js" */
 
-import { api, html, getElement, getButtonElement, formatDate, getErrorMessage } from "../utils.js"
-import { renderMonogram } from "../../components/monogram.js"
+import { api, html, raw, getElement, getButtonElement, formatDate, getErrorMessage } from "../utils.js"
+import { flowerSVG } from "../../components/note-flower.js"
 
 /** One page's worth of entries. The public feed caps a page at 50. */
 const PAGE_SIZE = 50
@@ -38,21 +40,23 @@ async function fetchAllEntries() {
   return { entries, pinned }
 }
 
-/** Render one entry as a book page. `favorite` adds a small ✨ flourish.
- *  Message text keeps its line breaks via CSS `white-space: pre-wrap` on
- *  `.mb-entry-message`, so it renders verbatim (still auto-escaped by html``).
+/** Render one entry as a book page: the note, then its signature, with the
+ *  note's flower standing beside both. `favorite` sets it in the Favorites
+ *  section. Message text keeps its line breaks via CSS `white-space: pre-wrap`
+ *  on `.mb-entry-message`, so it renders verbatim (still auto-escaped by html``).
  *  @param {Types.MemoryBookEntry} entry @param {boolean} favorite @returns {string} */
 function entryMarkup(entry, favorite) {
   const name = entry.author_name || "A guest"
   return html`
     <article class="mb-entry ${favorite ? "is-favorite" : ""}">
-      <div class="mb-entry-head">
-        ${renderMonogram(name)}
-        <span class="mb-entry-author">${name}</span>
-        ${favorite ? html`<span class="mb-entry-fav" aria-label="Favorite">✨</span>` : ""}
-        <span class="mb-entry-date">${formatDate(entry.created_at)}</span>
-      </div>
       <p class="mb-entry-message">${entry.message}</p>
+      <p class="mb-entry-sign">
+        <span class="mb-entry-author">${name}</span>
+        <span class="mb-entry-date">${formatDate(entry.created_at)}</span>
+      </p>
+      <span class="mb-entry-flower" aria-hidden="true"
+        >${raw(flowerSVG(entry, { scale: 0.7, maxW: 120, maxH: 140, gold: entry.pinned }))}</span
+      >
     </article>
   `
 }
@@ -107,8 +111,18 @@ async function load() {
   }
 }
 
+/** The cover's flower: the couple's own, grown from their names like any note. */
+function drawCoverFlower() {
+  const names = document.querySelector(".mb-cover-names")?.textContent?.trim() ?? ""
+  getElement("mb-cover-flower").innerHTML = flowerSVG(
+    { author_name: names, message: names + "." },
+    { scale: 0.8, maxW: 96, maxH: 120 },
+  )
+}
+
 function init() {
   getButtonElement("mb-print").addEventListener("click", () => window.print())
+  drawCoverFlower()
   void load()
 }
 

@@ -434,3 +434,64 @@ export function replyGlyph(value: string | null | undefined): string
 /** The last single emoji in free text (what the reply form's "any emoji" box
  *  keeps when a keyboard inserts more than one character), or null. */
 export function lastEmojiIn(text: string): string | null
+
+/** @file note-flower.js - Types for the per-note flower drawn beside guestbook entries */
+
+/** A note's grammar, the thing the flower grows from. `end` is the sentence's
+ *  closing mark (`…` reads as `.` with `marks` 3); `commas` are word indices. */
+export interface NoteSentence {
+  words: string[]
+  end: "" | "." | "!" | "?"
+  marks: number
+  commas: number[]
+  emoji: string[]
+}
+
+export type FlowerLeafShape = "lance" | "ovate" | "coin" | "blade"
+export type FlowerPetalShape = "round" | "point" | "notch" | "strap"
+
+/** What a flower grew, counted — for tests and for nothing else. */
+export interface FlowerParts {
+  branches: number
+  leaves: number
+  blooms: number
+  tulips: number
+  buds: number
+  berries: number
+  tendrils: number
+  emoji: number
+}
+
+/** The two fields a flower is seeded from. The row id is deliberately not one. */
+export interface FlowerNote {
+  author_name: string
+  message: string
+}
+
+export interface FlowerOptions {
+  /** A Favorite (pinned): gold at the heart of every flower, a slightly taller stem. */
+  gold?: boolean
+}
+
+export interface FlowerSVGOptions extends FlowerOptions {
+  /** CSS px per plant unit before the caps apply (default 0.5). */
+  scale?: number
+  maxW?: number
+  maxH?: number
+}
+
+/** A plant as a `<g>` rooted at (0,0), with its bounding box in plant units. */
+export interface GrownFlower {
+  markup: string
+  box: { x0: number; y0: number; x1: number; y1: number }
+  parts: FlowerParts
+}
+
+/** Split a note into sentences, words, closing marks, commas and emoji (no regex). */
+export function noteSentences(message: string): NoteSentence[]
+
+/** Grow a note's plant: pure, deterministic per author + message. */
+export function growFlower(note: FlowerNote, opts?: FlowerOptions): GrownFlower
+
+/** The plant in its own fitted, aria-hidden `<svg>`, sized from the plant itself. */
+export function flowerSVG(note: FlowerNote, opts?: FlowerSVGOptions): string
