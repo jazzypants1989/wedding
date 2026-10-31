@@ -80,6 +80,40 @@ export function quarantineItemDir(fileKey) {
   }
 }
 
+/** @type {Types.restoreQuarantinedItemDir} */
+export function restoreQuarantinedItemDir(fileKey) {
+  // The inverse of quarantineItemDir, for an Undo of a reject (or "Move back to
+  // review") before the sweep purges it. The newest copy wins when a key was
+  // quarantined more than once ("<key>" or "<key>-<epochms>").
+  const dest = itemDir(fileKey)
+  if (fs.existsSync(dest)) return true
+  /** @type {string[]} */
+  let names = []
+  try {
+    names = fs.readdirSync(QUARANTINE_DIR)
+  } catch {
+    return false
+  }
+  let best = ""
+  let bestStamp = -1
+  for (const name of names) {
+    let stamp = -1
+    if (name === fileKey) stamp = 0
+    else if (name.startsWith(fileKey + "-")) {
+      const n = Number(name.slice(fileKey.length + 1))
+      if (Number.isInteger(n) && n > 0) stamp = n
+    }
+    if (stamp > bestStamp) {
+      best = name
+      bestStamp = stamp
+    }
+  }
+  if (!best) return false
+  fs.mkdirSync(path.dirname(dest), { recursive: true })
+  fs.renameSync(path.join(QUARANTINE_DIR, best), dest)
+  return true
+}
+
 /** @type {Types.contentTypeForExt} */
 export function contentTypeForExt(ext) {
   return CONTENT_TYPE_BY_EXT[ext] ?? "application/octet-stream"

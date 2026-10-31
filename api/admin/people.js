@@ -52,6 +52,8 @@ import {
   mergeIdentityInto,
   setIdentityPerson,
   softDeleteIdentity,
+  getFaceById,
+  mediaChipInfo,
 } from "../../db/media-faces.js"
 import {
   assignmentsForFace,
@@ -95,9 +97,56 @@ function personPayload(person) {
   }
 }
 
+/** How many of one person's faces `?faces=` returns. A person page shows them
+ *  as a grid to check by eye; past this it says how many more there are. */
+const PERSON_FACES_MAX = 60
+
+/**
+ * One person's live faces as chips, newest identity first — for the People
+ * page's face grid, so a wrong name can be spotted (and opened) from the person
+ * as well as from the photograph. Ids, a file key, a box and the original
+ * pixel size, the same chip shape every face payload uses; never a descriptor.
+ * @param {number} personId
+ */
+function personFaces(personId) {
+  /** @type {Array<{ id: number, media_id: number, bbox_x: number, bbox_y: number, bbox_w: number, bbox_h: number }>} */
+  const rows = []
+  for (const identity of identitiesForPerson(personId)) {
+    for (const faceId of faceIdsForIdentity(identity.id)) {
+      const face = getFaceById(faceId)
+      // faceIdsForIdentity includes soft-deleted rows on purpose (see its
+      // note); a dismissed or superseded face is not one of theirs to show.
+      if (face && !face.deleted_at) rows.push(face)
+    }
+  }
+  rows.sort((a, b) => b.id - a.id)
+  const shown = rows.slice(0, PERSON_FACES_MAX)
+  const chips = mediaChipInfo([...new Set(shown.map((f) => f.media_id))])
+  const faces = shown.map((f) => {
+    const info = chips.get(f.media_id)
+    return {
+      faceId: f.id,
+      mediaId: f.media_id,
+      fileKey: info ? info.fileKey : null,
+      width: info ? info.width : null,
+      height: info ? info.height : null,
+      box: { x: f.bbox_x, y: f.bbox_y, w: f.bbox_w, h: f.bbox_h },
+    }
+  })
+  return { faces, total: rows.length }
+}
+
 /** @type {Types.peopleListHandler} */
 export async function listPeople(req, res) {
-  return sendJson(res, 200, { people: listPeopleRows().map(personListPayload) })
+  const people = listPeopleRows().map(personListPayload)
+  // `?faces=<personId>` adds that one person's faces, so the People page can
+  // draw its grid without a route of its own.
+  const param = new URL(req.url ?? "/", `http://${req.headers.host}`).searchParams.get("faces")
+  if (param === null) return sendJson(res, 200, { people })
+  const idResult = validateId(param, "person ID")
+  if (!idResult.valid) throw new ValidationError(idResult.error)
+  const { faces, total } = personFaces(idResult.value)
+  return sendJson(res, 200, { people, personFaces: { personId: idResult.value, faces, total } })
 }
 
 /** @type {Types.personCreateHandler} */

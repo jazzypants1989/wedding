@@ -1,5 +1,7 @@
-/** @file Admin "Effects" tab — promote the studio's tuned effect values to a
- *  site-wide runtime override.
+/** @file Effects (/admin/site/effects) — promote the studio's tuned effect
+ *  values to a site-wide runtime override. A single column under Site, like
+ *  Site content: the JSON, a sticky action bar, and a leave guard while it
+ *  holds unsaved edits.
  *
  *  Loads the stored `effect_config` override into a JSON textarea, PUTs edits to
  *  /api/admin/effect-config (auto-CSRF via api()), offers a reset-to-defaults
@@ -10,6 +12,7 @@
 /** @import * as Types from './types.js' */
 
 import { api, showError, showSuccess } from "./utils.js"
+import { registerPanel, addGuard, setCrumbs } from "./router.js"
 import { openConfirm } from "./confirm.js"
 import {
   getElement,
@@ -22,12 +25,29 @@ import {
 /** Shared contract with the effects read side + studio write side. */
 const STUDIO_STORAGE_KEY = "effect-config-override"
 
-/** @param {Record<string, unknown>} override */
-function fillTextarea(override) {
-  getTextAreaElement("effect-config-json").value = JSON.stringify(override, null, 2)
+/** The textarea as last loaded or saved — the dirty baseline. */
+let saved = /** @type {string | null} */ (null)
+
+/** @param {Record<string, unknown>} override @param {boolean} [isSaved] */
+function fillTextarea(override, isSaved = true) {
+  const text = JSON.stringify(override, null, 2)
+  getTextAreaElement("effect-config-json").value = text
+  if (isSaved) saved = text
+  updateDirtyNote()
+}
+
+/** @returns {boolean} edits since the last load / save */
+export function isEffectConfigDirty() {
+  return saved !== null && getTextAreaElement("effect-config-json").value !== saved
+}
+
+function updateDirtyNote() {
+  getElement("effect-config-dirty").hidden = !isEffectConfigDirty()
 }
 
 export async function loadEffectConfig() {
+  // Never clobber edits still sitting in the textarea (a re-login, a re-visit).
+  if (isEffectConfigDirty()) return
   try {
     const data = /** @type {Types.EffectConfigResponse} */ (await api("/api/admin/effect-config"))
     fillTextarea(data.override || {})
@@ -38,8 +58,14 @@ export async function loadEffectConfig() {
 }
 
 /** @param {SubmitEvent} e */
-async function handleSubmit(e) {
+function handleSubmit(e) {
   e.preventDefault()
+  void saveEffectConfig()
+}
+
+/** Save the textarea; true when it saved (the guard's "Save and leave" too).
+ *  @returns {Promise<boolean>} */
+export async function saveEffectConfig() {
   const errorEl = getElement("effect-config-form-error")
   errorEl.hidden = true
 
@@ -48,9 +74,9 @@ async function handleSubmit(e) {
     const text = getTextAreaElement("effect-config-json").value.trim()
     override = text ? JSON.parse(text) : {}
   } catch {
-    errorEl.textContent = "That isn't valid JSON — check for a trailing comma or missing quote."
+    errorEl.textContent = "That isn't valid JSON — check for a trailing comma or a missing quote."
     errorEl.hidden = false
-    return
+    return false
   }
 
   const saveBtn = getButtonElement("effect-config-save-btn")
@@ -63,10 +89,12 @@ async function handleSubmit(e) {
       })
     )
     fillTextarea(data.override || {})
-    showSuccess("Effect config updated")
+    showSuccess("Effects saved — live on the next page load")
+    return true
   } catch (err) {
     errorEl.textContent = getErrorMessage(err)
     errorEl.hidden = false
+    return false
   } finally {
     saveBtn.disabled = false
   }
@@ -103,13 +131,14 @@ function handleImport() {
   }
   if (!stored) {
     errorEl.textContent =
-      "No studio override found in this browser. Tune an effect in /studio and 'Save to browser' first."
+      "No studio override found in this browser. " +
+      "Tune an effect in /studio and 'Save to browser' first."
     errorEl.hidden = false
     return
   }
   try {
-    fillTextarea(JSON.parse(stored))
-    showSuccess("Imported this browser's studio values — review, then Save.")
+    fillTextarea(JSON.parse(stored), false)
+    showSuccess("Imported this browser's studio values — review them, then Save.")
   } catch {
     errorEl.textContent = "This browser's studio override is corrupt and couldn't be read."
     errorEl.hidden = false
@@ -117,6 +146,29 @@ function handleImport() {
 }
 
 export function initEffectConfig() {
+  registerPanel("effects", {
+    mount() {
+      setCrumbs([])
+      void loadEffectConfig()
+    },
+  })
+  addGuard({
+    tab: "effects",
+    dirty: isEffectConfigDirty,
+    what: "your effect settings",
+    save: saveEffectConfig,
+    // Discard means discard: the next visit reloads the saved override.
+    discard: () => {
+      saved = null
+      updateDirtyNote()
+    },
+  })
+  window.addEventListener("beforeunload", (e) => {
+    if (!isEffectConfigDirty()) return
+    e.preventDefault()
+    e.returnValue = ""
+  })
+  getTextAreaElement("effect-config-json").addEventListener("input", updateDirtyNote)
   getFormElement("effect-config-form").addEventListener("submit", handleSubmit)
   getButtonElement("effect-config-reset-btn").addEventListener("click", handleReset)
   getButtonElement("effect-config-import-btn").addEventListener("click", handleImport)

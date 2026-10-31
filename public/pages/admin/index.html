@@ -3,10 +3,10 @@
 
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Admin Dashboard - Wedding RSVP</title>
-  <meta name="theme-color" content="#eee6dc" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#1a1614" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f5efe7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#15111c" media="(prefers-color-scheme: dark)">
   <meta name="description" content="Admin dashboard for managing wedding RSVPs.">
   <link rel="icon" type="image/png" href="/images/favicon.png">
   <link rel="preload" as="font" type="font/woff2" href="/fonts/dm-serif-display-latin.woff2" crossorigin>
@@ -16,6 +16,11 @@
   <link rel="stylesheet" href="/styles/components.css">
   <link rel="stylesheet" href="/styles/social.css">
   <link rel="stylesheet" href="/pages/admin/admin.css">
+  <!-- One sheet per phase-2 slice, so nobody fights over admin.css (WORKSPACE.md). -->
+  <link rel="stylesheet" href="/pages/admin/admin-review.css">
+  <link rel="stylesheet" href="/pages/admin/admin-thanks.css">
+  <link rel="stylesheet" href="/pages/admin/admin-faces.css">
+  <link rel="stylesheet" href="/pages/admin/admin-panels.css">
   <script src="/components/theme-init.js"></script>
 </head>
 
@@ -30,7 +35,8 @@
 
   <div id="login-section" class="login-container">
     <div class="login-card">
-      <h1>Admin Login</h1>
+      <p class="login-brand">Wedding <span>Admin</span></p>
+      <h1>Welcome back</h1>
       <div id="login-error" class="alert alert-error" role="alert" hidden></div>
       <form id="login-form">
         <input type="text" id="username" name="username" value="admin" autocomplete="username" hidden
@@ -39,471 +45,218 @@
           <label for="password">Password</label>
           <input type="password" id="password" name="password" required autocomplete="current-password">
         </div>
-        <button type="submit" id="login-form-submit" class="btn btn-primary w-full">Login</button>
+        <button type="submit" id="login-form-submit" class="btn btn-primary btn-lg w-full">Sign in</button>
       </form>
     </div>
   </div>
 
-  <div id="dashboard-section" class="dashboard">
-    <header class="header">
-      <h1>Wedding RSVP Admin</h1>
-      <div class="header-actions">
-        <button class="theme-toggle btn btn-secondary btn-sm" type="button" aria-label="Switch to dark mode"><span
-            class="theme-icon-sun" aria-hidden="true"></span><span class="theme-icon-moon"
-            aria-hidden="true"></span></button>
-        <a href="/" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">View Site</a>
-        <button id="logout-btn" class="btn btn-secondary btn-sm">Logout</button>
+  <!-- The Workspace shell (prototypes/admin-workspace, IA.md; contract in
+       WORKSPACE.md). The sidebar is drawn by router.js from routes.js's NAV;
+       on phones the same links become the bottom bar. Only #view scrolls. -->
+  <div id="dashboard-section" class="dashboard ws">
+    <a class="skip" href="#view">Skip to content</a>
+    <aside class="sidebar">
+      <a class="brand" href="/admin"><span class="brand-mark" id="brand-mark">J&amp;J</span><span
+          class="brand-text">Admin</span></a>
+      <nav class="admin-nav" id="admin-nav" aria-label="Admin sections"></nav>
+      <div class="side-foot">
+        <a class="side-site" href="/" target="_blank" rel="noopener"><span>View the site</span><small>Opens in
+            a new tab</small></a>
+        <button type="button" class="icon-btn theme-toggle" aria-label="Switch to dark mode" title="Light / dark">
+          <svg class="icon icon-moon" viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor"
+            stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15 12.5A6 6 0 0 1 7.5 5a6 6 0 1 0 7.5 7.5z" />
+          </svg>
+          <svg class="icon icon-sun" viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor"
+            stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path
+              d="M10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M10 2v2 M10 16v2 M2 10h2 M16 10h2 M4.3 4.3l1.4 1.4 M14.3 14.3l1.4 1.4 M4.3 15.7l1.4-1.4 M14.3 5.7l1.4-1.4" />
+          </svg>
+        </button>
+        <button type="button" id="logout-btn" class="icon-btn" aria-label="Sign out" title="Sign out">
+          <svg class="icon" viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor"
+            stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 17H4V3h4 M13 14l4-4-4-4 M17 10H8" />
+          </svg>
+        </button>
       </div>
-    </header>
+    </aside>
 
-    <main class="main-content">
-      <div class="stats-grid" id="stats-grid">
-        <div class="stat-card text-center">
-          <div class="stat-label">Total Guests</div>
-          <div class="stat-value" id="stat-total">-</div>
+    <div class="main">
+      <header class="topbar">
+        <nav aria-label="Breadcrumb" class="crumbs-wrap"><ol id="crumbs" class="crumbs"></ol></nav>
+        <div class="top-tools">
+          <button type="button" id="admin-keys-btn" class="btn btn-sm btn-ghost keys-btn"><kbd>?</kbd>
+            Keys</button>
         </div>
-        <div class="stat-card text-center">
-          <div class="stat-label">Responded</div>
-          <div class="stat-value" id="stat-responded">-</div>
-          <div class="stat-detail" id="stat-responded-detail"></div>
-        </div>
-        <div class="stat-card text-center"
-          title="Guests who haven't responded yet — those invited plus those not yet invited.">
-          <div class="stat-label">Awaiting Reply</div>
-          <div class="stat-value" id="stat-pending">-</div>
-        </div>
-        <div class="stat-card text-center"
-          title="People expected — the sum of party sizes from guests who RSVP'd yes.">
-          <div class="stat-label">Expected Headcount</div>
-          <div class="stat-value" id="stat-headcount">-</div>
-        </div>
-      </div>
+      </header>
 
-      <!-- Shared success/error banner: polite (not role=alert) since it also announces successes. -->
-      <div id="notification-banner" class="alert alert-error" aria-live="polite" hidden></div>
+      <main id="view" class="view" tabindex="-1">
+      <!-- Section tabs for one job that is still two panels (Requests | Blocked). -->
+      <nav id="view-tabs" class="seg view-tabs" hidden></nav>
 
-      <div class="tabs" role="tablist" aria-label="Admin dashboard sections">
-        <button class="tab-btn active" data-tab="inbox" role="tab" id="tab-btn-inbox" aria-selected="true"
-          aria-controls="tab-inbox" tabindex="0">
-          Inbox
-          <span id="inbox-badge" class="tab-badge" hidden aria-label="items needing attention">0</span>
-        </button>
-        <button class="tab-btn" data-tab="guests" role="tab" id="tab-btn-guests" aria-selected="false"
-          aria-controls="tab-guests" tabindex="-1">Guests</button>
-        <button class="tab-btn" data-tab="rsvps" role="tab" id="tab-btn-rsvps" aria-selected="false"
-          aria-controls="tab-rsvps" tabindex="-1">RSVPs</button>
-        <button class="tab-btn" data-tab="petitions" role="tab" id="tab-btn-petitions" aria-selected="false"
-          aria-controls="tab-petitions" tabindex="-1">
-          Invitation Requests
-          <span id="petitions-badge" class="tab-badge" hidden aria-label="pending invitation requests">0</span>
-        </button>
-        <button class="tab-btn" data-tab="moderation" role="tab" id="tab-btn-moderation" aria-selected="false"
-          aria-controls="tab-moderation" tabindex="-1">
-          Moderation
-          <span id="moderation-badge" class="tab-badge" hidden aria-label="items awaiting review">0</span>
-        </button>
-        <button class="tab-btn" data-tab="gallery" role="tab" id="tab-btn-gallery" aria-selected="false"
-          aria-controls="tab-gallery" tabindex="-1">Gallery</button>
-        <button class="tab-btn" data-tab="faces" role="tab" id="tab-btn-faces" aria-selected="false"
-          aria-controls="tab-faces" tabindex="-1">Faces</button>
-        <button class="tab-btn" data-tab="thankyous" role="tab" id="tab-btn-thankyous" aria-selected="false"
-          aria-controls="tab-thankyous" tabindex="-1">
-          Thank yous
-          <span id="thankyous-badge" class="tab-badge" hidden aria-label="draft cards">0</span>
-          <span id="thankyous-reply-badge" class="tab-badge tab-badge-reply" hidden
-            aria-label="unread replies">&#9829;&nbsp;0</span>
-        </button>
-        <button class="tab-btn" data-tab="blocklist" role="tab" id="tab-btn-blocklist" aria-selected="false"
-          aria-controls="tab-blocklist" tabindex="-1">Blocklist</button>
-        <button class="tab-btn" data-tab="site-content" role="tab" id="tab-btn-site-content" aria-selected="false"
-          aria-controls="tab-site-content" tabindex="-1">Site content</button>
-        <button class="tab-btn" data-tab="effects" role="tab" id="tab-btn-effects" aria-selected="false"
-          aria-controls="tab-effects" tabindex="-1">Effects</button>
+      <!-- MORE (phones): every section as a list, drawn by router.js
+           renderMore(). Wide screens redirect it to Home. -->
+      <div id="tab-more" class="tab-content" role="region" aria-labelledby="more-title" hidden>
+        <div class="more">
+          <h1 id="more-title" class="sr-only">Everything</h1>
+          <div id="admin-more-list"></div>
+        </div>
       </div>
 
-      <!-- INBOX (A1): the daily-loop landing surface — pending review, unread
-           replies, and the next un-thanked guests, each deep-linking onward. -->
-      <div id="tab-inbox" class="tab-content active" role="tabpanel" aria-labelledby="tab-btn-inbox">
-        <p id="inbox-error" class="form-error" role="alert" hidden></p>
-        <div class="inbox-grid">
-          <section class="card inbox-card">
-            <div class="card-header flex-between">
-              <h2>Awaiting review <span id="inbox-mod-count" class="inbox-count"></span></h2>
-              <button type="button" class="btn btn-secondary btn-sm inbox-jump" data-jump="moderation">Open →</button>
-            </div>
-            <div id="inbox-moderation" class="inbox-section" role="status" aria-live="polite"></div>
+      <!-- HOME (inbox.js): three numbered steps in the order the work runs,
+           only the first unfinished one highlighted, plus "pick up where you
+           left off" and unread replies (IA §2, §13.6). -->
+      <div id="tab-inbox" class="tab-content" role="region" aria-labelledby="home-title">
+        <div class="home">
+          <header class="home-head">
+            <h1 id="home-title">Good morning, newlyweds</h1>
+            <p class="muted">Three things, in order. Each one walks you through itself.</p>
+          </header>
+          <p id="inbox-error" class="form-error" role="alert" hidden></p>
+          <div id="home-resume"></div>
+          <ol class="steps" id="home-steps" aria-live="polite"></ol>
+          <div id="home-replies"></div>
+        </div>
+      </div>
+
+      <!-- GUESTS & RSVPs (guests.js): one split view. An RSVP is a fact about a
+           guest — a filter (?rsvp=), a line in each row, a block in the detail
+           (IA §10). The list head is static so the search box keeps focus while
+           the rows re-render. -->
+      <div id="tab-guests" class="tab-content panel-fill" role="region" aria-label="Guests &amp; RSVPs" hidden>
+        <div class="split" id="guests-split">
+          <section class="pane pane-list" aria-label="Guests">
+            <header class="pane-head">
+              <h1>Guests &amp; RSVPs</h1>
+              <div class="pane-tools">
+                <span class="muted small" id="guests-summary"></span>
+                <a class="btn btn-sm" id="add-guest-btn" href="/admin/guests/new">+ Add</a>
+                <a class="btn btn-sm" id="import-csv-btn" href="/admin/guests/import">Import CSV</a>
+                <details class="ws-menu" id="guests-menu">
+                  <summary class="btn btn-sm" aria-label="More guest-list tools" title="More">⋯</summary>
+                  <div class="ws-menu-pop">
+                    <a class="ws-menu-item" id="send-invites-btn" href="/admin/guests/invite">Send invites…</a>
+                    <a class="ws-menu-item" id="manual-sms-btn" href="/admin/guests/text">Text invites by hand…</a>
+                    <hr>
+                    <a class="ws-menu-item" id="export-guests-btn" href="/api/admin/guests/export" download>Export guests (CSV)</a>
+                    <a class="ws-menu-item" id="export-rsvps-btn" href="/api/admin/rsvps/export" download>Export RSVPs (CSV)</a>
+                  </div>
+                </details>
+              </div>
+              <label class="ws-search">
+                <span class="sr-only">Search guests</span>
+                <input type="search" id="guest-search" placeholder="Search names, emails, phones" autocomplete="off"
+                  enterkeyhint="search">
+              </label>
+              <div class="chips" role="group" aria-label="RSVP" id="guests-chips"></div>
+            </header>
+            <ul class="rows" id="guests-rows"></ul>
+            <footer class="pane-foot"><kbd>j</kbd> <kbd>k</kbd> move · <kbd>/</kbd> search · <kbd>e</kbd> edit</footer>
           </section>
-          <section class="card inbox-card">
-            <div class="card-header flex-between">
-              <h2>Unread replies <span id="inbox-replies-count" class="inbox-count"></span></h2>
-              <button type="button" class="btn btn-secondary btn-sm inbox-jump" data-jump="mailbox">Open →</button>
+          <section class="pane pane-detail" aria-label="Selected guest" id="guests-detail"></section>
+        </div>
+      </div>
+
+      <!-- REQUESTS | BLOCKED (petitions.js + blocklist.js): one split view. The
+           blocklist only exists to filter requests, so it is a tab of them
+           (IA §10). Both list panes are drawn by JS. -->
+      <div id="tab-petitions" class="tab-content panel-fill" role="region" aria-label="Requests" hidden>
+        <div class="split" id="requests-split">
+          <section class="pane pane-list" aria-label="Requests" id="requests-list"></section>
+          <section class="pane pane-detail" aria-label="Selected request" id="requests-detail"></section>
+        </div>
+      </div>
+
+      <!-- Review posts + Accounts (moderation.js): two list → detail splits in
+           one panel. Drawn by JS; see public/pages/admin/WORKSPACE.md. -->
+      <div id="tab-moderation" class="tab-content panel-fill" role="region" aria-label="Review posts" hidden>
+        <div id="rv-split" class="split">
+          <section class="pane pane-list" id="rv-list" aria-label="Posts">
+            <div class="rv-sticky">
+              <header class="pane-head" id="rv-head"></header>
+              <div id="rv-bulk"></div>
             </div>
-            <div id="inbox-replies" class="inbox-section" role="status" aria-live="polite"></div>
+            <ul class="rows" id="rv-rows"></ul>
+            <footer class="pane-foot muted">
+              <kbd>j</kbd> <kbd>k</kbd> move · <kbd>x</kbd> tick · <kbd>?</kbd> all keys
+            </footer>
           </section>
-          <section class="card inbox-card">
-            <div class="card-header flex-between">
-              <h2>Still to thank <span id="inbox-unthanked-count" class="inbox-count"></span></h2>
-              <button type="button" class="btn btn-secondary btn-sm inbox-jump" data-jump="thankyous">Open →</button>
-            </div>
-            <div id="inbox-unthanked" class="inbox-section" role="status" aria-live="polite"></div>
+          <section class="pane pane-detail" id="rv-detail" aria-label="Selected post"></section>
+        </div>
+        <div id="ac-split" class="split" hidden>
+          <section class="pane pane-list" id="ac-list" aria-label="Accounts">
+            <header class="pane-head" id="ac-head"></header>
+            <ul class="rows" id="ac-rows"></ul>
+            <footer class="pane-foot muted">
+              <kbd>j</kbd> <kbd>k</kbd> move · <kbd>t</kbd> trust · <kbd>?</kbd> all keys
+            </footer>
           </section>
-        </div>
-      </div>
-
-      <div id="tab-guests" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-guests" hidden>
-        <div class="card">
-          <div class="card-header flex-between">
-            <h2>Guest List</h2>
-            <div class="header-buttons">
-              <button id="import-csv-btn" class="btn btn-secondary btn-sm">Import CSV</button>
-              <a href="/api/admin/guests/export" id="export-guests-btn" class="btn btn-secondary btn-sm">Export CSV</a>
-              <button id="manual-sms-btn" class="btn btn-secondary btn-sm">Manual SMS</button>
-              <button id="send-invites-btn" class="btn btn-secondary btn-sm">Send Invites</button>
-              <button id="add-guest-btn" class="btn btn-primary btn-sm">Add Guest</button>
-            </div>
-          </div>
-
-          <div class="filters">
-            <label for="guest-search" class="sr-only">Search guests</label>
-            <input type="text" id="guest-search" class="search-input" placeholder="Search by name, email, or phone...">
-            <label for="guest-status-filter" class="sr-only">Filter by status</label>
-            <select id="guest-status-filter" class="filter-select">
-              <option value="">All Statuses</option>
-              <option value="pending">Pending</option>
-              <option value="invited">Invited</option>
-              <option value="responded">Responded</option>
-              <option value="archived">Archived</option>
-            </select>
-          </div>
-
-          <div class="table-container">
-            <table id="guests-table">
-              <thead>
-                <tr>
-                  <th scope="col">Name</th>
-                  <th scope="col">Contact</th>
-                  <th scope="col">Status</th>
-                  <th scope="col" class="hide-mobile">Party Size</th>
-                  <th scope="col" class="hide-mobile">Last Invited</th>
-                  <th scope="col">Actions</th>
-                </tr>
-              </thead>
-              <tbody id="guests-tbody">
-                <!-- Populated by JS -->
-              </tbody>
-            </table>
-          </div>
-
-          <div id="guests-pagination" class="pagination flex-center">
-            <!-- Populated by JS -->
-          </div>
-        </div>
-      </div>
-
-      <div id="tab-rsvps" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-rsvps" hidden>
-        <div class="card">
-          <div class="card-header flex-between">
-            <h2>RSVP Responses</h2>
-            <a href="/api/admin/rsvps/export" id="export-rsvps-btn" class="btn btn-secondary btn-sm">Export CSV</a>
-          </div>
-
-          <div class="table-container">
-            <table id="rsvps-table">
-              <thead>
-                <tr>
-                  <th scope="col">Guest</th>
-                  <th scope="col">Attending</th>
-                  <th scope="col">Party Size</th>
-                  <th scope="col" class="hide-mobile">Food</th>
-                  <th scope="col" class="hide-mobile">Notes</th>
-                  <th scope="col" class="hide-mobile">Message</th>
-                  <th scope="col" class="hide-mobile">Submitted</th>
-                </tr>
-              </thead>
-              <tbody id="rsvps-tbody">
-                <!-- Populated by JS -->
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <!-- Petitions Tab -->
-      <div id="tab-petitions" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-petitions" hidden>
-        <div class="card">
-          <div class="card-header flex-between">
-            <h2>Invitation Requests</h2>
-            <div class="header-buttons">
-              <select id="petition-status-filter" class="filter-select">
-                <option value="">All</option>
-                <option value="pending" selected>Pending</option>
-                <option value="approved">Approved</option>
-                <option value="denied">Denied</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="table-container">
-            <table id="petitions-table">
-              <thead>
-                <tr>
-                  <th scope="col">Name</th>
-                  <th scope="col">Contact</th>
-                  <th scope="col" class="hide-mobile">Relationship</th>
-                  <th scope="col">Status</th>
-                  <th scope="col" class="hide-mobile">Submitted</th>
-                  <th scope="col">Actions</th>
-                </tr>
-              </thead>
-              <tbody id="petitions-tbody">
-                <!-- Populated by JS -->
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <!-- Moderation Tab -->
-      <div id="tab-moderation" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-moderation" hidden>
-        <div class="sub-toggle" role="tablist" aria-label="Moderation views">
-          <button type="button" id="mod-sub-queue" class="sub-toggle-pill active" role="tab"
-            aria-selected="true">Queue</button>
-          <button type="button" id="mod-sub-accounts" class="sub-toggle-pill" role="tab"
-            aria-selected="false">Accounts</button>
-        </div>
-
-        <!-- Queue sub-view -->
-        <div id="mod-view-queue" class="card">
-          <div class="card-header flex-between">
-            <h2>Awaiting Review</h2>
-            <div class="header-buttons">
-              <button type="button" id="mod-start-review" class="btn btn-primary btn-sm" hidden
-                title="Review pending items one at a time. Keys: ← / → to page, A approve, R reject, H hide.">
-                Start review ⏵
-              </button>
-            </div>
-          </div>
-
-          <div class="filters">
-            <label for="mod-type-filter" class="sr-only">Filter by type</label>
-            <select id="mod-type-filter" class="filter-select">
-              <option value="">All types</option>
-              <option value="guestbook">Messages</option>
-              <option value="media">Photos &amp; videos</option>
-              <option value="comment">Comments</option>
-            </select>
-            <label for="mod-status-filter" class="sr-only">Filter by status</label>
-            <select id="mod-status-filter" class="filter-select">
-              <option value="pending" selected>Pending</option>
-              <option value="approved">Approved</option>
-              <option value="hidden">Hidden</option>
-              <option value="rejected">Rejected</option>
-            </select>
-          </div>
-
-          <div id="mod-account-filter-note" class="mod-account-filter" hidden>
-            Showing one account's items.
-            <button type="button" id="mod-clear-account" class="btn btn-secondary btn-sm">Clear filter</button>
-          </div>
-
-          <div id="mod-bulk-bar" class="mod-bulk-bar" hidden>
-            <span id="mod-bulk-count" class="mod-bulk-count">0 selected</span>
-            <button type="button" id="mod-bulk-approve" class="btn btn-primary btn-sm">Approve selected</button>
-            <button type="button" id="mod-bulk-reject" class="btn btn-danger btn-sm">Reject selected</button>
-          </div>
-
-          <div id="mod-approve-all-bar" class="mod-approve-all-bar" hidden>
-            <button type="button" id="mod-approve-all" class="btn btn-primary btn-sm">Approve all pending</button>
-            <span class="text-muted">Publishes the entire pending backlog, not just this page.</span>
-          </div>
-
-          <div class="table-container">
-            <table id="moderation-table">
-              <thead>
-                <tr>
-                  <th scope="col" class="mod-check-col">
-                    <input type="checkbox" id="mod-select-all" aria-label="Select all loaded">
-                  </th>
-                  <th scope="col">Preview</th>
-                  <th scope="col" class="hide-mobile">Type</th>
-                  <th scope="col">Author</th>
-                  <th scope="col" class="hide-mobile">Submitted</th>
-                  <th scope="col">Actions</th>
-                </tr>
-              </thead>
-              <tbody id="moderation-tbody">
-                <!-- Populated by JS -->
-              </tbody>
-            </table>
-          </div>
-
-          <div class="mod-loadmore-wrap flex-center">
-            <button type="button" id="mod-loadmore" class="btn btn-secondary btn-sm" hidden>Load more</button>
-          </div>
-        </div>
-
-        <!-- Accounts sub-view -->
-        <div id="mod-view-accounts" class="card" hidden>
-          <p class="text-muted card-text">
-            Trusted guests post straight to the site; untrusted guests' posts wait
-            for your approval. Approving someone's post trusts them automatically,
-            so you'll see people here marked trusted whom you never clicked Trust for.
-          </p>
-          <div class="card-header flex-between">
-            <h2>Guest Accounts</h2>
-            <div class="header-buttons">
-              <select id="mod-account-trusted-filter" class="filter-select">
-                <option value="">All accounts</option>
-                <option value="1">Trusted</option>
-                <option value="0">Untrusted</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="table-container">
-            <table id="accounts-table">
-              <thead>
-                <tr>
-                  <th scope="col">Name</th>
-                  <th scope="col" class="hide-mobile">Source</th>
-                  <th scope="col">Trusted</th>
-                  <th scope="col" class="hide-mobile">Posts</th>
-                  <th scope="col" class="hide-mobile">Created</th>
-                  <th scope="col">Actions</th>
-                </tr>
-              </thead>
-              <tbody id="accounts-tbody">
-                <!-- Populated by JS -->
-              </tbody>
-            </table>
-          </div>
+          <section class="pane pane-detail" id="ac-detail" aria-label="Selected account"></section>
         </div>
       </div>
 
       <!-- Gallery Tab -->
-      <div id="tab-gallery" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-gallery" hidden>
-        <!-- Official ⇆ Most-loved (guest, by reaction count) toggle (A3). -->
-        <div class="tc-subnav" role="tablist" aria-label="Gallery views">
-          <button type="button" id="gallery-sub-official" class="tc-subnav-btn active" role="tab"
-            aria-selected="true">Official</button>
-          <button type="button" id="gallery-sub-loved" class="tc-subnav-btn" role="tab"
-            aria-selected="false">❤️ Most loved</button>
-        </div>
-
-        <div id="gallery-official-view">
-          <div class="card">
-            <div class="card-header flex-between">
-              <h2>Official Gallery</h2>
-              <button id="gallery-add-btn" class="btn btn-primary btn-sm">Add official photos</button>
-            </div>
-            <p class="text-muted card-text">
-              These appear in the gallery's Official section, in the order below. Use the arrows to reorder;
-              captions save as you type.
-            </p>
-            <div id="gallery-error" class="alert alert-error" role="alert" hidden></div>
-            <div id="curated-grid" class="curated-grid">
-              <!-- Populated by JS -->
-            </div>
-          </div>
-        </div>
-
-        <div id="gallery-loved-view" hidden>
-          <div class="card">
-            <div class="card-header flex-between">
-              <h2>Most loved <span aria-hidden="true">❤️</span></h2>
-            </div>
-            <p class="text-muted card-text">
-              Guest photos and videos ranked by how many reactions they've received. Feature a favourite by
-              moving it into the Official gallery.
-            </p>
-            <div id="loved-error" class="alert alert-error" role="alert" hidden></div>
-            <div id="loved-grid" class="curated-grid">
-              <!-- Populated by JS -->
-            </div>
-          </div>
+      <!-- GALLERY (gallery-admin.js): Official (curated, in order) | Most loved
+           by guests (ranked by reactions; promote into Official). -->
+      <div id="tab-gallery" class="tab-content panel-fill" role="region" aria-label="Gallery" hidden>
+        <div class="single single-wide">
+          <header class="single-head">
+            <h1>Gallery</h1>
+            <nav class="seg" aria-label="Gallery">
+              <a href="/admin/gallery" id="gallery-seg-official">Official</a>
+              <a href="/admin/gallery/loved" id="gallery-seg-loved">Most loved by guests</a>
+            </nav>
+            <p class="muted" id="gallery-lede"></p>
+            <a class="btn btn-sm" id="gallery-add-btn" href="/admin/gallery/upload">+ Add official photos</a>
+          </header>
+          <p id="gallery-error" class="status-note is-error" role="alert" hidden></p>
+          <ul id="curated-grid" class="photo-grid"></ul>
+          <ul id="loved-grid" class="photo-grid" hidden></ul>
         </div>
       </div>
 
-      <!-- Faces Tab: assisted face tagging against the guest roster
-           (docs/post-wedding/SPEC-vision-lab.md §6.5). A list, never a
-           wizard — Groups / Ask queue / Identified, populated by JS. Groups is
-           itself two views: a compact list, and a focused one-group-at-a-time
-           review that takes over #faces-body while it is open. -->
-      <div id="tab-faces" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-faces" hidden>
-        <div class="card">
-          <div class="card-header flex-between">
-            <h2>Faces</h2>
-            <div class="header-buttons">
-              <button type="button" id="faces-refresh-btn" class="btn btn-secondary btn-sm">Refresh</button>
+      <!-- NAME FACES (face-assignment.js): the Workspace walk — a stepper
+           (Groups → Quick questions → Same moment → Leftovers) with People and
+           History beside it, each a route under /admin/faces (routes.js).
+           Everything inside #faces-body is drawn by JS on every arrival. -->
+      <div id="tab-faces" class="tab-content panel-fill" role="region" aria-labelledby="tab-btn-faces" hidden>
+        <div id="faces-body" class="faces-root"></div>
+        <!-- The guest roster, for "Link to a guest" on a person. A PERSON is who
+             a face belongs to; a GUEST is an invitation (one per party). -->
+        <datalist id="faces-guest-roster"></datalist>
+      </div>
+
+      <!-- SITE CONTENT (site-content.js): one long form, guarded (IA §6). The
+           jump chips scroll to a section; the sticky action bar saves. -->
+      <div id="tab-site-content" class="tab-content panel-fill" role="region" aria-label="Site content" hidden>
+        <div class="single" id="site-content-page">
+          <header class="single-head">
+            <h1>Site content</h1>
+            <nav class="seg" aria-label="Site">
+              <a href="/admin/site/content" aria-current="page">Content</a>
+              <a href="/admin/site/effects">Effects</a>
+            </nav>
+            <p class="muted">What guests read on the public site. Changes go live when you save. The site
+              has a <strong>before</strong> and an <strong>after</strong> version that switch on your wedding
+              date, each with its own welcome and menu.</p>
+            <div class="chips sc-jump" role="group" aria-label="Jump to a section">
+              <button type="button" class="chip" data-jump="sc-sec-couple">Couple</button>
+              <button type="button" class="chip" data-jump="sc-sec-event">Event</button>
+              <button type="button" class="chip" data-jump="sc-sec-schedule">Schedule</button>
+              <button type="button" class="chip" data-jump="sc-sec-dress-code">Dress code</button>
+              <button type="button" class="chip" data-jump="sc-sec-registry">Registry</button>
+              <button type="button" class="chip" data-jump="sc-sec-memories">Memories</button>
+              <button type="button" class="chip" data-jump="sc-sec-guestbook">Guestbook</button>
+              <button type="button" class="chip" data-jump="sc-sec-footer">Footer</button>
+              <button type="button" class="chip" data-jump="sc-sec-pre-wedding-copy">Pre-wedding copy</button>
+              <button type="button" class="chip" data-jump="sc-sec-post-wedding-copy">Post-wedding copy</button>
+              <button type="button" class="chip" data-jump="sc-sec-pre-wedding-nav-links">Pre-wedding nav links</button>
+              <button type="button" class="chip" data-jump="sc-sec-post-wedding-nav-links">Post-wedding nav links</button>
             </div>
-          </div>
-          <p class="text-muted card-text">
-            Faces found in your photos, grouped by who they likely belong to. Open a group to look
-            through its faces one at a time, then name the whole group at once — the more you
-            name, the better the Ask queue below gets at suggesting the rest.
-          </p>
-          <div id="faces-counts" class="faces-counts" aria-live="polite"></div>
-          <!-- Two DIFFERENT rosters, and the distinction is the whole point of
-               the people table: a PERSON is who a face belongs to, a GUEST is an
-               invitation (one row per party, and much of the photographed cast
-               is not on it). Faces are named against people; people are
-               optionally linked to guests. Both live OUTSIDE #faces-body,
-               which JS replaces wholesale on every render. -->
-          <datalist id="faces-people-roster"></datalist>
-          <datalist id="faces-guest-roster"></datalist>
-          <div id="faces-body" class="faces-body">
-            <!-- Populated by JS: an empty state, or the Groups / Ask queue /
-                 Same moment / Identified / People sections -->
-          </div>
-        </div>
-      </div>
-
-      <div id="tab-blocklist" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-blocklist" hidden>
-        <div class="card">
-          <div class="card-header flex-between">
-            <h2>Blocklist</h2>
-            <button id="add-blocklist-btn" class="btn btn-primary btn-sm">Add Entry</button>
-          </div>
-
-          <p class="text-muted card-text">
-            People on this list will not see the invitation-request form when they try to look up their invitation.
-          </p>
-
-          <div class="table-container">
-            <table id="blocklist-table">
-              <thead>
-                <tr>
-                  <th scope="col">Name</th>
-                  <th scope="col">Email</th>
-                  <th scope="col">Phone</th>
-                  <th scope="col" class="hide-mobile">Reason</th>
-                  <th scope="col">Actions</th>
-                </tr>
-              </thead>
-              <tbody id="blocklist-tbody">
-                <!-- Populated by JS -->
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <div id="tab-site-content" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-site-content" hidden>
-        <div class="card">
-          <div class="card-header flex-between">
-            <h2>Site content</h2>
-          </div>
-
-          <p class="text-muted card-text">
-            Edit the words and details shown across your wedding site — names, date, schedule,
-            registry, and more. Changes save instantly, with no redeploy or technical steps.
-            Your site has two versions that switch automatically on your wedding date: a
-            <strong>before</strong> version (welcome, RSVP, schedule) and an <strong>after</strong>
-            version (guestbook, photos), each with its own welcome message and menu.
-          </p>
-
-          <form id="site-content-form">
-            <fieldset class="form-section">
+          </header>
+          <form id="site-content-form" class="form sc-form">
+            <fieldset class="form-section" id="sc-sec-couple">
               <legend>Couple</legend>
               <div class="form-group">
                 <label for="sc-couple-display">Display name (e.g. "First &amp; First")</label>
@@ -523,7 +276,7 @@
               </div>
             </fieldset>
 
-            <fieldset class="form-section">
+            <fieldset class="form-section" id="sc-sec-event">
               <legend>Event</legend>
               <div class="form-group">
                 <label for="sc-wedding-datetime">Wedding date &amp; time</label>
@@ -549,7 +302,7 @@
               </div>
             </fieldset>
 
-            <fieldset class="form-section">
+            <fieldset class="form-section" id="sc-sec-schedule">
               <legend>Schedule</legend>
               <div class="form-group">
                 <label for="sc-schedule-title">Section heading</label>
@@ -559,7 +312,7 @@
               <button type="button" id="sc-schedule-add" class="btn btn-secondary btn-sm">Add schedule item</button>
             </fieldset>
 
-            <fieldset class="form-section">
+            <fieldset class="form-section" id="sc-sec-dress-code">
               <legend>Dress code</legend>
               <div class="form-group">
                 <label for="sc-dresscode-title">Section heading</label>
@@ -579,7 +332,7 @@
               </div>
             </fieldset>
 
-            <fieldset class="form-section">
+            <fieldset class="form-section" id="sc-sec-registry">
               <legend>Registry</legend>
               <div class="form-group">
                 <label for="sc-registry-title">Section heading</label>
@@ -609,7 +362,7 @@
               </div>
             </fieldset>
 
-            <fieldset class="form-section">
+            <fieldset class="form-section" id="sc-sec-memories">
               <legend>Memories (post-wedding)</legend>
               <div class="form-group">
                 <label for="sc-memories-title">Section heading</label>
@@ -621,7 +374,17 @@
               </div>
             </fieldset>
 
-            <fieldset class="form-section">
+            <fieldset class="form-section" id="sc-sec-guestbook">
+              <legend>Guestbook</legend>
+              <div class="form-group">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="sc-guestbook-favorites">
+                  <span>Show pinned notes as Favorites at the top of the guestbook and first in the memory book</span>
+                </label>
+              </div>
+            </fieldset>
+
+            <fieldset class="form-section" id="sc-sec-footer">
               <legend>Footer</legend>
               <div class="form-group">
                 <label for="sc-footer-event-heading">Event-details heading</label>
@@ -633,7 +396,7 @@
               </div>
             </fieldset>
 
-            <fieldset class="form-section">
+            <fieldset class="form-section" id="sc-sec-pre-wedding-copy">
               <legend>Pre-wedding copy</legend>
               <div class="form-group">
                 <label for="sc-copy-pre-heading">Welcome heading</label>
@@ -645,7 +408,7 @@
               </div>
             </fieldset>
 
-            <fieldset class="form-section">
+            <fieldset class="form-section" id="sc-sec-post-wedding-copy">
               <legend>Post-wedding copy</legend>
               <div class="form-group">
                 <label for="sc-copy-post-heading">Welcome heading</label>
@@ -657,412 +420,264 @@
               </div>
             </fieldset>
 
-            <fieldset class="form-section">
+            <fieldset class="form-section" id="sc-sec-pre-wedding-nav-links">
               <legend>Pre-wedding nav links</legend>
               <div id="sc-nav-pre-rows" class="nav-editor"></div>
               <button type="button" id="sc-nav-pre-add" class="btn btn-secondary btn-sm">Add link</button>
             </fieldset>
 
-            <fieldset class="form-section">
+            <fieldset class="form-section" id="sc-sec-post-wedding-nav-links">
               <legend>Post-wedding nav links</legend>
               <div id="sc-nav-post-rows" class="nav-editor"></div>
               <button type="button" id="sc-nav-post-add" class="btn btn-secondary btn-sm">Add link</button>
             </fieldset>
 
-            <div class="form-actions form-actions-sticky">
+            <div class="actionbar sc-actionbar">
+              <button type="submit" id="site-content-save-btn" class="btn btn-primary btn-lg">Save</button>
+              <span class="dirty-note" id="site-content-dirty" hidden>Unsaved changes</span>
               <p id="site-content-form-error" class="form-error" role="alert" tabindex="-1" hidden></p>
-              <div class="form-actions-buttons">
-                <button type="submit" id="site-content-save-btn" class="btn btn-primary">Save changes</button>
-                <button type="button" id="site-content-reset-btn" class="btn btn-secondary btn-sm">Reset to defaults</button>
-              </div>
+              <button type="button" id="site-content-reset-btn" class="btn btn-ghost btn-sm sc-reset">Reset to defaults…</button>
             </div>
           </form>
         </div>
       </div>
 
-      <div id="tab-effects" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-effects" hidden>
-        <div class="card">
-          <div class="card-header flex-between">
-            <h2>Effects</h2>
-            <button type="button" id="effect-config-reset-btn" class="btn btn-secondary btn-sm">Reset to defaults</button>
-          </div>
-
-          <p class="text-muted card-text">
-            Promote tuned effect values to every visitor. Open <a href="/studio" target="_blank" rel="noopener">the
-            effect studio</a>, tune an effect, "Save to browser", then click "Import from this browser" below to pull
-            those values in and save them site-wide. The stored override is a sparse
-            <code>{ effectId: { key: value } }</code> map (only changed keys); saving an empty map clears the override.
-            Changes apply on the next page load — no redeploy.
-          </p>
-
-          <form id="effect-config-form">
-            <div class="form-group">
-              <label for="effect-config-json">Effect config override (JSON)</label>
-              <textarea id="effect-config-json" rows="16" spellcheck="false"
-                style="font-family: monospace; white-space: pre;" placeholder="{}"></textarea>
-            </div>
-            <p id="effect-config-form-error" class="form-error" role="alert" hidden></p>
-            <div class="form-actions">
-              <button type="button" id="effect-config-import-btn" class="btn btn-secondary">Import from this browser</button>
-              <button type="submit" id="effect-config-save-btn" class="btn btn-primary">Save changes</button>
-            </div>
-          </form>
-        </div>
-      </div>
-
-      <div id="tab-thankyous" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-thankyous" hidden>
-        <p id="thankyous-error" class="form-error" role="alert" hidden></p>
-
-        <!-- LIST VIEW: gift log + card list -->
-        <div id="thankyous-list">
-          <!-- Progress ring "N of M thanked" (task 1) + post-save "next guest" queue (task 3) -->
-          <div id="tc-progress" class="tc-progress" role="status" aria-live="polite" hidden></div>
-          <div id="tc-queue-prompt" class="tc-queue-prompt" role="status" hidden></div>
-          <div class="tc-tab-toolbar">
-            <input type="search" id="tc-name-search" class="tc-name-search"
-              placeholder="Filter by guest name…" aria-label="Filter gifts and cards by guest name" />
-            <label class="tc-check-label tc-replyping">
-              <input type="checkbox" id="tc-replyping-toggle" />
-              <span>Email me the moment a card gets its first reply</span>
+      <!-- EFFECTS (effect-config.js): the studio's tuned values, promoted to
+           every visitor as a sparse JSON override. -->
+      <div id="tab-effects" class="tab-content panel-fill" role="region" aria-label="Effects" hidden>
+        <div class="single" id="effects-page">
+          <header class="single-head">
+            <h1>Effects</h1>
+            <nav class="seg" aria-label="Site">
+              <a href="/admin/site/content">Content</a>
+              <a href="/admin/site/effects" aria-current="page">Effects</a>
+            </nav>
+            <p class="muted">Which animations play on each public page, and how. Tune an effect in
+              <a href="/studio" target="_blank" rel="noopener">the effect studio</a>, choose “Save to browser”
+              there, then <strong>Import from this browser</strong> here and save it for every visitor. Changes
+              apply on the next page load.</p>
+          </header>
+          <form id="effect-config-form" class="form">
+            <label for="effect-config-json">Site-wide override
+              <span class="muted small fx-hint">Only the keys you changed, as
+                <code>{ effectId: { key: value } }</code>. Save an empty <code>{}</code> to clear it.</span>
             </label>
-          </div>
-
-          <!-- Cards ⇆ Mailbox sub-view toggle (D1). -->
-          <div class="tc-subnav" role="tablist" aria-label="Thank-you views">
-            <button type="button" id="tc-sub-cards" class="tc-subnav-btn active" role="tab"
-              aria-selected="true">Cards</button>
-            <button type="button" id="tc-sub-mailbox" class="tc-subnav-btn" role="tab"
-              aria-selected="false">
-              💌 Mailbox
-              <span id="tc-mailbox-badge" class="tab-badge tab-badge-reply" hidden
-                aria-label="unread replies">&#9829;&nbsp;0</span>
-            </button>
-          </div>
-
-          <div id="tc-cards-view">
-          <div class="card">
-            <div class="card-header flex-between">
-              <h2>Gifts</h2>
-              <div class="header-buttons">
-                <a href="/api/admin/thank-you/export/gifts.csv" id="export-gifts-btn" class="btn btn-secondary btn-sm">Export CSV</a>
-                <button type="button" id="gift-add-btn" class="btn btn-primary btn-sm">Add gift</button>
-              </div>
+            <textarea id="effect-config-json" class="code-input" rows="18" spellcheck="false"
+              autocomplete="off" placeholder="{}"></textarea>
+            <div class="actionbar fx-actionbar">
+              <button type="submit" id="effect-config-save-btn" class="btn btn-primary btn-lg">Save</button>
+              <button type="button" id="effect-config-import-btn" class="btn btn-lg">Import from this browser</button>
+              <span class="dirty-note" id="effect-config-dirty" hidden>Unsaved changes</span>
+              <p id="effect-config-form-error" class="form-error" role="alert" hidden></p>
+              <button type="button" id="effect-config-reset-btn" class="btn btn-ghost btn-sm sc-reset">Reset to defaults…</button>
             </div>
-            <p class="text-muted card-text">
-              The gift log tracks who gave what. The amount is admin-only — it never appears on a card or any
-              guest-facing page.
-            </p>
-            <div class="table-container">
-              <table>
-                <thead>
-                  <tr>
-                    <th scope="col">Guest</th>
-                    <th scope="col" class="hide-mobile">Description</th>
-                    <th scope="col" class="hide-mobile">Amount
-                      <span class="tc-lock" title="Only you can see this — never shown to guests"
-                        aria-label="Only you can see this — never shown to guests">🔒</span></th>
-                    <th scope="col" class="hide-mobile">Received</th>
-                    <th scope="col">Physical card</th>
-                    <th scope="col">Digital card</th>
-                    <th scope="col">Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="gifts-tbody"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-header flex-between">
-              <h2>Thank-you cards</h2>
-              <div class="header-buttons">
-                <a href="/api/admin/thank-you/export/cards.csv" id="export-cards-btn" class="btn btn-secondary btn-sm">Export CSV</a>
-                <button type="button" id="tc-write-card-btn" class="btn btn-primary btn-sm">Write a card</button>
-              </div>
-            </div>
-            <div id="tc-status-chips" class="tc-status-chips" role="group"
-              aria-label="Filter cards by status"></div>
-            <div class="table-container">
-              <table>
-                <thead>
-                  <tr>
-                    <th scope="col">Recipient</th>
-                    <th scope="col">Status</th>
-                    <th scope="col" class="hide-mobile">Sent via</th>
-                    <th scope="col" class="hide-mobile">Timeline</th>
-                    <th scope="col">Reply</th>
-                    <th scope="col">Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="cards-tbody"></tbody>
-              </table>
-            </div>
-          </div>
-          </div><!-- /#tc-cards-view -->
-
-          <!-- MAILBOX (D1): one warm chronological feed of every reply. -->
-          <div id="tc-mailbox-view" hidden>
-            <div class="card">
-              <div class="card-header flex-between">
-                <h2>Mailbox <span aria-hidden="true">💌</span></h2>
-              </div>
-              <p class="text-muted card-text tc-mailbox-sub">
-                Every reply your guests have sent, newest first. Opening this clears the unread badge.
-              </p>
-              <div id="tc-mailbox-feed" class="tc-mailbox-feed" role="list"></div>
-            </div>
-          </div>
+          </form>
         </div>
+      </div>
 
-        <!-- EDITOR VIEW: composer + live preview (swaps in-panel) -->
-        <div id="thankyous-editor" hidden>
-          <div class="card-header flex-between">
-            <button type="button" id="tc-editor-back" class="btn btn-secondary btn-sm">&larr; Back</button>
-            <button type="button" id="tc-editor-save" class="btn btn-primary">Save card</button>
+      <!-- Thank-yous (thank-you.js): Gifts, Cards and Replies lists with their
+           details, and the batch-send steps, are drawn into #ty-view. The
+           composer is its own route (/admin/thank-yous/cards/c17/edit), kept as
+           static markup so its live-preview iframe survives between cards. -->
+      <div id="tab-thankyous" class="tab-content panel-fill" role="region" aria-labelledby="tab-btn-thankyous" hidden>
+        <div id="ty-view" class="ty-view"></div>
+
+        <div id="ty-composer" class="composer" hidden>
+          <header class="composer-head">
+            <a id="tc-editor-back" class="btn btn-ghost" href="/admin/thank-yous/cards" data-up
+              ><svg class="icon" viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor"
+                stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l-6 6 6 6" /></svg
+              ><span id="tc-editor-back-label">Card</span></a>
+            <div class="composer-title">
+              <h1 id="tc-editor-title">Edit card</h1>
+              <p id="tc-editor-sub" class="muted small"></p>
+            </div>
+            <span id="tc-dirty-note" class="dirty-note" hidden>Unsaved changes</span>
+            <div class="composer-actions">
+              <button type="button" id="tc-editor-save" class="btn">Save card</button>
+              <button type="button" id="tc-editor-next" class="btn btn-primary">Save and write the next one</button>
+            </div>
+          </header>
+          <div id="tc-restore" class="status-note composer-note" role="status" hidden>
+            <span>You have unsaved changes to this card from earlier.</span>
+            <button type="button" id="tc-restore-yes" class="btn btn-sm">Restore them</button>
+            <button type="button" id="tc-restore-no" class="btn btn-sm btn-ghost">Discard</button>
           </div>
-          <p id="tc-editor-error" class="form-error" role="alert" hidden></p>
+          <p id="tc-editor-error" class="status-note is-error composer-note" role="alert" hidden></p>
 
-          <div class="tc-composer">
-            <div class="tc-composer-form">
-              <div class="form-group">
-                <label>Recipient</label>
-                <p id="tc-editor-recipient" class="tc-readonly-field"></p>
-              </div>
-              <div class="form-group">
-                <label>Linked gift</label>
-                <p id="tc-editor-gift" class="tc-readonly-field"></p>
-              </div>
-              <div class="form-group">
-                <label for="tc-editor-template">Start from a template</label>
-                <div class="tc-template-row">
+          <div class="composer-body">
+            <form id="tc-editor-form" class="form composer-form" novalidate>
+              <div class="field">
+                <div class="field-head">
+                  <label for="tc-editor-message">Message</label>
+                  <span id="tc-name-hint" class="muted small"></span>
+                </div>
+                <textarea id="tc-editor-message" rows="8" maxlength="2000"
+                  placeholder="Write your thank-you… {name} becomes their name."></textarea>
+                <div class="field-tools">
                   <select id="tc-editor-template" aria-label="Start from a message template"></select>
-                  <button type="button" id="tc-reroll-btn" class="btn btn-secondary btn-sm"
-                    title="Swap in a different starter message (keeps cycling on each click)">↻ Reroll</button>
+                  <button type="button" id="tc-reroll-btn" class="btn btn-sm"
+                    title="Swap in a different starter message (keeps cycling on each click)">↻ Another starter</button>
+                  <span id="tc-message-counter" class="muted small field-count" aria-hidden="true"></span>
                 </div>
               </div>
-              <div class="form-group">
-                <label for="tc-editor-message">Message</label>
-                <textarea id="tc-editor-message" rows="5" maxlength="2000"
-                  placeholder="Write your thank-you… use {name} to insert the recipient's name."></textarea>
-                <small id="tc-message-counter" class="text-muted" aria-hidden="true"></small>
-              </div>
 
-              <details id="tc-story-panel" class="tc-story" hidden>
-                <summary class="tc-story-summary">Their story</summary>
-                <div id="tc-story-body" class="tc-story-body"></div>
+              <details id="tc-story-panel" class="story" hidden>
+                <summary>What we know about them</summary>
+                <div id="tc-story-body" class="story-body"></div>
               </details>
 
-              <div class="form-group">
-                <label id="tc-preset-label">Occasion presets</label>
-                <div id="tc-preset-chips" class="tc-preset-chips" role="group"
-                  aria-labelledby="tc-preset-label"></div>
-                <small class="text-muted">One tap sets a matching theme + effect stack.</small>
+              <div class="field">
+                <span class="field-label" id="tc-preset-label">Look</span>
+                <div id="tc-preset-chips" class="chips" role="group" aria-labelledby="tc-preset-label"></div>
               </div>
 
               <div class="form-row">
-                <div class="form-group">
-                  <label for="tc-editor-theme">Theme</label>
-                  <select id="tc-editor-theme"></select>
-                </div>
-                <div class="form-group">
-                  <label for="tc-editor-reveal">Reveal moment</label>
-                  <div class="tc-reveal-row">
-                    <select id="tc-editor-reveal">
-                      <option value="confetti">Confetti burst</option>
-                      <option value="hearts">Heart burst</option>
-                      <option value="champagne">Champagne pop</option>
-                      <option value="none">None (quiet)</option>
-                    </select>
-                    <button type="button" id="tc-play-reveal-btn" class="btn btn-secondary btn-sm"
-                      title="Play the full reveal in the preview">▶ Play reveal</button>
-                  </div>
-                </div>
+                <label>Theme <select id="tc-editor-theme"></select></label>
+                <label>Reveal
+                  <select id="tc-editor-reveal">
+                    <option value="confetti">Confetti burst</option>
+                    <option value="hearts">Heart burst</option>
+                    <option value="champagne">Champagne pop</option>
+                    <option value="none">None (quiet)</option>
+                  </select>
+                </label>
               </div>
 
-              <div class="form-group">
-                <label>Effects</label>
+              <details id="tc-effects" class="effects">
+                <summary>Effects <span id="tc-effects-count" class="muted small"></span></summary>
                 <div id="tc-effect-stack" class="tc-effect-stack"></div>
                 <div class="tc-effect-add">
                   <select id="tc-effect-add-select" aria-label="Add an effect"></select>
-                  <button type="button" id="tc-effect-add-btn" class="btn btn-secondary btn-sm">Add effect</button>
+                  <button type="button" id="tc-effect-add-btn" class="btn btn-sm">Add effect</button>
                 </div>
-              </div>
+              </details>
 
-              <div class="form-group">
-                <label>Photos <span id="tc-photo-count" class="text-muted">0/12</span></label>
-                <button type="button" id="tc-photos-btn" class="btn btn-secondary btn-sm">Choose photos</button>
-                <div id="tc-photo-strip" class="tc-photo-strip"></div>
+              <div class="field">
+                <div class="field-head">
+                  <span class="field-label">Photos</span>
+                  <span id="tc-photo-count" class="muted small"></span>
+                </div>
+                <div id="tc-photo-strip" class="cp-photos cp-photos-edit"></div>
               </div>
-            </div>
+            </form>
 
-            <div class="tc-composer-preview">
-              <div class="tc-preview-devicebar" role="group" aria-label="Preview width">
-                <button type="button" id="tc-preview-mobile" class="btn btn-secondary btn-sm active"
-                  aria-pressed="true">Mobile</button>
-                <button type="button" id="tc-preview-desktop" class="btn btn-secondary btn-sm"
-                  aria-pressed="false">Desktop</button>
+            <aside class="composer-preview" aria-label="Live preview">
+              <div class="preview-bar">
+                <div class="seg" role="group" aria-label="Preview width">
+                  <button type="button" id="tc-preview-mobile" aria-pressed="true">Phone</button>
+                  <button type="button" id="tc-preview-desktop" aria-pressed="false">Computer</button>
+                </div>
+                <button type="button" id="tc-play-reveal-btn" class="btn btn-sm"
+                  title="Play the full reveal in the preview">▶ Play the reveal</button>
               </div>
               <div id="tc-preview-wrap" class="tc-preview-wrap device-mobile">
                 <iframe id="tc-preview-frame" src="/thanks-preview" title="Card preview"
                   class="tc-preview-frame"></iframe>
               </div>
-              <p id="tc-preview-unavailable" class="text-muted tc-preview-note" hidden>
-                Preview unavailable — try reopening the card.
+              <p id="tc-preview-unavailable" class="muted small" hidden>
+                The preview didn't load. Reopen the card to try again.
               </p>
-            </div>
+            </aside>
           </div>
         </div>
       </div>
-    </main>
+      </main>
+    </div>
   </div>
 
-  <dialog id="gift-modal" aria-labelledby="gift-modal-title">
-    <div class="modal-header flex-between">
-      <h2 id="gift-modal-title">Add gift</h2>
-      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
-    </div>
-    <form id="gift-form">
+  <!-- Toasts: success, error, and Undo (`z`). utils.js showSuccess/showError/showUndo. -->
+  <div id="notification-banner" class="admin-toast" role="status" aria-live="polite" hidden></div>
+  <div id="route-live" class="sr-only" aria-live="polite"></div>
+
+  <!-- Thank-yous dialog routes (thank-you.js). Opened by the router over
+       their parent screen; closing one goes back to it. -->
+  <dialog id="gift-modal" class="route-dialog ty-dialog" aria-labelledby="gift-modal-title">
+    <header class="dlg-head">
+      <h2 id="gift-modal-title">Log a gift</h2>
+      <button type="button" class="dlg-x" data-close-modal aria-label="Close">&times;</button>
+    </header>
+    <form id="gift-form" class="form" novalidate>
       <input type="hidden" id="gift-id">
-      <div class="form-group">
-        <label for="gift-guest">Guest *</label>
-        <select id="gift-guest" required></select>
+      <label>Guest <select id="gift-guest" required></select></label>
+      <label>What was it? <input type="text" id="gift-description" maxlength="1000"
+          placeholder="e.g. Honeymoon dinner fund"></label>
+      <div class="form-row">
+        <label><span>Amount <span class="muted small">· only you see this</span></span>
+          <input type="text" id="gift-amount" maxlength="100" placeholder="optional"></label>
+        <label>Received <input type="text" id="gift-received" maxlength="32" placeholder="e.g. 2026-06-14"></label>
       </div>
-      <div class="form-group">
-        <label for="gift-description">Description</label>
-        <input type="text" id="gift-description" maxlength="1000" placeholder="e.g. Honeymoon dinner fund">
-      </div>
-      <div class="form-group">
-        <label for="gift-amount">Amount <span class="text-muted">(optional — never shown to the guest)</span></label>
-        <input type="text" id="gift-amount" maxlength="100" placeholder="e.g. $150">
-      </div>
-      <div class="form-group">
-        <label for="gift-received">Received</label>
-        <input type="text" id="gift-received" maxlength="32" placeholder="e.g. 2026-06-14">
-      </div>
-      <div class="form-group">
-        <label for="gift-notes">Notes</label>
-        <textarea id="gift-notes" rows="2" maxlength="1000"></textarea>
-      </div>
-      <p id="gift-form-error" class="form-error" role="alert" hidden></p>
-      <div class="modal-actions">
-        <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
+      <label>Notes <textarea id="gift-notes" rows="2" maxlength="1000"></textarea></label>
+      <p id="gift-form-error" class="status-note is-error" role="alert" hidden></p>
+      <footer class="dlg-actions">
+        <button type="button" class="btn" data-close-modal>Cancel</button>
         <button type="submit" id="gift-save-btn" class="btn btn-primary">Save gift</button>
-      </div>
+      </footer>
     </form>
   </dialog>
 
-  <dialog id="photo-picker-modal" class="modal-lg" aria-labelledby="photo-picker-title">
-    <div class="modal-header flex-between">
+  <dialog id="photo-picker-modal" class="route-dialog ty-dialog ty-picker-dialog" aria-labelledby="photo-picker-title">
+    <header class="dlg-head">
       <h2 id="photo-picker-title">Choose photos</h2>
-      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
-    </div>
-    <div class="tc-picker-toggle" role="tablist" aria-label="Photo section">
-      <button type="button" id="picker-section-official" class="sub-toggle-pill active" role="tab"
-        aria-selected="true">Official</button>
-      <button type="button" id="picker-section-guest" class="sub-toggle-pill" role="tab"
-        aria-selected="false">Guest (approved)</button>
-    </div>
-    <p id="picker-count" class="text-muted"></p>
-    <div id="photo-picker-grid" class="tc-picker-grid"></div>
-    <div class="modal-actions">
-      <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
-      <button type="button" id="picker-confirm-btn" class="btn btn-primary">Use selected</button>
-    </div>
+      <button type="button" class="dlg-x" data-close-modal aria-label="Close">&times;</button>
+    </header>
+    <div id="photo-picker-body" class="picker-body"></div>
+    <footer class="dlg-actions">
+      <span id="picker-count" class="muted small"></span>
+      <button type="button" class="btn" data-close-modal>Cancel</button>
+      <button type="button" id="picker-confirm-btn" class="btn btn-primary">Use these photos</button>
+    </footer>
   </dialog>
 
-  <dialog id="thankyou-send-modal" class="modal-lg" aria-labelledby="thankyou-send-title">
-    <div class="modal-header flex-between">
-      <h2 id="thankyou-send-title">Send thank-you card</h2>
-      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
-    </div>
-
-    <div id="tysend-step-config">
-      <p id="tysend-recipient-summary"></p>
-      <fieldset class="form-group">
-        <legend>How would you like to send it?</legend>
-        <label class="radio-row"><input type="radio" name="tysend-channel" value="email" checked>
-          Email <span id="tysend-email-status" class="text-muted"></span></label>
-        <label class="radio-row"><input type="radio" name="tysend-channel" value="sms">
-          Text message <span id="tysend-sms-status" class="text-muted"></span></label>
-        <label class="radio-row"><input type="radio" name="tysend-channel" value="manual">
-          Copy the message myself</label>
-      </fieldset>
-      <div class="form-group" id="tysend-message-group">
-        <label for="tysend-message">Custom message <span class="text-muted">(optional — {name} and {url})</span></label>
-        <textarea id="tysend-message" rows="3" placeholder="Leave blank to send the default message"></textarea>
-        <small class="tc-delivery-hint text-muted">This is the email/SMS that delivers the link — not the
-          card itself. {name} and {url} are filled in automatically.</small>
-        <small class="text-muted">Default message — edit above to customize:</small>
-        <pre id="tysend-default-preview" class="invite-default-preview"></pre>
-      </div>
-    </div>
-
-    <div id="tysend-step-preview" hidden>
-      <div id="tysend-preview-content"></div>
-    </div>
-
-    <div id="tysend-step-results" hidden>
-      <div id="tysend-results-content"></div>
-    </div>
-
-    <p id="tysend-error" class="form-error" role="alert" hidden></p>
-    <div class="modal-actions">
-      <button type="button" id="tysend-back-btn" class="btn btn-secondary" hidden>Back</button>
-      <button type="button" id="tysend-next-btn" class="btn btn-primary">Preview</button>
-    </div>
+  <dialog id="thankyou-send-modal" class="route-dialog ty-dialog" aria-labelledby="thankyou-send-title">
+    <header class="dlg-head">
+      <h2 id="thankyou-send-title">Send the card</h2>
+      <button type="button" class="dlg-x" data-close-modal aria-label="Close">&times;</button>
+    </header>
+    <div id="tysend-body"></div>
+    <p id="tysend-error" class="status-note is-error" role="alert" hidden></p>
+    <footer class="dlg-actions">
+      <button type="button" id="tysend-preview-btn" class="btn btn-ghost">Preview the message</button>
+      <button type="button" id="tysend-cancel" class="btn" data-close-modal>Cancel</button>
+      <button type="button" id="tysend-next-btn" class="btn btn-primary">Send</button>
+    </footer>
   </dialog>
 
-  <dialog id="thankyou-detail-modal" class="modal-lg" aria-labelledby="thankyou-detail-title">
-    <div class="modal-header flex-between">
-      <h2 id="thankyou-detail-title">Card details</h2>
-      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
-    </div>
-    <div id="thankyou-detail-body"></div>
-    <div class="modal-actions">
-      <button type="button" class="btn btn-secondary" data-close-modal>Close</button>
-    </div>
-  </dialog>
-
-  <dialog id="tc-guest-picker-modal" aria-labelledby="tc-guest-picker-title">
-    <div class="modal-header flex-between">
+  <dialog id="tc-guest-picker-modal" class="route-dialog ty-dialog" aria-labelledby="tc-guest-picker-title">
+    <header class="dlg-head">
       <h2 id="tc-guest-picker-title">Write a card</h2>
-      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
-    </div>
-    <p class="text-muted">Pick a guest to write a card for — no gift required.</p>
-    <div class="form-group">
-      <label for="tc-guest-picker-search">Guest</label>
-      <input type="search" id="tc-guest-picker-search" placeholder="Search by name…"
-        aria-label="Search guests by name" autocomplete="off" />
-    </div>
-    <ul id="tc-guest-picker-list" class="tc-guest-picker-list"></ul>
-    <div class="modal-actions">
-      <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
-    </div>
+      <button type="button" class="dlg-x" data-close-modal aria-label="Close">&times;</button>
+    </header>
+    <p class="muted">For anyone on the guest list. No gift needed.</p>
+    <input type="search" id="tc-guest-picker-search" placeholder="Find a guest…"
+      aria-label="Find a guest by name" autocomplete="off">
+    <ul id="tc-guest-picker-list" class="rows guest-pick"></ul>
+    <footer class="dlg-actions">
+      <button type="button" class="btn" data-close-modal>Cancel</button>
+    </footer>
   </dialog>
 
-  <dialog id="guest-modal" aria-labelledby="guest-modal-title">
-    <div class="modal-header flex-between">
-      <h2 id="guest-modal-title">Add Guest</h2>
-      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
-    </div>
-    <form id="guest-form">
+  <!-- Dialog routes /admin/guests/new and /admin/guests/:guest/edit (guests.js). -->
+  <dialog id="guest-modal" class="route-dialog" aria-labelledby="guest-modal-title">
+    <header class="dlg-head">
+      <h2 id="guest-modal-title">Add a guest</h2>
+      <button type="button" class="dlg-x" data-close-modal aria-label="Close">&times;</button>
+    </header>
+    <form id="guest-form" class="form">
       <input type="hidden" id="guest-id" name="id">
-      <div class="form-group">
-        <label for="guest-name">Name *</label>
-        <input type="text" id="guest-name" name="name" required maxlength="200">
-      </div>
+      <label for="guest-name">Name
+        <input type="text" id="guest-name" name="name" required maxlength="200" autocomplete="off"
+          placeholder="e.g. Auntie Bea &amp; Uncle Jo">
+      </label>
       <div class="form-row">
-        <div class="form-group">
-          <label for="guest-email">Email</label>
-          <input type="email" id="guest-email" name="email" maxlength="254">
-        </div>
-        <div class="form-group">
-          <label for="guest-phone">Phone</label>
-          <input type="tel" id="guest-phone" name="phone" placeholder="(555) 123-4567">
-        </div>
+        <label for="guest-email">Email
+          <input type="email" id="guest-email" name="email" maxlength="254" autocomplete="off">
+        </label>
+        <label for="guest-phone">Phone
+          <input type="tel" id="guest-phone" name="phone" placeholder="(555) 123-4567" autocomplete="off">
+        </label>
       </div>
-      <div class="form-group">
-        <label for="guest-party-size">Party Size</label>
+      <label for="guest-party-size">Party size
         <select id="guest-party-size" name="party_size">
           <option value="1">1</option>
           <option value="2">2</option>
@@ -1075,17 +690,15 @@
           <option value="9">9</option>
           <option value="10">10</option>
         </select>
-      </div>
-      <div class="form-group">
-        <label for="guest-notes">Notes</label>
+      </label>
+      <label for="guest-notes"><span>Notes <span class="muted small">(only you see these)</span></span>
         <textarea id="guest-notes" name="notes" rows="3" maxlength="1000"></textarea>
-      </div>
-      <div id="guest-thankyou-summary" class="guest-thankyou-summary" hidden></div>
-      <div id="guest-form-error" class="alert alert-error" role="alert" hidden></div>
-      <div class="modal-actions">
-        <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
-        <button type="submit" class="btn btn-primary" id="guest-form-submit">Save Guest</button>
-      </div>
+      </label>
+      <p id="guest-form-error" class="status-note is-error" role="alert" hidden></p>
+      <footer class="dlg-actions">
+        <button type="button" class="btn" data-close-modal>Cancel</button>
+        <button type="submit" class="btn btn-primary" id="guest-form-submit">Save</button>
+      </footer>
     </form>
   </dialog>
 
@@ -1093,11 +706,12 @@
        tearing it down, so every tab, draft, open dialog and review position
        survives. auth.js opens it; the full login screen is only for a cold
        start or an explicit sign-out. -->
-  <dialog id="reauth-modal" aria-labelledby="reauth-modal-title">
+  <dialog id="reauth-modal" class="relogin" aria-labelledby="reauth-modal-title">
     <div class="modal-header">
-      <h2 id="reauth-modal-title">Sign back in</h2>
+      <h2 id="reauth-modal-title">You were signed out</h2>
     </div>
-    <p>Your session timed out. Sign in again to pick up exactly where you left off.</p>
+    <p>Thirty quiet minutes ends the session. Everything on screen is still here — sign in and
+      you'll carry on from <strong id="reauth-where">this page</strong>.</p>
     <div id="reauth-error" class="alert alert-error" role="alert" hidden></div>
     <form id="reauth-form">
       <input type="text" name="username" value="admin" autocomplete="username" hidden aria-hidden="true">
@@ -1112,471 +726,392 @@
     </form>
   </dialog>
 
-  <dialog id="delete-modal" aria-labelledby="delete-modal-title">
-    <div class="modal-header flex-between">
-      <h2 id="delete-modal-title">Archive Guest</h2>
-      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
-    </div>
-    <p id="delete-message">Are you sure you want to archive this guest?</p>
-    <div id="delete-rsvp-warning" class="alert alert-warning" hidden>
-      This guest has submitted an RSVP. Their response will be preserved but hidden from stats.
-    </div>
-    <div id="delete-error" class="alert alert-error" role="alert" hidden></div>
-    <div class="modal-actions">
-      <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
+  <dialog id="delete-modal" class="confirm" aria-labelledby="delete-modal-title">
+    <h2 id="delete-modal-title">Archive this guest?</h2>
+    <p id="delete-message">They leave the guest list and the stats. You can restore them from Archived.</p>
+    <p id="delete-rsvp-warning" class="status-note" hidden>
+      This guest has RSVP'd. Their response is kept, but no longer counted.
+    </p>
+    <p id="delete-error" class="status-note is-error" role="alert" hidden></p>
+    <div class="dlg-actions">
+      <button type="button" class="btn" data-close-modal>Cancel</button>
       <button type="button" class="btn btn-danger" id="confirm-delete-btn">Archive</button>
     </div>
   </dialog>
 
-  <dialog id="restore-modal" aria-labelledby="restore-modal-title">
-    <div class="modal-header flex-between">
-      <h2 id="restore-modal-title">Restore Guest</h2>
-      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
-    </div>
-    <p id="restore-message">Are you sure you want to restore this guest from the archive?</p>
-    <div id="restore-error" class="alert alert-error" role="alert" hidden></div>
-    <div class="modal-actions">
-      <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
+  <dialog id="restore-modal" class="confirm" aria-labelledby="restore-modal-title">
+    <h2 id="restore-modal-title">Restore this guest?</h2>
+    <p id="restore-message">They come back onto the guest list.</p>
+    <p id="restore-error" class="status-note is-error" role="alert" hidden></p>
+    <div class="dlg-actions">
+      <button type="button" class="btn" data-close-modal>Cancel</button>
       <button type="button" class="btn btn-primary" id="confirm-restore-btn">Restore</button>
     </div>
   </dialog>
 
-  <dialog id="rsvp-modal" aria-labelledby="rsvp-modal-title">
-    <div class="modal-header flex-between">
-      <h2 id="rsvp-modal-title">RSVP Details</h2>
-      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
-    </div>
-    <div id="rsvp-details">
-      <!-- Populated by JS -->
-    </div>
-    <div class="modal-actions">
-      <button type="button" class="btn btn-secondary" data-close-modal>Close</button>
-    </div>
-  </dialog>
 
-  <dialog id="invite-modal" class="modal-lg" aria-labelledby="invite-modal-title">
-    <div class="modal-header flex-between">
-      <h2 id="invite-modal-title">Send Invites</h2>
-      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
-    </div>
+  <!-- Dialog routes /admin/guests/invite, /admin/guests/:guest/invite and
+       /admin/guests/invite/sent (invites.js). Sending replaces the URL with
+       …/sent, so Back can never land on a live Send button. -->
+  <dialog id="invite-modal" class="route-dialog" aria-labelledby="invite-modal-title">
+    <header class="dlg-head">
+      <h2 id="invite-modal-title">Send invites</h2>
+      <button type="button" class="dlg-x" data-close-modal aria-label="Close">&times;</button>
+    </header>
 
-    <div id="invite-step-config" class="invite-step">
-      <div class="form-group">
-        <label>Send via</label>
-        <div class="radio-group">
-          <label class="radio-label">
-            <input type="radio" name="invite-type" value="email" checked>
-            <span>Email</span>
-            <small id="email-status"></small>
-          </label>
-          <label class="radio-label">
-            <input type="radio" name="invite-type" value="sms">
-            <span>SMS</span>
-            <small id="sms-status"></small>
-          </label>
-        </div>
-      </div>
+    <div id="invite-recipients-summary" class="invite-summary"></div>
 
-      <div class="form-group">
-        <label for="invite-message">Message (use {name} and {url} as placeholders)</label>
-        <textarea id="invite-message" rows="4" placeholder="Leave blank for default message"></textarea>
-        <small class="text-muted">Leave blank to send the default for the selected channel:</small>
-        <pre id="invite-default-preview" class="invite-default-preview"></pre>
-      </div>
-
-      <div id="invite-recipients-summary" class="recipients-summary">
-        <!-- Populated by JS -->
-      </div>
-
-      <div id="invite-config-error" class="alert alert-error" role="alert" hidden></div>
+    <div id="invite-step-config" class="invite-step form">
+      <fieldset class="channels">
+        <legend class="invite-label">Send by</legend>
+        <label class="radio" for="invite-type-email">
+          <input type="radio" id="invite-type-email" name="invite-type" value="email" checked>
+          <span>Email</span> <small id="email-status" class="muted"></small>
+        </label>
+        <label class="radio" for="invite-type-sms">
+          <input type="radio" id="invite-type-sms" name="invite-type" value="sms">
+          <span>Text message</span> <small id="sms-status" class="muted"></small>
+        </label>
+      </fieldset>
+      <label for="invite-message"><span>Message <span class="muted small">— leave blank for the default
+            below. <code>{name}</code> and <code>{url}</code> fill themselves in.</span></span>
+        <textarea id="invite-message" rows="4" placeholder="Leave blank to send the default"></textarea>
+      </label>
+      <pre id="invite-default-preview" class="invite-default-preview"></pre>
+      <p id="invite-config-error" class="status-note is-error" role="alert" hidden></p>
     </div>
 
     <div id="invite-step-preview" class="invite-step" hidden>
-      <div id="invite-preview-content">
-        <!-- Populated by JS -->
-      </div>
+      <div id="invite-preview-content"></div>
     </div>
 
     <div id="invite-step-results" class="invite-step" hidden>
-      <div id="invite-results-content">
-        <!-- Populated by JS -->
-      </div>
+      <div id="invite-results-content"></div>
     </div>
 
-    <div class="modal-actions">
-      <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
-      <button type="button" class="btn btn-secondary" id="invite-back-btn" hidden>Back</button>
+    <footer class="dlg-actions">
+      <button type="button" class="btn" id="invite-cancel-btn" data-close-modal>Cancel</button>
+      <button type="button" class="btn" id="invite-back-btn" hidden>Back</button>
       <button type="button" class="btn btn-primary" id="invite-next-btn">Preview</button>
-    </div>
+    </footer>
   </dialog>
 
-  <dialog id="import-modal" class="modal-lg" aria-labelledby="import-modal-title">
-    <div class="modal-header flex-between">
-      <h2 id="import-modal-title">Import Guests from CSV</h2>
-      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
-    </div>
+  <!-- Dialog route /admin/guests/import (csv-import.js). -->
+  <dialog id="import-modal" class="route-dialog" aria-labelledby="import-modal-title">
+    <header class="dlg-head">
+      <h2 id="import-modal-title">Import guests</h2>
+      <button type="button" class="dlg-x" data-close-modal aria-label="Close">&times;</button>
+    </header>
     <div id="import-instructions" class="import-section">
-      <p>Upload a CSV file with guest information. Required column: <strong>name</strong></p>
-      <p>Optional columns: <code>email</code>, <code>phone</code>, <code>party_size</code>, <code>notes</code></p>
-      <p class="text-muted">Guests with duplicate email or phone numbers will be skipped.</p>
-      <div class="form-group">
-        <label for="csv-file" class="file-input-label text-center">
-          <span id="file-name">Choose CSV file...</span>
-          <input type="file" id="csv-file" accept=".csv" class="file-input">
-        </label>
-      </div>
+      <p>Choose a CSV with a <strong>name</strong> column. Optional: <code>email</code>, <code>phone</code>,
+        <code>party_size</code>, <code>notes</code>.</p>
+      <p class="muted small">Anyone whose email or phone is already on the list is skipped.</p>
+      <label for="csv-file" class="file-drop">
+        <span id="file-name">Choose a CSV file…</span>
+        <input type="file" id="csv-file" accept=".csv" class="file-input">
+      </label>
       <div id="csv-preview" class="csv-preview" hidden>
-        <h4>Preview (first 5 rows):</h4>
+        <p class="invite-label">First five rows</p>
         <div id="csv-preview-table"></div>
       </div>
-      <div id="import-form-error" class="alert alert-error" role="alert" hidden></div>
+      <p id="import-form-error" class="status-note is-error" role="alert" hidden></p>
     </div>
     <div id="import-results" class="import-section" hidden>
       <div id="import-results-content"></div>
     </div>
-    <div class="modal-actions">
-      <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
-      <button type="button" class="btn btn-primary" id="import-submit-btn" disabled>Import Guests</button>
-    </div>
+    <footer class="dlg-actions">
+      <button type="button" class="btn" data-close-modal id="import-cancel-btn">Cancel</button>
+      <button type="button" class="btn btn-primary" id="import-submit-btn" disabled>Import guests</button>
+    </footer>
   </dialog>
 
-  <dialog id="petition-modal" aria-labelledby="petition-modal-title">
-    <div class="modal-header flex-between">
-      <h2 id="petition-modal-title">Invitation Request</h2>
-      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
-    </div>
-    <div id="petition-details">
-      <!-- Populated by JS -->
-    </div>
-    <div class="modal-actions">
-      <button type="button" class="btn btn-secondary" data-close-modal>Close</button>
-      <button type="button" class="btn btn-danger" id="petition-deny-btn">Deny</button>
-      <button type="button" class="btn btn-primary" id="petition-approve-btn">Approve</button>
-    </div>
-  </dialog>
 
-  <dialog id="petition-approve-modal" aria-labelledby="petition-approve-modal-title">
-    <div class="modal-header flex-between">
-      <h2 id="petition-approve-modal-title">Approve Request</h2>
-      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
-    </div>
-    <p>Approving this request will create a guest and send them an invite.</p>
+  <dialog id="petition-approve-modal" class="confirm" aria-labelledby="petition-approve-modal-title">
+    <h2 id="petition-approve-modal-title">Approve and invite?</h2>
+    <p id="approve-lede">They join the guest list.</p>
     <input type="hidden" id="approve-petition-id">
-    <div class="form-group">
-      <label for="approve-party-size">Party Size</label>
-      <!-- Ceiling matches the guest add/edit form (#guest-party-size): both cap
-           at 10, within the server's LIMITS.PARTY_SIZE_MAX clamp (types.js). -->
-      <select id="approve-party-size">
-        <option value="1">1</option>
-        <option value="2" selected>2</option>
-        <option value="3">3</option>
-        <option value="4">4</option>
-        <option value="5">5</option>
-        <option value="6">6</option>
-        <option value="7">7</option>
-        <option value="8">8</option>
-        <option value="9">9</option>
-        <option value="10">10</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label class="checkbox-label">
+    <div class="form">
+      <!-- Ceiling matches the guest form (#guest-party-size): both cap at 10,
+           within the server's LIMITS.PARTY_SIZE_MAX clamp (types.js). -->
+      <label for="approve-party-size">Party size
+        <select id="approve-party-size">
+          <option value="1">1</option>
+          <option value="2" selected>2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="5">5</option>
+          <option value="6">6</option>
+          <option value="7">7</option>
+          <option value="8">8</option>
+          <option value="9">9</option>
+          <option value="10">10</option>
+        </select>
+      </label>
+      <label class="check" for="approve-send-invite">
         <input type="checkbox" id="approve-send-invite" checked>
-        <span>Send invite immediately</span>
+        <span>Send the invitation now</span>
+      </label>
+      <label for="approve-notes"><span>Note to yourself <span class="muted small">(optional)</span></span>
+        <textarea id="approve-notes" rows="2"></textarea>
       </label>
     </div>
-    <div class="form-group">
-      <label for="approve-notes">Admin Notes (optional)</label>
-      <textarea id="approve-notes" rows="2"></textarea>
-    </div>
-    <div id="approve-error" class="alert alert-error" role="alert" hidden></div>
-    <div class="modal-actions">
-      <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
-      <button type="button" class="btn btn-primary" id="confirm-approve-btn">Approve & Create Guest</button>
+    <p id="approve-error" class="status-note is-error" role="alert" hidden></p>
+    <div class="dlg-actions">
+      <button type="button" class="btn" data-close-modal>Cancel</button>
+      <button type="button" class="btn btn-primary" id="confirm-approve-btn">Approve &amp; invite</button>
     </div>
   </dialog>
 
-  <dialog id="petition-deny-modal" aria-labelledby="petition-deny-modal-title">
-    <div class="modal-header flex-between">
-      <h2 id="petition-deny-modal-title">Deny Request</h2>
-      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
-    </div>
-    <p>This will deny the request.</p>
+  <dialog id="petition-deny-modal" class="confirm" aria-labelledby="petition-deny-modal-title">
+    <h2 id="petition-deny-modal-title">Deny this request?</h2>
+    <p id="deny-lede">They aren't told; their request just closes.</p>
     <input type="hidden" id="deny-petition-id">
-    <div class="form-group">
-      <label class="checkbox-label">
+    <div class="form">
+      <label class="check" for="deny-add-blocklist">
         <input type="checkbox" id="deny-add-blocklist">
-        <span>Add to blocklist (prevent future requests)</span>
+        <span>Also block them — they won't see the request form again</span>
+      </label>
+      <label for="deny-notes"><span>Note to yourself <span class="muted small">(optional)</span></span>
+        <textarea id="deny-notes" rows="2" placeholder="Why, for later"></textarea>
       </label>
     </div>
-    <div class="form-group">
-      <label for="deny-notes">Admin Notes (optional)</label>
-      <textarea id="deny-notes" rows="2" placeholder="Reason for denial..."></textarea>
-    </div>
-    <div id="deny-error" class="alert alert-error" role="alert" hidden></div>
-    <div class="modal-actions">
-      <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
-      <button type="button" class="btn btn-danger" id="confirm-deny-btn">Deny Request</button>
+    <p id="deny-error" class="status-note is-error" role="alert" hidden></p>
+    <div class="dlg-actions">
+      <button type="button" class="btn" data-close-modal>Cancel</button>
+      <button type="button" class="btn btn-danger" id="confirm-deny-btn">Deny</button>
     </div>
   </dialog>
 
-  <!-- Moderation detail modal: full content + author + all applicable actions -->
-  <dialog id="moderation-modal" class="modal-lg" aria-labelledby="moderation-modal-title"
-    aria-keyshortcuts="ArrowLeft ArrowRight A R H">
-    <div class="modal-header flex-between">
-      <h2 id="moderation-modal-title">Review Item</h2>
-      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
-    </div>
-    <div id="mod-detail-nav" class="mod-detail-nav" hidden>
-      <button type="button" class="btn btn-secondary btn-sm" id="mod-detail-prev">&lsaquo; Prev</button>
-      <span id="mod-detail-position" class="mod-detail-position" aria-live="polite"></span>
-      <button type="button" class="btn btn-secondary btn-sm" id="mod-detail-next">Next &rsaquo;</button>
-    </div>
-    <div id="moderation-detail-body">
-      <!-- Populated by JS: preview (text / image / video) + author info -->
-    </div>
-    <div id="moderation-error" class="alert alert-error" role="alert" hidden></div>
-    <div id="moderation-detail-actions" class="modal-actions modal-actions-wrap">
-      <!-- Populated by JS: the actions available for this item's status -->
-    </div>
-    <p class="mod-detail-keys text-muted hide-mobile" aria-hidden="true">
-      Keyboard: <kbd>←</kbd>/<kbd>→</kbd> previous/next &middot; <kbd>A</kbd> approve
-      &middot; <kbd>R</kbd> reject &middot; <kbd>H</kbd> hide
-    </p>
-    <p class="sr-only">
-      Keyboard shortcuts: left and right arrows move to the previous and next item;
-      A approves; R rejects; H hides.
-    </p>
-  </dialog>
-
-  <!-- Generic moderation confirm dialog (approve / reject / hide / trust / etc.) -->
-  <dialog id="mod-confirm-modal" aria-labelledby="mod-confirm-title">
-    <div class="modal-header flex-between">
-      <h2 id="mod-confirm-title">Confirm</h2>
-      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
-    </div>
+  <!-- Review: "Reject with a reason…" (moderation.js). The reason goes in the
+       audit log; a plain Reject (r) needs no dialog — it has an Undo. -->
+  <dialog id="mod-confirm-modal" class="confirm" aria-labelledby="mod-confirm-title">
+    <h2 id="mod-confirm-title">Reject with a reason</h2>
     <p id="mod-confirm-desc"></p>
-    <label id="mod-confirm-release-row" class="checkbox-label" hidden>
-      <input type="checkbox" id="mod-confirm-release">
-      <span>Also approve this author's other pending items</span>
-    </label>
-    <div id="mod-confirm-reason-row" class="form-group" hidden>
-      <label for="mod-confirm-reason">Reason <span class="text-muted">(optional, recorded in the audit log)</span></label>
-      <textarea id="mod-confirm-reason" rows="2" maxlength="500"
-        placeholder="Why is this being rejected?"></textarea>
-    </div>
-    <div id="mod-confirm-error" class="alert alert-error" role="alert" hidden></div>
+    <form class="form" id="mod-confirm-form" method="dialog">
+      <label>Reason <span class="muted small">(optional, kept in the audit log)</span>
+        <textarea id="mod-confirm-reason" rows="3" maxlength="500"
+          placeholder="Why is this being rejected?"></textarea>
+      </label>
+    </form>
+    <p id="mod-confirm-error" class="status-note is-error" role="alert" hidden></p>
     <div class="modal-actions">
-      <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
-      <button type="button" class="btn btn-primary" id="mod-confirm-btn">Confirm</button>
+      <button type="button" class="btn" data-close-modal>Cancel</button>
+      <button type="button" class="btn btn-danger" id="mod-confirm-btn">Reject</button>
     </div>
   </dialog>
 
-  <!-- Generic destructive-action confirm dialog (site-content / effects resets) -->
-  <dialog id="admin-confirm-modal" aria-labelledby="admin-confirm-title">
-    <div class="modal-header flex-between">
-      <h2 id="admin-confirm-title">Confirm</h2>
-      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
-    </div>
+  <!-- The shared yes/no question (confirm.js): deletes, resets. Drawn like every
+       other .confirm, so it stays a centred card on phones, not a sheet. -->
+  <dialog id="admin-confirm-modal" class="confirm" aria-labelledby="admin-confirm-title">
+    <h2 id="admin-confirm-title">Confirm</h2>
     <p id="admin-confirm-desc"></p>
-    <div id="admin-confirm-error" class="alert alert-error" role="alert" hidden></div>
-    <div class="modal-actions">
-      <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
+    <p id="admin-confirm-error" class="status-note is-error" role="alert" hidden></p>
+    <div class="dlg-actions">
+      <button type="button" class="btn" data-close-modal>Cancel</button>
       <button type="button" class="btn btn-primary" id="admin-confirm-btn">Confirm</button>
     </div>
   </dialog>
 
-  <!-- Add official photos: reuses the shared media-uploader tray -->
-  <dialog id="gallery-upload-modal" class="modal-lg" aria-labelledby="gallery-upload-title">
+  <!-- Leave-without-saving guard (router.js): asked before a navigation, the
+       sidebar, or the browser's Back would drop unsaved work. Three-way when
+       the guard can save (IA §13.3); deliberately not a route. -->
+  <dialog id="admin-leave-modal" class="confirm" aria-labelledby="admin-leave-title">
+    <h2 id="admin-leave-title">Leave without saving?</h2>
+    <p id="admin-leave-desc"></p>
+    <p id="admin-leave-error" class="status-note is-error" role="alert" hidden></p>
+    <div class="modal-actions">
+      <button type="button" class="btn" id="admin-leave-keep" data-close-modal>Keep editing</button>
+      <button type="button" class="btn btn-danger-soft" id="admin-leave-discard">Discard</button>
+      <button type="button" class="btn btn-primary" id="admin-leave-save" hidden>Save and leave</button>
+    </div>
+  </dialog>
+
+  <!-- The ? sheet (router.js). The shell's keys, plus the showing panel's
+       (AdminPanel.help) in #admin-keys-panel. -->
+  <dialog id="admin-keys-modal" class="help" aria-labelledby="admin-keys-title">
     <div class="modal-header flex-between">
-      <h2 id="gallery-upload-title">Add official photos</h2>
+      <h2 id="admin-keys-title">Keyboard</h2>
       <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
     </div>
-    <p class="text-muted">
-      Photos and videos added here publish to the Official section immediately. On desktop Chrome, HEIC
-      files from an iPhone may fail to process — export as JPEG first if that happens.
-    </p>
+    <div class="help-cols">
+      <dl>
+        <dt>Anywhere</dt>
+        <dd><kbd>g</kbd> <kbd>h</kbd> Home</dd>
+        <dd><kbd>g</kbd> <kbd>r</kbd> Review posts</dd>
+        <dd><kbd>g</kbd> <kbd>f</kbd> Name faces</dd>
+        <dd><kbd>g</kbd> <kbd>y</kbd> Gallery</dd>
+        <dd><kbd>g</kbd> <kbd>g</kbd> Gifts</dd>
+        <dd><kbd>g</kbd> <kbd>c</kbd> Cards</dd>
+        <dd><kbd>g</kbd> <kbd>m</kbd> Replies</dd>
+        <dd><kbd>g</kbd> <kbd>u</kbd> Guests</dd>
+        <dd><kbd>g</kbd> <kbd>s</kbd> Site content</dd>
+      </dl>
+      <dl>
+        <dt>Always</dt>
+        <dd><kbd>z</kbd> Undo the last action</dd>
+        <dd><kbd>?</kbd> This sheet</dd>
+        <dd><kbd>Esc</kbd> Close / back to the list</dd>
+      </dl>
+      <div id="admin-keys-panel"></div>
+    </div>
+  </dialog>
+
+  <!-- Dialog route /admin/gallery/upload (gallery-admin.js): the shared
+       media-uploader tray. Uploads keep going with the dialog closed. -->
+  <dialog id="gallery-upload-modal" class="route-dialog" aria-labelledby="gallery-upload-title">
+    <header class="dlg-head">
+      <h2 id="gallery-upload-title">Add official photos</h2>
+      <button type="button" class="dlg-x" data-close-modal aria-label="Close">&times;</button>
+    </header>
+    <p class="muted">They publish to Official straight away, at the end of the order. Big uploads keep
+      going if you close this.</p>
     <input type="file" id="gallery-upload-input" accept="image/*,video/*" multiple hidden>
     <!-- A second input: webkitdirectory makes an input folder-ONLY, so it cannot
          be combined with the multi-file one above. Both feed the same queue. -->
     <input type="file" id="gallery-upload-folder-input" webkitdirectory multiple hidden>
-    <div class="gallery-upload-controls">
-      <button type="button" id="gallery-upload-pick" class="btn btn-primary btn-sm">Choose files</button>
-      <button type="button" id="gallery-upload-pick-folder" class="btn btn-secondary btn-sm">Choose folder</button>
-      <button type="button" id="gallery-upload-cancel-all" class="btn btn-secondary btn-sm">Cancel all</button>
-    </div>
     <div id="gallery-upload-drop" class="gallery-upload-drop">
-      Drop photos here, or use the buttons above. Dragging a whole
-      <em>folder</em> in doesn't work in any browser — use “Choose folder” for that.
-      For hundreds of photos at once, <code>npm run import:media</code> is faster and
-      handles iPhone HEIC files.
+      <span class="btn-row">
+        <button type="button" id="gallery-upload-pick" class="btn btn-primary">Choose photos</button>
+        <button type="button" id="gallery-upload-pick-folder" class="btn">Choose a folder</button>
+      </span>
+      <span id="gallery-upload-note" class="muted small">or drop photos here. A whole <em>folder</em> can't be
+        dragged in — use “Choose a folder”. On desktop Chrome an iPhone HEIC may fail; for hundreds at
+        once, <code>npm run import:media</code> is faster and handles HEIC.</span>
     </div>
-    <div id="gallery-upload-summary" class="upload-tray-summary"></div>
+    <div class="upload-tray-head">
+      <span id="gallery-upload-summary" class="upload-tray-summary"></span>
+      <button type="button" id="gallery-upload-cancel-all" class="btn btn-sm btn-ghost" hidden>Cancel all</button>
+    </div>
     <ul id="gallery-upload-list" class="upload-tray-list"></ul>
-    <div class="modal-actions">
-      <button type="button" class="btn btn-secondary" data-close-modal>Done</button>
-    </div>
+    <footer class="dlg-actions">
+      <button type="button" class="btn" data-close-modal>Done</button>
+    </footer>
   </dialog>
 
-  <dialog id="gallery-remove-modal" aria-labelledby="gallery-remove-title">
-    <div class="modal-header flex-between">
-      <h2 id="gallery-remove-title">Remove photo</h2>
-      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
-    </div>
-    <p>Remove this photo from the site? Its files are set aside out of sight (not permanently deleted) in case it was a mistake.</p>
-    <div id="gallery-remove-card-warning" class="alert alert-warning" role="alert" hidden></div>
-    <div id="gallery-remove-error" class="alert alert-error" role="alert" hidden></div>
-    <div class="modal-actions">
-      <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
+  <dialog id="gallery-remove-modal" class="confirm" aria-labelledby="gallery-remove-title">
+    <h2 id="gallery-remove-title">Remove this photo?</h2>
+    <p>It comes off the site. Its files are set aside, not deleted, in case it was a mistake.</p>
+    <p id="gallery-remove-card-warning" class="status-note" role="alert" hidden></p>
+    <p id="gallery-remove-error" class="status-note is-error" role="alert" hidden></p>
+    <div class="dlg-actions">
+      <button type="button" class="btn" data-close-modal>Cancel</button>
       <button type="button" class="btn btn-danger" id="gallery-remove-btn">Remove</button>
     </div>
   </dialog>
 
-  <!-- Per-photograph face view (SPEC-vision-lab.md §6.5). One photograph, every
-       face in it boxed over the rendered image, each nameable ONE AT A TIME
-       through POST /api/admin/faces/assign-one.
-
-       This is not a nicety. Quality routing withholds low-grade faces from the
-       Groups and Ask sections, and bulk assign REFUSES them by design, so
-       without this dialog a set-aside face is unnameable through the UI at all
-       and the routing filter becomes a one-way door. Everything else in the
-       Faces tab is a list of faces; this is the one view of a PHOTOGRAPH.
-
-       It lives here, outside #tab-faces, for two reasons: initModals() runs
-       once over document.querySelectorAll("dialog") at startup, so the element
-       must already exist; and #faces-body is replaced wholesale on every
-       render, which would tear an open dialog out of the DOM mid-edit. Its own
-       listeners are wired in initFacesPhoto() — it inherits none of
-       #faces-body's delegation. -->
-  <dialog id="faces-photo-modal" class="modal-lg" aria-labelledby="faces-photo-title">
-    <div class="modal-header flex-between">
-      <h2 id="faces-photo-title">Faces in this photograph</h2>
-      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
-    </div>
-    <p class="text-muted card-text">
-      Every face found here, including any the Ask queue held back as too small or too soft.
-      Choose a face, then type who it is.
-    </p>
-    <div id="faces-photo-body">
-      <!-- Populated by JS: the display variant, the face-box overlay, and the
-           selected face's name control. -->
-    </div>
-    <div id="faces-photo-error" class="alert alert-error" role="alert" hidden></div>
-    <div class="modal-actions">
-      <button type="button" class="btn btn-secondary" data-close-modal>Done</button>
-    </div>
+  <!-- Name faces: one photograph, every face in it boxed, each named one at a
+       time (POST /api/admin/faces/assign-one — the only route that takes a
+       face routing set aside). A DIALOG ROUTE (routes.js, faces/…/photos/:media):
+       the router opens it over the screen that linked it, and Back closes it.
+       Top-level so initModals() wires its close buttons; face-assignment.js
+       fills #faces-photo-body and wires its own listeners. -->
+  <dialog id="faces-photo-modal" class="route-dialog faces-photo" aria-labelledby="faces-photo-title">
+    <header class="dlg-head">
+      <h2 id="faces-photo-title">Photo</h2>
+      <button type="button" class="dlg-x" data-close-modal aria-label="Close">&times;</button>
+    </header>
+    <div id="faces-photo-body"></div>
+    <footer class="dlg-actions">
+      <span id="faces-photo-status" class="muted small" role="status" aria-live="polite">Back button closes this.</span>
+      <button type="button" class="btn" data-close-modal>Close</button>
+    </footer>
   </dialog>
 
-  <dialog id="blocklist-modal" aria-labelledby="blocklist-modal-title">
-    <div class="modal-header flex-between">
-      <h2 id="blocklist-modal-title">Add to Blocklist</h2>
-      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
-    </div>
-    <p class="text-muted">At least one of name, email, or phone is required.</p>
-    <form id="blocklist-form">
-      <div class="form-group">
-        <label for="blocklist-name">Name (fuzzy match)</label>
-        <input type="text" id="blocklist-name" name="name" maxlength="200">
+  <!-- Dialog route /admin/requests/blocked/new (blocklist.js). -->
+  <dialog id="blocklist-modal" class="route-dialog" aria-labelledby="blocklist-modal-title">
+    <header class="dlg-head">
+      <h2 id="blocklist-modal-title">Block someone</h2>
+      <button type="button" class="dlg-x" data-close-modal aria-label="Close">&times;</button>
+    </header>
+    <p class="muted">They won't see the invitation-request form. Fill in at least one.</p>
+    <form id="blocklist-form" class="form">
+      <label for="blocklist-name"><span>Name <span class="muted small">— close spellings match too</span></span>
+        <input type="text" id="blocklist-name" name="name" maxlength="200" autocomplete="off">
+      </label>
+      <div class="form-row">
+        <label for="blocklist-email"><span>Email <span class="muted small">— exact</span></span>
+          <input type="email" id="blocklist-email" name="email" maxlength="254" autocomplete="off">
+        </label>
+        <label for="blocklist-phone"><span>Phone <span class="muted small">— exact</span></span>
+          <input type="tel" id="blocklist-phone" name="phone" placeholder="(555) 123-4567" autocomplete="off">
+        </label>
       </div>
-      <div class="form-group">
-        <label for="blocklist-email">Email (exact match)</label>
-        <input type="email" id="blocklist-email" name="email" maxlength="254">
-      </div>
-      <div class="form-group">
-        <label for="blocklist-phone">Phone (exact match)</label>
-        <input type="tel" id="blocklist-phone" name="phone" placeholder="(555) 123-4567">
-      </div>
-      <div class="form-group">
-        <label for="blocklist-reason">Reason (optional)</label>
+      <label for="blocklist-reason"><span>Why <span class="muted small">(optional, only you see it)</span></span>
         <textarea id="blocklist-reason" name="reason" rows="2" maxlength="500"></textarea>
-      </div>
-      <div id="blocklist-form-error" class="alert alert-error" role="alert" hidden></div>
-      <div class="modal-actions">
-        <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
-        <button type="submit" class="btn btn-primary" id="blocklist-form-submit">Add to Blocklist</button>
-      </div>
+      </label>
+      <p id="blocklist-form-error" class="status-note is-error" role="alert" hidden></p>
+      <footer class="dlg-actions">
+        <button type="button" class="btn" data-close-modal>Cancel</button>
+        <button type="submit" class="btn btn-primary" id="blocklist-form-submit">Block</button>
+      </footer>
     </form>
   </dialog>
 
-  <dialog id="blocklist-delete-modal" aria-labelledby="blocklist-delete-modal-title">
-    <div class="modal-header flex-between">
-      <h2 id="blocklist-delete-modal-title">Remove from Blocklist</h2>
-      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
-    </div>
-    <p id="blocklist-delete-message">Are you sure you want to remove this entry from the blocklist?</p>
-    <input type="hidden" id="blocklist-delete-id">
-    <div id="blocklist-delete-error" class="alert alert-error" role="alert" hidden></div>
-    <div class="modal-actions">
-      <button type="button" class="btn btn-secondary" data-close-modal>Cancel</button>
-      <button type="button" class="btn btn-danger" id="confirm-blocklist-delete-btn">Remove</button>
+  <dialog id="blocklist-delete-modal" class="confirm" aria-labelledby="blocklist-delete-modal-title">
+    <h2 id="blocklist-delete-modal-title">Unblock?</h2>
+    <p id="blocklist-delete-message">They'll be able to ask for an invitation again.</p>
+    <p id="blocklist-delete-error" class="status-note is-error" role="alert" hidden></p>
+    <div class="dlg-actions">
+      <button type="button" class="btn" data-close-modal>Cancel</button>
+      <button type="button" class="btn btn-danger" id="confirm-blocklist-delete-btn">Unblock</button>
     </div>
   </dialog>
 
-  <dialog id="manual-sms-modal" class="modal-lg" aria-labelledby="manual-sms-modal-title">
-    <div class="modal-header flex-between">
-      <h2 id="manual-sms-modal-title">Manual SMS</h2>
-      <button type="button" class="modal-close flex-center" data-close-modal aria-label="Close">&times;</button>
-    </div>
-
-    <details id="msms-template-section" class="msms-template-section">
-      <summary>Edit message template</summary>
-      <div class="msms-template-body">
-        <div class="form-group">
-          <textarea id="msms-template" rows="3"></textarea>
-          <div class="msms-placeholders">
-            <small class="text-muted">Placeholders:</small>
-            <button type="button" class="msms-placeholder-tag" data-placeholder="{name}">{name}</button>
-            <button type="button" class="msms-placeholder-tag" data-placeholder="{url}">{url}</button>
-            <button type="button" class="msms-placeholder-tag" data-placeholder="{date}">{date}</button>
-            <button type="button" class="msms-placeholder-tag" data-placeholder="{location}">{location}</button>
-          </div>
-        </div>
-      </div>
-    </details>
-
-    <div class="msms-mode-toggle">
-      <button type="button" id="msms-mode-focus" class="btn btn-sm active">Focus</button>
-      <button type="button" id="msms-mode-list" class="btn btn-sm">List</button>
-      <span id="msms-progress-counter" class="msms-progress"></span>
+  <!-- Dialog route /admin/guests/text (manual-sms.js): text each guest from
+       your own phone — copy, send, mark as sent — one at a time or as a list. -->
+  <dialog id="manual-sms-modal" class="route-dialog" aria-labelledby="manual-sms-modal-title">
+    <header class="dlg-head">
+      <h2 id="manual-sms-modal-title">Text invites by hand</h2>
+      <button type="button" class="dlg-x" data-close-modal aria-label="Close">&times;</button>
+    </header>
+    <div class="msms-bar">
+      <nav class="seg" aria-label="View">
+        <button type="button" id="msms-mode-focus" class="seg-btn" aria-pressed="true">One at a time</button>
+        <button type="button" id="msms-mode-list" class="seg-btn" aria-pressed="false">List</button>
+      </nav>
+      <span id="msms-progress-counter" class="msms-progress muted small"></span>
     </div>
 
     <div id="msms-focus-view">
-      <div class="msms-guest-card">
-        <div class="msms-guest-header flex-between">
+      <div class="msms-card">
+        <div class="msms-card-head">
           <strong id="msms-guest-name"></strong>
           <span id="msms-guest-phone" class="msms-phone"></span>
         </div>
         <div id="msms-guest-message" class="msms-message-box"></div>
-        <div class="msms-card-actions">
-          <button type="button" id="msms-copy-btn" class="btn btn-secondary btn-sm">Copy Message</button>
-          <button type="button" id="msms-mark-sent-btn" class="btn btn-primary btn-sm">Mark as Sent</button>
+        <div class="btn-row">
+          <button type="button" id="msms-copy-btn" class="btn">Copy message</button>
+          <button type="button" id="msms-mark-sent-btn" class="btn btn-primary">Mark as sent</button>
         </div>
       </div>
-      <div class="msms-nav flex-between">
-        <button type="button" id="msms-prev-btn" class="btn btn-secondary btn-sm">&larr; Prev</button>
-        <button type="button" id="msms-next-btn" class="btn btn-secondary btn-sm">Next &rarr;</button>
+      <div class="msms-nav">
+        <button type="button" id="msms-prev-btn" class="btn btn-sm">‹ Previous</button>
+        <button type="button" id="msms-next-btn" class="btn btn-sm">Next ›</button>
       </div>
     </div>
 
     <div id="msms-list-view" hidden>
-      <div class="table-container">
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">Name</th>
-              <th scope="col">Phone</th>
-              <th scope="col" class="hide-mobile">Message</th>
-              <th scope="col">Actions</th>
-            </tr>
-          </thead>
-          <tbody id="msms-list-tbody"></tbody>
-        </table>
-      </div>
+      <ul class="msms-list" id="msms-list-tbody"></ul>
     </div>
 
-    <div class="modal-actions">
-      <button type="button" class="btn btn-secondary" id="msms-done-btn">Done</button>
-    </div>
+    <details id="msms-template-section" class="msms-template-section">
+      <summary>Edit the message</summary>
+      <div class="msms-template-body">
+        <label class="sr-only" for="msms-template">Message template</label>
+        <textarea id="msms-template" rows="3"></textarea>
+        <div class="chips msms-placeholders">
+          <span class="muted small">Insert:</span>
+          <button type="button" class="chip msms-placeholder-tag" data-placeholder="{name}">{name}</button>
+          <button type="button" class="chip msms-placeholder-tag" data-placeholder="{url}">{url}</button>
+          <button type="button" class="chip msms-placeholder-tag" data-placeholder="{date}">{date}</button>
+          <button type="button" class="chip msms-placeholder-tag" data-placeholder="{location}">{location}</button>
+        </div>
+      </div>
+    </details>
+
+    <footer class="dlg-actions">
+      <button type="button" class="btn btn-primary" id="msms-done-btn">Done</button>
+    </footer>
   </dialog>
 
   <script type="module" src="/pages/admin/main.js"></script>

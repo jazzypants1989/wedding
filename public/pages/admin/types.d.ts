@@ -13,6 +13,7 @@ import type {
   SiteContentImage,
   GiftWithGuest,
   ThankYouCardWithGuest,
+  ThankYouCardListRow,
   ThankYouCard,
   ThankYouCardReply,
 } from "../../../types.js"
@@ -118,7 +119,7 @@ export interface AdminState {
   currentAccounts: AccountRow[]
   currentCurated: MediaListItem[]
   currentGifts: GiftWithGuest[]
-  currentCards: ThankYouCardWithGuest[]
+  currentCards: ThankYouCardListRow[]
   onAuthRequired: () => void
   getGuestById: (id: number) => Guest | null
   getBlockedEntryById: (id: number) => BlocklistEntry | null
@@ -126,7 +127,7 @@ export interface AdminState {
   getAccountById: (id: number) => AccountRow | null
   getCuratedById: (id: number) => MediaListItem | null
   getGiftById: (id: number) => GiftWithGuest | null
-  getCardById: (id: number) => ThankYouCardWithGuest | null
+  getCardById: (id: number) => ThankYouCardListRow | null
 }
 
 /** @file moderation.js - Types for the admin Moderation tab (Phase 6: full queue) */
@@ -184,6 +185,68 @@ export interface ModerationBulkResponse {
   total: number
   /** How many previously-untrusted authors were auto-trusted by this approve. */
   trusted: number
+  /** What changed, with the status each left — what an Undo puts back. */
+  items: ModerationChanged[]
+  /** Accounts this batch auto-trusted (an Undo un-trusts them). */
+  trustedAccounts: number[]
+}
+
+/** One post a batch changed, and the status it left. */
+export interface ModerationChanged {
+  type: ModerationContentType
+  id: number
+  previousStatus: string
+}
+
+/** POST /api/admin/accounts/:id/approve-pending — "Approve their N waiting". */
+export interface ApproveWaitingResponse {
+  success: boolean
+  changed: number
+  items: ModerationChanged[]
+  trustedAccounts: number[]
+}
+
+/** POST /api/admin/moderation/restore — the Undo toast's call. */
+export interface ModerationRestoreResponse {
+  success: boolean
+  restored: number
+  untrusted: number
+  total: number
+}
+
+/** GET /api/admin/moderation/:type/:id — one post in any status. */
+export interface ModerationItemResponse {
+  item: ModerationItem
+}
+
+/** The Review query string: ?status= &type= &author=a5. */
+export interface ReviewFilter {
+  status: "pending" | "approved" | "hidden" | "rejected"
+  /** The URL's names (photo covers video); "" = everything. */
+  type: "" | "photo" | "message" | "comment"
+  author: number | null
+}
+
+/** The Accounts query string: ?trusted=1|0. */
+export interface AccountsFilter {
+  trusted: "" | "1" | "0"
+}
+
+/** How many of one author's posts sit in each status. */
+export interface ModerationStatusCounts {
+  pending: number
+  approved: number
+  hidden: number
+  rejected: number
+}
+
+/** GET /api/admin/accounts/:id — an account row plus its per-status counts. */
+export interface AccountDetail extends AccountRow {
+  counts: ModerationStatusCounts
+}
+
+export interface AccountDetailResponse {
+  account: AccountDetail
 }
 
 export interface ModerationCountsResponse {
@@ -212,6 +275,8 @@ export interface AccountRow {
   guest_id: number | null
   contact_email: string | null
   post_count: number
+  /** Of those, how many wait for review. */
+  pending_count: number
   created_at: string
 }
 
@@ -220,7 +285,8 @@ export interface AccountsResponse {
   total: number
 }
 
-/** Load the combined queue (current filters) into the Moderation table. */
+/** Reload whichever view (Review or Accounts) is showing. Unused while the
+ *  panel is registered (the router mounts it); kept for main.js's legacy hook. */
 export function loadModeration(): Promise<void>
 
 /** Refresh the Moderation tab badge from the counts endpoint. */
@@ -229,87 +295,46 @@ export function loadModerationCount(): Promise<number>
 /** Set the Moderation tab badge value/visibility. */
 export function updateModerationBadge(count: number): void
 
-/** Wire up the Moderation tab (sub-toggle, queue table, accounts table, modals). */
+/** Register the Review + Accounts panel with the router and wire its panes. */
 export function initModeration(): void
 
-/** @file gallery-admin.js - Types for the admin curated-gallery manager (Phase 6) */
+/** @file gallery-admin.js - Gallery: Official (curated order) | Most loved */
 
 /** Load the official section into the curated grid. */
 export function loadGalleryAdmin(): Promise<void>
 
-/** Wire up the curated grid, reorder buttons, caption inputs, and upload modal. */
+/** Wire the grids, the upload dialog route and register the panel. */
 export function initGalleryAdmin(): void
 
-/** @file blocklist.js - Types for blocklist management module */
+/** @file blocklist.js - Requests › Blocked (drawn inside the Requests split view) */
 
 export interface BlocklistResponse {
   blocklist: BlocklistEntry[]
 }
 
-/**
- * Module state for blocklist operations.
- * @example
- * const state: BlocklistState = { deleteId: null };
- * state.deleteId = 5;
- */
-export interface BlocklistState {
-  deleteId: number | null
-}
-
-/**
- * Load and display blocklist entries.
- * @example
- * await loadBlocklist();
- */
+/** Load every blocklist entry. */
 export function loadBlocklist(): Promise<void>
 
-/**
- * Render blocklist entries to the table.
- * @example
- * renderBlocklist(entries);
- */
-export function renderBlocklist(entries: BlocklistEntry[]): void
+/** Blocked entries, newest first. */
+export function blockedItems(): BlocklistEntry[]
 
-/**
- * Open the add to blocklist modal.
- * @example
- * openAddBlocklistModal();
- */
-export function openAddBlocklistModal(): void
+/** The Blocked list pane's body (tools + rows), `selected` marked. */
+export function blockedListMarkup(selected: number | null): string
 
-/**
- * Handle blocklist form submission.
- * @example
- * form.addEventListener('submit', handleBlocklistFormSubmit);
- */
+/** The Blocked detail pane for one entry (or its empty state). */
+export function blockedDetailMarkup(id: number | null): string
+
+/** Reset the "Block someone" dialog route's form. */
+export function prepareBlockForm(): void
+
+/** Ask before unblocking; `next` names where to go once it's done. */
+export function confirmUnblock(id: number, next: () => string): void
+
 export function handleBlocklistFormSubmit(e: SubmitEvent): Promise<void>
 
-/**
- * Open the remove from blocklist confirmation modal.
- * @example
- * confirmRemoveBlocklist(5);
- */
-export function confirmRemoveBlocklist(id: number): void
-
-/**
- * Handle blocklist delete confirmation.
- * @example
- * confirmBtn.addEventListener('click', handleBlocklistDeleteConfirm);
- */
 export function handleBlocklistDeleteConfirm(): Promise<void>
 
-/**
- * Handle click events on blocklist table.
- * @example
- * tbody.addEventListener('click', handleBlocklistTableClick);
- */
-export function handleBlocklistTableClick(e: MouseEvent): void
-
-/**
- * Initialize blocklist management.
- * @example
- * initBlocklist();
- */
+/** Wire the Block someone form and the Unblock confirm. */
 export function initBlocklist(): void
 
 /** @file csv-import.js - Types for CSV import module */
@@ -376,12 +401,8 @@ export function parseRow(row: string): CsvRow
  */
 export function showCSVPreview(csvText: string): void
 
-/**
- * Open the import CSV modal.
- * @example
- * openImportModal();
- */
-export function openImportModal(): void
+/** Reset the import dialog for a fresh arrival at /admin/guests/import. */
+export function mountImport(): void
 
 /**
  * Handle file selection event.
@@ -415,21 +436,10 @@ export function initCSVImport(): void
 export function onLoginSuccess(): void
 
 /**
- * Switch to a specific tab and load its data.
- * Handles ARIA attributes, visibility, and lazy loading of tab content.
- * @example
- * switchTab("guests");
- * switchTab("rsvps");
- * switchTab("petitions");
+ * Show one section's panel (#tab-<id>) and load its data. Called by the router,
+ * which decides the section from the path.
  */
-export function switchTab(tabId: string): void
-
-/**
- * Initialize tab navigation event listeners.
- * @example
- * initTabs();
- */
-export function initTabs(): void
+export function showPanel(tabId: string): void
 
 /**
  * Initialize the entire dashboard.
@@ -439,151 +449,51 @@ export function initTabs(): void
  */
 export function init(): void
 
-/** @file guests.js - Types for guest management module */
+/** @file guests.js - Guests & RSVPs (one split view) */
 
-/**
- * Stats API response.
- * @example
- * const response: StatsApiResponse = { stats: { total_guests: 100, ... } };
- */
 export interface StatsApiResponse {
   stats: Stats
 }
 
-/**
- * Guests API response with pagination.
- * @example
- * const response: GuestsApiResponse = { guests: [], pagination: { total: 0, limit: 25, offset: 0 } };
- */
+/** GET /api/admin/guests: one page. */
 export interface GuestsApiResponse {
   guests: GuestWithInviteCount[]
   pagination: PaginationInfo
 }
 
-/**
- * Module state for guest operations.
- * @example
- * const state: GuestModuleState = { deleteId: null, searchTimeout: undefined };
- */
-export interface GuestModuleState {
-  deleteId: number | null
-  restoreId: number | null
-  searchTimeout: ReturnType<typeof setTimeout> | undefined
+/** The list's RSVP filter (`?rsvp=`): everyone, coming, can't come, no reply
+ *  yet, or the archived (soft-deleted) guests. */
+export type GuestFilter = "all" | "yes" | "no" | "awaiting" | "archived"
+
+/** The whole roster, loaded once and filtered client-side (a wedding is small). */
+export interface GuestsData {
+  guests: GuestWithInviteCount[]
+  /** Loaded the first time the Archived filter is shown. */
+  archived: GuestWithInviteCount[] | null
+  /** RSVPs by guest id. */
+  rsvps: Map<number, RSVPWithGuest>
+  stats: Stats | null
+  loaded: boolean
 }
 
-/**
- * Load stats and update dashboard counters.
- * @example
- * await loadStats();
- */
+/** What the list shows, from the URL. */
+export interface GuestsView {
+  filter: GuestFilter
+  q: string
+  /** The selected guest (`/admin/guests/g12`). */
+  id: number | null
+  items: GuestWithInviteCount[]
+}
+
+/** Refresh the stats (the list head's "N parties · N people coming"). */
 export function loadStats(): Promise<void>
 
-/**
- * Load guests with pagination, search, and filtering.
- * @example
- * await loadGuests();
- */
+/** Reload the roster, the RSVPs and the stats; re-draw if the panel shows. */
 export function loadGuests(): Promise<void>
 
-/**
- * Render guest table.
- * @example
- * renderGuests(guests, pagination);
- */
-export function renderGuests(
-  guests: GuestWithInviteCount[],
-  pagination: PaginationInfo,
-): void
-
-/**
- * Render pagination controls.
- * @example
- * renderPagination(pagination);
- */
-export function renderPagination(pagination: PaginationInfo): void
-
-/**
- * Navigate to a specific page.
- * @example
- * goToPage(2);
- */
-export function goToPage(page: number): void
-
-/**
- * Open add guest modal.
- * @example
- * openAddGuestModal();
- */
-export function openAddGuestModal(): void
-
-/**
- * Edit a guest.
- * @example
- * editGuest(5);
- */
-export function editGuest(id: number): void
-
-/**
- * Open delete confirmation modal.
- * @example
- * confirmDeleteGuest(5);
- */
-export function confirmDeleteGuest(id: number): void
-
-/**
- * Open the restore-confirmation dialog for a soft-deleted guest.
- * @example
- * restoreGuest(5);
- */
-export function restoreGuest(id: number): void
-
-/**
- * Handle guest form submission.
- * @example
- * form.addEventListener('submit', handleGuestFormSubmit);
- */
 export function handleGuestFormSubmit(e: SubmitEvent): Promise<void>
 
-/**
- * Handle delete confirmation click.
- * @example
- * btn.addEventListener('click', handleDeleteConfirm);
- */
-export function handleDeleteConfirm(): Promise<void>
-
-/**
- * Handle restore confirmation click.
- * @example
- * btn.addEventListener('click', handleRestoreConfirm);
- */
-export function handleRestoreConfirm(): Promise<void>
-
-/**
- * Handle search input.
- * @example
- * input.addEventListener('input', handleSearchInput);
- */
-export function handleSearchInput(): void
-
-/**
- * Handle guest table click events.
- * @example
- * tbody.addEventListener('click', handleGuestsTableClick);
- */
-export function handleGuestsTableClick(e: MouseEvent): void
-
-/**
- * Handle pagination click events.
- * @example
- * container.addEventListener('click', handlePaginationClick);
- */
-export function handlePaginationClick(e: MouseEvent): void
-
-/**
- * Initialize guest management.
- * @example
- * initGuests();
- */
+/** Wire the panel and its dialogs, and register it with the router. */
 export function initGuests(): void
 
 /** @file invites.js - Types for invite wizard module */
@@ -734,12 +644,15 @@ export function renderInvitePreview(): void
  */
 export function renderInviteResults(result: InviteSendResult): void
 
-/**
- * Open send invites modal.
- * @example
- * await openSendInvitesModal();
- */
-export function openSendInvitesModal(): Promise<void>
+/** Which invite dialog route is being shown: the list's invitable guests
+ *  (filtered like the list), one guest, or the results of the last send. */
+export type InviteMount =
+  | { kind: "bulk"; filter: GuestFilter; q: string }
+  | { kind: "one"; id: number; name: string }
+  | { kind: "sent" }
+
+/** Fill the invite dialog for this arrival (the router opens it). */
+export function mountInvite(opts: InviteMount): Promise<void>
 
 /**
  * Handle next button in invite wizard.
@@ -781,6 +694,9 @@ export function showSuccess(message: string): void
  * clearNotification();
  */
 export function clearNotification(): void
+
+/** Run the pending Undo (the toast's button, or `z`). False when there is none. */
+export function runUndo(): boolean
 
 /** Render a centered spinner into a tab container while its data loads, so a
  * slow fetch doesn't leave the prior tab's stale rows in place. For a
@@ -826,6 +742,9 @@ export function openModal(
  */
 export function closeModal(dialog: HTMLDialogElement): void
 
+/** The most recently opened dialog (via openModal) that is still open, or null. */
+export function topModal(): HTMLDialogElement | null
+
 /**
  * Initialize modal event listeners for all dialog elements.
  * Sets up close button handlers, backdrop click handling, and focus return.
@@ -858,124 +777,56 @@ export function openConfirm(cfg: ConfirmConfig): void
 /** Wire the shared confirm dialog's confirm button. Call once on load. */
 export function initConfirmDialog(): void
 
-/** @file petitions.js - Types for petition management module */
+/** @file petitions.js - Requests | Blocked (one split view) */
 
-/**
- * Petition counts by status.
- * @example
- * const counts: PetitionCounts = { pending: 5 };
- */
 export interface PetitionCounts {
   pending: number
 }
 
-/**
- * Petitions API response with counts.
- * @example
- * const response: PetitionsWithCountsResponse = { petitions: [], counts: { pending: 0 } };
- */
 export interface PetitionsWithCountsResponse {
   petitions: Petition[]
   counts: PetitionCounts
 }
 
-/**
- * Update the petition badge count.
- * @example
- * updatePetitionBadge(5);
- */
+/** The Requests list's filter (`?status=`). */
+export type PetitionFilter = "pending" | "approved" | "denied" | "all"
+
+/** What the Requests panel shows, from the URL. */
+export interface RequestsView {
+  /** /admin/requests/blocked… (the Blocked tab). */
+  blocked: boolean
+  filter: PetitionFilter
+  /** The selected request (`p3`) or blocked entry (`b5`). */
+  id: number | null
+  items: Array<Petition | BlocklistEntry>
+}
+
+/** The sidebar's Requests count and the tab's. */
 export function updatePetitionBadge(count: number): void
 
-/**
- * Load petitions with optional status filter.
- * @example
- * await loadPetitions();
- */
+/** Load every request (the list filters them). */
 export function loadPetitions(): Promise<void>
 
-/**
- * Load just the petition count for badge.
- * @example
- * await loadPetitionCount();
- */
+/** The waiting count only, for the badge poll. */
 export function loadPetitionCount(): Promise<void>
 
-/**
- * Render petitions table.
- * @example
- * renderPetitions(petitions);
- */
-export function renderPetitions(petitions: Petition[]): void
-
-/**
- * View petition details modal.
- * @example
- * viewPetition(5);
- */
-export function viewPetition(id: number): void
-
-/**
- * Open approve petition modal.
- * @example
- * openApprovePetition(5);
- */
+/** Ask the approve questions (party size, send now, a note). */
 export function openApprovePetition(id: number): void
 
-/**
- * Open deny petition modal.
- * @example
- * openDenyPetition(5);
- */
-export function openDenyPetition(id: number): void
+/** Ask the deny questions; `block` pre-ticks "also block them". */
+export function openDenyPetition(id: number, block?: boolean): void
 
-/**
- * Handle approve confirmation click.
- * @example
- * btn.addEventListener('click', handleApproveConfirm);
- */
 export function handleApproveConfirm(): Promise<void>
 
-/**
- * Handle deny confirmation click.
- * @example
- * btn.addEventListener('click', handleDenyConfirm);
- */
 export function handleDenyConfirm(): Promise<void>
 
-/**
- * Handle petitions table click events.
- * @example
- * tbody.addEventListener('click', handlePetitionsTableClick);
- */
-export function handlePetitionsTableClick(e: MouseEvent): void
-
-/**
- * Initialize petition management.
- * @example
- * initPetitions();
- */
+/** Wire the panel and its confirms, and register it with the router. */
 export function initPetitions(): void
 
-/** @file rsvps.js - Types for RSVP list display module */
-
+/** GET /api/admin/rsvps (Guests & RSVPs reads it into each guest). */
 export interface RSVPsResponse {
   rsvps: RSVPWithGuest[]
 }
-
-/**
- * Render RSVP data to the table body.
- * Shows name, attendance status, party size, dietary info, and date.
- * @example
- * renderRsvps(rsvps);
- */
-export function renderRsvps(rsvps: RSVPWithGuest[]): void
-
-/**
- * Load RSVPs from API and render them to the table.
- * @example
- * await loadRsvps();
- */
-export function loadRsvps(): Promise<void>
 
 /** @file manual-sms.js - Types for manual SMS copy-paste texting module */
 
@@ -1099,19 +950,15 @@ export function markGuestSent(guestId: number): Promise<void>
  */
 export function isManualSmsData(data: unknown): data is ManualSmsData
 
-/**
- * Open the manual SMS modal and load eligible guests.
- * @example
- * await openManualSmsModal();
- */
-export function openManualSmsModal(): Promise<void>
+/** Load the eligible guests into the dialog route /admin/guests/text. */
+export function mountManualSms(): Promise<void>
 
 /**
  * Handle closing the manual SMS modal and refreshing data.
  * @example
  * await handleDone();
  */
-export function handleDone(): Promise<void>
+export function handleDone(): void
 
 /**
  * Switch between focus and list view modes.
@@ -1127,8 +974,14 @@ export function switchViewMode(mode: string): void
  */
 export function initManualSms(): void
 
-/** @file thank-you.js — Types for the admin "Thank yous" tab (gift log, card
- *  list, composer with live iframe preview, send wizard). */
+/** @file thank-you.js — Types for Thank-yous: Gifts, Cards and Replies lists,
+ *  the composer route (live iframe preview), the send dialog and batch send. */
+
+/** A card as the admin lists it: recipient name + contact (GET /api/admin/thank-you). */
+export type ThankYouCardRow = ThankYouCardListRow
+
+/** How a card goes: by email, by text, or as a link the couple sends. */
+export type ThankYouChannel = "email" | "sms" | "link"
 
 /** GET /api/admin/gifts */
 export interface GiftsResponse {
@@ -1137,7 +990,59 @@ export interface GiftsResponse {
 
 /** GET /api/admin/thank-you */
 export interface CardsResponse {
-  cards: ThankYouCardWithGuest[]
+  cards: ThankYouCardListRow[]
+}
+
+/** One approved gallery item the guest is in (GET /api/admin/guests/:id/photos). */
+export interface GuestPhotoItem {
+  id: number
+  file_key: string
+  kind: "image" | "video"
+  section: "official" | "guest"
+  width: number | null
+  height: number | null
+  needs_display: boolean
+  created_at: string
+  faces: number
+}
+
+/** GET /api/admin/guests/:id/photos — "Photos they're in" (IA §13.1). */
+export interface GuestPhotosResponse {
+  items: GuestPhotoItem[]
+}
+
+/** One card's outcome in a batch send. */
+export interface ThankYouBatchResult {
+  id: number
+  via: ThankYouChannel
+  ok: boolean
+  error: string | null
+}
+
+/** The batch-send flow (Choose → How → Check → Sent). The ids and channels
+ *  survive a reload (sessionStorage); the history positions don't. */
+export interface ThankYouBatchFlow {
+  /** Ticked cards (step 1). */
+  ids: number[]
+  /** Card id → the channel picked in step 2 (absent = the pre-pick). */
+  channel: Record<string, ThankYouChannel>
+  sent: boolean
+  results: ThankYouBatchResult[]
+  /** history.state.idx of step 1's entry. */
+  chooseIdx: number | null
+  /** history.state.idx of the entry step 1 was opened from (null: deep link). */
+  originIdx: number | null
+  /** history.state.idx of Sent (which replaced Check). */
+  doneIdx: number | null
+  /** Back from Sent should still rewind to the origin. */
+  rewind: boolean
+}
+
+/** The single-card send dialog (route cards/:id/send). */
+export interface ThankYouSendDialogState {
+  cardId: number
+  stage: "pick" | "done" | "closed"
+  channel: ThankYouChannel
 }
 
 /** GET /api/admin/thank-you/counts */
@@ -1240,8 +1145,6 @@ export interface GuestStory {
   cards: GuestStoryCard[]
 }
 
-/** Card status filter buckets for the list view (task 2). */
-export type ThankYouCardFilter = "all" | "draft" | "sent/unopened" | "viewed" | "unread"
 
 /** { success, card } from create/update/mark-sent. */
 export interface ThankYouCardResponse {
@@ -1259,15 +1162,11 @@ export interface ThankYouTemplate {
   giftFallback?: string
 }
 
-/** GET /api/admin/thank-you/:id — a single card joined with its recipient name
- *  plus the full reply thread (ascending). */
-export interface ThankYouCardDetail extends ThankYouCardWithGuest {
-  replies: ThankYouCardReply[]
-}
-
-/** GET /api/admin/thank-you/:id response envelope. */
+/** GET /api/admin/thank-you/:id — one card with its recipient name, plus the
+ *  full reply thread, oldest first. */
 export interface ThankYouCardDetailResponse {
-  card: ThankYouCardDetail
+  card: ThankYouCard & { guest_name: string | null }
+  replies: Array<Pick<ThankYouCardReply, "emoji" | "message" | "created_at">>
 }
 
 /** POST /api/admin/thank-you/:id/resend response. `reset` re-drafts a sent-but-
@@ -1284,7 +1183,6 @@ export interface OpenEditorInput {
   guestId: number
   giftId: number | null
   recipientName: string
-  giftLabel: string
   message: string
   theme: string
   reveal: string
@@ -1309,68 +1207,86 @@ export interface ThankYouDraft {
   mediaItems: ThankYouMediaItem[]
 }
 
-/** Send-wizard state (config → preview → results for one card). */
-export interface ThankYouWizardState {
-  cardId: number
-  recipientName: string
-  step: "config" | "preview" | "results"
-  config: ThankYouSendConfig | null
-}
-
 /** Photo-picker state. */
 export interface ThankYouPickerState {
-  section: "official" | "guest"
   selected: Set<string>
 }
 
-/** The tab's module-level state. */
+/** The panel's module-level state. */
 export interface ThankYouModuleState {
-  view: "list" | "editor"
+  /** Gifts and cards have been fetched at least once. */
+  loaded: boolean
+  /** What #ty-view (or the composer) is showing. */
+  view: "gifts" | "cards" | "replies" | "composer" | "flow" | null
+  /** Which list the split shows, so a selection move keeps its scroll. */
+  listKey: string
+  /** The list's name filter (transient; not in the URL). */
+  query: string
   dirty: boolean
   effectsCustomized: boolean
-  /** Whether the couple has hand-edited the message — guards "↻ Reroll" from
-   *  silently replacing real writing (D2). */
+  /** The couple has written in the message: replacing it asks first. */
   messageCustomized: boolean
-  /** How many times Reroll has cycled the current draft (deterministic rotation). */
+  /** How many times "another starter" has cycled the current draft. */
   rerollCount: number
   guestsLoaded: boolean
   guestOptions: { id: number; name: string }[]
-  /** The site's active effect theme, cached for seeding new cards (E4). Null
-   *  until first loaded; falls back to the composer default. */
+  /** The site's effect theme (seeds a new card). Null until loaded. */
   siteTheme: string | null
+  /** The couple's display name (signs the card miniatures + preview). */
+  coupleName: string
+  config: ThankYouSendConfig | null
   draft: ThankYouDraft | null
+  /** Which composer route the draft belongs to ("card:17", "gift:41", "guest:12"). */
+  draftKey: string | null
+  /** The open draft has never been saved. */
+  isNew: boolean
+  /** An autosave that differs from the open draft, offered for restore. */
+  restoreSaved: string | null
   previewReady: boolean
   pendingPush: boolean
-  wizard: ThankYouWizardState | null
   picker: ThankYouPickerState
-  /** Active card status filter bucket (task 2). Persists across in-tab reloads. */
-  cardFilter: ThankYouCardFilter
-  /** Case-insensitive guest-name substring filtering both tables (task 2). */
-  nameQuery: string
-  /** Live-preview device width; mobile is the default (phone-first guests). */
   previewDevice: "mobile" | "desktop"
-  /** Cached "email me on first reply" config toggle (task 6). */
   replyPingEnabled: boolean
-  /** The open card recipient's story, for the composer sidecar (task 7). */
+  /** The open card recipient's story, for the composer sidecar. */
   story: GuestStory | null
-  /** Cards ⇆ Mailbox sub-view within the list view (D1). */
-  subView: "cards" | "mailbox"
-  /** When true, entering the tab lands on the Mailbox (set by the Inbox jump). */
-  mailboxOnLoad: boolean
+  /** A batch send or retry is running. */
+  sending: boolean
 }
 
 export function initThankYous(): void
 export function loadThankYous(): Promise<void>
 export function loadThankYouCount(): Promise<void>
 export function isThankYousDirty(): boolean
-/** Ask the thank-you tab to open on the Mailbox next time it loads (Inbox jump). */
-export function requestThankYouMailbox(): void
 
-// ---- Inbox (A1) ----
-export function initInbox(): void
-export function loadInbox(): Promise<void>
-/** Badge-only refresh (piggybacks on main.js's existing poll). */
-export function refreshInboxBadge(): Promise<void>
+// ---- Home (inbox.js; IA §2, §13.6) ----
+
+/** One numbered step card on Home. */
+export interface HomeStep {
+  step: number
+  /** Work waiting; 0 = done (the card dims, its button says "Look again"). */
+  waiting: number
+  title: string
+  todo: string
+  done: string
+  /** Where the button goes (an /admin path). */
+  to: string
+  cta: string
+  /** Progress in the job's own unit ("38 of 212 faces named"). */
+  progress?: { done: number; total: number; label: string }
+}
+
+export interface HomeData {
+  review: ModerationCountsResponse
+  /** Null when the faces endpoints could not be read. */
+  faces: { groups: number; ask: number; named: number; total: number } | null
+  thanks: { owed: number; thanked: number; unwritten: number; drafts: number; unread: number }
+  replies: number
+}
+
+/** Fetch and draw Home's step cards (mounted on every visit). */
+export function loadHome(): Promise<void>
+/** The badge poll's share: the Gifts count, which only Home computes. */
+export function refreshHomeBadges(): Promise<void>
 
 /** @file face-assignment.js — Types for the admin Faces tab (assisted face
  *  tagging against the guest roster, docs/post-wedding/SPEC-vision-lab.md
@@ -1461,6 +1377,10 @@ export interface FaceGroup {
   /** People exist to suggest, but none cleared `assign.suggest*` — so the
    *  group shows "no confident match" rather than the nearest wrong name. */
   abstained: boolean
+  /** The nearest people to the group, nearest first, with NO bar applied —
+   *  the picker's numbered alternatives ("Or one of these"), never a
+   *  suggestion. Empty until someone has been named. */
+  candidates: FaceGroupCandidate[]
   /** A strict majority of the cluster routed `accept`; the server sorts these
    *  first. */
   mostlyClear: boolean
@@ -1489,11 +1409,32 @@ export interface FaceRouteCounts {
   ungraded: number
 }
 
+/** One of a group's nearest people (FaceGroup.candidates). */
+export interface FaceGroupCandidate {
+  personId: number
+  personName: string
+  distance: number
+}
+
+/** What became of one face, from `overview?face=` — so a link that names a
+ *  face no longer in any group can say why instead of 404ing. `unnamed` is
+ *  either "in a group" or "held back from every group"; the client tells them
+ *  apart by membership. */
+export interface FaceAnchor {
+  faceId: number
+  mediaId: number | null
+  state: "unnamed" | "named" | "not_a_face" | "gone"
+  personId: number | null
+  personName: string | null
+}
+
 /** GET /api/admin/faces/overview. */
 export interface FacesOverviewResponse {
   counts: FaceOverviewCounts
   routeCounts: FaceRouteCounts
   groups: FaceGroup[]
+  /** Only with `?face=<id>`. */
+  anchor?: FaceAnchor
 }
 
 /** One prototype-match candidate offered for an ask-queue face. */
@@ -1555,6 +1496,15 @@ export interface FaceAssignResponse {
   personId: number
   identityId: number
   changed: number
+  /** The ledger pass this wrote — revoking it is the Undo. */
+  batchId: string
+}
+
+/** POST /api/admin/faces/not-a-face and /propagate: one revocable pass. */
+export interface FaceBatchWriteResponse {
+  success: boolean
+  changed: number
+  batchId: string
 }
 
 /** POST /api/admin/faces/assign-one response. Same shape as the bulk assign,
@@ -1693,6 +1643,9 @@ export interface PersonEntry {
 /** GET /api/admin/people. */
 export interface PeopleApiResponse {
   people: PersonEntry[]
+  /** Only with `?faces=<personId>`: that person's newest live faces (capped)
+   *  and how many there are in all. */
+  personFaces?: { personId: number; faces: FaceChipEntry[]; total: number }
 }
 
 /** One person as the write endpoints echo them back (no roll-up counts). */
@@ -1726,13 +1679,79 @@ export interface PersonMergeResponse {
   carriedGuestLink: boolean
 }
 
-/** Load the Faces tab's overview + ask queue + people list, then render. */
+/** Which Name-faces screen a route draws: the four steps, the two reference
+ *  tabs, or `root` (/admin/faces, which resolves to the first unfinished step). */
+export type FacesView =
+  | "root"
+  | "groups"
+  | "ask"
+  | "same-moment"
+  | "leftovers"
+  | "people"
+  | "history"
+
+/** Where the Name-faces panel is, parsed from the route. Ids are numbers; the
+ *  URL spells them `f1240` (a face), `p12` (a person), `m380` (a photograph). */
+export interface FacesPlace {
+  view: FacesView
+  face: number | null
+  person: number | null
+  media: number | null
+  /** `?face=` on a photograph route: the face to select when it opens. */
+  photoFace: number | null
+}
+
+/** One Quick question: a face that is a group of one, with the ask queue's
+ *  candidates and `unlocks` when it has them (it has none until someone is
+ *  named). */
+export interface FacesAskItem {
+  faceId: number
+  entry: FaceChipEntry
+  candidates: Array<{ personId: number | null; personName: string | null }>
+  /** Null when the queue doesn't carry the face (no one named yet). */
+  unlocks: number | null
+  routeState: "accept" | "ask" | null
+  routeReason: string | null
+}
+
+/** One decision made in this browser session, kept (sessionStorage) so the
+ *  Groups list can show it under "Named", a link to its face can say "Named
+ *  Rosa" with an Undo, and History can label its pass with a name. Ids, a
+ *  name someone typed and one chip — never anything about a photograph. */
+export interface FacesNamedEntry {
+  kind: "group" | "ask"
+  /** The face the group was shown by; its link resolves to this entry. */
+  anchor: number
+  faceIds: number[]
+  personId: number | null
+  /** Null = marked not a face. */
+  personName: string | null
+  count: number
+  batchId: string
+  chip: FaceChipEntry
+  revoked: boolean
+}
+
+/** The pieces of one "who is this?" picker. */
+export interface FacesPickerSpec {
+  kind: "group" | "ask"
+  /** The group key or the face id, as the action buttons carry it. */
+  id: number
+  /** How many faces a confirm names. */
+  count: number
+  suggestion: { personId: number; personName: string; note: string } | null
+  /** Numbered alternatives (keys 1–3). */
+  alternatives: Array<{ personId: number; personName: string; note: string }>
+  /** Why there's no suggestion, for the "Who is this?" heading. */
+  emptyNote: string
+}
+
+/** Load (or reload) everything the Name-faces panel draws, then redraw it. */
 export function loadFaceAssignment(): Promise<void>
 
-/** Wire up the Faces tab: the refresh button, the delegated
- *  click/keydown/input on the tab body (groups, ask queue, name-input
- *  autocomplete), and the per-photograph dialog's own listeners — that dialog
- *  lives OUTSIDE `#faces-body` and so inherits none of its delegation. */
+/** Register the Name-faces panel with the router and wire its delegated
+ *  click/keydown/input handlers, plus the photograph dialog's own listeners —
+ *  that dialog is a top-level <dialog> and inherits none of the panel's. */
 export function initFaceAssignment(): void
 
 /** The variant a face chip loads: `thumb` when its pixels already cover the
@@ -1744,3 +1763,183 @@ export function chipVariant(
   cssPx: number,
   dpr: number,
 ): "thumb" | "display"
+
+/** @file routes.js / router.js - The admin's real-path routes (Workspace shell) */
+
+/** One place in the admin. `path` is relative to /admin ("" is /admin itself)
+ *  and may hold `:param` segments ("review/:id"). `tab` is the panel that draws
+ *  it (#tab-<tab>), `sub` the panel's sub-view pill it selects, `nav` the
+ *  sidebar item it lights (a key of NAV). */
+export interface AdminRoute {
+  path: string
+  tab: string
+  sub?: string
+  nav: string
+  /** The page's own name: last breadcrumb and document title (a panel may
+   *  refine both with setCrumbs()). */
+  title: string
+  /** The param that names the selected item in a list. Moving it while one is
+   *  already selected (j/k, clicking the next row, advance-after-act) is
+   *  motion, not navigation: replaceState. */
+  sel?: string
+  /** Dialog route: the id of the <dialog> the router opens over `parent`. */
+  dialog?: string
+  /** Dialog route: the route pattern underneath, filled with the same params.
+   *  Closing the dialog goes up() to it. */
+  parent?: string
+  /** Alias: arriving here always replaces the URL with this path. */
+  redirect?: string
+}
+
+/** A sidebar item. `path` is its root, relative to /admin. */
+export interface NavItem {
+  label: string
+  /** Bottom-bar label (phones); defaults to `label`. */
+  short?: string
+  path: string
+  /** A name from icons.js. */
+  icon: string
+  /** Id of the count badge in this item (kept for modules that set it by id). */
+  badge?: string
+  /** The badge is a heart-tinted count (unread replies). */
+  heart?: boolean
+  /** Route paths shown as a segmented control above the panel ("Requests |
+   *  Blocked") — sections that are one job but, for now, two panels. */
+  tabs?: string[]
+}
+
+export interface NavGroup {
+  label: string
+  items: string[]
+}
+
+export interface RouteMatch {
+  route: AdminRoute
+  params: Record<string, string>
+}
+
+export interface Crumb {
+  label: string
+  /** A link (an /admin path); the last crumb never has one. */
+  href?: string
+}
+
+/** The route a pathname shows: an exact match (params filled) beats a prefix
+ *  match (params empty), which keeps a deeper unknown path in its section. */
+export function matchRoute(pathname: string): RouteMatch | null
+
+/** matchRoute(pathname)?.route — the section a path belongs to. */
+export function routeFor(pathname: string): AdminRoute | null
+
+/** The path of a route with its params filled ("/admin", "/admin/review/photo-4"). */
+export function pathFor(route: AdminRoute, params?: Record<string, string>): string
+
+/** The route an old `/admin#<tab>` link meant, or null. */
+export function legacyHashRoute(hash: string): AdminRoute | null
+
+/** The route that shows a panel's given sub-view, or null. */
+export function routeForSub(tab: string, sub: string): AdminRoute | null
+
+/** A sidebar item's root path. */
+export function navRoot(key: string): string
+
+/** The heading of the sidebar group holding `key` ("" for Home). */
+export function navGroupOf(key: string): string
+
+/** Where a sidebar item links: the remembered place in that section, unless
+ *  you are already in it (then its root). */
+export function navHref(key: string, currentNav: string, memory: Record<string, string>): string
+
+/** A dialog route's parent path, or null for an ordinary route. */
+export function parentPath(match: RouteMatch): string | null
+
+/** Group › Section › Page, the section linking to its root. */
+export function crumbsFor(match: RouteMatch): Crumb[]
+
+/** What a panel is told on every arrival. */
+export interface RouteContext {
+  route: AdminRoute
+  params: Record<string, string>
+  query: URLSearchParams
+  /** The full /admin path + search being shown. */
+  path: string
+  /** The app path this history entry was pushed from (null on a deep link). */
+  prev: string | null
+  /** True when the panel was already showing (a param or query change). */
+  samePanel: boolean
+  /** True when this arrival was a replace (selection motion, a redirect). */
+  replace: boolean
+}
+
+/** The module contract (WORKSPACE.md). Register with registerPanel(tab, panel).
+ *  A panel that registers is mounted on EVERY arrival at one of its routes,
+ *  including param/query changes; one that does not keeps today's behaviour
+ *  (main.js's load*() runs when the panel is first shown). */
+export interface AdminPanel {
+  mount(params: Record<string, string>, query: URLSearchParams, ctx: RouteContext): void | Promise<void>
+  /** Leaving for another panel. Drop timers, listeners, guards. */
+  unmount?(): void
+  /** Keys while this panel shows (not typing, no dialog open). True = handled. */
+  keys?(e: KeyboardEvent, ctx: RouteContext): boolean
+  /** Lines added to the ? sheet while this panel shows: [keys, what]. */
+  help?: { title: string; keys: Array<[string, string]> }
+}
+
+/** Work a navigation would throw away. `tab`: guards while that panel shows;
+ *  `path`: guards while the URL is inside this /admin path prefix (so the
+ *  composer's own photo-picker route doesn't trip it). */
+export interface LeaveGuard {
+  what: string
+  dirty: () => boolean
+  /** Present → the dialog offers "Save and leave". Resolve true when saved. */
+  save?: () => Promise<boolean>
+  /** Called when the owner chooses Discard: drop the edits, so the next visit
+   *  shows the saved version rather than the text they threw away. */
+  discard?: () => void
+  tab?: string
+  path?: string
+}
+
+export interface NavigateOptions {
+  /** replaceState instead of pushState (selection motion, advance-after-act). */
+  replace?: boolean
+  /** false: only record the place (a pill already switched the view). */
+  render?: boolean
+}
+
+/** Go to an /admin path (+ search): push (or replace), ask first if unsaved
+ *  work would be lost. */
+export function navigate(path: string, opts?: NavigateOptions): Promise<void>
+
+/** Close / back-chevron / Esc: history.back() when the previous entry IS
+ *  `fallback` (so Close and Back agree), else replace to it. */
+export function up(fallback: string): void
+
+/** Register a panel module for its #tab-<tab>. */
+export function registerPanel(tab: string, panel: AdminPanel): void
+
+/** Add a leave guard; returns the function that removes it. */
+export function addGuard(guard: LeaveGuard): () => void
+
+/** Replace the crumbs after the section ("Hannah Weiss · Photo"); also sets
+ *  the document title to the last label. Call from mount(). */
+export function setCrumbs(trail: Crumb[]): void
+
+/** The place being shown. */
+export function currentPlace(): RouteContext | null
+
+/** Set a sidebar item's count badge (and the bottom bar's, and More's). */
+export function setNavBadge(key: string, count: number): void
+
+/** Wire the shell (sidebar, bottom bar, keys) and Back/Forward. `load` runs a
+ *  legacy panel's load*() when it is first shown. */
+export function initRouter(load: (tabId: string) => void): void
+
+/** Render whatever the current URL names (after login). Redirects old #tab links. */
+export function startRouter(): void
+
+/** Fill /admin/more (phones) with every section, its live badge, and settings. */
+export function renderMore(): void
+
+/** @file icons.js - Stroke icons (20px grid), shared by the shell and panels */
+export function icon(name: string): string

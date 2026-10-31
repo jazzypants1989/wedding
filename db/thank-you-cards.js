@@ -90,7 +90,9 @@ export function getPublicCardByShareToken(shareToken) {
 
 /** @type {Types.listCards} */
 export function listCards() {
-  return sql`SELECT t.*, g.name AS guest_name
+  // Contact rides along so the admin's batch send can pre-pick each card's
+  // channel and list every recipient before anything goes out.
+  return sql`SELECT t.*, g.name AS guest_name, g.email AS guest_email, g.phone AS guest_phone
     FROM thank_you_cards t
     JOIN guests g ON g.id = t.guest_id
     WHERE t.deleted_at IS NULL

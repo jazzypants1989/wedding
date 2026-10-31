@@ -1,0 +1,968 @@
+/* Name faces — the three-pane walk (face-assignment.js). Loaded after
+   admin.css and built on its primitives (WORKSPACE.md); the pieces below are
+   ported value for value from prototypes/admin-workspace/app.css (.faces-head,
+   .flow, .faces3, .stage*, .strip*, .picker, .cand/.who, .pairs, .photo-grid,
+   .history, .pf). Every rule is scoped under #tab-faces or the photo dialog,
+   so nothing leaks into another panel.
+
+   admin.css still carries the OLD Faces rules (.faces-counts, .face-review-*,
+   .faces-setaside-*, .faces-batch-*, …). Nothing renders them any more; only
+   .face-chip-img (the cropped <img>) is still used. */
+
+/* ------------------------------------------------------------------ frame */
+#tab-faces .faces-root {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------------------------------------------------------- the stepper */
+#tab-faces .faces-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--ws-line);
+  background: var(--ws-bg);
+  flex-wrap: wrap;
+}
+
+#tab-faces .flow {
+  display: flex;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  gap: 4px;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+#tab-faces .flow li {
+  display: flex;
+  align-items: center;
+}
+
+#tab-faces .flow li + li::before {
+  content: "";
+  width: 18px;
+  height: 1px;
+  background: var(--ws-line);
+  margin-right: 4px;
+}
+
+#tab-faces .flow a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  text-decoration: none;
+  color: var(--ws-muted);
+  font-size: 0.88rem;
+}
+
+#tab-faces .flow a:hover {
+  background: var(--ws-hover);
+}
+
+#tab-faces .flow [aria-current="step"] {
+  background: var(--ws-panel);
+  color: var(--ws-ink);
+  font-weight: 500;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+
+#tab-faces .flow-n {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.75rem;
+  border: 1px solid currentColor;
+  flex: none;
+}
+
+#tab-faces .flow-n .icon {
+  width: 14px;
+  height: 14px;
+}
+
+#tab-faces .flow [aria-current="step"] .flow-n {
+  background: var(--ws-accent);
+  color: var(--ws-accent-ink);
+  border-color: var(--ws-accent);
+}
+
+#tab-faces .flow .is-done .flow-n {
+  background: var(--color-status-responded-bg);
+  color: var(--ws-ok);
+  border-color: transparent;
+}
+
+#tab-faces .faces-ref {
+  display: flex;
+  gap: 4px;
+}
+
+#tab-faces .faces-ref a,
+#tab-faces .faces-ref-phone a {
+  padding: 6px 10px;
+  border-radius: 8px;
+  color: var(--ws-muted);
+  text-decoration: none;
+  font-size: 0.88rem;
+}
+
+#tab-faces .faces-ref a:hover {
+  color: var(--ws-ink);
+}
+
+#tab-faces .faces-ref a[aria-current="page"] {
+  color: var(--ws-ink);
+  background: var(--ws-panel);
+  font-weight: 500;
+}
+
+#tab-faces .faces-ref-phone {
+  gap: 14px;
+}
+
+#tab-faces .faces-ref-phone a {
+  padding: 0;
+  color: var(--ws-accent);
+  text-decoration: underline;
+}
+
+#tab-faces .faces-head + .split {
+  flex: 1;
+}
+
+/* ---------------------------------------------------- the three panes */
+#tab-faces .faces3 {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 290px minmax(0, 1fr) 330px;
+}
+
+#tab-faces .faces3:not(:has(.pane-picker)) {
+  grid-template-columns: 290px minmax(0, 1fr);
+}
+
+#tab-faces .pane-stage {
+  background: var(--ws-panel);
+  display: flex;
+  flex-direction: column;
+}
+
+#tab-faces .pane-picker {
+  border-left: 1px solid var(--ws-line);
+  background: var(--ws-panel);
+  padding: 18px;
+}
+
+#tab-faces .pane-head .chips {
+  margin-top: 4px;
+}
+
+#tab-faces .pane-head .chip {
+  font-size: 0.75rem;
+  padding: 3px 9px;
+}
+
+/* --------------------------------------------------------- face chips */
+#tab-faces .chip-face,
+#faces-photo-modal .chip-face {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  overflow: hidden;
+  flex: none;
+  background: var(--ws-hover);
+}
+
+#tab-faces .chips4 {
+  display: grid;
+  grid-template-columns: repeat(4, 26px);
+  gap: 3px;
+  flex: none;
+}
+
+#tab-faces .chips4 .chip-face {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+}
+
+#tab-faces .chip-face-lg {
+  width: 96px;
+  height: 96px;
+  border-radius: 16px;
+}
+
+#tab-faces .rows-done .row {
+  opacity: 0.75;
+}
+
+#tab-faces .rows-done .row-top .icon {
+  width: 14px;
+  height: 14px;
+  color: var(--ws-ok);
+}
+
+/* A long name ellipsizes instead of pushing the narrow list sideways (the
+   prototype scrolls horizontally at the icon-rail width). */
+#tab-faces .pane-list {
+  overflow-x: hidden;
+}
+
+#tab-faces .row-top {
+  min-width: 0;
+}
+
+#tab-faces .row-top strong {
+  min-width: 0;
+}
+
+#tab-faces .avatar .art,
+#faces-photo-modal .avatar .art {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#tab-faces .avatar text,
+#faces-photo-modal .avatar text {
+  font-family: var(--font-body);
+  font-weight: 500;
+}
+
+/* -------------------------------------------------------------- stage */
+#tab-faces .stage {
+  padding: 18px clamp(16px, 3vw, 32px);
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+#tab-faces .stage-head {
+  display: flex;
+  align-items: center;
+}
+
+#tab-faces .stage-head .eyebrow {
+  flex: 1;
+}
+
+#tab-faces .stage-face {
+  margin: 0;
+  width: min(100%, 300px);
+  justify-self: center;
+}
+
+#tab-faces .chip-stage {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  border-radius: 16px;
+}
+
+#tab-faces .stage-face.is-out .chip-stage {
+  opacity: 0.35;
+  filter: grayscale(1);
+}
+
+#tab-faces .stage-face figcaption {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  font-size: 0.85rem;
+  color: var(--ws-muted);
+}
+
+#tab-faces .stage-tools {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+#tab-faces .stage-tools kbd {
+  margin-left: 2px;
+}
+
+#tab-faces .strip {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(54px, 1fr));
+  gap: 6px;
+}
+
+#tab-faces .strip-face {
+  display: block;
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  aspect-ratio: 1;
+  outline-offset: 1px;
+}
+
+#tab-faces .strip-face .chip-face {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+}
+
+#tab-faces .strip-face[aria-current="true"] {
+  outline: 3px solid var(--ws-accent);
+}
+
+#tab-faces .strip-face.is-out .chip-face {
+  opacity: 0.3;
+  filter: grayscale(1);
+}
+
+#tab-faces .strip-face.is-unclear {
+  opacity: 0.6;
+}
+
+#tab-faces .strip-face.is-unclear::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 2px dashed rgb(255 255 255 / 0.8);
+  border-radius: 8px;
+}
+
+#tab-faces .strip-badge {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  bottom: 2px;
+  font-size: 0.6rem;
+  text-align: center;
+  background: rgb(0 0 0 / 0.6);
+  color: #fff;
+  border-radius: 4px;
+}
+
+#tab-faces .strip-help {
+  margin: 0;
+}
+
+#tab-faces .strip-out {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--ws-hover);
+}
+
+/* ------------------------------------------------------------- picker */
+#tab-faces .picker {
+  display: grid;
+  gap: 12px;
+}
+
+#tab-faces .suggest {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+#tab-faces .suggest h2,
+#tab-faces .picker-q {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 1.4rem;
+  color: var(--ws-ink);
+}
+
+#tab-faces .suggest .eyebrow {
+  display: block;
+}
+
+#tab-faces .suggest-none {
+  display: block;
+}
+
+#tab-faces .suggest-none h2 {
+  margin-bottom: 4px;
+}
+
+#tab-faces .picker-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ws-muted);
+  margin: 6px 0 0;
+  display: flex;
+  justify-content: space-between;
+}
+
+#tab-faces .cands,
+#tab-faces .who-list,
+#faces-photo-modal .who-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+
+#tab-faces .cand,
+#tab-faces .who,
+#faces-photo-modal .who {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--ws-line);
+  border-radius: 10px;
+  background: var(--ws-panel);
+  color: var(--ws-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+#tab-faces .cand:hover,
+#tab-faces .who:hover,
+#faces-photo-modal .who:hover,
+#tab-faces .who:focus-visible,
+#faces-photo-modal .who:focus-visible {
+  background: var(--ws-hover);
+  border-color: var(--ws-accent);
+}
+
+#tab-faces .cand:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+#tab-faces .cand kbd {
+  margin: 0;
+}
+
+#tab-faces .cand strong {
+  font-weight: 500;
+}
+
+#tab-faces .who,
+#faces-photo-modal .who {
+  padding: 6px 8px;
+}
+
+#tab-faces .who .avatar,
+#faces-photo-modal .who .avatar {
+  width: 26px;
+  height: 26px;
+}
+
+#tab-faces .who .muted,
+#faces-photo-modal .who .muted {
+  margin-left: auto;
+  font-size: 0.75rem;
+}
+
+#tab-faces .who-new,
+#faces-photo-modal .who-new {
+  color: var(--ws-accent);
+}
+
+#tab-faces .who-list:not(:empty),
+#faces-photo-modal .who-list:not(:empty) {
+  margin-top: 6px;
+}
+
+#tab-faces .someone input,
+#faces-photo-modal .someone input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--ws-line);
+  background: var(--ws-bg);
+  color: var(--ws-ink);
+  font: inherit;
+  margin-top: 6px;
+}
+
+#tab-faces .picker-minor {
+  display: flex;
+  gap: 6px;
+  border-top: 1px solid var(--ws-line);
+  padding-top: 10px;
+}
+
+#tab-faces .picker .fine {
+  margin-top: 0;
+}
+
+#tab-faces .picker-error {
+  margin: 0;
+}
+
+/* -------------------------------------------------- single-column pages */
+#tab-faces .single .single-head .faces-ref-phone {
+  margin-top: 2px;
+}
+
+#tab-faces .pairs {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 16px;
+  display: grid;
+  gap: 8px;
+}
+
+#tab-faces .pair {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--ws-line);
+  border-radius: 12px;
+  background: var(--ws-panel);
+  cursor: pointer;
+}
+
+#tab-faces .pair > span:nth-last-child(2) {
+  flex: 1;
+}
+
+#tab-faces .pair strong {
+  font-weight: 500;
+}
+
+#tab-faces .actionbar {
+  align-items: center;
+}
+
+#tab-faces .actionbar-note {
+  flex: 1;
+}
+
+#tab-faces .photo-grid {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 24px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 14px;
+}
+
+#tab-faces .photo-card {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--ws-line);
+  border-radius: 12px;
+  background: var(--ws-panel);
+  color: var(--ws-ink);
+  text-decoration: none;
+}
+
+#tab-faces .photo-card:hover {
+  border-color: var(--ws-accent);
+}
+
+#tab-faces .photo-card.is-done {
+  opacity: 0.6;
+}
+
+#tab-faces .photo-thumb {
+  display: block;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--ws-hover);
+  margin-bottom: 6px;
+}
+
+#tab-faces .photo-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+#tab-faces .history {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 24px;
+  display: grid;
+  gap: 8px;
+}
+
+#tab-faces .history li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--ws-line);
+  border-radius: 12px;
+  background: var(--ws-panel);
+}
+
+#tab-faces .history strong {
+  font-weight: 500;
+}
+
+#tab-faces .history li.is-revoked {
+  opacity: 0.55;
+}
+
+/* The pass id is for the command line (`revoke --batch`): there when you
+   look for it on a row, not shouting from every one. */
+#tab-faces .history .batch-id {
+  margin-left: 8px;
+  font-size: 0.7rem;
+  background: none;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+#tab-faces .history li:hover .batch-id,
+#tab-faces .history li:focus-within .batch-id {
+  opacity: 0.7;
+}
+
+#tab-faces .faces-cli-hint {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--ws-hover);
+  overflow-x: auto;
+}
+
+/* ---------------------------------------------------------------- people */
+#tab-faces .faces-stats {
+  margin: 2px 0 0;
+  color: var(--ws-ink);
+}
+
+#tab-faces .person-head h1 {
+  color: var(--ws-title);
+}
+
+#tab-faces .person-head p {
+  margin: 4px 0 0;
+}
+
+#tab-faces .faces-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 12px;
+  max-width: 560px;
+}
+
+#tab-faces .faces-inline input,
+#tab-faces .faces-inline select {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+#tab-faces .person-error {
+  margin-top: 12px;
+}
+
+#tab-faces .face-grid {
+  list-style: none;
+  padding: 0;
+  margin: 18px 0 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  gap: 6px;
+}
+
+#tab-faces .face-grid a {
+  display: block;
+  border-radius: 8px;
+}
+
+#tab-faces .face-grid .chip-face {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+}
+
+/* ---------------------------------------------------- the photo dialog */
+#faces-photo-modal .pf {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+#faces-photo-modal .pf-photo {
+  margin: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  position: relative;
+  background: var(--ws-hover);
+}
+
+#faces-photo-modal .pf-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+#faces-photo-modal .pf-boxes {
+  position: absolute;
+  inset: 0;
+}
+
+#faces-photo-modal .pf-box {
+  position: absolute;
+  padding: 0;
+  background: transparent;
+  border: 2px solid rgb(255 255 255 / 0.9);
+  border-radius: 4px;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35);
+}
+
+#faces-photo-modal .pf-box.is-unclear {
+  border-style: dashed;
+}
+
+#faces-photo-modal .pf-box.is-named {
+  border-color: var(--ws-ok);
+}
+
+#faces-photo-modal .pf-box.is-on {
+  border-color: var(--ws-accent);
+  border-width: 3px;
+}
+
+#faces-photo-modal .pf-box span {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 2px);
+  transform: translateX(-50%);
+  font-size: 0.8rem;
+  color: #fff;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.7);
+}
+
+#faces-photo-modal .pf-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+#faces-photo-modal .pf-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px;
+  border-radius: 10px;
+}
+
+#faces-photo-modal .pf-row.is-on {
+  background: var(--ws-sel);
+  align-items: flex-start;
+}
+
+#faces-photo-modal .pf-row.is-on .pf-n {
+  padding-top: 18px;
+}
+
+#faces-photo-modal .pf-row.is-on > .chip-face {
+  margin-top: 4px;
+}
+
+#faces-photo-modal .pf-n {
+  width: 20px;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--ws-muted);
+  flex: none;
+}
+
+#faces-photo-modal .pf-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+#faces-photo-modal .pf-name strong {
+  font-weight: 500;
+}
+
+#faces-photo-modal .pf-tools {
+  display: flex;
+  gap: 10px;
+  font-size: 0.85rem;
+}
+
+#faces-photo-modal .pf-who {
+  flex: 1;
+  min-width: 0;
+  display: block;
+}
+
+#faces-photo-modal .pf-who input {
+  margin-top: 0;
+}
+
+#faces-photo-modal .pf-who .tag {
+  display: inline-block;
+  margin-top: 6px;
+  margin-right: 4px;
+}
+
+#faces-photo-modal .pf-pick {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--ws-line);
+  background: var(--ws-bg);
+  color: var(--ws-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+#faces-photo-modal .pf-pick:hover {
+  border-color: var(--ws-accent);
+}
+
+#faces-photo-modal .pf-pick .tag {
+  margin-left: auto;
+}
+
+#faces-photo-modal #faces-photo-status .linklike {
+  margin-left: 6px;
+}
+
+/* -------------------------------------------------------- icon rail */
+@media (min-width: 900px) and (max-width: 1199px) {
+  #tab-faces .faces3 {
+    grid-template-columns: 240px minmax(0, 1fr) 290px;
+  }
+
+  #tab-faces .faces3:not(:has(.pane-picker)) {
+    grid-template-columns: 240px minmax(0, 1fr);
+  }
+}
+
+/* ------------------------------------------------------------- phones */
+@media (max-width: 899.98px) {
+  #tab-faces .faces3 {
+    display: block;
+    overflow-y: auto;
+  }
+
+  #tab-faces .faces3 > .pane {
+    overflow: visible;
+    border: 0;
+  }
+
+  #tab-faces .faces3.has-sel > .pane-list,
+  #tab-faces .faces3:not(.has-sel) > .pane-stage,
+  #tab-faces .faces3:not(.has-sel) > .pane-picker {
+    display: none;
+  }
+
+  #tab-faces .faces3.has-sel {
+    background: var(--ws-panel);
+  }
+
+  #tab-faces .faces3 > .pane-picker {
+    border-top: 1px solid var(--ws-line);
+  }
+
+  #tab-faces .stage {
+    padding: 10px 14px;
+    gap: 10px;
+  }
+
+  #tab-faces .stage-face {
+    width: 100%;
+  }
+
+  #tab-faces .chip-stage {
+    width: 170px;
+    margin-inline: auto;
+  }
+
+  #tab-faces .stage-face figcaption {
+    justify-content: center;
+  }
+
+  #tab-faces .strip {
+    grid-template-columns: repeat(auto-fill, minmax(42px, 1fr));
+  }
+
+  #tab-faces .faces-head {
+    padding: 8px 10px;
+    gap: 6px;
+  }
+
+  #tab-faces .flow {
+    flex-wrap: nowrap;
+  }
+
+  #tab-faces .flow li + li::before {
+    width: 8px;
+  }
+
+  #tab-faces .flow-label,
+  #tab-faces .flow .count {
+    display: none;
+  }
+
+  #tab-faces .flow [aria-current="step"] .flow-label,
+  #tab-faces .flow [aria-current="step"] .count {
+    display: inline-flex;
+  }
+
+  #tab-faces .faces-ref {
+    display: none;
+  }
+
+  #tab-faces .history .batch-id {
+    display: none;
+  }
+
+  #tab-faces .actionbar-note {
+    display: none;
+  }
+
+  #faces-photo-modal .pf {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* A photo that failed to load leaves its box empty, not a broken-image icon
+   (face-assignment.js hides it). Needed because .face-chip-img sets display. */
+#tab-faces img[hidden],
+#faces-photo-modal img[hidden] {
+  display: none;
+}

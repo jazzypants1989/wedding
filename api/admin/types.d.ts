@@ -685,6 +685,14 @@ export function adminThankYouGuestStoryHandler(
   routeInfo: AuthenticatedRouteInfo,
 ): Promise<void>
 
+/** GET /api/admin/guests/:id/photos — "Photos they're in": approved gallery
+ *  media with a named face linked to this guest → `{ items: GuestPhoto[] }`. */
+export function adminThankYouGuestPhotosHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
 /** POST /api/admin/thank-you/preview — { cardId, type, customMessage? } →
  *  resolved recipient + message preview (or a skip reason). */
 export function adminThankYouPreviewHandler(
@@ -758,7 +766,9 @@ export function logout(req: IncomingMessage, res: ServerResponse): Promise<void>
  *  because of it; created_by/actors always derive from the admin session. */
 
 /** GET /api/admin/people — every live person, display-name order, with the
- *  linked guest's name (null off-roster) and live identity/face counts. */
+ *  linked guest's name (null off-roster) and live identity/face counts.
+ *  `?faces=<personId>` adds `personFaces: { personId, faces, total }` — that
+ *  person's newest live faces as chips (capped), for the People page's grid. */
 export function peopleListHandler(
   req: IncomingMessage,
   res: ServerResponse,
@@ -825,6 +835,11 @@ export interface FaceBoxOut {
  *  bulk-nameable" a property of the payload rather than of a client's
  *  filtering. `weld` is an ORDERING score only — see faces.js's `weldRisk` for
  *  why it is never rendered as a warning. */
+/*  Each group also carries `candidates`: the nearest people from matchFace,
+ *  nearest first, NO bar applied — the picker's numbered alternatives, never a
+ *  suggestion. `?face=<id>` adds `anchor: { faceId, mediaId, state, personId,
+ *  personName }` (state: unnamed | named | not_a_face | gone), so a deep link
+ *  to a face that has left every group can say why. */
 export function faceOverviewHandler(
   req: IncomingMessage,
   res: ServerResponse,

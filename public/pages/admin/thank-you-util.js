@@ -290,3 +290,149 @@ export function diffConfig(defaults, current) {
   }
   return out
 }
+
+// ==================== Workspace lists (Gifts · Cards · Replies) ====================
+
+/** The one word a card's state reads as in the lists (prototype `statusOf`): a
+ *  reply outranks an open, an open outranks a send. Pure.
+ *  @param {{ status: string, viewed_at: string | null, replied_at: string | null }} card
+ *  @returns {"draft" | "sent" | "opened" | "replied"} */
+export function cardStatus(card) {
+  if (card.status === "draft") return "draft"
+  if (card.replied_at) return "replied"
+  if (card.viewed_at || card.status === "viewed") return "opened"
+  return "sent"
+}
+
+/** Label for each cardStatus() value (also the Cards filter chips). */
+export const CARD_STATUS_LABEL = /** @type {const} */ ({
+  draft: "Draft",
+  sent: "Sent",
+  opened: "Opened",
+  replied: "Replied",
+})
+
+/** Parse an ISO-8601 or SQLite `YYYY-MM-DD HH:MM:SS` (UTC, no zone) timestamp
+ *  to epoch ms; NaN when unparseable. No regex.
+ *  @param {string | null | undefined} iso @returns {number} */
+export function parseStamp(iso) {
+  if (typeof iso !== "string" || !iso) return NaN
+  let s = iso.trim()
+  if (!s.includes("T") && s.includes(" ")) s = s.replace(" ", "T")
+  const tail = s.slice(10)
+  const zoned = tail.endsWith("Z") || tail.includes("+") || tail.includes("-")
+  if (s.includes("T") && !zoned) s += "Z"
+  return Date.parse(s)
+}
+
+/** The list's compact time ("12m ago", "5h ago", "3d ago", then a date), as the
+ *  prototype's rows show it. Pure: `nowMs` is injectable for tests.
+ *  @param {string | null | undefined} iso @param {number} [nowMs] @returns {string} */
+export function shortAgo(iso, nowMs = Date.now()) {
+  const then = parseStamp(iso)
+  if (Number.isNaN(then)) return ""
+  const minutes = Math.max(0, Math.round((nowMs - then) / 60000))
+  if (minutes < 1) return "just now"
+  if (minutes < 60) return minutes + "m ago"
+  if (minutes < 1440) return Math.round(minutes / 60) + "h ago"
+  if (minutes < 1440 * 14) return Math.round(minutes / 1440) + "d ago"
+  return new Date(then).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+}
+
+/** Compute the thank-you worklist from gift + card lists. Pure — shared by the
+ *  Gifts list, the composer's "write the next one" and Home (inbox.js), so the
+ *  "who do we still owe" logic lives in exactly one place.
+ *
+ *  "owed" = distinct guests we owe a thank-you: every guest with a logged gift,
+ *  PLUS the guests of any gift-less card (we chose to thank them even without a
+ *  gift). "thanked" = those owed guests who have at least one card that's actually
+ *  been SENT (`sent_at` set — status sent or viewed); a still-draft card doesn't
+ *  count. "remaining" = owed-but-not-thanked, de-duped, in gift order then
+ *  gift-less-card order.
+ *  @param {Array<{ guest_id: number, guest_name: string }>} gifts
+ *  @param {Array<{ guest_id: number, guest_name: string, gift_id: number | null, sent_at: string | null }>} cards
+ *  @returns {{ owed: number, thanked: number, remaining: { guestId: number, name: string }[] }} */
+export function computeWorklist(gifts, cards) {
+  /** @type {Set<number>} */
+  const owed = new Set()
+  for (const g of gifts) owed.add(g.guest_id)
+  for (const c of cards) if (c.gift_id == null) owed.add(c.guest_id)
+  /** @type {Set<number>} */
+  const thanked = new Set()
+  for (const c of cards) {
+    if (c.sent_at && owed.has(c.guest_id)) thanked.add(c.guest_id)
+  }
+  /** @type {Set<number>} */
+  const seen = new Set()
+  /** @type {{ guestId: number, name: string }[]} */
+  const remaining = []
+  for (const g of gifts) {
+    if (thanked.has(g.guest_id) || seen.has(g.guest_id)) continue
+    seen.add(g.guest_id)
+    remaining.push({ guestId: g.guest_id, name: g.guest_name })
+  }
+  for (const c of cards) {
+    if (c.gift_id != null) continue
+    if (thanked.has(c.guest_id) || seen.has(c.guest_id)) continue
+    seen.add(c.guest_id)
+    remaining.push({ guestId: c.guest_id, name: c.guest_name })
+  }
+  return { owed: owed.size, thanked: thanked.size, remaining }
+}
+
+/** "Save and write the next one" (IA §13.2): the next guest still owed a
+ *  thank-you who has no card at all yet (a drafted card is written — it's
+ *  waiting in Cards for the batch send), skipping the one just written. Null
+ *  when everyone has a card: the composer then reads "Save and finish".
+ *  @param {Array<{ id: number, guest_id: number, guest_name: string }>} gifts
+ *  @param {Array<{ id: number, guest_id: number, guest_name: string, gift_id: number | null, sent_at: string | null, status: string }>} cards
+ *  @param {number | null} excludeGuestId
+ *  @returns {{ guestId: number, name: string, giftId: number | null } | null} */
+export function nextToWrite(gifts, cards, excludeGuestId) {
+  /** @type {Set<number>} */
+  const drafted = new Set()
+  for (const c of cards) if (c.status === "draft") drafted.add(c.guest_id)
+  for (const r of computeWorklist(gifts, cards).remaining) {
+    if (r.guestId === excludeGuestId || drafted.has(r.guestId)) continue
+    const gift = gifts.find((g) => g.guest_id === r.guestId)
+    return { guestId: r.guestId, name: r.name, giftId: gift ? gift.id : null }
+  }
+  return null
+}
+
+/** Which ways a card can go to one guest, and why not when it can't: the
+ *  guest's contact on file, and whether the site has Resend / Twilio keys. A
+ *  channel we can't use is shown disabled with its reason, never hidden
+ *  (IA §5 C), so it's clear why someone is getting a link. Pure.
+ *  @param {{ email: string | null, phone: string | null }} contact
+ *  @param {{ email: boolean, sms: boolean }} configured
+ *  @returns {Array<{ key: "email" | "sms" | "link", label: string, ok: boolean, why: string }>} */
+export function channelOptions(contact, configured) {
+  /** @param {boolean} has @param {boolean} set @param {string} what */
+  const why = (has, set, what) => (!set ? "not set up on this site" : !has ? `no ${what} on file` : "")
+  return [
+    {
+      key: "email",
+      label: "Email",
+      ok: !!contact.email && configured.email,
+      why: why(!!contact.email, configured.email, "email"),
+    },
+    {
+      key: "sms",
+      label: "Text message",
+      ok: !!contact.phone && configured.sms,
+      why: why(!!contact.phone, configured.sms, "phone number"),
+    },
+    { key: "link", label: "Copy a link (send it yourself)", ok: true, why: "" },
+  ]
+}
+
+/** The channel a card is pre-picked to go by: email if we can, else a text,
+ *  else a link the couple sends themselves (IA §5 C step 2).
+ *  @param {{ email: string | null, phone: string | null }} contact
+ *  @param {{ email: boolean, sms: boolean }} configured
+ *  @returns {"email" | "sms" | "link"} */
+export function defaultChannel(contact, configured) {
+  const usable = channelOptions(contact, configured).find((o) => o.ok)
+  return usable ? usable.key : "link"
+}

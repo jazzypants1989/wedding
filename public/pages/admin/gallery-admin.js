@@ -1,22 +1,20 @@
-/** @file Gallery tab (Phase 6) — the curated "Official" section manager: a grid
- *  of official items with position numbers, button-based reorder (no drag —
- *  binding decision), inline caption editing, remove, and an "Add official
- *  photos" modal that drives the shared media-uploader as the admin principal
- *  (csrf cookie + section:'official', reconciliation 7). */
+/** @file Gallery (prototypes/admin-workspace views/misc.js, IA §4): Official
+ *  — the curated set, in order, as a photo grid with arrows and a typed
+ *  position to reorder (no drag — binding decision), captions that save on
+ *  blur, Remove (with the thank-you-card warning) — and Most loved by guests,
+ *  guest photos ranked by reactions, each one promotable into Official.
+ *
+ *  Routes: /admin/gallery · /admin/gallery/loved · dialog route
+ *  /admin/gallery/upload, which drives the shared media-uploader as the admin
+ *  principal (csrf cookie + section:'official', reconciliation 7). */
 /** @import * as Types from './types.js' */
 /** @import * as GlobalTypes from '../../../types.js' */
 /** @import * as Components from '../../components/types.js' */
 
 import { state } from "./state.js"
-import {
-  api,
-  openModal,
-  closeModal,
-  showSuccess,
-  showError,
-  showLoading,
-  showLoadError,
-} from "./utils.js"
+import { api, openModal, closeModal, showSuccess, showError, showLoadError } from "./utils.js"
+import { openConfirm } from "./confirm.js"
+import { registerPanel, setCrumbs } from "./router.js"
 import {
   html,
   getElement,
@@ -47,63 +45,66 @@ const failedCaptions = /** @type {Map<number, string>} */ (new Map())
 /** @type {Types.loadGalleryAdmin} */
 export async function loadGalleryAdmin() {
   try {
-    if (!foldedIn.size) showLoading(getElement("curated-grid"))
+    if (!officialLoaded) {
+      getElement("curated-grid").innerHTML = html`<li class="grid-empty">Loading…</li>`
+    }
     const data = /** @type {GlobalTypes.MediaListResponse} */ (
       await api("/api/media?section=official&limit=500")
     )
     state.currentCurated = data.items
+    officialLoaded = true
     renderGrid()
   } catch (err) {
     console.error("Failed to load official gallery:", err)
-    showLoadError(
-      getElement("curated-grid"),
-      1,
-      "Couldn't load the official gallery.",
-      loadGalleryAdmin,
+    showLoadError(getElement("curated-grid"), 1, "Couldn't load the official gallery.", () =>
+      void loadGalleryAdmin(),
     )
   }
 }
+
+let officialLoaded = false
 
 function renderGrid() {
   const grid = getElement("curated-grid")
   const items = state.currentCurated
   if (items.length === 0) {
-    grid.innerHTML = html`<p class="curated-empty">
-      No official photos yet. Use "Add official photos" to upload, or promote a guest
-      photo from the moderation queue.
-    </p>`
+    grid.innerHTML = html`<li class="grid-empty">
+      <strong>No official photos yet.</strong>
+      <span class="muted">Add your photographer's best with “+ Add official photos”, or promote a guest
+        favourite from Most loved.</span>
+    </li>`
     return
   }
   grid.innerHTML = html`${items.map(itemMarkup)}`
+  // The typed position is as wide as the longest number (CSSOM: CSP-safe).
+  const width = `${String(items.length).length + 0.8}ch`
+  for (const input of grid.querySelectorAll(".curated-pos")) {
+    if (input instanceof HTMLElement) input.style.width = width
+  }
+}
+
+/** A photo's frame: the thumb (a poster for video), or a stand-in for an
+ *  iPhone HEIC still being converted.
+ *  @param {{ kind: string, needs_display: boolean, file_key: string }} item */
+function frameMarkup(item) {
+  const isVideo = item.kind === "video"
+  const img =
+    item.needs_display && !isVideo
+      ? html`<span class="photo-stand-in">HEIC</span>`
+      : html`<img class="art" src="/media/${item.file_key}/${isVideo ? "poster" : "thumb"}" alt=""
+          loading="lazy" />`
+  return html`<span class="photo-frame">${img}${isVideo
+      ? html`<span class="photo-play" aria-label="Video">▶</span>`
+      : ""}</span>`
 }
 
 // ---- "Most loved" guest curation (A3) -------------------------------------
-
-/** Official ⇆ Most-loved sub-view within the Gallery tab. */
-let gallerySubView = /** @type {"official" | "loved"} */ ("official")
-
-/** @param {"official" | "loved"} view */
-function showGallerySubView(view) {
-  gallerySubView = view
-  getElement("gallery-official-view").hidden = view !== "official"
-  getElement("gallery-loved-view").hidden = view !== "loved"
-  for (const [id, name] of /** @type {[string, "official" | "loved"][]} */ ([
-    ["gallery-sub-official", "official"],
-    ["gallery-sub-loved", "loved"],
-  ])) {
-    const btn = getButtonElement(id)
-    const active = name === view
-    btn.classList.toggle("active", active)
-    btn.setAttribute("aria-selected", active ? "true" : "false")
-  }
-  if (view === "loved") void loadLoved()
-}
 
 /** Load approved guest media ranked by total reaction count (server-side sort,
  *  so "Most loved" is globally correct, not just over a loaded window). */
 async function loadLoved() {
   const grid = getElement("loved-grid")
-  showLoading(grid)
+  if (!grid.childElementCount) grid.innerHTML = html`<li class="grid-empty">Loading…</li>`
   try {
     const data = /** @type {Types.LovedMediaResponse} */ (
       await api("/api/admin/media/guest-loved?limit=60")
@@ -118,9 +119,11 @@ async function loadLoved() {
 function renderLoved(items) {
   const grid = getElement("loved-grid")
   if (items.length === 0) {
-    grid.innerHTML = html`<p class="curated-empty">
-      No guest photos have reactions yet. Once guests start reacting, the most-loved rise to the top here.
-    </p>`
+    grid.innerHTML = html`<li class="grid-empty">
+      <strong>No reactions yet.</strong>
+      <span class="muted">Once guests start reacting to each other's photos, the most loved rise to the
+        top here.</span>
+    </li>`
     return
   }
   grid.innerHTML = html`${items.map(lovedItemMarkup)}`
@@ -128,92 +131,81 @@ function renderLoved(items) {
 
 /** @param {Types.LovedMediaItem} item @returns {string} */
 function lovedItemMarkup(item) {
-  const isVideo = item.kind === "video"
-  const thumb =
-    item.needs_display && !isVideo
-      ? html`<div class="curated-thumb mod-thumb-empty">HEIC</div>`
-      : html`<img class="curated-thumb"
-          src="/media/${item.file_key}/${isVideo ? "poster" : "thumb"}"
-          alt="" loading="lazy" />`
-  return html`
-    <div class="curated-item loved-item" data-id="${item.id}">
-      <div class="curated-thumb-wrap">${thumb}</div>
-      <div class="loved-meta">
-        <span class="loved-reactions" title="Total reactions">❤ ${item.reaction_count}</span>
-        <span class="loved-author text-muted">${item.author_name || "A guest"}</span>
-      </div>
-      <div class="curated-actions">
-        <button type="button" class="btn btn-primary btn-sm" data-loved-action="promote">
-          Move to official
-        </button>
-      </div>
+  return html`<li class="loved-item" data-id="${item.id}">
+    <div class="photo-card">
+      ${frameMarkup(item)}
+      <span class="small loved-meta"
+        ><span class="loved-heart" aria-label="Reactions">♥</span> ${item.reaction_count} · by
+        ${item.author_name || "a guest"}</span
+      >
+      <span class="btn-row">
+        <button type="button" class="btn btn-sm" data-loved-action="promote">Add to Official</button>
+      </span>
     </div>
-  `
+  </li>`
 }
 
 /** @param {MouseEvent} e */
-async function handleLovedGridClick(e) {
+function handleLovedGridClick(e) {
   const target = e.target
   if (!(target instanceof Element)) return
   const btn = target.closest("[data-loved-action]")
-  if (!(btn instanceof HTMLElement)) return
+  if (!(btn instanceof HTMLElement) || btn.dataset.lovedAction !== "promote") return
   const wrap = btn.closest(".loved-item")
   if (!(wrap instanceof HTMLElement)) return
   const id = parseInt(wrap.dataset.id || "", 10)
   if (Number.isNaN(id)) return
-  if (btn.dataset.lovedAction !== "promote") return
-  if (
-    !window.confirm(
-      "Move this photo into the Official gallery? It leaves the guest feed — this is a move, not a copy.",
-    )
-  ) {
-    return
-  }
-  try {
-    await api(`/api/admin/media/${id}/promote`, { method: "POST" })
-    showSuccess("Moved to official ✓")
-    await loadLoved()
-  } catch (err) {
-    showError("Couldn't move that photo: " + getErrorMessage(err))
-  }
+  openConfirm({
+    title: "Add to Official?",
+    desc:
+      "It moves into the Official gallery, at the end of the order, and leaves the guest " +
+      "section — a move, not a copy. Its reactions and comments come with it.",
+    confirmLabel: "Add to Official",
+    danger: false,
+    run: async () => {
+      await api(`/api/admin/media/${id}/promote`, { method: "POST" })
+      wrap.remove()
+      showSuccess("Added to Official")
+      officialLoaded = false
+      void loadLoved()
+    },
+  })
 }
 
 /** @param {GlobalTypes.MediaListItem} item @param {number} index @returns {string} */
 function itemMarkup(item, index) {
   const total = state.currentCurated.length
-  const isVideo = item.kind === "video"
   const failed = failedCaptions.has(item.id)
   const captionValue = failed ? failedCaptions.get(item.id) : item.caption || ""
-  const thumb =
-    item.needs_display && !isVideo
-      ? html`<div class="curated-thumb mod-thumb-empty">HEIC</div>`
-      : html`<img class="curated-thumb"
-          src="/media/${item.file_key}/${isVideo ? "poster" : "thumb"}"
-          alt="" loading="lazy" />`
-  return html`
-    <div class="curated-item" data-id="${item.id}">
-      <div class="curated-thumb-wrap">
-        <input type="number" class="curated-pos" data-id="${item.id}"
-          value="${index + 1}" min="1" max="${total}" inputmode="numeric"
-          aria-label="Position — type a number to move this photo there" />
-        ${thumb}
-      </div>
-      <input type="text" class="curated-caption ${failed ? "is-error" : ""}" data-id="${item.id}"
-        value="${captionValue}" placeholder="Add a caption…" maxlength="500"
-        aria-label="Caption" ${failed ? 'aria-invalid="true"' : ""} />
-      ${failed ? html`<span class="curated-caption-error" role="alert">Not saved — still here, try again</span>` : ""}
-      <div class="curated-actions">
-        <button type="button" class="btn btn-secondary btn-sm" data-action="top"
-          title="Move to top" aria-label="Move to top" ${index === 0 ? "disabled" : ""}>⤒</button>
-        <button type="button" class="btn btn-secondary btn-sm" data-action="up"
-          title="Move up" aria-label="Move up" ${index === 0 ? "disabled" : ""}>↑</button>
-        <button type="button" class="btn btn-secondary btn-sm" data-action="down"
-          title="Move down" aria-label="Move down" ${index === total - 1 ? "disabled" : ""}>↓</button>
-        <button type="button" class="btn btn-danger btn-sm" data-action="remove"
-          title="Remove" aria-label="Remove">✕</button>
-      </div>
+  return html`<li class="curated-item" data-id="${item.id}">
+    <div class="photo-card">
+      ${frameMarkup(item)}
+      <span class="photo-line">
+        <label class="photo-pos"
+          ><span aria-hidden="true">#</span
+          ><input type="number" class="curated-pos" data-id="${item.id}" value="${index + 1}" min="1"
+            max="${total}" inputmode="numeric"
+            aria-label="Position — type a number to move this photo there"
+        /></label>
+        <input type="text" class="curated-caption ${failed ? "is-error" : ""}" data-id="${item.id}"
+          value="${captionValue}" placeholder="Add a caption…" maxlength="500" aria-label="Caption"
+          aria-invalid="${failed ? "true" : "false"}" />
+      </span>
+      ${failed
+        ? html`<span class="curated-caption-error" role="alert">Not saved — still here, try again</span>`
+        : ""}
+      <span class="btn-row">
+        <button type="button" class="btn btn-sm" data-action="up" aria-label="Move earlier"
+          title="Move earlier" ${index === 0 ? "disabled" : ""}>←</button>
+        <button type="button" class="btn btn-sm" data-action="down" aria-label="Move later"
+          title="Move later" ${index === total - 1 ? "disabled" : ""}>→</button>
+        <button type="button" class="btn btn-sm btn-ghost" data-action="top" aria-label="Move to first"
+          title="Move to first" ${index === 0 ? "disabled" : ""}>⇤</button>
+        <button type="button" class="btn btn-sm btn-ghost btn-danger-soft photo-remove" data-action="remove"
+          >Remove</button>
+      </span>
     </div>
-  `
+  </li>`
 }
 
 /** @param {string} msg */
@@ -312,17 +304,17 @@ function captionInput(id) {
 /** @param {HTMLInputElement} input @param {boolean} failed */
 function markCaptionErrorDom(input, failed) {
   input.classList.toggle("is-error", failed)
-  if (failed) input.setAttribute("aria-invalid", "true")
-  else input.removeAttribute("aria-invalid")
+  input.setAttribute("aria-invalid", failed ? "true" : "false")
   const row = input.closest(".curated-item")
-  if (!row) return
+  const line = input.closest(".photo-line")
+  if (!row || !line) return
   const existing = row.querySelector(".curated-caption-error")
   if (failed && !existing) {
     const err = document.createElement("span")
     err.className = "curated-caption-error"
     err.setAttribute("role", "alert")
     err.textContent = "Not saved — still here, try again"
-    input.insertAdjacentElement("afterend", err)
+    line.insertAdjacentElement("afterend", err)
   } else if (!failed && existing) {
     existing.remove()
   }
@@ -550,7 +542,7 @@ async function addFiltered(files) {
     else media.push(file)
   }
   if (media.length) queue.add(media)
-  const note = getElement("gallery-upload-drop")
+  const note = getElement("gallery-upload-note")
   if (dropped > 0) {
     note.textContent =
       `Added ${media.length} photo${media.length === 1 ? "" : "s"} — skipped ${dropped} ` +
@@ -610,6 +602,7 @@ function renderUploadTray() {
   const succeeded = items.filter(
     (i) => i.state === "done" || i.state === "pending",
   ).length
+  getButtonElement("gallery-upload-cancel-all").hidden = active === 0
   getElement("gallery-upload-summary").textContent =
     items.length === 0
       ? ""
@@ -705,24 +698,57 @@ function handleUploadListClick(e) {
 
 // ---- init -----------------------------------------------------------------
 
+/** Official or Most loved, from the route. @param {Types.RouteContext} ctx */
+function mount(ctx) {
+  const loved = ctx.route.path === "gallery/loved"
+  getElement("gallery-seg-official").setAttribute("aria-current", loved ? "false" : "page")
+  getElement("gallery-seg-loved").setAttribute("aria-current", loved ? "page" : "false")
+  getElement("gallery-lede").textContent = loved
+    ? "Guest photos ranked by reactions. Promote the best into Official."
+    : "The curated set, in order — what guests see first. " +
+      "Use the arrows (or type a number) to reorder; captions save as you go."
+  getElement("gallery-add-btn").hidden = loved
+  getElement("curated-grid").hidden = loved
+  getElement("loved-grid").hidden = !loved
+  setCrumbs([])
+  // Fresh on every arrival at a view; a dialog opening over it is not one.
+  const arrived = !ctx.samePanel || lastView !== (loved ? "loved" : "official")
+  lastView = loved ? "loved" : "official"
+  if (loved) {
+    if (arrived) void loadLoved()
+  } else if (!officialLoaded || arrived) {
+    void loadGalleryAdmin()
+  }
+}
+
+let lastView = ""
+
 /** @type {Types.initGalleryAdmin} */
 export function initGalleryAdmin() {
   const grid = getElement("curated-grid")
   grid.addEventListener("click", handleGridClick)
   grid.addEventListener("focusout", handleGridBlur)
   grid.addEventListener("keydown", handleGridKeydown)
-  getButtonElement("gallery-add-btn").addEventListener("click", () =>
-    openModal(getDialogElement("gallery-upload-modal")),
-  )
   getButtonElement("gallery-remove-btn").addEventListener("click", confirmRemove)
-  // Official ⇆ Most-loved sub-view (A3).
-  getButtonElement("gallery-sub-official").addEventListener("click", () =>
-    showGallerySubView("official"),
-  )
-  getButtonElement("gallery-sub-loved").addEventListener("click", () =>
-    showGallerySubView("loved"),
-  )
   getElement("loved-grid").addEventListener("click", handleLovedGridClick)
+  // A thumb that won't load leaves an empty frame (error doesn't bubble: capture).
+  for (const id of ["curated-grid", "loved-grid"]) {
+    getElement(id).addEventListener(
+      "error",
+      (e) => {
+        const frame = e.target instanceof HTMLImageElement ? e.target.closest(".photo-frame") : null
+        if (frame) frame.classList.add("is-missing")
+      },
+      true,
+    )
+  }
+  registerPanel("gallery", {
+    mount: (_params, _query, ctx) => mount(ctx),
+    help: {
+      title: "Gallery",
+      keys: [["Enter", "Save a caption or a typed position"]],
+    },
+  })
   initUploadModal()
 
   // Resume network-failed curated uploads when connectivity returns (a 401 is

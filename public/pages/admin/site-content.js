@@ -1,13 +1,16 @@
-/** @file Admin "Site content" tab — edit the runtime SiteContent override.
- *
- *  Loads the effective content into a form, PUTs edits to /api/admin/site-content
- *  (auto-CSRF via api()), and offers a reset-to-defaults (DELETE). Nav links are
- *  edited with a small repeatable row editor.
+/** @file Site content (/admin/site/content) — edit the runtime SiteContent
+ *  override. One long form in a single column (prototypes/admin-workspace
+ *  views/misc.js): jump chips at the top, a sticky action bar with Save and an
+ *  "Unsaved changes" note, guarded on the way out (main.js's guard, whose
+ *  "Save and leave" calls saveSiteContent()). PUTs to /api/admin/site-content
+ *  (auto-CSRF via api()); Reset to defaults is a DELETE. Nav links are edited
+ *  with a small repeatable row editor.
  */
 /** @import * as Types from './types.js' */
 /** @import * as Components from '../../components/types.js' */
 
 import { api, showError, showSuccess } from "./utils.js"
+import { registerPanel, setCrumbs } from "./router.js"
 import { openConfirm } from "./confirm.js"
 import { createUploadQueue } from "../../components/media-uploader.js"
 import { DRESSCODE_LADDER, buildDressCodeDescriptor } from "./dresscode-descriptor.js"
@@ -161,10 +164,13 @@ function addNavRow(containerId, link) {
   getElement(containerId).insertAdjacentHTML(
     "beforeend",
     html`<div class="nav-row">
-      <input type="text" class="nav-href" placeholder="href (e.g. #schedule or /rsvp)" maxlength="200" value="${href}">
+      <input type="text" class="nav-href"
+        placeholder="href (e.g. #schedule or /rsvp)" maxlength="200" value="${href}">
       <input type="text" class="nav-label" placeholder="label" maxlength="100" value="${label}">
-      <button type="button" class="btn btn-secondary btn-sm nav-up" title="Move up" aria-label="Move up">↑</button>
-      <button type="button" class="btn btn-secondary btn-sm nav-down" title="Move down" aria-label="Move down">↓</button>
+      <button type="button" class="btn btn-secondary btn-sm nav-up"
+        title="Move up" aria-label="Move up">↑</button>
+      <button type="button" class="btn btn-secondary btn-sm nav-down"
+        title="Move down" aria-label="Move down">↓</button>
       <button type="button" class="btn btn-danger btn-sm nav-remove">Remove</button>
     </div>`,
   )
@@ -228,7 +234,8 @@ function syncDressCodeCards() {
     const altEl = card.querySelector(".dc-alt")
     const capEl = card.querySelector(".dc-caption")
     const alt = altEl instanceof HTMLInputElement ? altEl.value.trim() : dressCodeImages[i].alt
-    const caption = capEl instanceof HTMLInputElement ? capEl.value.trim() : dressCodeImages[i].caption
+    const caption =
+      capEl instanceof HTMLInputElement ? capEl.value.trim() : dressCodeImages[i].caption
     dressCodeImages[i] = { ...dressCodeImages[i], alt, caption: caption || null }
   })
 }
@@ -252,12 +259,17 @@ function addDressCodeCard(img, index) {
     html`<div class="dc-card" data-index="${index}">
       <img class="dc-card-thumb" src="${cardThumbSrc(img.src)}" alt="" loading="lazy">
       <div class="dc-card-fields">
-        <input type="text" class="dc-alt" placeholder="Alt text (describe the image)" maxlength="500" value="${img.alt}">
-        <input type="text" class="dc-caption" placeholder="Caption (optional)" maxlength="500" value="${img.caption || ""}">
+        <input type="text" class="dc-alt"
+          placeholder="Alt text (describe the image)" maxlength="500" value="${img.alt}">
+        <input type="text" class="dc-caption"
+          placeholder="Caption (optional)" maxlength="500" value="${img.caption || ""}">
       </div>
       <div class="dc-card-actions">
-        <button type="button" class="btn btn-secondary btn-sm dc-up" title="Move up" aria-label="Move up" ${index === 0 ? "disabled" : ""}>↑</button>
-        <button type="button" class="btn btn-secondary btn-sm dc-down" title="Move down" aria-label="Move down" ${index === total - 1 ? "disabled" : ""}>↓</button>
+        <button type="button" class="btn btn-secondary btn-sm dc-up"
+          title="Move up" aria-label="Move up" ${index === 0 ? "disabled" : ""}>↑</button>
+        <button type="button" class="btn btn-secondary btn-sm dc-down"
+          title="Move down"
+          aria-label="Move down" ${index === total - 1 ? "disabled" : ""}>↓</button>
         <button type="button" class="btn btn-danger btn-sm dc-remove">Remove</button>
       </div>
     </div>`,
@@ -392,16 +404,23 @@ function addScheduleRow(item) {
   getElement("sc-schedule-rows").insertAdjacentHTML(
     "beforeend",
     html`<div class="schedule-card">
-      <input type="text" class="sched-time" placeholder="Time (e.g. 11:15 - 11:30 AM)" maxlength="100" value="${time}">
+      <input type="text" class="sched-time"
+        placeholder="Time (e.g. 11:15 - 11:30 AM)" maxlength="100" value="${time}">
       <input type="text" class="sched-title" placeholder="Title" maxlength="200" value="${title}">
-      <input type="text" class="sched-officiant" placeholder="Officiant (optional)" maxlength="300" value="${officiant}">
-      <input type="text" class="sched-venue" placeholder="Venue (optional)" maxlength="200" value="${venue}">
-      <input type="text" class="sched-address" placeholder="Address (optional)" maxlength="300" value="${address}">
-      <textarea class="sched-details" rows="3" placeholder="Details — leave a blank line between paragraphs">${details}</textarea>
+      <input type="text" class="sched-officiant"
+        placeholder="Officiant (optional)" maxlength="300" value="${officiant}">
+      <input type="text" class="sched-venue"
+        placeholder="Venue (optional)" maxlength="200" value="${venue}">
+      <input type="text" class="sched-address"
+        placeholder="Address (optional)" maxlength="300" value="${address}">
+      <textarea class="sched-details" rows="3"
+        placeholder="Details — leave a blank line between paragraphs">${details}</textarea>
       <textarea class="sched-note" rows="2" placeholder="Note (optional)">${note}</textarea>
       <div class="card-reorder-actions">
-        <button type="button" class="btn btn-secondary btn-sm sched-up" title="Move up" aria-label="Move up">↑</button>
-        <button type="button" class="btn btn-secondary btn-sm sched-down" title="Move down" aria-label="Move down">↓</button>
+        <button type="button" class="btn btn-secondary btn-sm sched-up"
+          title="Move up" aria-label="Move up">↑</button>
+        <button type="button" class="btn btn-secondary btn-sm sched-down"
+          title="Move down" aria-label="Move down">↓</button>
         <button type="button" class="btn btn-danger btn-sm sched-remove">Remove item</button>
       </div>
     </div>`,
@@ -500,6 +519,7 @@ function populate(c) {
   getInputElement("sc-registry-after").checked = c.registry.showAfterWedding
   setVal("sc-memories-title", c.memories.title)
   setTa("sc-memories-body", c.memories.body)
+  getInputElement("sc-guestbook-favorites").checked = c.guestbook.showFavorites
   setVal("sc-footer-event-heading", c.footer.eventHeading)
   setVal("sc-footer-github", c.footer.githubUrl || "")
   setVal("sc-copy-pre-heading", c.copy.pre.welcomeHeading)
@@ -511,6 +531,20 @@ function populate(c) {
   // Baseline for the unsaved-changes guard: the form now matches saved state.
   loaded = true
   savedSnapshot = snapshotForm()
+  updateDirtyNote()
+}
+
+/** The action bar's "Unsaved changes" note follows the form. */
+function updateDirtyNote() {
+  getElement("site-content-dirty").hidden = !isSiteContentDirty()
+}
+
+/** @type {ReturnType<typeof setTimeout> | undefined} */
+let dirtyTimer
+/** Re-check after typing settles (serialising the form on every key is waste). */
+function scheduleDirtyNote() {
+  clearTimeout(dirtyTimer)
+  dirtyTimer = setTimeout(updateDirtyNote, 150)
 }
 
 // Unsaved-changes guard. `savedSnapshot` is the serialized form as of the last
@@ -522,6 +556,13 @@ let savedSnapshot = ""
 /** @returns {string} the current form serialized for dirty comparison */
 function snapshotForm() {
   return JSON.stringify(collectForm())
+}
+
+/** The leave guard's Discard: forget the edits. The form reads as clean, so
+ *  the next visit's mount reloads the saved content over it. */
+export function discardSiteContent() {
+  loaded = false
+  updateDirtyNote()
 }
 
 /** @returns {boolean} whether the form has unsaved edits since the last load/save */
@@ -568,6 +609,9 @@ function collectForm() {
       title: val("sc-memories-title"),
       body: taVal("sc-memories-body"),
     },
+    guestbook: {
+      showFavorites: getInputElement("sc-guestbook-favorites").checked,
+    },
     footer: {
       githubUrl: val("sc-footer-github") || null,
       eventHeading: val("sc-footer-event-heading"),
@@ -606,8 +650,14 @@ export async function loadSiteContent() {
 }
 
 /** @param {SubmitEvent} e */
-async function handleSubmit(e) {
+function handleSubmit(e) {
   e.preventDefault()
+  void saveSiteContent()
+}
+
+/** Save the form; true when it saved. The leave guard's "Save and leave"
+ *  (router.js) calls this too. @returns {Promise<boolean>} */
+export async function saveSiteContent() {
   const errorEl = getElement("site-content-form-error")
   errorEl.hidden = true
 
@@ -621,6 +671,7 @@ async function handleSubmit(e) {
     const response = /** @type {Types.SiteContentResponse} */ (data)
     populate(response.content)
     showSuccess("Site content updated")
+    return true
   } catch (err) {
     // The server throws one ValidationError at a time; surface it in the sticky
     // save bar (always in view) and move focus to it for screen readers.
@@ -628,6 +679,7 @@ async function handleSubmit(e) {
     errorEl.hidden = false
     errorEl.scrollIntoView({ block: "nearest" })
     errorEl.focus()
+    return false
   } finally {
     saveBtn.disabled = false
   }
@@ -661,8 +713,35 @@ function handleNavClick(e) {
   else if (target.closest(".nav-down")) moveSibling(row, 1)
 }
 
+/** A jump chip scrolls its section to the top of the page. @param {MouseEvent} e */
+function handleJump(e) {
+  const t = e.target
+  if (!(t instanceof Element)) return
+  const chip = t.closest("[data-jump]")
+  if (!(chip instanceof HTMLElement)) return
+  const section = document.getElementById(chip.dataset.jump ?? "")
+  if (!section) return
+  section.scrollIntoView({ block: "start", behavior: "smooth" })
+  const first = section.querySelector("input, textarea, select")
+  if (first instanceof HTMLElement) first.focus({ preventScroll: true })
+}
+
 export function initSiteContent() {
   renderThemeOptions()
+  registerPanel("site-content", {
+    mount() {
+      setCrumbs([])
+      void loadSiteContent()
+    },
+  })
+  const form = getFormElement("site-content-form")
+  form.addEventListener("input", scheduleDirtyNote)
+  form.addEventListener("change", scheduleDirtyNote)
+  // Row add/remove/reorder buttons change the form without an input event.
+  form.addEventListener("click", (e) => {
+    if (e.target instanceof Element && e.target.closest("button")) scheduleDirtyNote()
+  })
+  getElement("site-content-page").addEventListener("click", handleJump)
   getFormElement("site-content-form").addEventListener("submit", handleSubmit)
   // Warn before a full page unload (refresh / close / session-expiry redirect)
   // drops unsaved edits. Tab-switches within the dashboard are guarded in main.js.

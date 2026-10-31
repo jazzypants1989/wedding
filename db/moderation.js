@@ -11,6 +11,16 @@ import { liveCommentParentFilter } from "./comments.js"
 import { MEDIA_SECTION } from "../types.js"
 
 /**
+ * `status = …` for one branch, or nothing when `status` is null (a single-item
+ * lookup and the per-author counts read every status).
+ * @param {string} column @param {string | null} status
+ * @returns {import('./sql.js').SqlFragment}
+ */
+function statusIs(column, status) {
+  return status === null ? sql.empty : sql`AND ${sql.raw(column)} = ${status}`
+}
+
+/**
  * Build one type's contribution to the combined queue. Every branch projects the
  * SAME 18 columns (NULL-filled where a column doesn't apply) so the UNION ALL is
  * well-formed. Media uses a LEFT JOIN (official uploads have account_id NULL).
@@ -22,7 +32,7 @@ import { MEDIA_SECTION } from "../types.js"
  * via correlated subqueries so the moderation detail can show what a comment is
  * ON; guestbook/media branches NULL-fill those four columns.
  * @param {'guestbook' | 'media' | 'comment'} type
- * @param {string} status
+ * @param {string | null} status null = every status
  * @param {number | null} accountId
  * @returns {import('./sql.js').SqlFragment}
  */
@@ -36,7 +46,7 @@ function typeSelect(type, status, accountId) {
         NULL AS file_key, NULL AS kind, NULL AS caption, NULL AS needs_display,
         NULL AS parent_snippet, NULL AS parent_author, NULL AS parent_file_key, NULL AS parent_kind
       FROM guestbook_entries e JOIN accounts a ON a.id = e.account_id
-      WHERE e.status = ${status} AND e.deleted_at IS NULL AND a.deleted_at IS NULL ${acct}`
+      WHERE e.deleted_at IS NULL AND a.deleted_at IS NULL ${statusIs("e.status", status)} ${acct}`
   }
   if (type === "comment") {
     const acct = accountId !== null ? sql`AND c.account_id = ${accountId}` : sql.empty
@@ -62,7 +72,7 @@ function typeSelect(type, status, accountId) {
           WHEN 'media' THEN (SELECT m.kind FROM media m WHERE m.id = c.target_id)
         END AS parent_kind
       FROM comments c JOIN accounts a ON a.id = c.account_id
-      WHERE c.status = ${status} AND c.deleted_at IS NULL AND a.deleted_at IS NULL
+      WHERE c.deleted_at IS NULL AND a.deleted_at IS NULL ${statusIs("c.status", status)}
         AND ${liveCommentParentFilter()} ${acct}`
   }
   const acct = accountId !== null ? sql`AND m.account_id = ${accountId}` : sql.empty
@@ -73,7 +83,7 @@ function typeSelect(type, status, accountId) {
       m.file_key AS file_key, m.kind AS kind, m.caption AS caption, m.needs_display AS needs_display,
       NULL AS parent_snippet, NULL AS parent_author, NULL AS parent_file_key, NULL AS parent_kind
     FROM media m LEFT JOIN accounts a ON a.id = m.account_id
-    WHERE m.status = ${status} AND m.deleted_at IS NULL
+    WHERE m.deleted_at IS NULL ${statusIs("m.status", status)}
       AND (m.account_id IS NULL OR a.deleted_at IS NULL)
       AND m.section != ${MEDIA_SECTION.CONTENT} ${acct}`
 }
@@ -88,6 +98,35 @@ export function getModerationQueue({ type = null, status = "pending", accountId 
   return sql`SELECT * FROM (${union})
     ORDER BY created_at DESC, content_type ASC, id DESC
     LIMIT ${limit} OFFSET ${offset}`.all()
+}
+
+/** @type {Types.getModerationItem} */
+export function getModerationItem(type, id) {
+  // Any status: a deep link to a post that has since been decided resolves to
+  // "this is now approved", never a 404 (IA §1.4). Same projection as the queue.
+  return sql`SELECT * FROM (${typeSelect(type, null, null)}) WHERE id = ${id}`.get()
+}
+
+/** @type {Types.getModerationStatusCounts} */
+export function getModerationStatusCounts(accountId) {
+  // Counted over the same three branches the queue reads, so "Approve their 3
+  // waiting" names exactly the rows the queue shows for this author.
+  const union = sql.join(
+    ["guestbook", "media", "comment"].map((t) =>
+      typeSelect(/** @type {'guestbook' | 'media' | 'comment'} */ (t), null, accountId),
+    ),
+    " UNION ALL ",
+  )
+  /** @type {{ status: string, n: number }[]} */
+  const rows = sql`SELECT status, COUNT(*) AS n FROM (${union}) GROUP BY status`.all()
+  const counts = { pending: 0, approved: 0, hidden: 0, rejected: 0 }
+  for (const row of rows) {
+    if (row.status === "pending") counts.pending = row.n
+    else if (row.status === "approved") counts.approved = row.n
+    else if (row.status === "hidden") counts.hidden = row.n
+    else if (row.status === "rejected") counts.rejected = row.n
+  }
+  return counts
 }
 
 /**

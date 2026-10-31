@@ -1,138 +1,106 @@
-/** @file Faces tab — assisted face tagging against the photographed CAST
- *  (docs/post-wedding/SPEC-vision-lab.md §6.5, SESSION-2-vision.md §4b). A
- *  list, never a wizard: unnamed Groups, an Ask queue ordered by what
- *  confirming would unlock, Same moment (must-link propagations), a minimal
- *  Identified summary, and People. Every confirm is an immediate POST; there is
- *  no batch "finish" step and no keyboard-trapping modal, so the page is
- *  abandonable at any point.
+/** @file Name faces — the Workspace design (prototypes/admin-workspace/views/
+ *  faces.js, IA §5 B, §8). A four-step walk instead of seven stacked sections:
  *
- *  GROUPS IS TWO VIEWS, not one, and that is the load-bearing change from the
- *  first version. It used to be a grid of cards, each rendering every face its
- *  group held, at full length — so the page grew without bound in the group
- *  count AND in the size of every group, and only a few people were on screen
- *  at once however far you scrolled. A 96px thumbnail is not something anyone
- *  can be sure about anyway. Both are the same complaint: the screen was built
- *  to show the WHOLE problem, and the work is one person at a time. So:
+ *    ① Groups → ② Quick questions → ③ Same moment → ④ Leftovers
  *
- *   - **The overview list** — one row per group, a few chips, the size and the
- *     suggested name, at a FIXED row height whatever the group's size. It is
- *     the non-linear way in and the progress display, and it names nobody.
- *   - **The review view** — one group, the selected face large off the
- *     `display` variant, and a filmstrip of every face in the group beside it.
- *     Naming happens here.
+ *  with People and History as reference tabs beside the stepper. Every step,
+ *  and the photograph dialog, is a route (routes.js), so Back undoes
+ *  navigation, a reload lands on the same screen, and nothing is more than one
+ *  click away.
  *
- *  THE FILMSTRIP IS WHY THE REVIEW VIEW EXISTS. It carries the group's
- *  `set_aside` members too, dimmed and labelled, so it is the answer to "Open
- *  photo opens ONE arbitrary photograph out of the many a group spans, with no
- *  way to reach the others": every photograph the group touches is one click
- *  away, and the odd one out is excluded before the rest are named.
+ *  THE URL NAMES A FACE, NOT A GROUP. `/admin/faces/groups/f1240` is "the group
+ *  face 1240 is in, with 1240 on the stage". Groups are recomputed from live
+ *  rows on every request, so a position ("group 3") means something different
+ *  after any naming; a face id does not. A face that has since been named
+ *  resolves to a "Named Rosa" card (with Undo when it was named here), a
+ *  dismissed one says so, and one that is gone says that — never a different
+ *  group. `reloadAnchoredOnFace` and `anchorAfter` are the two helpers that
+ *  keep that promise after a mutation.
  *
- *  WHAT IS NOT HERE ANY MORE is the per-group "this may be two people" banner.
- *  It was not selective enough to be worth a banner — a warning has to be, or
- *  it reads as noise and trains the eye past it. A search for a statistic that
- *  would earn one came back empty; `weldRisk` in api/admin/faces.js records
- *  what was tried and how to re-run it, so nobody re-derives it from scratch.
- *  The information survives in the two places where being wrong is free: ONE
- *  standing sentence at the top of the list, and the "most varied first" sort
- *  order. Nothing per card, nothing repeated.
+ *  THE STEPS, against the server's lists:
+ *   - Groups = clusters of two or more faces (the overview, clearest first).
+ *     The middle pane is the old review view: one face large off the `display`
+ *     variant, and a filmstrip of EVERY face in the group, set-aside members
+ *     dimmed and labelled "unclear". A bulk confirm names exactly the shown,
+ *     not-left-out faces (`group.faceIds` minus exclusions) and never a
+ *     set-aside one — the server refuses those, and the count on the button is
+ *     the honest number for that reason.
+ *   - Quick questions = the groups of one: faces nothing else looked like. The
+ *     ask queue supplies their candidates and `unlocks` (it ranks every
+ *     unidentified face, so it would duplicate Groups if listed whole).
+ *   - Same moment = must-link propagations, ticked, confirmed as one pass.
+ *   - Leftovers = photographs holding set-aside faces (GET faces/set-aside).
+ *     Routing withholds those from every list of FACES and bulk assign refuses
+ *     them by design; the per-photograph dialog names them one at a time
+ *     through POST faces/assign-one, the deliberate single-face exemption.
  *
- *  PEOPLE, NOT GUESTS. Faces are assigned to a `people` row, not to a `guests`
- *  row. A guest is an INVITATION — one per party, with a unique invite code —
- *  and much of the cast is not on that list at all: partners recorded under
- *  someone else's row, children, the photographer, vendors. A person carries an
- *  optional `guestId` link back to the roster, which is what the second
- *  datalist in index.html is for. Assigning by name is not an API shape: the
- *  name input resolves to a personId here and the request carries the id.
+ *  PEOPLE, NOT GUESTS. Faces are named against a `people` row; a guest is an
+ *  INVITATION and much of the cast is not on that list. A person carries an
+ *  optional `guestId` link. Assigning by name is not an API shape: the picker
+ *  resolves to a personId, and a new person is only ever created by an explicit
+ *  "+ New person" — a same-name create asks first (the server refuses one
+ *  without `confirmDuplicate`).
  *
- *  CONTRACT NOTE: there is no crop endpoint. Faces are shown by loading the
- *  photo's existing `/media/:fileKey/thumb` variant and cropping to the face's
- *  box client-side (see renderFaceChip + positionFaceChipImage). That needs
- *  the ORIGINAL photo's pixel width/height alongside each box, because the box
- *  is in original-pixel coordinates and the thumb is an unknown scale of it.
- *  This was originally written as an ASSUMPTION about the server, and the
- *  assumption was wrong — the payloads carried faceId/mediaId/box only, so
- *  every chip in this tab silently rendered an uncropped thumbnail. The server
- *  now sends `fileKey` + `width`/`height` on every chip entry (`chipOf` in
- *  api/admin/faces.js, pinned by an integration test). The graceful
- *  degradation is still there — a missing dimension bails out of
- *  positionFaceChipImage rather than breaking the row — but it is now the
- *  fallback it was meant to be rather than the normal case.
+ *  UNDO. Every bulk write returns a `batchId`; the Undo toast (and `z`) revokes
+ *  that pass, and History lists every pass with "Undo this". Revoking deletes
+ *  nothing and a later hand correction survives it — the copy says so, because
+ *  an admin who thinks undo is destructive will not use it.
  *
- *  THE PER-PHOTOGRAPH VIEW (bottom of this file) closes what used to be a hole
- *  in the above. Quality routing withholds low-grade faces from Groups and the
- *  Ask queue, and bulk assign REFUSES them by design — so `set_aside` was a
- *  state the UI could put a face into and never get it out of. The sections
- *  above are all lists of FACES; `#faces-photo-modal` is the one view of a
- *  PHOTOGRAPH, showing every face in it whatever its routing state, each
- *  nameable one at a time through POST /api/admin/faces/assign-one (the
- *  deliberate single-face exemption). `personId: null` on that route is its own
- *  undo, which is where "clear this name" comes from too.
+ *  NO CROP ENDPOINT. A face is shown by loading its photo's `display` (or
+ *  `thumb`, chip-variant.js) variant and cropping to the box client-side; the
+ *  box is in ORIGINAL pixels, so every chip entry carries the original
+ *  width/height. A missing dimension degrades to an uncropped image.
  *
- *  It is a `<dialog>` declared in index.html rather than markup rendered into
- *  #faces-body, because #faces-body is replaced wholesale on every render and
- *  initModals() sweeps the document once at startup. That also means it
- *  inherits NONE of the delegation below — see initFaceAssignment.
- *
- *  THE SET-ASIDE LIST closes what was still missing from THAT. Every way into
- *  the dialog was an "Open photo" button rendered beside a face — in a group's
- *  card or an ask row — and both of those lists filter `set_aside` out. So a
- *  photograph whose faces are ALL set aside, or all already named, appeared in
- *  neither, nothing rendered a button for it, and its faces stayed unreachable
- *  however carefully assign-one had been exempted. The header's "N set aside"
- *  count is now a button that lists those PHOTOGRAPHS (GET
- *  /api/admin/faces/set-aside), each opening the same dialog through the same
- *  `.faces-open-photo` delegation. No second modal and no second assignment
- *  path: the only new thing is a way to arrive.
- *
- *  RECENT BULK PASSES (last section, collapsed) is the undo. Every bulk
- *  mutation here posts back a `batchId` and, until this section existed,
- *  nothing on the page ever used one — so the ledger's central promise (revoke
- *  a pass, keep the corrections made after it) was reachable only from a test.
- *  It is a short newest-first list with a Revoke button, not a history browser:
- *  the case it serves is "that group was two people and I just named thirty
- *  faces", which is minutes old. The button is NOT styled destructive, and the
- *  copy says twice that nothing is deleted and that later hand corrections
- *  survive — an admin who thinks revoking is destructive will not use it, and
- *  will redo work that was never lost. */
+ *  Photographs are input to code (CLAUDE.md): every accessible name here is
+ *  built from ids, counts and names an admin typed. Nothing describes a
+ *  photograph or who is in it, and every <img> is alt="". */
 /** @import * as Types from "./types.js" */
 
-import {
-  api,
-  showError,
-  showSuccess,
-  showLoading,
-  showLoadError,
-  openModal,
-} from "./utils.js"
-import {
-  html,
-  getElement,
-  getButtonElement,
-  getErrorMessage,
-} from "../utils.js"
+import { api, showError, showSuccess, showUndo, showLoading, showLoadError } from "./utils.js"
+import { html, getElement, getErrorMessage } from "../utils.js"
 import { openConfirm } from "./confirm.js"
 import { chipVariant } from "./chip-variant.js"
+import { icon } from "./icons.js"
+import { registerPanel, navigate, setCrumbs, setNavBadge, currentPlace } from "./router.js"
 
-/** Fallback CSS-pixel size for a face chip, used only when the element has not
- *  been laid out yet. Every chip's real size is read from its own container
- *  (positionFaceChipImage), because there are now three of them: the list
- *  chips, the filmstrip, and the review view's large stage. */
-const CHIP_SIZE = 96
+/** The stage crops to the box widened by this much about its centre: hair and
+ *  shoulders make a face far easier to place, and a wider crop is more SOURCE
+ *  pixels in the same square, so the upscale from `display` falls with it. */
+const STAGE_PAD = 1.6
 
-/** How many chips one overview row previews. Four fits beside the count and the
- *  suggested name at a comfortable height, and — the actual point — the row is
- *  that height whether the group holds four faces or forty. */
-const OVERVIEW_PREVIEW_CHIPS = 4
+/** Chip sizes in CSS px, mirrored from admin-faces.css. Used only to choose a
+ *  variant, so drift costs a sharper-or-blurrier chip, never a broken one. */
+const CHIP_PX = Object.freeze({ mini: 26, row: 40, strip: 64, grid: 72 })
 
-/** The review view's large image crops to the face's box widened by this much
- *  about its centre. It buys two things with one number: a face with some hair
- *  and shoulder around it is far easier to place than one cropped to the jaw,
- *  AND a wider crop is proportionally more SOURCE pixels rendered into the same
- *  square, so the upscale from the `display` variant falls by the same factor.
- *  Context and sharpness are the same knob here, which is the reason this view
- *  does not need `original` (which is served `Content-Disposition: attachment`
- *  and must never appear in an `<img>`). */
-const REVIEW_STAGE_PAD = 1.6
+/** Fallback size when a chip's container has not been laid out yet. */
+const CHIP_FALLBACK = 40
+
+/** Set-aside photographs per request; the list is fetched whole (it is the
+ *  Leftovers grid and its count), a page at a time. */
+const SET_ASIDE_PAGE = 100
+
+/** How many people the "someone else" type-ahead lists. */
+const WHO_MAX = 6
+
+const WIDE = "(min-width: 900px)"
+const NAMED_KEY = "admin-faces-named"
+const ORDER_KEY = "admin-faces-order"
+
+/** Why routing held a face back, in the words a person would use. Keys are
+ *  public/vision/gate.js's checks; anything new falls back to "unclear". */
+const REASONS = /** @type {Record<string, string>} */ ({
+  score: "the camera wasn't sure it's a face",
+  boxPx: "small",
+  border: "at the edge of the photo",
+  eyeRatioLow: "turned to the side",
+  eyeRatioHigh: "turned to the side",
+  residual: "at an odd angle",
+  alignScale: "hard to line up",
+  outside: "partly out of the photo",
+  sharpness: "blurry",
+})
+
+// ------------------------------------------------------------------- state
 
 /** @type {Types.FacesOverviewResponse | null} */
 let overview = null
@@ -140,1687 +108,204 @@ let overview = null
 let queueData = null
 /** @type {Types.FacePropagationsResponse | null} */
 let propagationData = null
-
-/** The set-aside PHOTOGRAPH list, and whether the header count has been used to
- *  open it. Loaded lazily — an admin who never has a set-aside face never pays
- *  for the query — and kept across a reload, so naming a face in the dialog
- *  (which reloads the whole tab on close) does not collapse the list underneath
- *  the person working through it.
- *  @type {Types.FacesSetAsideResponse | null} */
-let setAsideData = null
-let setAsideOpen = false
-/** Non-fatal: the panel shows this and offers a retry, and every other section
- *  renders regardless. @type {string | null} */
-let setAsideError = null
-
-/** Photographs per page of the set-aside list. Small on purpose — this is a
- *  "work through them" list, not a browse, and the rest of the tab is below it. */
-const SET_ASIDE_PAGE = 20
-
-/** The batch history behind the undo affordance, and whether its panel is open.
- *  Lazily fetched on first open and refetched with every reload while open —
- *  a revocation changes a row's own state, and a stale row would offer to undo
- *  something already undone. Non-fatal on failure, like the set-aside list.
- *  @type {Types.FacesBatchesResponse | null} */
+/** Every photograph holding a set-aside face (the Leftovers grid). */
+/** @type {Types.FaceSetAsidePhoto[]} */
+let setAsidePhotos = []
+/** @type {Types.FacesBatchesResponse | null} */
 let batchesData = null
-let batchesOpen = false
 /** @type {string | null} */
 let batchesError = null
-
-/** People cache for the name-input autocomplete and the People section (a
- *  per-module cache, not shared admin state). A person is who a face belongs
- *  to; the guest roster is only the optional link on a person. */
 /** @type {Types.PersonEntry[]} */
 let peopleData = []
-let peopleLoaded = false
-
-/** Guest roster cache, used ONLY to link a person to an invitation in the
- *  People section (mirrors thank-you.js's ensureGuestsLoaded — a per-module
- *  cache, not shared admin state). Faces are never named against this list;
- *  they are named against `peopleData`. */
+/** Guest roster, only for linking a person to an invitation. */
 /** @type {{ id: number, name: string }[]} */
 let guestOptions = []
 let guestsLoaded = false
+/** A person's faces for the People page, by person id. */
+/** @type {Map<number, { faces: Types.FaceChipEntry[], total: number }>} */
+const personFaces = new Map()
+
+let loaded = false
+/** Set by every write: the next arrival refetches before drawing. */
+let stale = true
+/** @type {Promise<void> | null} */
+let inflight = null
+
+/** @type {Types.FacesPlace} */
+let place = { view: "root", face: null, person: null, media: null, photoFace: null }
+
+/** Faces left out of a group before naming it: face id → the group key it was
+ *  left out of. Keyed by face, checked against the key, so a regroup that moves
+ *  a left-out face into a different group never carries the judgement along. */
+const excluded = /** @type {Map<number, number>} */ (new Map())
+
+/** @type {"size" | "varied"} */
+let groupOrder = readSession(ORDER_KEY) === "varied" ? "varied" : "size"
+
+/** Decisions made this session (FacesNamedEntry). */
+/** @type {Types.FacesNamedEntry[]} */
+let named = readNamed()
+
+/** Faces / people with a write in flight — a held-down key fires once. */
+const pending = /** @type {Set<number>} */ (new Set())
+const pendingPeople = /** @type {Set<number>} */ (new Set())
+
+/** Same-moment rows the admin unticked. */
+const unticked = /** @type {Set<number>} */ (new Set())
+
+/** The "someone else" text, kept across re-renders of the same item. */
+let whoText = ""
+/** Which item `whoText` belongs to ("group:182"). */
+let whoFor = ""
+
+/** The People page's open editor. */
+/** @type {{ id: number, mode: "rename" | "merge" | "link" } | null} */
+let personEdit = null
+
+// ---------------------------------------------------------------- session
+
+/** @param {string} key */
+function readSession(key) {
+  try {
+    return sessionStorage.getItem(key) ?? ""
+  } catch {
+    return ""
+  }
+}
+
+/** @param {string} key @param {string} value */
+function writeSession(key, value) {
+  try {
+    sessionStorage.setItem(key, value)
+  } catch {
+    // Private mode: it lasts as long as the page.
+  }
+}
+
+/** @returns {Types.FacesNamedEntry[]} */
+function readNamed() {
+  try {
+    const parsed = JSON.parse(readSession(NAMED_KEY) || "[]")
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function saveNamed() {
+  // A short memory: this is "what I just did", not a history (History is).
+  named = named.slice(0, 60)
+  writeSession(NAMED_KEY, JSON.stringify(named))
+}
+
+/** The live session entry a face belongs to, if any. @param {number} faceId */
+function namedEntryFor(faceId) {
+  const hit = named.find((e) => !e.revoked && (e.anchor === faceId || e.faceIds.includes(faceId)))
+  return hit ?? null
+}
+
+// ------------------------------------------------------------------- utils
+
+const isWide = () => window.matchMedia(WIDE).matches
 
 /**
- * Fold a name to its comparison key. MIRRORS `nameKey` in db/people.js, which
- * is the authority — the server refuses a duplicate create on the same rule, so
- * if these two disagree the UI offers to create someone the server then
- * rejects. NFC first because a combining accent and a precomposed one look
- * identical and compare unequal; `toLowerCase` after because it is
- * Unicode-aware where SQLite's COLLATE NOCASE folds ASCII only. No regex —
- * both are string methods.
+ * Fold a name to its comparison key. MIRRORS `nameKey` in db/people.js, the
+ * authority — the server refuses a same-name create on the same rule. NFC
+ * first (a combining accent and a precomposed one look the same), then a
+ * Unicode-aware lower-case. String methods only.
  * @param {string} name
  */
 function nameKey(name) {
-  return name.normalize("NFC").toLowerCase()
+  return name.normalize("NFC").trim().toLowerCase()
 }
 
-/**
- * A match margin, for display.
- *
- * `null` is a real value here, not a defensive guard: matchFace reports
- * `Infinity` when a face has exactly ONE prototype to compare against ("no
- * second-best" — an unopposed match), and `JSON.stringify(Infinity)` is `null`.
- * So the moment the first person is named — including through the
- * per-photograph view — every suggestion and every ask candidate arrives with a
- * null margin, and calling `.toFixed` on it threw, taking the whole tab's render
- * down with it. That is exactly the state a first-time admin is in.
- * @param {number | null | undefined} margin
- */
-function formatMargin(margin) {
-  if (typeof margin !== "number" || !Number.isFinite(margin)) return "unopposed"
-  return margin.toFixed(2)
+/** "f1240" → 1240 (a bare number works too); anything else → null.
+ *  @param {string | undefined | null} value @param {string} prefix */
+function parseId(value, prefix) {
+  if (!value) return null
+  const digits = value.startsWith(prefix) ? value.slice(prefix.length) : value
+  if (digits === "" || [...digits].some((c) => c < "0" || c > "9")) return null
+  const n = Number(digits)
+  return n > 0 ? n : null
 }
 
-/** Faces excluded ("reject from this action") per group, keyed by
- *  `String(group.key)`. Client-only until "Not a face" or a reload — and
- *  DROPPED on every reload, because a group key is a position in a list the
- *  server recomputes from scratch each time. Holding an exclusion across a
- *  reload does not preserve a judgement, it re-points it at whatever cluster
- *  landed at that index. */
-const excludedByGroup = /** @type {Map<string, Set<number>>} */ (new Map())
-
-/** Which group the review view is showing, by `group.key`; null is the overview
- *  list. @type {string | null} */
-let reviewGroupKey = null
-/** The face shown large in the review view. @type {number | null} */
-let reviewFaceId = null
-/** What the admin has typed into the review view's name field. Kept across the
- *  re-renders that selecting or excluding a face causes — without it, checking
- *  one more face silently threw away a half-typed name. Null means untouched,
- *  so the field falls back to the group's suggestion. @type {string | null} */
-let reviewNameDraft = null
-
-/** Overview ordering. `size` is the server's own (clearest first — groups that
- *  are mostly accept-routed faces — then largest, so the most progress per
- *  confirm and the hard leftovers last); `varied` sorts by the weld score, which is a weak
- *  signal spent where being wrong is free — see the file header.
- *  @type {"size" | "varied"} */
-let groupOrder = "size"
-
-/** Ask-queue faces dismissed via "None of these" this session — a visual-only
- *  dim, since the contract has no "reviewed, no match" endpoint to record it. */
-const dismissedAsk = /** @type {Set<number>} */ (new Set())
-
-/** Face ids with a mutation in flight — guards double-submit from a fast
- *  double-click or a held-down keyboard shortcut. */
-const pending = /** @type {Set<number>} */ (new Set())
-
-/** The same guard for the People section, keyed by person id. Separate set:
- *  face ids and person ids are different keyspaces and would collide. */
-const pendingPeople = /** @type {Set<number>} */ (new Set())
-
-// ---- load + top-level render ----------------------------------------------
-
-/** @type {Types.loadFaceAssignment} */
-export async function loadFaceAssignment() {
-  const body = getElement("faces-body")
-  showLoading(body)
-  try {
-    const [ov, q, p] = await Promise.all([
-      api("/api/admin/faces/overview"),
-      api("/api/admin/faces/queue"),
-      api("/api/admin/faces/propagations"),
-      refreshPeople(),
-      ensureGuestsLoaded(),
-    ])
-    overview = /** @type {Types.FacesOverviewResponse} */ (ov)
-    // ⚠ Before anything renders, and for the same reason twice. A group key is
-    // an INDEX into a list the server rebuilds from live rows on every request,
-    // so the group at key "7" after a reload is generally not the group at key
-    // "7" before it. An exclusion carried across that boundary would silently
-    // apply to a different person's faces, and a review view left open on that
-    // key would show a different group under an unchanged heading. Both are
-    // dropped; the one caller that wants to come back — reloadAnchoredOnFace —
-    // re-derives the key from a FACE that survived, which is stable.
-    excludedByGroup.clear()
-    reviewGroupKey = null
-    reviewFaceId = null
-    reviewNameDraft = null
-    queueData = /** @type {Types.FacesQueueResponse} */ (q)
-    propagationData = /** @type {Types.FacePropagationsResponse} */ (p)
-    // Only when the panel is open, and only then — the set-aside list is the
-    // one section an admin may never need, so it stays unfetched until asked
-    // for. Once open it is refetched with everything else: naming a face there
-    // changes `unnamedSetAside`, and a stale row would claim work already done.
-    if (setAsideOpen) await refreshSetAside()
-    // Same rule, same reason: only when open, and then every time — a revoked
-    // batch that still renders a Revoke button is an offer to undo something
-    // already undone.
-    if (batchesOpen) await refreshBatches()
-    renderCounts()
-    renderBody()
-  } catch (err) {
-    console.error("Failed to load face assignment data:", err)
-    showLoadError(body, 1, "Couldn't load face data.", () => void loadFaceAssignment())
-  }
+/** @param {number} n @param {string} one @param {string} many */
+function plural(n, one, many) {
+  return `${n} ${n === 1 ? one : many}`
 }
 
-/** Load the people list (for the name-autocomplete datalist + People section).
- *  Failing to load it is non-fatal — groups/queue still render, just without
- *  autocomplete until a retry. */
-async function refreshPeople() {
-  try {
-    const data = /** @type {Types.PeopleApiResponse} */ (await api("/api/admin/people"))
-    peopleData = data.people
-    peopleLoaded = true
-    renderPeopleDatalist()
-  } catch (err) {
-    console.error("Failed to load people for face autocomplete:", err)
-  }
-}
-
-function renderPeopleDatalist() {
-  const dl = document.getElementById("faces-people-roster")
-  if (!dl) return
-  dl.innerHTML = html`${peopleData.map((p) => html`<option value="${p.displayName}"></option>`)}`
-}
-
-/** Load the guest roster ONCE, for the People section's "link an invitation"
- *  control only — same fetch as the thank-you tab's picker. Non-fatal: without
- *  it the link inputs render disabled and everything else still works. */
-async function ensureGuestsLoaded() {
-  if (guestsLoaded) return
-  try {
-    const data = /** @type {Types.GuestsApiResponse} */ (
-      await api("/api/admin/guests?limit=1000&offset=0")
-    )
-    guestOptions = data.guests.map((g) => ({ id: g.id, name: g.name }))
-    guestsLoaded = true
-    renderGuestDatalist()
-  } catch (err) {
-    console.error("Failed to load guest roster for person-to-invitation linking:", err)
-  }
-}
-
-function renderGuestDatalist() {
-  const dl = document.getElementById("faces-guest-roster")
-  if (!dl) return
-  dl.innerHTML = html`${guestOptions.map((g) => html`<option value="${g.name}"></option>`)}`
-}
-
-/**
- * The header tallies — and one of them is a CONTROL, not a statistic.
- *
- * "N set aside" is a real `<button>` because it is the entry point to the
- * photographs those faces are in. Everything else in this tab is a list of
- * FACES and every one of them filters `set_aside` out, so a photograph whose
- * faces are all set aside (or all already named) appeared in no group's chips
- * and no queue row — nothing rendered an "Open photo" button for it and its
- * faces could not be reached at all, however deliberately `assign-one` had been
- * exempted from the routing check. This count was already the only place on
- * screen that admitted they existed; making it the way in is what closes that.
- *
- * A button rather than a chip with a click handler, so it is keyboard-reachable
- * and announced as expandable for free. Its accessible name is a number and two
- * words — nothing here ever describes a photograph.
- */
-function renderCounts() {
-  const el = getElement("faces-counts")
-  if (!overview) {
-    el.innerHTML = ""
-    return
-  }
-  const c = overview.counts
-  const r = overview.routeCounts
-  el.innerHTML = html`
-    <span class="faces-count"><strong>${c.faces}</strong> faces</span>
-    <span class="faces-count"><strong>${c.identified}</strong> identified</span>
-    <span class="faces-count"><strong>${c.unidentified}</strong> unidentified</span>
-    <span class="faces-count"><strong>${c.notAFace}</strong> not a face</span>
-    ${r && r.setAside > 0
-      ? html`<button type="button"
-          class="faces-count faces-count-muted faces-setaside-toggle"
-          aria-expanded="${setAsideOpen ? "true" : "false"}"
-          aria-controls="faces-setaside-panel"
-          title="Too small or too soft to be worth naming from the queue. Still stored, still grouped — open this to list the photographs they are in and name them there."
-          ><strong>${r.setAside}</strong> set aside</button
-        >`
-      : ""}
-    ${r && r.ungraded > 0
-      ? html`<span class="faces-count faces-count-muted"
-          title="Ingested before quality routing existed, so never graded. Shown and assignable exactly as before."
-          ><strong>${r.ungraded}</strong> ungraded</span
-        >`
-      : ""}
-  `
-}
-
-function renderBody() {
-  const body = getElement("faces-body")
-  if (!overview || !queueData) return
-
-  if (overview.counts.faces === 0) {
-    body.innerHTML = emptyIngestMarkup()
-    return
-  }
-
-  // Review mode takes the whole tab. Everything else here is a list, and a list
-  // stacked under a view whose entire purpose is "look at ONE thing properly"
-  // is the wall of thumbnails again by another route. Nothing is lost by their
-  // absence: Escape or "All groups" brings them straight back, and every one of
-  // them re-derives from state already in hand.
-  const reviewing = reviewGroup()
-  if (reviewing) {
-    body.innerHTML = html`
-      <section class="faces-section" aria-labelledby="faces-review-heading">
-        ${reviewMarkup(reviewing)}
-      </section>
-    `
-    wireFaceChipImages(body)
-    focusReview()
-    return
-  }
-
-  body.innerHTML = html`
-    ${setAsidePanelMarkup()}
-    <section class="faces-section" aria-labelledby="faces-groups-heading">
-      <h3 id="faces-groups-heading">Groups</h3>
-      ${groupsMarkup()}
-    </section>
-    <section class="faces-section" aria-labelledby="faces-queue-heading">
-      <h3 id="faces-queue-heading">Ask queue</h3>
-      ${queueMarkup()}
-    </section>
-    ${propagationsMarkup()}
-    <section class="faces-section" aria-labelledby="faces-identified-heading">
-      <h3 id="faces-identified-heading">Identified</h3>
-      ${identifiedMarkup()}
-    </section>
-    <section class="faces-section" aria-labelledby="faces-people-heading">
-      <h3 id="faces-people-heading">People</h3>
-      ${peopleMarkup()}
-    </section>
-    ${batchesPanelMarkup()}
-  `
-  wireFaceChipImages(body)
-}
-
-function emptyIngestMarkup() {
-  return html`
-    <div class="faces-empty-state">
-      <p>No faces have been ingested yet.</p>
-      <p class="text-muted">
-        Run the face pipeline against a folder of photos from the command line:
-      </p>
-      <pre class="faces-cli-hint">node scripts/vision/ingest-faces.js &lt;run-dir&gt;</pre>
-    </div>
-  `
-}
-
-// ---- Set aside: the photographs, not the faces ----------------------------
-
-/**
- * The panel the header's "set aside" count opens.
- *
- * Rendered whenever there is a set-aside face at all, `hidden` while collapsed,
- * rather than added and removed — the toggle's `aria-controls` has to point at
- * an element that exists, and an assistive technology should be able to find the
- * region the button claims to control before it is opened.
- *
- * It sits FIRST in the body on purpose. It is the shortest list on the page and
- * the only one whose contents are otherwise unreachable, so it is the one thing
- * here that would be worst to have to scroll for.
- */
-function setAsidePanelMarkup() {
-  if (!overview || overview.routeCounts.setAside === 0) return ""
-  return html`
-    <section class="faces-section" id="faces-setaside-panel"
-      aria-labelledby="faces-setaside-heading" ${setAsideOpen ? "" : "hidden"}>
-      <h3 id="faces-setaside-heading">Set aside</h3>
-      <p class="faces-setaside-note text-muted">
-        These faces were held back from the Groups and the Ask queue as too small or too soft to
-        name off a list, and a bulk action will not touch them. Open a photograph to see every
-        face in it — set aside included — and name them one at a time.
-      </p>
-      ${setAsideBodyMarkup()}
-    </section>
-  `
-}
-
-function setAsideBodyMarkup() {
-  // The error sits ABOVE the list rather than replacing it: a failed "show
-  // more" must not throw away the pages that did load, or a transient blip
-  // costs the admin their place in the list.
-  const problem =
-    setAsideError === null
-      ? ""
-      : html`<p class="faces-setaside-error" role="alert">
-          ${setAsideError}
-          <button type="button" class="btn btn-secondary btn-sm faces-setaside-retry">
-            Try again
-          </button>
-        </p>`
-  const data = setAsideData
-  if (!data) return html`${problem}${setAsideError === null ? html`<p class="faces-empty text-muted">Loading…</p>` : ""}`
-  if (data.photos.length === 0) {
-    // Reachable, and worth saying plainly rather than as "nothing here": the
-    // header count is over live FACES while this list is over live
-    // PHOTOGRAPHS, so a set-aside face whose photograph has since been deleted
-    // is counted above and has no row below. Silence would look like a bug.
-    return html`${problem}<p class="faces-empty text-muted">
-      No photographs to open — every remaining set-aside face is on a photograph that has since
-      been deleted.
-    </p>`
-  }
-  const remaining = data.total - data.photos.length
-  return html`
-    ${problem}
-    <ul class="faces-setaside-list">
-      ${data.photos.map(setAsidePhotoRowMarkup)}
-    </ul>
-    ${remaining > 0
-      ? html`<button type="button" class="btn btn-secondary btn-sm faces-setaside-more">
-          Show more (${remaining} more ${remaining === 1 ? "photograph" : "photographs"})
-        </button>`
-      : ""}
-  `
-}
-
-/**
- * One photograph's row.
- *
- * The accessible name on its button is built from ids and counts alone —
- * "Photograph 41, 3 faces set aside, 2 still to name". Never anything about what
- * the photograph shows or who is in it (CLAUDE.md, "Photographs Are Input To
- * Code, Not To A Reader"), and the thumbnail is `alt=""` for the same reason:
- * it is there to be recognised by the person who took it, not described.
- * @param {Types.FaceSetAsidePhoto} photo
- */
-function setAsidePhotoRowMarkup(photo) {
-  const set = photo.setAsideFaces
-  const left = photo.unnamedSetAside
-  const label =
-    `Photograph ${photo.mediaId}, ${set} ${set === 1 ? "face" : "faces"} set aside, ` +
-    (left === 0 ? "all named" : `${left} still to name`)
-  return html`
-    <li class="faces-setaside-row ${left === 0 ? "is-done" : ""}" data-media-id="${photo.mediaId}">
-      <img class="faces-setaside-thumb" src="/media/${photo.fileKey}/thumb" alt="" loading="lazy" />
-      <div class="faces-setaside-main">
-        <p class="faces-setaside-summary">
-          <strong>${set}</strong> of ${photo.liveFaces}
-          ${photo.liveFaces === 1 ? "face" : "faces"} here ${set === 1 ? "was" : "were"} set aside
-        </p>
-        <p class="faces-setaside-remaining text-muted">
-          ${left === 0
-            ? "All of them have a name."
-            : html`${left} still ${left === 1 ? "has" : "have"} no name.`}
-        </p>
-      </div>
-      ${openPhotoButtonMarkup(photo.mediaId, label)}
-    </li>
-  `
-}
-
-/** Fetch one page. Separate from the render so both the toggle and "show more"
- *  fail the same way. @param {number} offset */
-async function fetchSetAsidePage(offset) {
-  return /** @type {Types.FacesSetAsideResponse} */ (
-    await api(`/api/admin/faces/set-aside?limit=${SET_ASIDE_PAGE}&offset=${offset}`)
-  )
-}
-
-/** Load the first page, replacing whatever was held. Used by the toggle and by
- *  every reload while the panel is open — naming a face changes
- *  `unnamedSetAside`, and a stale row would claim work that is already done. */
-async function refreshSetAside() {
-  try {
-    setAsideData = await fetchSetAsidePage(0)
-    setAsideError = null
-  } catch (err) {
-    console.error("Failed to load the set-aside photographs:", err)
-    setAsideError = "Couldn't load the photographs with set-aside faces."
-  }
-}
-
-/**
- * Open or close the panel.
- *
- * `aria-expanded` is updated on the button IN PLACE rather than by re-rendering
- * the counts: `renderCounts` replaces the whole `#faces-counts` subtree, which
- * would destroy the very button that was just activated and drop keyboard focus
- * to the document body.
- * @param {HTMLElement} toggle
- */
-async function toggleSetAside(toggle) {
-  setAsideOpen = !setAsideOpen
-  toggle.setAttribute("aria-expanded", setAsideOpen ? "true" : "false")
-  renderBody()
-  if (!setAsideOpen || setAsideData !== null) return
-  await refreshSetAside()
-  renderBody()
-}
-
-/** Append the next page. Focus is put back on the button afterwards (or on the
- *  last row's "Open photo" when the list is now complete and the button is
- *  gone), because renderBody replaces the element that was clicked. */
-async function loadMoreSetAside() {
-  const data = setAsideData
-  if (!data) return
-  try {
-    const next = await fetchSetAsidePage(data.photos.length)
-    setAsideData = {
-      photos: [...data.photos, ...next.photos],
-      total: next.total,
-      limit: next.limit,
-      offset: next.offset,
-    }
-    setAsideError = null
-  } catch (err) {
-    console.error("Failed to load more set-aside photographs:", err)
-    // `setAsideData` is left alone — the pages already on screen are still
-    // good, and "show more" stays available to retry with.
-    setAsideError = "Couldn't load any more photographs."
-  }
-  renderBody()
-  const more = document.querySelector(".faces-setaside-more")
-  if (more instanceof HTMLElement) {
-    more.focus()
-    return
-  }
-  const rows = document.querySelectorAll(".faces-setaside-row .faces-open-photo")
-  const last = rows[rows.length - 1]
-  if (last instanceof HTMLElement) last.focus()
-}
-
-// ---- Groups -----------------------------------------------------------
-
-/**
- * The groups in the order the overview lists them AND the order prev/next walks
- * — one function, so the two can never disagree about what "the next group" is.
- *
- * `size` needs no sort: the server already returns clearest-then-largest, which
- * buys the most identified faces per confirm and keeps the viewpoint-clustered
- * leftovers (profiles, backs of heads) at the end. `varied` spends the
- * weld score (see the file header) as an ordering, which is the only way a weak
- * signal is worth having — a wrong guess costs the admin the sequence they work
- * in and nothing else.
- * @returns {Types.FaceGroup[]}
- */
-function orderedGroups() {
-  if (!overview) return []
-  if (groupOrder !== "varied") return overview.groups
-  return [...overview.groups].sort(
-    (a, b) => (b.weld?.ratio ?? 0) - (a.weld?.ratio ?? 0) || b.size - a.size,
-  )
-}
-
-/** @returns {Types.FaceGroup | null} */
-function reviewGroup() {
-  if (reviewGroupKey === null || !overview) return null
-  return overview.groups.find((g) => String(g.key) === reviewGroupKey) ?? null
-}
-
-/**
- * Every face in a group, in filmstrip order: the bulk-nameable ones first, then
- * the ones routing held back.
- *
- * The two arrive as two arrays from the server and are deliberately NOT merged
- * anywhere but here, for display. `group.faceIds` — what "Confirm all" posts —
- * is the first list only, and the server refuses a bulk call carrying anything
- * from the second. Showing them together while keeping them apart in every
- * request is the whole trick this view turns.
- * @param {Types.FaceGroup} group
- * @returns {Array<{ entry: Types.FaceChipEntry, setAside: boolean }>}
- */
-function reviewFaces(group) {
-  return [
-    ...group.media.map((entry) => ({ entry, setAside: false })),
-    ...group.setAsideMedia.map((entry) => ({ entry, setAside: true })),
-  ]
-}
-
-/** @param {Types.FaceGroup} group */
-function excludedIn(group) {
-  return excludedByGroup.get(String(group.key)) ?? new Set()
-}
-
-/** The face ids a bulk confirm would carry: shown, minus anything excluded.
- *  @param {Types.FaceGroup} group */
-function assignableFaceIds(group) {
-  const excluded = excludedIn(group)
-  return group.faceIds.filter((id) => !excluded.has(id))
-}
-
-function groupsMarkup() {
-  if (!overview) return ""
-  const groups = orderedGroups()
-  if (groups.length === 0) {
-    return html`<p class="faces-empty text-muted">No unnamed groups right now.</p>`
-  }
-  return html`
-    <!-- The ONE place this tab says that a group is sometimes two people. It
-         used to be a banner on every card, which meant it was on screen dozens
-         of times and therefore read nowhere. Said once, as standing context,
-         next to the thing that actually checks it. -->
-    <p class="faces-groups-standing text-muted">
-      Each row is one group of faces the matcher thinks are the same person. Open one to look
-      through them a face at a time, then name the whole group at once. Occasionally a group is
-      two people who look alike — that is what the filmstrip is for, and anyone who does not
-      belong can be excluded before you name the rest.
-    </p>
-    <div class="faces-groups-toolbar">
-      <label class="faces-groups-sort">
-        Order
-        <select class="faces-groups-sort-select" aria-label="Order the groups">
-          <option value="size" ${groupOrder === "size" ? "selected" : ""}>Clearest first</option>
-          <option value="varied" ${groupOrder === "varied" ? "selected" : ""}>
-            Most varied first
-          </option>
-        </select>
-      </label>
-      <span class="text-muted faces-groups-total">
-        ${groups.length} group${groups.length === 1 ? "" : "s"} still to name
-      </span>
-    </div>
-    <ul class="faces-overview-list">
-      ${groups.map((group, index) => overviewRowMarkup(group, index, groups.length))}
-    </ul>
-  `
-}
-
-/** Why a group has no suggested name: nobody named yet, or nobody close enough.
- *  @param {Types.FaceGroup} group */
-function noSuggestionText(group) {
-  return group.abstained ? "no confident match" : "no suggestion yet"
-}
-
-/**
- * One group, compactly.
- *
- * A fixed number of chips and a fixed height, whatever the group holds — that
- * is the fix for "long groups run far off screen", and it is why the row shows
- * `+N more` rather than growing. The whole row is one `<button>` so it is a
- * single keyboard-reachable target with one accessible name; the chips inside
- * are inert `<span>`s, never nested controls.
- *
- * The accessible name is a position, a count and a name someone typed. Nothing
- * here describes a photograph (CLAUDE.md, "Photographs Are Input To Code").
- * @param {Types.FaceGroup} group
- * @param {number} index
- * @param {number} total
- */
-function overviewRowMarkup(group, index, total) {
-  const preview = group.media.slice(0, OVERVIEW_PREVIEW_CHIPS)
-  const more = group.size - preview.length
-  const suggestion = group.suggestion
-  const label =
-    `Review group ${index + 1} of ${total}, ${group.size} face${group.size === 1 ? "" : "s"}` +
-    (suggestion ? `, suggested ${suggestion.personName}` : `, ${noSuggestionText(group)}`)
-  return html`
-    <li>
-      <button type="button" class="face-overview-row" data-group-key="${String(group.key)}"
-        aria-label="${label}">
-        <span class="face-overview-chips">${preview.map(faceChipMarkup)}</span>
-        <span class="face-overview-main">
-          <span class="face-overview-count">
-            <strong>${group.size}</strong> face${group.size === 1 ? "" : "s"}
-            ${more > 0 ? html`<span class="face-overview-more">+${more} not shown here</span>` : ""}
-          </span>
-          <span class="face-overview-suggestion">
-            ${suggestion ? html`suggested: ${suggestion.personName}` : noSuggestionText(group)}
-          </span>
-        </span>
-        <span class="face-overview-go" aria-hidden="true">Review →</span>
-      </button>
-    </li>
-  `
-}
-
-// ---- the review view: one group, one face at a time ----------------------
-
-/**
- * The focused view. Large face on the left, every face in the group on the
- * right, name field and confirm above, group navigation below.
- *
- * **"Confirm all" and the set-aside trap.** The filmstrip deliberately shows
- * faces the quality gate held back, and the bulk endpoint deliberately refuses
- * them — so the count on the button is `assignableFaceIds(group)`, never the
- * group's size, and the two differ in plain sight rather than by a rejected
- * request. What the view offers instead is "Name only this face", which posts
- * to `assign-one`: the single-face exemption, the one route that will take a
- * set-aside face. Weakening the server check to make one button do both was
- * available and is exactly what the check exists to prevent — a bulk action
- * must not be able to name a face nobody looked at, and the filmstrip showing
- * one is not the same as somebody having decided about it.
- * @param {Types.FaceGroup} group
- */
-function reviewMarkup(group) {
-  const groups = orderedGroups()
-  const position = groups.findIndex((g) => String(g.key) === reviewGroupKey)
-  const faces = reviewFaces(group)
-  const found = faces.findIndex((f) => f.entry.faceId === reviewFaceId)
-  const selectedIndex = found === -1 ? 0 : found
-  const current = faces[selectedIndex]
-  const excluded = excludedIn(group)
-  const assignable = assignableFaceIds(group)
-  const suggestion = group.suggestion
-  const nameValue = reviewNameDraft ?? (suggestion ? suggestion.personName : "")
-
-  return html`
-    <div class="face-review" tabindex="-1" data-group-key="${String(group.key)}">
-      <div class="face-review-head">
-        <button type="button" class="btn btn-secondary btn-sm face-review-back">
-          ← All groups
-        </button>
-        <h3 id="faces-review-heading" class="face-review-pos">
-          Group ${position + 1} of ${groups.length}
-          <span class="text-muted">· ${group.size} face${group.size === 1 ? "" : "s"}</span>
-        </h3>
-        <div class="face-review-name">
-          <input type="text" class="face-review-name-input" list="faces-people-roster"
-            placeholder="${group.abstained ? "No confident match. Who is this?" : "Who is this?"}"
-            value="${nameValue}" autocomplete="off"
-            aria-label="Person name for this group" maxlength="200" />
-          <button type="button" class="btn btn-primary btn-sm face-review-confirm"
-            ${assignable.length === 0 ? "disabled" : ""}>
-            Confirm all ${assignable.length}
-          </button>
-          <span class="face-review-input-error" role="alert" hidden></span>
-          <button type="button" class="btn btn-secondary btn-sm face-review-create-person"
-            hidden></button>
-        </div>
-      </div>
-
-      <div class="face-review-main">
-        <div class="face-review-stage">
-          ${current ? faceChipImgMarkup(current.entry, REVIEW_STAGE_PAD, Infinity) : ""}
-        </div>
-        <div class="face-review-side">
-          <p class="face-review-facepos">
-            <strong>Face ${selectedIndex + 1} of ${faces.length}</strong>
-            ${current && current.setAside
-              ? html`<span class="face-review-flag">set aside</span>`
-              : ""}
-            ${current && excluded.has(current.entry.faceId)
-              ? html`<span class="face-review-flag">excluded</span>`
-              : ""}
-          </p>
-          <div class="face-review-strip" role="group" aria-label="Every face in this group">
-            ${faces.map((face, i) =>
-              stripChipMarkup(face, i, faces.length, {
-                selected: i === selectedIndex,
-                excluded: excluded.has(face.entry.faceId),
-              }),
-            )}
-          </div>
-          ${reviewFaceActionsMarkup(group, current, excluded)}
-        </div>
-      </div>
-
-      <div class="face-review-nav">
-        <button type="button" class="btn btn-secondary btn-sm face-review-prev"
-          ${position <= 0 ? "disabled" : ""}>◀ Previous group</button>
-        <button type="button" class="btn btn-secondary btn-sm face-review-next"
-          ${position >= groups.length - 1 ? "disabled" : ""}>Next group ▶</button>
-        <span class="face-review-hint text-muted">
-          <kbd>←</kbd><kbd>→</kbd> face · <kbd>[</kbd><kbd>]</kbd> group · <kbd>x</kbd> exclude ·
-          <kbd>Esc</kbd> back
-        </span>
-      </div>
-    </div>
-  `
-}
-
-/** The controls that act on the SELECTED face, plus the one sentence that
- *  explains why "Confirm all" counts fewer faces than the group holds.
- *  @param {Types.FaceGroup} group
- *  @param {{ entry: Types.FaceChipEntry, setAside: boolean } | undefined} current
- *  @param {Set<number>} excluded */
-function reviewFaceActionsMarkup(group, current, excluded) {
-  if (!current) return ""
-  const isExcluded = excluded.has(current.entry.faceId)
-  return html`
-    ${current.setAside
-      ? html`<p class="face-review-note" role="note">
-          This one was held back from the queue as too small or too soft to name off a list, so a
-          bulk name skips it. “Name only this face” is the way in — it is the one place that can.
-        </p>`
-      : ""}
-    <div class="face-review-face-actions">
-      ${current.setAside
-        ? ""
-        : html`<button type="button" class="btn btn-secondary btn-sm face-review-exclude">
-            ${isExcluded ? "↩ Put this one back" : "✕ Exclude this one"}
-          </button>`}
-      <button type="button" class="btn btn-secondary btn-sm face-review-name-one">
-        Name only this face
-      </button>
-      ${openPhotoButtonMarkup(
-        current.entry.mediaId,
-        "Open the whole photograph this face is in",
-      )}
-      ${excluded.size > 0
-        ? html`<button type="button" class="btn btn-secondary btn-sm face-review-notaface">
-            Not a face (${excluded.size})
-          </button>`
-        : ""}
-    </div>
-    ${group.setAside > 0
-      ? html`<p class="face-review-setaside text-muted">
-          ${group.setAside} of these ${group.setAside === 1 ? "was" : "were"} set aside as too
-          small or too soft to name from a list — dimmed above, and skipped by “Confirm all”.
-          Select one and use “Name only this face”.
-        </p>`
-      : ""}
-  `
-}
-
-/** One filmstrip chip: a real button, so click and keyboard both reach it and
- *  its state is announced. The label says which face and what state, never
- *  anything about the photograph.
- *  @param {{ entry: Types.FaceChipEntry, setAside: boolean }} face
- *  @param {number} index @param {number} total
- *  @param {{ selected: boolean, excluded: boolean }} state */
-function stripChipMarkup(face, index, total, state) {
-  const classes = ["face-strip-chip"]
-  if (state.selected) classes.push("is-selected")
-  if (face.setAside) classes.push("is-setaside")
-  if (state.excluded) classes.push("is-excluded")
-  const label =
-    `Face ${index + 1} of ${total}` +
-    (face.setAside ? ", set aside from the queue" : "") +
-    (state.excluded ? ", excluded from the name" : "")
-  return html`<button type="button" class="${classes.join(" ")}"
-    data-face-id="${face.entry.faceId}" aria-pressed="${state.selected ? "true" : "false"}"
-    aria-label="${label}">
-    ${faceChipImgMarkup(face.entry, 1, CHIP_PX.strip)}
-  </button>`
-}
-
-// ---- review view: navigation + actions -----------------------------------
-
-/** Focus the review container so the delegated keydown below sees the keys. A
- *  re-render replaces every element in here, so this runs after each one. */
-function focusReview() {
-  const el = document.querySelector(".face-review")
-  if (el instanceof HTMLElement) el.focus()
-}
-
-/** Enter the review view on a group, selecting its first face. @param {string} key */
-function openReview(key) {
-  const group = overview?.groups.find((g) => String(g.key) === key)
-  if (!group) return
-  reviewGroupKey = key
-  reviewNameDraft = null
-  const faces = reviewFaces(group)
-  reviewFaceId = faces.length > 0 ? faces[0].entry.faceId : null
-  renderBody()
-}
-
-/** Back to the list, with focus on the row that was open — otherwise the admin
- *  lands at the top of the page and has to find their place again. */
-function closeReview() {
-  const key = reviewGroupKey
-  reviewGroupKey = null
-  reviewFaceId = null
-  reviewNameDraft = null
-  renderBody()
-  const row = document.querySelector(`.face-overview-row[data-group-key="${key}"]`)
-  if (row instanceof HTMLElement) row.focus()
-}
-
-/** @param {number} delta */
-function stepGroup(delta) {
-  const groups = orderedGroups()
-  const position = groups.findIndex((g) => String(g.key) === reviewGroupKey)
-  if (position === -1) return
-  const next = groups[position + delta]
-  if (!next) return
-  openReview(String(next.key))
-}
-
-/** @param {number} delta */
-function stepFace(delta) {
-  const group = reviewGroup()
-  if (!group) return
-  const faces = reviewFaces(group)
-  const index = faces.findIndex((f) => f.entry.faceId === reviewFaceId)
-  const next = faces[(index === -1 ? 0 : index) + delta]
-  if (!next) return
-  reviewFaceId = next.entry.faceId
-  renderBody()
+/** The first word of a name, for the big button ("name 12 faces Rosa").
+ *  @param {string} name */
+function firstName(name) {
+  const word = name.trim().split(" ")[0]
+  return word || name
 }
 
 /** @param {number} faceId */
-function selectReviewFace(faceId) {
-  reviewFaceId = faceId
-  renderBody()
-}
-
-/** Exclude / re-include the selected face. Only ever called for a face that is
- *  bulk-nameable in the first place: a set-aside one is already outside every
- *  bulk action, so offering to exclude it would be a control with no effect —
- *  and "Not a face" over a set-aside id is refused by the same server check. */
-function toggleReviewExclude() {
-  const group = reviewGroup()
-  if (!group || reviewFaceId === null) return
-  if (!group.faceIds.includes(reviewFaceId)) return
-  const key = String(group.key)
-  let set = excludedByGroup.get(key)
-  if (!set) {
-    set = new Set()
-    excludedByGroup.set(key, set)
-  }
-  if (set.has(reviewFaceId)) set.delete(reviewFaceId)
-  else set.add(reviewFaceId)
-  renderBody()
-}
-
-/** @returns {HTMLInputElement | null} */
-function reviewNameInput() {
-  const el = document.querySelector(".face-review-name-input")
-  return el instanceof HTMLInputElement ? el : null
-}
-
-/** @param {string} msg */
-function showReviewError(msg) {
-  const el = document.querySelector(".face-review-input-error")
-  if (!(el instanceof HTMLElement)) return
-  el.textContent = msg
-  el.hidden = false
-}
-
-function hideReviewError() {
-  const el = document.querySelector(".face-review-input-error")
-  if (el instanceof HTMLElement) el.hidden = true
-  const createBtn = document.querySelector(".face-review-create-person")
-  if (createBtn instanceof HTMLButtonElement) createBtn.hidden = true
-}
-
-/**
- * Resolve what is typed in the name field to one person, or reveal the explicit
- * create step. Shared by every naming action in this view so all of them refuse
- * an ambiguous name the same way, and none of them ever creates a person as a
- * side effect of typing.
- * @param {"one" | "all"} mode which action asked — carried on the create
- *   button so the explicit-create step resumes the right one afterwards
- * @param {string} verb what the create button will go on to do, for its label
- * @returns {{ name: string, personId: number } | null}
- */
-function resolveReviewName(mode, verb) {
-  const input = reviewNameInput()
-  if (!input) return null
-  const name = input.value.trim()
-  if (!name) {
-    showReviewError("Type a name first.")
-    return null
-  }
-  const resolved = resolvePersonByName(name)
-  if (resolved.status === "ambiguous") {
-    showReviewError(
-      "Multiple people share that name — rename one in the People section, then retry.",
-    )
-    return null
-  }
-  if (resolved.status === "none") {
-    const createBtn = document.querySelector(".face-review-create-person")
-    if (createBtn instanceof HTMLButtonElement) {
-      createBtn.textContent = `Create person “${name}” & ${verb}`
-      createBtn.dataset.mode = mode
-      createBtn.hidden = false
-      showReviewError("No person has that name yet. Create them?")
-    }
-    return null
-  }
-  return { name, personId: resolved.id }
-}
-
-/**
- * Reload the tab and put the review view back where it was, anchored on a face
- * rather than on a group key.
- *
- * Group keys are positions in a list the server recomputes, and naming a face
- * REMOVES it from the pool the clustering runs over — so after any mutation the
- * key that was on screen means something else. Anchoring on a face id that
- * survived the mutation finds whichever group now contains it, which is the
- * same people in front of the admin a moment ago. When nothing survived (the
- * usual case after "Confirm all"), it falls back to the overview list, which is
- * the honest answer: that group is done.
- * @param {number | null} anchorFaceId
- */
-async function reloadAnchoredOnFace(anchorFaceId) {
-  // Cleared first so the in-flight render inside loadFaceAssignment cannot draw
-  // a stale group under a key that no longer means what it did.
-  reviewGroupKey = null
-  reviewFaceId = null
-  reviewNameDraft = null
-  await loadFaceAssignment()
-  if (anchorFaceId === null || !overview) return
-  const group = overview.groups.find((g) =>
-    reviewFaces(g).some((f) => f.entry.faceId === anchorFaceId),
-  )
-  if (!group) return
-  reviewGroupKey = String(group.key)
-  reviewFaceId = anchorFaceId
-  renderBody()
-}
-
-/** A face in the current group that will still exist after `faceId` is named or
- *  dismissed — the next one along, else the previous. Null when it was the last.
- *  @param {Types.FaceGroup} group @param {number} faceId */
-function anchorAfter(group, faceId) {
-  const faces = reviewFaces(group)
-  const index = faces.findIndex((f) => f.entry.faceId === faceId)
-  if (index === -1) return null
-  const next = faces[index + 1] ?? faces[index - 1]
-  return next ? next.entry.faceId : null
-}
-
-/** POST the bulk assignment and go back to the list. @param {number[]} faceIds
- *  @param {number} personId @param {string} name */
-async function assignFacesToPerson(faceIds, personId, name) {
-  const res = /** @type {Types.FaceAssignResponse} */ (
-    await api("/api/admin/faces/assign", {
-      method: "POST",
-      body: JSON.stringify({ faceIds, personId }),
-    })
-  )
-  const n = res.changed ?? faceIds.length
-  showSuccess(`Assigned ${n} face${n === 1 ? "" : "s"} to ${name}`)
-  // No anchor: every face that was on screen as nameable has just been named,
-  // so there is nothing left in this group to come back to.
-  await reloadAnchoredOnFace(null)
-}
-
-/** "Confirm all N" — the bulk path, over the shown, non-excluded faces only. */
-async function handleReviewConfirmAll() {
-  const group = reviewGroup()
-  if (!group) return
-  const faceIds = assignableFaceIds(group)
-  if (faceIds.length === 0) {
-    showReviewError("Every face here is excluded or set aside — nothing left to name in bulk.")
-    return
-  }
-  const resolved = resolveReviewName("all", `name all ${faceIds.length}`)
-  if (!resolved) return
-  try {
-    await assignFacesToPerson(faceIds, resolved.personId, resolved.name)
-  } catch (err) {
-    showReviewError(getErrorMessage(err))
-  }
-}
-
-/**
- * "Name only this face" — POST /api/admin/faces/assign-one.
- *
- * The single-face route, and the ONLY one that will take a set-aside face. It
- * is offered for every face rather than only the held-back ones because the
- * distinction is the server's business, not something the admin should have to
- * hold in their head: "name this one" means the same thing whichever face is on
- * screen, and the request is identical.
- */
-async function handleReviewNameOne() {
-  const group = reviewGroup()
-  if (!group || reviewFaceId === null) return
-  const faceId = reviewFaceId
-  if (pending.has(faceId)) return
-  const resolved = resolveReviewName("one", "name this one")
-  if (!resolved) return
-  pending.add(faceId)
-  try {
-    await api("/api/admin/faces/assign-one", {
-      method: "POST",
-      body: JSON.stringify({ faceId, personId: resolved.personId }),
-    })
-    showSuccess(`Named ${resolved.name}`)
-    await reloadAnchoredOnFace(anchorAfter(group, faceId))
-  } catch (err) {
-    showReviewError(getErrorMessage(err))
-  } finally {
-    pending.delete(faceId)
-  }
-}
-
-/** The explicit-create step: create the person, then do whatever the action that
- *  revealed it was going to do. @param {HTMLButtonElement} btn */
-async function handleReviewCreatePerson(btn) {
-  const input = reviewNameInput()
-  if (!input) return
-  const name = input.value.trim()
-  if (!name) return
-  const single = btn.dataset.mode === "one"
-
-  btn.disabled = true
-  try {
-    await api("/api/admin/people", {
-      method: "POST",
-      body: JSON.stringify({ displayName: name }),
-    })
-    // Refreshed BEFORE the assignment so the new person resolves by name the
-    // same way an existing one does — one code path, not two.
-    await refreshPeople()
-    btn.hidden = true
-    hideReviewError()
-    if (single) await handleReviewNameOne()
-    else await handleReviewConfirmAll()
-  } catch (err) {
-    btn.disabled = false
-    // A 409 here means someone with this name appeared since the list loaded —
-    // the message names them, and a reload refreshes the autocomplete.
-    showReviewError(getErrorMessage(err))
-  }
-}
-
-/** "Not a face (N)" over the excluded set. Excluded ids are always bulk-shown
- *  faces (toggleReviewExclude refuses the rest), so this never carries a
- *  set-aside id into a bulk endpoint that would refuse it. */
-async function handleReviewNotAFace() {
-  const group = reviewGroup()
-  if (!group) return
-  const excluded = excludedIn(group)
-  if (excluded.size === 0) return
-  const faceIds = [...excluded]
-  const anchor = reviewFaces(group).find((f) => !excluded.has(f.entry.faceId))
-  try {
-    await api("/api/admin/faces/not-a-face", {
-      method: "POST",
-      body: JSON.stringify({ faceIds }),
-    })
-    showSuccess(`Marked ${faceIds.length} face${faceIds.length === 1 ? "" : "s"} as not a face`)
-    await reloadAnchoredOnFace(anchor ? anchor.entry.faceId : null)
-  } catch (err) {
-    showReviewError(getErrorMessage(err))
-  }
-}
-
-/** @param {Element} target @returns {boolean} handled */
-function handleReviewClick(target) {
-  if (target.closest(".face-review-back")) {
-    closeReview()
-    return true
-  }
-  if (target.closest(".face-review-prev")) {
-    stepGroup(-1)
-    return true
-  }
-  if (target.closest(".face-review-next")) {
-    stepGroup(1)
-    return true
-  }
-  const chip = target.closest(".face-strip-chip")
-  if (chip instanceof HTMLElement) {
-    const faceId = parseInt(chip.dataset.faceId || "", 10)
-    if (!Number.isNaN(faceId)) selectReviewFace(faceId)
-    return true
-  }
-  if (target.closest(".face-review-exclude")) {
-    toggleReviewExclude()
-    return true
-  }
-  if (target.closest(".face-review-confirm")) {
-    void handleReviewConfirmAll()
-    return true
-  }
-  if (target.closest(".face-review-name-one")) {
-    void handleReviewNameOne()
-    return true
-  }
-  const createBtn = target.closest(".face-review-create-person")
-  if (createBtn instanceof HTMLButtonElement) {
-    void handleReviewCreatePerson(createBtn)
-    return true
-  }
-  if (target.closest(".face-review-notaface")) {
-    void handleReviewNotAFace()
-    return true
-  }
-  return false
-}
-
-/** @param {KeyboardEvent} e @returns {boolean} handled */
-function handleReviewKeydown(e) {
-  if (e.metaKey || e.ctrlKey || e.altKey) return false
-  const target = e.target
-  // While a field has focus the only key this view claims is Enter — every
-  // other shortcut here is a letter or a bracket somebody may be typing.
-  if (target instanceof HTMLInputElement) {
-    if (e.key === "Enter") {
-      e.preventDefault()
-      void handleReviewConfirmAll()
-      return true
-    }
-    return false
-  }
-  if (target instanceof HTMLSelectElement) return false
-
-  if (e.key === "ArrowRight") stepFace(1)
-  else if (e.key === "ArrowLeft") stepFace(-1)
-  else if (e.key === "]") stepGroup(1)
-  else if (e.key === "[") stepGroup(-1)
-  else if (e.key === "x" || e.key === "X") toggleReviewExclude()
-  else if (e.key === "Escape") closeReview()
-  else return false
-  e.preventDefault()
-  return true
-}
-
-/**
- * "Open photo" for a card/row that holds face chips. The per-photograph view is
- * the ONLY place a `set_aside` face can be named, so every list section here
- * needs a labelled, keyboard-reachable way into it — a hover affordance or a
- * bare chip click would leave the escape hatch undiscoverable, which is the
- * state this whole view exists to fix.
- * @param {number | null | undefined} mediaId
- * @param {string} label the accessible name — say WHICH photograph, since a
- *   group spans several and the button can only open one.
- */
-function openPhotoButtonMarkup(mediaId, label) {
-  if (mediaId === null || mediaId === undefined) return ""
-  return html`<button type="button" class="btn btn-secondary btn-sm faces-open-photo"
-    data-media-id="${mediaId}" aria-label="${label}"
-    title="Shows every face in that photograph — including any set aside from the queue">
-    Open photo
-  </button>`
-}
-
-/**
- * Resolve a typed name to exactly one person, via `nameKey` — the same fold the
- * server uses to refuse a duplicate create (no regex, string methods only).
- * @param {string} name
- * @returns {{ status: "ok", id: number } | { status: "ambiguous" } | { status: "none" }}
- */
-function resolvePersonByName(name) {
-  const key = nameKey(name)
-  const matches = peopleData.filter((p) => nameKey(p.displayName) === key)
-  if (matches.length === 1) return { status: "ok", id: matches[0].id }
-  if (matches.length > 1) return { status: "ambiguous" }
-  return { status: "none" }
-}
-
-// ---- Ask queue --------------------------------------------------------
-
-/** How many ask rows render at a time. The server already caps its response,
- *  but that cap is in the hundreds and it is a limit on the PAYLOAD, not on
- *  what belongs on a screen — rendering all of them made this section the
- *  tallest thing on the page the moment the groups above stopped being. The
- *  queue is ordered by impact and abandonable at any point, so the rows past
- *  the first screenful are the ones that matter least. */
-const ASK_PAGE = 15
-
-/** Grows with "Show more", and deliberately NOT reset by a reload: every
- *  confirm reloads the whole tab, and resetting here would drop the admin back
- *  to the top of the queue after each one. */
-let askShown = ASK_PAGE
-
-function queueMarkup() {
-  if (!queueData || !overview) return ""
-  const items = queueData.items
-  if (items.length === 0) {
-    const msg =
-      overview.counts.identified === 0
-        ? "The ask queue fills in once a group above has been named — matching needs at least one confirmed face per person to compare against."
-        : "Nothing waiting on you right now."
-    return html`<p class="faces-empty text-muted">${msg}</p>`
-  }
-  const visible = items.slice(0, askShown)
-  const remaining = items.length - visible.length
-  return html`
-    <ul class="faces-ask-list">
-      ${visible.map(askRowMarkup)}
-    </ul>
-    ${remaining > 0
-      ? html`<button type="button" class="btn btn-secondary btn-sm faces-ask-more">
-          Show ${Math.min(remaining, ASK_PAGE)} more (${remaining} waiting)
-        </button>`
-      : ""}
-    ${queueData.truncated
-      ? html`<p class="faces-queue-truncated">
-          Showing the highest-impact faces first — more will appear as you go.
-        </p>`
-      : ""}
-  `
-}
-
-/** @param {Types.FaceQueueItem} item */
-function askRowMarkup(item) {
-  const dismissed = dismissedAsk.has(item.faceId)
-  return html`
-    <li class="face-ask-row ${dismissed ? "is-dismissed" : ""}" data-face-id="${item.faceId}"
-      tabindex="0">
-      ${renderFaceChip(item, { dimmed: false })}
-      <div class="face-ask-main">
-        <div class="face-ask-candidates">
-          ${item.candidates.map(
-            (c, i) => html`
-              <button type="button" class="btn btn-secondary btn-sm face-ask-candidate"
-                data-index="${i}">
-                <kbd>${i + 1}</kbd> ${c.personName} · margin ${formatMargin(c.margin)}
-              </button>
-            `,
-          )}
-          ${item.candidates.length === 0
-            ? html`<span class="text-muted">No candidates yet</span>`
-            : ""}
-        </div>
-        <div class="face-ask-actions">
-          <span class="face-ask-unlocks text-muted"
-            title="Confirming this would identify this many photo appearances"
-            >unlocks ${item.unlocks}</span
-          >
-          ${openPhotoButtonMarkup(item.mediaId, "Open the photograph this face is in")}
-          <button type="button" class="btn btn-secondary btn-sm face-ask-skip">
-            <kbd>s</kbd> Skip
-          </button>
-          <button type="button" class="btn btn-secondary btn-sm face-ask-none">
-            None of these
-          </button>
-          <button type="button" class="btn btn-danger btn-sm face-ask-notaface">
-            <kbd>x</kbd> Not a face
-          </button>
-        </div>
-      </div>
-    </li>
-  `
-}
-
-/** The faceId of the row after `faceId` in the CURRENT (pre-reload) queue
- *  order — captured before a mutation so focus can return to roughly the same
- *  spot once the list is refetched and re-rendered. @param {number} faceId */
-function nextAskFaceId(faceId) {
-  if (!queueData) return null
-  const idx = queueData.items.findIndex((i) => i.faceId === faceId)
-  if (idx === -1) return null
-  const next = queueData.items[idx + 1]
-  return next ? next.faceId : null
-}
-
-/** @param {number | null} faceId */
-function focusAskRow(faceId) {
-  if (faceId === null) return
-  const rows = document.querySelectorAll(".face-ask-row")
-  for (const row of rows) {
-    if (row instanceof HTMLElement && row.dataset.faceId === String(faceId)) {
-      row.focus()
-      return
-    }
-  }
-}
-
-/** @param {number} faceId @param {number} delta */
-function focusAdjacentAskRow(faceId, delta) {
-  const rows = Array.from(document.querySelectorAll(".face-ask-row"))
-  const idx = rows.findIndex(
-    (r) => r instanceof HTMLElement && r.dataset.faceId === String(faceId),
-  )
-  if (idx === -1) return
-  const next = rows[idx + delta]
-  if (next instanceof HTMLElement) next.focus()
-}
-
-/** @param {number} faceId @param {number} candidateIndex */
-async function confirmAskCandidate(faceId, candidateIndex) {
-  const item = queueData?.items.find((i) => i.faceId === faceId)
-  if (!item) return
-  const candidate = item.candidates[candidateIndex]
-  if (!candidate) return
-  // personId is null when the prototype's person row vanished between the
-  // queue being built and this click — there is nothing to assign to.
-  if (candidate.personId === null) return
-  if (pending.has(faceId)) return
-  pending.add(faceId)
-  const nextFocusId = nextAskFaceId(faceId)
-  try {
-    await api("/api/admin/faces/assign", {
-      method: "POST",
-      body: JSON.stringify({ faceIds: [faceId], personId: candidate.personId }),
-    })
-    showSuccess(`Assigned to ${candidate.personName}`)
-    await loadFaceAssignment()
-    focusAskRow(nextFocusId)
-  } catch (err) {
-    showError(getErrorMessage(err))
-  } finally {
-    pending.delete(faceId)
-  }
-}
-
+const groupHref = (faceId) => `/admin/faces/groups/f${faceId}`
 /** @param {number} faceId */
-async function handleAskNotAFace(faceId) {
-  if (pending.has(faceId)) return
-  pending.add(faceId)
-  const nextFocusId = nextAskFaceId(faceId)
-  try {
-    await api("/api/admin/faces/not-a-face", {
-      method: "POST",
-      body: JSON.stringify({ faceIds: [faceId] }),
-    })
-    showSuccess("Marked as not a face")
-    await loadFaceAssignment()
-    focusAskRow(nextFocusId)
-  } catch (err) {
-    showError(getErrorMessage(err))
-  } finally {
-    pending.delete(faceId)
-  }
+const askHref = (faceId) => `/admin/faces/ask/f${faceId}`
+/** @param {number} personId */
+const personHref = (personId) => `/admin/faces/people/p${personId}`
+
+/** The path of the screen under a photograph dialog, which is where the
+ *  dialog's own path starts. */
+function screenPath() {
+  if (place.view === "groups" && place.face !== null) return groupHref(place.face)
+  if (place.view === "ask" && place.face !== null) return askHref(place.face)
+  if (place.view === "people" && place.person !== null) return personHref(place.person)
+  if (place.view === "same-moment") return "/admin/faces/same-moment"
+  return "/admin/faces/leftovers"
 }
 
-/** @param {HTMLElement} row @param {Element} target */
-function handleAskRowClick(row, target) {
-  const faceId = parseInt(row.dataset.faceId || "", 10)
-  if (Number.isNaN(faceId)) return
-
-  const candidateBtn = target.closest(".face-ask-candidate")
-  if (candidateBtn instanceof HTMLElement) {
-    const idx = parseInt(candidateBtn.dataset.index || "", 10)
-    if (!Number.isNaN(idx)) void confirmAskCandidate(faceId, idx)
-    return
-  }
-  if (target.closest(".face-ask-skip")) {
-    focusAdjacentAskRow(faceId, 1)
-    return
-  }
-  if (target.closest(".face-ask-none")) {
-    dismissedAsk.add(faceId)
-    row.classList.add("is-dismissed")
-    focusAdjacentAskRow(faceId, 1)
-    return
-  }
-  if (target.closest(".face-ask-notaface")) {
-    void handleAskNotAFace(faceId)
-  }
+/** A photograph dialog over the current screen.
+ *  @param {number | null} mediaId @param {number | null} [faceId] select this face */
+function photoHref(mediaId, faceId = null) {
+  if (mediaId === null) return ""
+  const base = `${screenPath()}/photos/m${mediaId}`
+  // The stage face is already the dialog's selection; only say it otherwise.
+  return faceId !== null && faceId !== place.face ? `${base}?face=f${faceId}` : base
 }
 
-// ---- Same-moment (must-link propagation) -------------------------------
-
-/**
- * Proposals to carry a confirmed identity onto the same person in a
- * near-duplicate frame. Hidden entirely when there are none, so it costs
- * nothing on a library with no bursts.
- *
- * Deliberately a SEPARATE section from the ask queue, and deliberately opt-in
- * per row: these are the system's own inferences rather than a human's, and
- * they are the only place in this tab where the evidence is geometric rather
- * than a name someone typed. Rolling them into the queue would hide that
- * distinction behind an identical-looking confirm.
- */
-function propagationsMarkup() {
-  const items = propagationData ? propagationData.items : []
-  if (items.length === 0) return ""
-  return html`
-    <section class="faces-section" aria-labelledby="faces-propagations-heading">
-      <h3 id="faces-propagations-heading">Same moment</h3>
-      <p class="text-muted faces-propagation-note">
-        These photographs are near-duplicates of one already-named face, and both the box and the
-        descriptor agree. Confirming records the name as <em>propagated</em> — it will never be used
-        to recognise anyone else.
-      </p>
-      <ul class="faces-propagation-list">
-        ${items.map(propagationRowMarkup)}
-      </ul>
-      <button type="button" class="btn btn-secondary btn-sm faces-propagate-all">
-        Accept all ${items.length}
-      </button>
-    </section>
-  `
+/** A person's initials on a hue, like the prototype's avatar. Inline SVG
+ *  presentation attributes are not inline styles, so the CSP allows them.
+ *  @param {{ id: number, name: string }} p */
+function avatar(p, size = "") {
+  const parts = p.name.split(" ").filter((w) => w.length > 0 && w !== "&")
+  const first = parts[0] ? [...parts[0]][0] : "?"
+  const last = parts.length > 1 ? [...parts[parts.length - 1]][0] : ""
+  const hue = (p.id * 47) % 360
+  return html`<span class="avatar ${size}"
+    ><svg class="art" viewBox="0 0 40 40" aria-hidden="true">
+      <circle cx="20" cy="20" r="20" fill="hsl(${hue} 40% 55%)" />
+      <text x="20" y="25" text-anchor="middle" font-size="14" fill="#fff">${first}${last}</text>
+    </svg></span
+  >`
 }
 
-/** @param {Types.FacePropagation} item */
-function propagationRowMarkup(item) {
-  return html`
-    <li class="face-propagation-row" data-face-id="${item.toFaceId}">
-      ${item.from ? renderFaceChip(item.from, { dimmed: true }) : ""}
-      ${renderFaceChip(item, { dimmed: false })}
-      <div class="face-propagation-main">
-        <span class="face-propagation-name">${item.personName || "Unknown person"}</span>
-        <span class="text-muted"
-          >overlap ${item.iou.toFixed(2)} · distance ${item.distance.toFixed(2)}</span
-        >
-      </div>
-      <div class="face-propagation-actions">
-        ${openPhotoButtonMarkup(item.mediaId, "Open the photograph this face is in")}
-        <button type="button" class="btn btn-secondary btn-sm face-propagation-accept">
-          Yes, same person
-        </button>
-        <button type="button" class="btn btn-secondary btn-sm face-propagation-dismiss">
-          Not now
-        </button>
-      </div>
-    </li>
-  `
+/** POST a JSON body to an admin endpoint. @param {string} path @param {unknown} body */
+function post(path, body) {
+  return api(path, { method: "POST", body: JSON.stringify(body) })
 }
 
-/** @param {number[]} toFaceIds */
-async function applyPropagations(toFaceIds) {
-  const ids = toFaceIds.filter((id) => !pending.has(id))
-  if (ids.length === 0) return
-  for (const id of ids) pending.add(id)
-  try {
-    await api("/api/admin/faces/propagate", {
-      method: "POST",
-      body: JSON.stringify({ toFaceIds: ids }),
-    })
-    showSuccess(ids.length === 1 ? "Name carried across" : `Name carried across ${ids.length} faces`)
-    await loadFaceAssignment()
-  } catch (err) {
-    showError(getErrorMessage(err))
-  } finally {
-    for (const id of ids) pending.delete(id)
-  }
+/** @param {number} personId */
+function personById(personId) {
+  return peopleData.find((p) => p.id === personId) ?? null
 }
 
-/** @param {HTMLElement} row @param {Element} target */
-function handlePropagationRowClick(row, target) {
-  const faceId = parseInt(row.dataset.faceId || "", 10)
-  if (Number.isNaN(faceId)) return
-  if (target.closest(".face-propagation-accept")) {
-    void applyPropagations([faceId])
-    return
-  }
-  if (target.closest(".face-propagation-dismiss")) {
-    // Visual-only, like the ask queue's "None of these": there is no
-    // "reviewed, declined" state to record, and inventing one would mean a
-    // second kind of durable judgement nothing else in the pipeline reads.
-    row.remove()
-  }
-}
-
-// ---- Identified (minimal — see file header re: no per-person breakdown) ---
-
-function identifiedMarkup() {
-  if (!overview) return ""
-  const n = overview.counts.identified
-  if (n === 0) return html`<p class="faces-empty text-muted">No faces identified yet.</p>`
-  // The contract has no per-guest breakdown (only an aggregate face count), so
-  // this stays a single collapsed line rather than a per-person list — the
-  // "expandable later" the spec asks for needs an endpoint that doesn't exist
-  // yet.
-  return html`<p class="faces-identified-summary">
-    ${n} face${n === 1 ? "" : "s"} identified so far.
-  </p>`
-}
-
-// ---- People (the photographed cast) ---------------------------------------
-
-/**
- * The roster of people faces get assigned to. A person is who a face belongs
- * to; a guest is an INVITATION — one row per party — and much of the cast
- * (partners recorded under someone else's row, children, the photographer,
- * vendors) is not on it at all. `guestId` is the optional link back.
- *
- * A list, like every other section here: no wizard, no modal. Each row does its
- * own rename / link / merge / delete against a single person, and every action
- * is an immediate request.
- *
- * There is no "create" control in this section on purpose. A person is created
- * from a group's name input, where the admin is already looking at the faces
- * they mean — creating one from a bare list is how you end up with two rows for
- * the same human and no way to tell which is which.
- */
-function peopleMarkup() {
-  if (!peopleLoaded) {
-    return html`<p class="faces-empty text-muted">Loading people…</p>`
-  }
-  if (peopleData.length === 0) {
-    return html`<p class="faces-empty text-muted">
-      No people yet. Name a group above and the person is created there.
-    </p>`
-  }
-  return html`
-    <ul class="faces-people-list">
-      ${peopleData.map(personRowMarkup)}
-    </ul>
-    ${guestsLoaded
-      ? ""
-      : html`<p class="text-muted faces-people-note">
-          Guest roster unavailable — linking a person to an invitation is disabled until the next
-          refresh.
-        </p>`}
-  `
-}
-
-/** @param {Types.PersonEntry} person */
-function personRowMarkup(person) {
-  const others = peopleData.filter((p) => p.id !== person.id)
-  // person_id is NOT NULL on face_identities, so a person with live identities
-  // cannot be soft-deleted — say why up front rather than letting the button
-  // fail with a 409 the admin has to interpret.
-  const undeletable = person.identities > 0
-  return html`
-    <li class="faces-person-row" data-person-id="${person.id}">
-      <div class="faces-person-main">
-        <input type="text" class="person-name-input" value="${person.displayName}"
-          aria-label="Name" data-person-id="${person.id}" maxlength="200" />
-        <span class="text-muted faces-person-counts">
-          ${person.faces} face${person.faces === 1 ? "" : "s"} ·
-          ${person.identities} identit${person.identities === 1 ? "y" : "ies"}
-        </span>
-      </div>
-      <div class="faces-person-link">
-        ${person.guestId === null
-          ? html`<input type="text" class="person-guest-input" list="faces-guest-roster"
-              placeholder="Link an invitation…" aria-label="Link this person to a guest"
-              maxlength="200" ${guestsLoaded ? "" : "disabled"} />`
-          : html`<span class="faces-person-guest"
-                >invitation: ${person.guestName ?? "(deleted guest)"}</span
-              >
-              <button type="button" class="btn btn-secondary btn-sm person-unlink">
-                Unlink
-              </button>`}
-      </div>
-      <div class="faces-person-actions">
-        ${others.length > 0
-          ? html`<select class="person-merge-select" aria-label="Merge this person into">
-                <option value="">Merge into…</option>
-                ${others.map((o) => html`<option value="${o.id}">${o.displayName}</option>`)}
-              </select>
-              <button type="button" class="btn btn-secondary btn-sm person-merge" disabled>
-                Merge
-              </button>`
-          : ""}
-        <button type="button" class="btn btn-secondary btn-sm person-delete"
-          ${undeletable ? "disabled" : ""}
-          title="${undeletable
-            ? "Reassign or merge this person's faces before deleting them."
-            : "Delete this person"}">
-          Delete
-        </button>
-      </div>
-      <span class="faces-person-error" role="alert" hidden></span>
-    </li>
-  `
-}
-
-// ---- Recent bulk passes: the undo -----------------------------------------
-
-/**
- * The undo affordance, and it is small on purpose.
- *
- * Every bulk mutation in this tab — naming a group, clearing one, dismissing
- * one as not-a-face, applying a propagation pass — is recorded as one BATCH,
- * and each of those responses already carried a `batchId` that nothing on this
- * page ever used. So the ledger was revocable and the product was not: the only
- * way to spend a batch id was to import `revokeBatch` into a test process.
- *
- * This is a list of bulk passes with a Revoke button, not a history browser.
- * The case it is for is "that group was two people and I just named all thirty
- * faces" — which is minutes old, so newest-first and a short ceiling is the
- * whole ordering story. It is collapsed by default and fetched only when
- * opened: an admin who never makes a mistake never pays for the query.
- *
- * THE COPY IS THE FEATURE. Revoking does not delete anything and does not
- * clobber later work, and an admin who believes otherwise will not touch it —
- * so both facts are stated in the panel and again in the confirm dialog, and
- * the button is not styled as destructive, because it is not.
- */
-function batchesPanelMarkup() {
-  return html`
-    <section class="faces-section faces-batches" aria-labelledby="faces-batches-heading">
-      <h3 id="faces-batches-heading">
-        <button type="button" class="faces-batches-toggle"
-          aria-expanded="${batchesOpen ? "true" : "false"}" aria-controls="faces-batches-body">
-          Recent bulk passes
-        </button>
-      </h3>
-      <div id="faces-batches-body" ${batchesOpen ? "" : "hidden"}>
-        <p class="faces-batches-note text-muted">
-          Every bulk action here — naming a group, clearing one, dismissing one, applying a
-          propagation pass — is one revocable pass. Revoking a pass stops its decisions counting
-          and re-derives the faces it touched. Nothing is deleted: the decisions stay on record,
-          and any face you have since corrected by hand keeps your correction. Reinstating a pass
-          means running it again.
-        </p>
-        ${batchesBodyMarkup()}
-      </div>
-    </section>
-  `
-}
-
-function batchesBodyMarkup() {
-  const problem =
-    batchesError === null
-      ? ""
-      : html`<p class="faces-batches-error" role="alert">
-          ${batchesError}
-          <button type="button" class="btn btn-secondary btn-sm faces-batches-retry">
-            Try again
-          </button>
-        </p>`
-  if (!batchesData) {
-    return html`${problem}${batchesError === null
-      ? html`<p class="faces-empty text-muted">Loading…</p>`
-      : ""}`
-  }
-  if (batchesData.batches.length === 0) {
-    return html`${problem}<p class="faces-empty text-muted">
-      No bulk passes yet. One is recorded the first time you name a whole group at once.
-    </p>`
-  }
-  return html`${problem}
-    <ul class="faces-batches-list">
-      ${batchesData.batches.map(batchRowMarkup)}
-    </ul>`
-}
-
-/** What each `face_assignment_batches.kind` was, in the words of the button
- *  that made it. The raw enum value is a schema detail and says nothing to the
- *  person who clicked "Name everyone in this group".
- *  @param {string} kind */
-function batchKindLabel(kind) {
-  if (kind === "propagate") return "Same-moment propagation"
-  if (kind === "manual") return "Bulk change"
-  if (kind === "label-import") return "Imported naming work"
-  if (kind === "merge-repair") return "Merge repair"
-  return kind
-}
-
-/**
- * A ledger timestamp, local and readable.
- *
- * Two formats reach here and only one of them says which zone it is in:
- * `created_at` defaults to SQLite's CURRENT_TIMESTAMP ("YYYY-MM-DD HH:MM:SS",
- * UTC, unmarked), while `revoked_at` is written by db/utils.js's `now()` and is
- * a proper ISO string. Parsing the first as-is makes the browser read it as
- * LOCAL time and a pass made an hour ago claims to be from the future, so the
- * unmarked form is completed into UTC before parsing. String methods only.
- * @param {string | null} value
- */
+/** A ledger timestamp, local and readable. `created_at` is SQLite's unmarked
+ *  UTC ("YYYY-MM-DD HH:MM:SS"); `revoked_at` is ISO. The unmarked form is
+ *  completed into UTC first, or a pass made an hour ago claims to be from the
+ *  future. @param {string | null} value */
 function ledgerTime(value) {
   if (!value) return ""
   const iso = value.includes("T") ? value : value.split(" ").join("T") + "Z"
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return value
+  const mins = Math.round((Date.now() - date.getTime()) / 60000)
+  if (mins < 1) return "just now"
+  if (mins < 60) return `${mins}m ago`
+  if (mins < 60 * 24) return `${Math.round(mins / 60)}h ago`
   return date.toLocaleString("en-US", {
     month: "short",
     day: "numeric",
@@ -1829,346 +314,304 @@ function ledgerTime(value) {
   })
 }
 
-/**
- * One pass.
- *
- * `faces` rather than `events` is what the row leads with: an admin thinks in
- * faces, and the two differ only when a pass touched one face twice. The batch
- * id is shown small and in full because it is what the CLI's `revoke --batch`
- * takes, and this list is the only place outside a database client to read it.
- * @param {Types.FaceBatchEntry} batch
- */
-function batchRowMarkup(batch) {
-  const revoked = batch.revokedAt !== null
-  return html`
-    <li class="faces-batch-row ${revoked ? "is-revoked" : ""}" data-batch-id="${batch.batchId}">
-      <div class="faces-batch-main">
-        <p class="faces-batch-summary">
-          <strong>${batchKindLabel(batch.kind)}</strong> ·
-          ${batch.faces} face${batch.faces === 1 ? "" : "s"} ·
-          ${ledgerTime(batch.createdAt)}
-        </p>
-        ${batch.note ? html`<p class="faces-batch-note text-muted">${batch.note}</p>` : ""}
-        <p class="faces-batch-id text-muted">
-          ${batch.batchId}
-          ${revoked
-            ? html` · revoked ${ledgerTime(batch.revokedAt)} by ${batch.revokedBy ?? "unattributed"}`
-            : ""}
-        </p>
-      </div>
-      ${revoked
-        ? html`<span class="faces-batch-state text-muted">Revoked</span>`
-        : html`<button type="button" class="btn btn-secondary btn-sm faces-batch-revoke">
-            Revoke
-          </button>`}
-    </li>
-  `
+// -------------------------------------------------------------- the steps
+
+/** Groups of two or more, in list order — the order j/k and "next" walk. `size`
+ *  is the server's (clearest, then largest); `varied` spends the weld score as
+ *  an ordering, the only use a signal that weak is fit for. */
+function groupsLeft() {
+  if (!overview) return []
+  const groups = overview.groups.filter((g) => g.size >= 2)
+  if (groupOrder !== "varied") return groups
+  return [...groups].sort((a, b) => (b.weld?.ratio ?? 0) - (a.weld?.ratio ?? 0) || b.size - a.size)
 }
 
-/** Load the list, replacing whatever was held. Non-fatal like the set-aside
- *  panel: the rest of the tab renders regardless and the panel offers a retry. */
+/** The Quick questions: groups of one, most-unlocking first.
+ *  @returns {Types.FacesAskItem[]} */
+function askLeft() {
+  if (!overview) return []
+  const queue = queueData ? queueData.items : []
+  const rank = new Map(queue.map((item, i) => [item.faceId, i]))
+  const byFace = new Map(queue.map((item) => [item.faceId, item]))
+  /** @type {Types.FacesAskItem[]} */
+  const items = []
+  for (const g of overview.groups) {
+    if (g.size !== 1 || g.media.length !== 1) continue
+    const entry = g.media[0]
+    const q = byFace.get(entry.faceId)
+    items.push({
+      faceId: entry.faceId,
+      entry,
+      candidates: q
+        ? q.candidates
+        : g.candidates.map((c) => ({ personId: c.personId, personName: c.personName })),
+      unlocks: q ? q.unlocks : null,
+      routeState: q ? q.routeState : null,
+      routeReason: q ? q.routeReason : null,
+    })
+  }
+  const last = Number.MAX_SAFE_INTEGER
+  return items.sort((a, b) => (rank.get(a.faceId) ?? last) - (rank.get(b.faceId) ?? last))
+}
+
+function propsLeft() {
+  return propagationData ? propagationData.items : []
+}
+
+function leftoversLeft() {
+  return setAsidePhotos.filter((p) => p.unnamedSetAside > 0)
+}
+
+/** Every face in a group, filmstrip order: the bulk-nameable ones, then the
+ *  ones routing held back. Merged here for DISPLAY only — `faceIds` (what a
+ *  bulk confirm posts) is the first list alone.
+ *  @param {Types.FaceGroup} g
+ *  @returns {Array<{ entry: Types.FaceChipEntry, setAside: boolean }>} */
+function membersOf(g) {
+  return [
+    ...g.media.map((entry) => ({ entry, setAside: false })),
+    ...g.setAsideMedia.map((entry) => ({ entry, setAside: true })),
+  ]
+}
+
+/** @param {number} faceId */
+function groupOfFace(faceId) {
+  if (!overview) return null
+  return (
+    overview.groups.find(
+      (g) => g.faceIds.includes(faceId) || g.setAsideMedia.some((m) => m.faceId === faceId),
+    ) ?? null
+  )
+}
+
+/** @param {Types.FaceGroup} g @param {number} faceId */
+function isExcluded(g, faceId) {
+  return excluded.get(faceId) === g.key
+}
+
+/** What a confirm on this group names: shown, minus the left-out.
+ *  @param {Types.FaceGroup} g */
+function nameableIds(g) {
+  return g.faceIds.filter((id) => !isExcluded(g, id))
+}
+
+/** @param {Types.FaceGroup} g */
+function leftOutIds(g) {
+  return g.faceIds.filter((id) => isExcluded(g, id))
+}
+
+/** A face in this group that will still exist after `faceId` is named or
+ *  dismissed — the next one along, else the previous. Null when it was the last.
+ *  @param {Types.FaceGroup} g @param {number} faceId */
+function anchorAfter(g, faceId) {
+  const faces = membersOf(g)
+  const i = faces.findIndex((f) => f.entry.faceId === faceId)
+  if (i === -1) return null
+  const next = faces[i + 1] ?? faces[i - 1]
+  return next ? next.entry.faceId : null
+}
+
+/** The step a screen belongs to, the first one with work, and its path. */
+const STEPS = /** @type {const} */ ([
+  ["groups", "Groups", "/admin/faces/groups", "Name the groups"],
+  ["ask", "Quick questions", "/admin/faces/ask", "Answer quick questions"],
+  ["same-moment", "Same moment", "/admin/faces/same-moment", "Confirm same-moment matches"],
+  ["leftovers", "Leftovers", "/admin/faces/leftovers", "Check the leftovers"],
+])
+
+/** @param {string} key */
+function stepCount(key) {
+  if (key === "groups") return groupsLeft().length
+  if (key === "ask") return askLeft().length
+  if (key === "same-moment") return propsLeft().length
+  return leftoversLeft().length
+}
+
+function firstUnfinished() {
+  const step = STEPS.find((s) => stepCount(s[0]) > 0)
+  return step ? step[2] : "/admin/faces/leftovers"
+}
+
+// ------------------------------------------------------------------- data
+
+/** @type {Types.loadFaceAssignment} */
+export async function loadFaceAssignment() {
+  stale = true
+  await ensureLoaded()
+  render()
+}
+
+/** Reload requests made, and the newest one a finished fetch has covered. */
+let requested = 0
+let fetched = 0
+
+/** Fetch everything the steps count — one fetch at a time, and never handing
+ *  a caller data older than its call: a fetch already in flight when an undo
+ *  lands started before it, so the caller waits for the next one. */
+async function ensureLoaded() {
+  const want = ++requested
+  while (fetched < want) {
+    if (!inflight) {
+      const covers = requested
+      inflight = fetchAll()
+        .then(() => {
+          fetched = covers
+        })
+        .finally(() => {
+          inflight = null
+        })
+    }
+    await inflight
+  }
+}
+
+async function fetchAll() {
+  const anchorQ = place.face !== null ? `?face=${place.face}` : ""
+  const [ov, q, p] = await Promise.all([
+    api(`/api/admin/faces/overview${anchorQ}`),
+    api("/api/admin/faces/queue"),
+    api("/api/admin/faces/propagations"),
+    refreshPeople(),
+    refreshSetAside(),
+    ensureGuestsLoaded(),
+  ])
+  overview = /** @type {Types.FacesOverviewResponse} */ (ov)
+  queueData = /** @type {Types.FacesQueueResponse} */ (q)
+  propagationData = /** @type {Types.FacePropagationsResponse} */ (p)
+  // A left-out face that is no longer in the group it was left out of has
+  // been named, regrouped or dismissed: the judgement no longer applies.
+  for (const [faceId, key] of excluded) {
+    const g = groupOfFace(faceId)
+    if (!g || g.key !== key) excluded.delete(faceId)
+  }
+  for (const id of unticked) {
+    if (!propsLeft().some((x) => x.toFaceId === id)) unticked.delete(id)
+  }
+  personFaces.clear()
+  loaded = true
+  stale = false
+  setNavBadge("faces", groupsLeft().length + askLeft().length)
+}
+
+/** The people list (the picker and People). Non-fatal. */
+async function refreshPeople() {
+  try {
+    const data = /** @type {Types.PeopleApiResponse} */ (await api("/api/admin/people"))
+    peopleData = data.people
+  } catch (err) {
+    console.error("Failed to load people:", err)
+  }
+}
+
+/** Every set-aside photograph, a page at a time. Non-fatal: Leftovers says so. */
+async function refreshSetAside() {
+  /** @type {Types.FaceSetAsidePhoto[]} */
+  const all = []
+  try {
+    for (;;) {
+      const page = /** @type {Types.FacesSetAsideResponse} */ (
+        await api(`/api/admin/faces/set-aside?limit=${SET_ASIDE_PAGE}&offset=${all.length}`)
+      )
+      all.push(...page.photos)
+      if (page.photos.length === 0 || all.length >= page.total) break
+    }
+    setAsidePhotos = all
+  } catch (err) {
+    console.error("Failed to load the set-aside photographs:", err)
+  }
+}
+
+/** The guest roster, once, for "Link to a guest". Non-fatal. */
+async function ensureGuestsLoaded() {
+  if (guestsLoaded) return
+  try {
+    const data = /** @type {Types.GuestsApiResponse} */ (
+      await api("/api/admin/guests?limit=1000&offset=0")
+    )
+    guestOptions = data.guests.map((g) => ({ id: g.id, name: g.name }))
+    guestsLoaded = true
+    const dl = document.getElementById("faces-guest-roster")
+    const options = guestOptions.map((g) => html`<option value="${g.name}"></option>`)
+    if (dl) dl.innerHTML = html`${options}`
+  } catch (err) {
+    console.error("Failed to load the guest roster:", err)
+  }
+}
+
 async function refreshBatches() {
   try {
-    batchesData = /** @type {Types.FacesBatchesResponse} */ (
-      await api("/api/admin/faces/batches")
-    )
+    batchesData = /** @type {Types.FacesBatchesResponse} */ (await api("/api/admin/faces/batches"))
     batchesError = null
   } catch (err) {
-    console.error("Failed to load the batch history:", err)
-    batchesError = "Couldn't load the recent bulk passes."
+    console.error("Failed to load the history:", err)
+    batchesError = "Couldn't load the history."
   }
 }
 
-/** Open or close the panel, lazily loading on first open. Focus is put back on
- *  the toggle because renderBody replaces the element that was clicked. */
-async function toggleBatches() {
-  batchesOpen = !batchesOpen
-  renderBody()
-  if (batchesOpen && batchesData === null) {
-    await refreshBatches()
-    renderBody()
-  }
-  focusBatchesToggle()
-}
-
-function focusBatchesToggle() {
-  const toggle = document.querySelector(".faces-batches-toggle")
-  if (toggle instanceof HTMLElement) toggle.focus()
-}
-
-/**
- * Confirm, then revoke.
- *
- * The confirm dialog is the shared destructive-action one, deliberately NOT in
- * its danger styling: this action destroys nothing, and dressing it in red
- * would teach the admin to avoid the one control that gets them out of a bad
- * bulk pass. What the copy has to carry instead is the property most likely to
- * be misunderstood — a later hand correction survives the revocation — because
- * an admin who assumes otherwise will re-do work that was never lost.
- * @param {string} batchId
- */
-function handleRevokeBatch(batchId) {
-  const batch = batchesData?.batches.find((b) => b.batchId === batchId)
-  if (!batch) return
-  const faces = `${batch.faces} face${batch.faces === 1 ? "" : "s"}`
-  openConfirm({
-    title: `Revoke this ${batchKindLabel(batch.kind).toLowerCase()}?`,
-    desc:
-      `The decisions this pass made about ${faces} stop counting, and those faces go back to ` +
-      `whatever they were before it. Nothing is deleted — the decisions stay on record — and ` +
-      `any of those faces you have corrected by hand since the pass keeps your correction. ` +
-      `Reinstating the pass means running it again.`,
-    confirmLabel: "Revoke pass",
-    danger: false,
-    run: async () => {
-      const result = /** @type {Types.FaceRevokeResponse} */ (
-        await api("/api/admin/faces/revoke", {
-          method: "POST",
-          body: JSON.stringify({ batchId }),
-        })
-      )
-      showSuccess(
-        result.alreadyRevoked
-          ? "That pass was already revoked — the faces it touched were re-derived again."
-          : `Pass revoked. ${result.reprojected} face${result.reprojected === 1 ? "" : "s"} re-derived.`,
-      )
-      // The whole tab, not just this list: revoking changes which faces are
-      // identified, so the groups, the queue and the counts above are all
-      // stale. The panel is open, so the reload refetches this list too — with
-      // the revoked row now showing who revoked it and when.
-      await loadFaceAssignment()
-    },
-  })
-}
-
 /** @param {number} personId */
-function findPersonRow(personId) {
-  const row = getElement("faces-body").querySelector(
-    `.faces-person-row[data-person-id="${personId}"]`,
-  )
-  return row instanceof HTMLElement ? row : null
-}
-
-/** @param {number} personId @param {string} msg */
-function showPersonError(personId, msg) {
-  const err = findPersonRow(personId)?.querySelector(".faces-person-error")
-  if (!(err instanceof HTMLElement)) return
-  err.textContent = msg
-  err.hidden = false
-}
-
-/** @param {number} personId */
-function hidePersonError(personId) {
-  const err = findPersonRow(personId)?.querySelector(".faces-person-error")
-  if (err instanceof HTMLElement) err.hidden = true
-}
-
-/**
- * Run a people mutation, then reload the whole tab. A reload rather than a
- * local patch because every one of these changes the group suggestions and the
- * identified counts too — a merge especially.
- * @param {number} personId
- * @param {() => Promise<string>} mutate resolves to the success message
- */
-async function runPersonAction(personId, mutate) {
-  if (pendingPeople.has(personId)) return
-  pendingPeople.add(personId)
-  hidePersonError(personId)
+async function loadPersonFaces(personId) {
+  if (personFaces.has(personId)) return
   try {
-    showSuccess(await mutate())
-    await loadFaceAssignment()
+    const data = /** @type {Types.PeopleApiResponse} */ (
+      await api(`/api/admin/people?faces=${personId}`)
+    )
+    if (data.personFaces) {
+      personFaces.set(personId, { faces: data.personFaces.faces, total: data.personFaces.total })
+    }
   } catch (err) {
-    showPersonError(personId, getErrorMessage(err))
-  } finally {
-    pendingPeople.delete(personId)
+    console.error("Failed to load that person's faces:", err)
   }
+  if (place.view === "people" && place.person === personId && isShowing()) render()
 }
 
-/** @param {HTMLInputElement} input */
-function handlePersonRename(input) {
-  const personId = Number(input.dataset.personId)
-  const person = peopleData.find((p) => p.id === personId)
-  if (!person) return
-  const name = input.value.trim()
-  if (!name) {
-    showPersonError(personId, "A person needs a name.")
-    return
-  }
-  if (name === person.displayName) return
-
-  void runPersonAction(personId, async () => {
-    await api(`/api/admin/people/${personId}`, {
-      method: "PATCH",
-      body: JSON.stringify({ displayName: name }),
-    })
-    return `Renamed to ${name}`
-  })
+/** Whether the Name-faces panel is the one on screen. */
+function isShowing() {
+  return currentPlace()?.route.tab === "faces"
 }
-
-/** Link a person to a roster guest, resolved from the typed name exactly the
- *  way a group's name input resolves a person. @param {HTMLInputElement} input */
-function handlePersonLinkGuest(input) {
-  const row = input.closest(".faces-person-row")
-  if (!(row instanceof HTMLElement)) return
-  const personId = Number(row.dataset.personId)
-  const name = input.value.trim()
-  if (!name) return
-
-  const key = nameKey(name)
-  const matches = guestOptions.filter((g) => nameKey(g.name) === key)
-  if (matches.length === 0) {
-    showPersonError(personId, "No invitation by that name — pick one from the list.")
-    return
-  }
-  if (matches.length > 1) {
-    showPersonError(personId, "More than one invitation has that name; link it in the Guests tab.")
-    return
-  }
-
-  void runPersonAction(personId, async () => {
-    await api(`/api/admin/people/${personId}`, {
-      method: "PATCH",
-      body: JSON.stringify({ guestId: matches[0].id }),
-    })
-    return `Linked to ${name}'s invitation`
-  })
-}
-
-/** @param {number} personId */
-function handlePersonUnlink(personId) {
-  void runPersonAction(personId, async () => {
-    await api(`/api/admin/people/${personId}`, {
-      method: "PATCH",
-      body: JSON.stringify({ guestId: null }),
-    })
-    return "Invitation unlinked"
-  })
-}
-
-/** @param {number} personId @param {HTMLElement} row */
-function handlePersonMerge(personId, row) {
-  const select = row.querySelector(".person-merge-select")
-  if (!(select instanceof HTMLSelectElement) || !select.value) return
-  const intoId = Number(select.value)
-  const from = peopleData.find((p) => p.id === personId)
-  const into = peopleData.find((p) => p.id === intoId)
-  if (!from || !into) return
-
-  // Merging is not reversible from this UI — the source person is soft-deleted
-  // and their identities re-pointed — so it is the one action here that asks.
-  if (
-    !window.confirm(
-      `Merge “${from.displayName}” (${from.faces} face${from.faces === 1 ? "" : "s"}) ` +
-        `into “${into.displayName}”? This cannot be undone from here.`,
-    )
-  ) {
-    return
-  }
-
-  void runPersonAction(personId, async () => {
-    const res = /** @type {Types.PersonMergeResponse} */ (
-      await api("/api/admin/people/merge", {
-        method: "POST",
-        body: JSON.stringify({ fromPersonId: personId, intoPersonId: intoId }),
-      })
-    )
-    const moved = res.movedFaces + res.movedIdentities
-    return (
-      `Merged into ${into.displayName} (${moved} row${moved === 1 ? "" : "s"} re-pointed)` +
-      (res.carriedGuestLink ? ", invitation link carried over" : "")
-    )
-  })
-}
-
-/** @param {number} personId */
-function handlePersonDelete(personId) {
-  const person = peopleData.find((p) => p.id === personId)
-  if (!person) return
-  if (!window.confirm(`Delete “${person.displayName}”?`)) return
-
-  void runPersonAction(personId, async () => {
-    await api(`/api/admin/people/${personId}`, { method: "DELETE" })
-    return `Deleted ${person.displayName}`
-  })
-}
-
-/** @param {HTMLElement} row @param {Element} target */
-function handlePersonRowClick(row, target) {
-  const personId = Number(row.dataset.personId)
-  if (Number.isNaN(personId)) return
-
-  if (target.closest(".person-unlink")) {
-    handlePersonUnlink(personId)
-    return
-  }
-  if (target.closest(".person-merge")) {
-    handlePersonMerge(personId, row)
-    return
-  }
-  if (target.closest(".person-delete")) {
-    handlePersonDelete(personId)
-  }
-}
-
-// ---- face chip (shared render path for Groups + Ask queue) ----------------
-
-/** Chip sizes in CSS px, mirrored from admin.css (`.face-chip`,
- *  `.face-overview-chips .face-chip`, `.face-review-strip .face-chip`). Used
- *  only to choose a variant, so drift costs a sharper-or-blurrier chip, never a
- *  broken one. */
-const CHIP_PX = Object.freeze({ chip: 96, overview: 64, strip: 76 })
 
 /**
- * One face, cropped down from the media's `display` variant to just the face's
- * box. The box is in the ORIGINAL photo's pixel coordinates, so the crop is
- * computed client-side once the image has loaded and its natural size is known
- * (see positionFaceChipImage) — there is no dedicated crop endpoint, and there
- * cannot be one: re-encoding a crop server-side would need an image library on
- * the request path, which this project does not have and will not take.
- *
- * **Why `display` and not `thumb`.** A chip is a magnified sliver of whatever
- * copy it loads, so the copy's resolution is the ONLY thing that decides how
- * sharp a face looks. `thumb` is 400px on the long edge and a chip is 96px, so
- * any face occupying less than a quarter of the frame arrives already smaller
- * than the chip and is upscaled to fill it — and a face is usually a small
- * fraction of a frame. That upscale is what made chips read as a camera or
- * detector problem rather than as a choice made here. `display` is 1600px on
- * the long edge, which moves the same faces to roughly chip size.
- *
- * (The arithmetic above is a property of the two variant sizes and the chip,
- * not of anyone's photographs. What fraction of a frame a face actually
- * occupies here is a measurement of identifiable people — derive it locally if
- * you need it, and leave it there. CLAUDE.md's fourth photograph rule.)
- *
- * The cost is real but small and admin-only: a bigger file per photograph,
- * fetched lazily, and shared by every face in the same photograph because the
- * browser caches by URL. `original` is not an option — it is served with
- * `Content-Disposition: attachment` (core/media-serve.js) precisely so it is
- * never rendered inline, and the review view's `REVIEW_STAGE_PAD` is what buys
- * back the resolution that would otherwise argue for it.
- *
- * THE `<img>` IS SHARED by all three sizes this tab draws — the list chips, the
- * review filmstrip and the review stage. Only the container differs, and
- * positionFaceChipImage reads its size off the container rather than a
- * constant, so a fourth size needs CSS and nothing else.
- * Which copy loads is decided per chip by chipVariant (chip-variant.js): the
- * reasoning above is why `display` is the default, and a chip whose face
- * already fills it from `thumb` skips the bigger fetch.
- * @param {Types.FaceChipEntry} entry
- * @param {number} pad crop the box widened by this factor about its centre
- * @param {number} cssPx the chip's CSS size (CHIP_PX); Infinity = always `display`
+ * Reload, then put the screen back where it was, anchored on a FACE rather than
+ * on a group: naming removes faces from the pool the clustering runs over, so
+ * a group's membership moves under any mutation, and the face id that survived
+ * it finds whichever group now holds those same people. When nothing survived,
+ * the step's list is the honest answer: that group is done.
+ * @param {number | null} anchorFaceId
  */
-function faceChipImgMarkup(entry, pad, cssPx) {
-  // Both can be absent if the media row vanished between the queries that
-  // built this payload. Same degradation as a missing width/height: the chip
-  // renders without a crop rather than the row disappearing.
+async function reloadAnchoredOnFace(anchorFaceId) {
+  stale = true
+  await ensureLoaded()
+  if (!isShowing()) return
+  const view = place.view === "ask" ? "ask" : "groups"
+  let target = `/admin/faces/${view}`
+  if (anchorFaceId !== null) {
+    target = view === "ask" ? askHref(anchorFaceId) : groupHref(anchorFaceId)
+  }
+  if (target === location.pathname) render()
+  else void navigate(target, { replace: true })
+}
+
+/** After a write: refetch in the background and redraw what is showing. The
+ *  screen has already moved on (advance-after-act) from local state. */
+function refreshSoon() {
+  stale = true
+  void ensureLoaded()
+    .then(() => {
+      if (isShowing()) render()
+    })
+    .catch((err) => console.error("Failed to refresh faces:", err))
+}
+
+// ------------------------------------------------------------------ chips
+
+/**
+ * One face, cropped from its photo's variant to the face's box. The `<img>` is
+ * shared by every size here (row chip, filmstrip, stage, dialog); only the
+ * container differs, and positionFaceChipImage measures it.
+ * @param {Types.FaceChipEntry} entry @param {number} pad @param {number} cssPx
+ */
+function faceImg(entry, pad, cssPx) {
   const box = entry.box ?? { x: 0, y: 0, w: 0, h: 0 }
-  // `thumb` when it already has the pixels this chip needs (a large face in a
-  // small chip), so the 1600px copy is fetched only where it buys sharpness.
   const variant = chipVariant(entry, pad, cssPx, window.devicePixelRatio || 1)
-  // A `display` variant is not guaranteed — an image the browser could not
-  // decode at upload time is stored original-only — so fall back to `thumb`
-  // once, exactly as the per-photograph view does. Blurry beats blank.
   return html`<img class="face-chip-img" src="/media/${entry.fileKey ?? ""}/${variant}" alt=""
     data-fallback="/media/${entry.fileKey ?? ""}/thumb"
     data-orig-w="${entry.width ?? ""}" data-orig-h="${entry.height ?? ""}"
@@ -2176,60 +619,44 @@ function faceChipImgMarkup(entry, pad, cssPx) {
     data-pad="${pad}" loading="lazy" />`
 }
 
-/** A plain, non-interactive chip — the overview list's preview. A `<span>`
- *  because the whole row is one `<button>` and a control may not nest inside
- *  one. @param {Types.FaceChipEntry} entry */
-function faceChipMarkup(entry) {
-  return html`<span class="face-chip">${faceChipImgMarkup(entry, 1, CHIP_PX.overview)}</span>`
+/** @param {Types.FaceChipEntry} entry @param {string} [cls] @param {number} [px] */
+function chip(entry, cls = "", px = CHIP_PX.row) {
+  return html`<span class="chip-face ${cls}">${faceImg(entry, 1, px)}</span>`
 }
 
-/** @param {Types.FaceChipEntry} entry @param {{ dimmed: boolean }} opts */
-function renderFaceChip(entry, opts) {
-  return html`<div class="face-chip ${opts.dimmed ? "is-dimmed" : ""}"
-    data-face-id="${entry.faceId}">${faceChipImgMarkup(entry, 1, CHIP_PX.chip)}</div>`
-}
-
-/** Wire every `.face-chip-img` under `container` to position itself once its
- *  natural size is known (immediately, if already cached/loaded).
- *  @param {ParentNode} container */
-function wireFaceChipImages(container) {
-  const imgs = container.querySelectorAll(".face-chip-img")
-  imgs.forEach((img) => {
+/** Position every chip under `root` once its image has a natural size.
+ *  @param {ParentNode} root */
+function wireChips(root) {
+  root.querySelectorAll(".photo-thumb img").forEach((img) => {
     if (!(img instanceof HTMLImageElement)) return
-    // `load` is NOT `once` here, because the fallback below swaps `src` and the
-    // replacement's natural size is different — positioning has to run again or
-    // the chip keeps the first image's geometry and shows the wrong sliver.
-    img.addEventListener("load", () => positionFaceChipImage(img))
-    img.addEventListener(
-      "error",
-      () => {
-        const fallback = img.dataset.fallback
-        if (fallback && img.src !== fallback) img.src = fallback
-      },
-      { once: true },
-    )
-    if (img.complete && img.naturalWidth) positionFaceChipImage(img)
+    img.addEventListener("error", () => (img.hidden = true), { once: true })
+  })
+  root.querySelectorAll(".face-chip-img").forEach((img) => {
+    if (!(img instanceof HTMLImageElement) || img.dataset.wired) return
+    img.dataset.wired = "1"
+    // Not `once`: the fallback swaps `src`, and the replacement's natural size
+    // differs, so positioning has to run again.
+    img.addEventListener("load", () => positionChip(img))
+    img.addEventListener("error", () => {
+      const fallback = img.dataset.fallback
+      // Once to the smaller copy; if that fails too, an empty chip beats a
+      // broken-image icon.
+      if (fallback && !img.src.endsWith(fallback)) img.src = fallback
+      else img.hidden = true
+    })
+    if (img.complete && img.naturalWidth) positionChip(img)
+    else if (img.complete && img.src.endsWith(img.dataset.fallback ?? "")) img.hidden = true
   })
 }
 
 /**
- * Position + scale the image so the face's box fills its container.
- *
- * `data-orig-w/h` are the ORIGINAL photo's pixel dimensions, which the server
- * sends alongside every box; the loaded `display` variant is smaller but
- * proportional, so `naturalWidth / origWidth` is the one uniform scale factor
- * between the box's coordinate space and the rendered image's. If the original
- * dimensions are missing, this bails and the element just shows the plain
- * uncropped image (via `.face-chip-img`'s CSS `object-fit: cover`) — degraded,
- * not broken.
- *
- * The target size comes from the PARENT rather than a constant, because this
- * tab now draws the same `<img>` at three sizes (list chip, filmstrip chip,
- * review stage) and a shared constant would have had to become three. `data-pad`
- * widens the crop about the box's centre — see REVIEW_STAGE_PAD.
+ * Scale and offset the image so the face's box (widened by `data-pad`) covers
+ * its container. `naturalWidth / origWidth` is the one scale between the box's
+ * coordinates and the loaded variant's. Missing geometry bails, leaving the
+ * plain `object-fit: cover` image — degraded, not broken.
  * @param {HTMLImageElement} img
  */
-function positionFaceChipImage(img) {
+function positionChip(img) {
   const origW = Number(img.dataset.origW)
   const origH = Number(img.dataset.origH)
   const boxX = Number(img.dataset.boxX)
@@ -2237,754 +664,2229 @@ function positionFaceChipImage(img) {
   const boxW = Number(img.dataset.boxW)
   const boxH = Number(img.dataset.boxH)
   if (!origW || !origH || !boxW || !boxH || !img.naturalWidth || !img.naturalHeight) return
-
   const parent = img.parentElement
-  // Falls back to the old fixed size only when the container has not been laid
-  // out — an unlaid-out parent reports 0, and dividing by it yields Infinity.
-  const frameW = parent && parent.clientWidth > 0 ? parent.clientWidth : CHIP_SIZE
-  const frameH = parent && parent.clientHeight > 0 ? parent.clientHeight : CHIP_SIZE
-
+  const frameW = parent && parent.clientWidth > 0 ? parent.clientWidth : CHIP_FALLBACK
+  const frameH = parent && parent.clientHeight > 0 ? parent.clientHeight : CHIP_FALLBACK
   const toNatural = img.naturalWidth / origW
   const pad = Number(img.dataset.pad) > 0 ? Number(img.dataset.pad) : 1
-  const natBoxW = boxW * toNatural * pad
-  const natBoxH = boxH * toNatural * pad
-  // Widened about the centre, so the face stays in the middle of the crop.
-  const natBoxX = boxX * toNatural - (natBoxW - boxW * toNatural) / 2
-  const natBoxY = boxY * toNatural - (natBoxH - boxH * toNatural) / 2
-
-  // Scale so the box's LARGER dimension fills the frame (like object-fit:
-  // cover, but keyed to the box rather than the whole image), then center the
-  // box within the frame on the other axis.
-  const scale = Math.max(frameW / natBoxW, frameH / natBoxH)
-  const dispW = img.naturalWidth * scale
-  const dispH = img.naturalHeight * scale
-  const offsetX = -(natBoxX * scale) + (frameW - natBoxW * scale) / 2
-  const offsetY = -(natBoxY * scale) + (frameH - natBoxH * scale) / 2
-
-  img.style.width = `${dispW}px`
-  img.style.height = `${dispH}px`
-  img.style.left = `${offsetX}px`
-  img.style.top = `${offsetY}px`
+  const natW = boxW * toNatural * pad
+  const natH = boxH * toNatural * pad
+  const natX = boxX * toNatural - (natW - boxW * toNatural) / 2
+  const natY = boxY * toNatural - (natH - boxH * toNatural) / 2
+  const scale = Math.max(frameW / natW, frameH / natH)
+  img.style.width = `${img.naturalWidth * scale}px`
+  img.style.height = `${img.naturalHeight * scale}px`
+  img.style.left = `${-(natX * scale) + (frameW - natW * scale) / 2}px`
+  img.style.top = `${-(natY * scale) + (frameH - natH * scale) / 2}px`
 }
 
-// ---- per-photograph view (#faces-photo-modal) -----------------------------
+// ----------------------------------------------------------------- chrome
 
-/**
- * The faces of the photograph currently on screen, in the order the server
- * returned them (`mf.id` ascending) — which is what "face 3 of 7" counts, so
- * the number an admin reads out loud is stable between refreshes.
- * @type {Types.MediaFaceEntry[]}
- */
-let photoFaces = []
-/** @type {number | null} */
-let photoMediaId = null
-/** @type {number | null} */
-let photoSelectedFaceId = null
-/** Set by any successful assign/clear in the dialog. The Faces tab behind it is
- *  then stale — counts, groups and the queue all move — but reloading it while
- *  the dialog is open would rip out the very element focus returns to on close,
- *  so the reload is deferred to the `close` event. */
-let photoDirty = false
-
-/** @returns {HTMLDialogElement | null} */
-function photoDialog() {
-  const el = document.getElementById("faces-photo-modal")
-  return el instanceof HTMLDialogElement ? el : null
+/** The stepper, with People and History to its right. @param {string} on */
+function facesHead(on) {
+  const steps = STEPS.map((s, i) => {
+    const n = stepCount(s[0])
+    const here = on === s[0]
+    return html`<li>
+      <a href="${s[2]}" class="${n === 0 ? "is-done" : ""}"
+        aria-current="${here ? "step" : "false"}">
+        <span class="flow-n" aria-hidden="true">${n === 0 ? icon("check") : i + 1}</span>
+        <span class="flow-label">${s[1]}</span>${n > 0
+          ? html`<span class="count">${n}</span>`
+          : html`<span class="sr-only">, done</span>`}
+      </a>
+    </li>`
+  })
+  return html`<header class="faces-head">
+    <ol class="flow" aria-label="Naming faces, step by step">
+      ${steps}
+    </ol>
+    <nav class="faces-ref" aria-label="Reference">
+      <a href="/admin/faces/people" aria-current="${on === "people" ? "page" : "false"}"
+        >People</a
+      >
+      <a href="/admin/faces/history" aria-current="${on === "history" ? "page" : "false"}"
+        >History</a
+      >
+    </nav>
+  </header>`
 }
 
-/** @returns {Types.MediaFaceEntry | undefined} */
-function selectedPhotoFace() {
-  return photoFaces.find((f) => f.faceId === photoSelectedFaceId)
+/** People / History for phones, where the stepper has no room for them. */
+function refLinks() {
+  return html`<nav class="phone-only faces-ref-phone" aria-label="Reference">
+    <a href="/admin/faces/people">People</a><a href="/admin/faces/history">History</a>
+  </nav>`
 }
 
-/** @returns {HTMLInputElement | null} */
-function photoNameInput() {
-  const el = document.getElementById("faces-photo-name")
-  return el instanceof HTMLInputElement ? el : null
+/** The phone's "‹ List" chevron. @param {string} to @param {string} label */
+function mBack(to, label) {
+  return html`<a class="m-back" href="${to}" data-up>${icon("back")}${label}</a>`
 }
 
-/** @param {string} msg */
-function showPhotoError(msg) {
-  const el = document.getElementById("faces-photo-error")
-  if (!(el instanceof HTMLElement)) return
-  el.textContent = msg
-  el.hidden = false
-}
-
-function hidePhotoError() {
-  const el = document.getElementById("faces-photo-error")
-  if (el instanceof HTMLElement) el.hidden = true
-}
-
-/** The per-face error, next to the name input — a bad name is about THIS face,
- *  not about the photograph. Falls back to the dialog-level alert when no face
- *  is selected, so a message is never swallowed. @param {string} msg */
-function showPhotoInputError(msg) {
-  const el = document.querySelector(".faces-photo-input-error")
-  if (!(el instanceof HTMLElement)) {
-    showPhotoError(msg)
-    return
+/** What a step shows once it has run dry: the next step's call to action, or
+ *  "everyone has a name". @param {string} after */
+function nextStep(after) {
+  const i = STEPS.findIndex((s) => s[0] === after)
+  const next = STEPS.slice(i + 1).find((s) => stepCount(s[0]) > 0)
+  if (!next) {
+    return html`<div class="done-state">
+      <div class="done-icon">${icon("check")}</div>
+      <h2>Everyone has a name</h2>
+      <p>That's every face the camera found. New photos will add new groups here.</p>
+      <a class="btn btn-primary btn-lg" href="/admin/thank-yous/cards">Next: thank-you cards →</a>
+    </div>`
   }
-  el.textContent = msg
-  el.hidden = false
+  return html`<div class="done-state">
+    <div class="done-icon">${icon("check")}</div>
+    <h2>Step done</h2>
+    <a class="btn btn-primary btn-lg" href="${next[2]}" data-autofocus
+      >Next: ${next[3]} (${stepCount(next[0])}) →</a
+    >
+  </div>`
 }
 
-function hidePhotoInputError() {
-  const el = document.querySelector(".faces-photo-input-error")
-  if (el instanceof HTMLElement) el.hidden = true
-  const createBtn = document.querySelector(".faces-photo-create-person")
-  if (createBtn instanceof HTMLButtonElement) createBtn.hidden = true
-  hidePhotoError()
+// ----------------------------------------------------------------- picker
+
+/** Alternatives for a group: its nearest people, minus the suggestion.
+ *  @param {Types.FaceGroup} g */
+function groupPicker(g) {
+  const sug = g.suggestion
+  const alternatives = g.candidates
+    .filter((c) => !sug || c.personId !== sug.personId)
+    .slice(0, 3)
+    .map((c) => ({ personId: c.personId, personName: c.personName, note: "Similar" }))
+  const people = peopleData.length
+  /** @type {Types.FacesPickerSpec} */
+  const spec = {
+    kind: "group",
+    id: g.key,
+    count: nameableIds(g).length,
+    suggestion: sug
+      ? {
+          personId: sug.personId,
+          personName: sug.personName,
+          // Null margin = an unopposed match: only one person to compare with.
+          note:
+            sug.margin === null
+              ? "The only person named so far — check the faces"
+              : "Strong match",
+        }
+      : null,
+    alternatives,
+    emptyNote:
+      people === 0
+        ? "No one's been named yet. The first time you name someone, they start getting suggested."
+        : "No confident match. Pick one of these, or type a name.",
+  }
+  return spec
 }
 
-/**
- * Open the per-photograph view. The one path to a `set_aside` face.
- * @param {number} mediaId
- * @param {HTMLElement} [trigger] focus returns here on close
- */
-async function openFacesPhoto(mediaId, trigger) {
-  const dialog = photoDialog()
-  if (!dialog) return
-  photoMediaId = mediaId
-  photoFaces = []
-  photoSelectedFaceId = null
-  photoDirty = false
-  hidePhotoError()
-  showLoading(getElement("faces-photo-body"))
-  openModal(dialog, trigger)
-  await refreshPhotoFaces()
-}
-
-/** Refetch and re-render. Always a refetch rather than a local patch: naming a
- *  face can promote a propagated identity to a confirmed one, which changes
- *  rows other than the one that was clicked. */
-async function refreshPhotoFaces() {
-  if (photoMediaId === null) return
-  const body = getElement("faces-photo-body")
-  try {
-    const data = /** @type {Types.MediaFacesResponse} */ (
-      await api(`/api/admin/media/${photoMediaId}/faces`)
-    )
-    photoFaces = data.faces
-    if (!photoFaces.some((f) => f.faceId === photoSelectedFaceId)) photoSelectedFaceId = null
-    renderPhotoBody()
-  } catch (err) {
-    console.error("Failed to load faces for photograph:", err)
-    showLoadError(body, 1, "Couldn't load this photograph's faces.", () =>
-      void refreshPhotoFaces(),
-    )
+/** @param {Types.FacesAskItem} item @returns {Types.FacesPickerSpec} */
+function askPicker(item) {
+  /** @type {Types.FacesPickerSpec["alternatives"]} */
+  const alternatives = []
+  for (const c of item.candidates) {
+    if (c.personId === null || c.personName === null) continue
+    alternatives.push({
+      personId: c.personId,
+      personName: c.personName,
+      note: alternatives.length === 0 ? "Most likely" : "Possible",
+    })
+  }
+  return {
+    kind: "ask",
+    id: item.faceId,
+    count: 1,
+    suggestion: null,
+    alternatives: alternatives.slice(0, 3),
+    emptyNote:
+      peopleData.length === 0
+        ? "No one's been named yet, so there's nobody to suggest. Type a name."
+        : "Type a name.",
   }
 }
 
-/** How many of the faces on screen the queue held back. Said out loud, because
- *  "why is that one outlined differently" is the first question the view asks. */
-function photoSetAsideCount() {
-  return photoFaces.filter((f) => f.routeState === "set_aside").length
-}
-
-function renderPhotoBody() {
-  const body = getElement("faces-photo-body")
-  if (photoFaces.length === 0) {
-    body.innerHTML = html`<p class="faces-empty text-muted">
-      No faces are recorded in this photograph.
-    </p>`
-    return
-  }
-
-  // Every row came from one media row, so they all carry the same file key and
-  // the same original dimensions — face 0 speaks for the photograph.
-  const first = photoFaces[0]
-  const fileKey = first.fileKey ?? ""
-  // `media.width`/`height` are nullable, and a box is in ORIGINAL source pixels,
-  // so without them there is no scale to express the box against. Degrade to a
-  // list — a box drawn on a guessed scale is worse than no box, because it looks
-  // authoritative while pointing at the wrong person.
-  const canBox = !!(first.width && first.height)
-
-  body.innerHTML = html`
-    <div class="faces-photo-stage">
-      <img class="faces-photo-img" src="/media/${fileKey}/display" alt=""
-        data-fallback="/media/${fileKey}/thumb" />
-      ${canBox
-        ? html`<div class="faces-photo-boxes" role="group"
-            aria-label="Faces in this photograph">
-            ${photoFaces.map(photoBoxMarkup)}
-          </div>`
-        : ""}
+/** "Who is this?" — shared by Groups and Quick questions.
+ *  @param {Types.FacesPickerSpec} o */
+function pickerMarkup(o) {
+  const s = o.suggestion
+  const faces = o.count === 1 ? "this face" : `${o.count} faces`
+  const primary = s
+    ? html`<div class="suggest">
+          ${avatar({ id: s.personId, name: s.personName }, "avatar-lg")}
+          <div>
+            <span class="eyebrow">Looks like</span>
+            <h2>${s.personName}</h2>
+            <span class="muted">${s.note}</span>
+          </div>
+        </div>
+        <button type="button" class="btn btn-primary btn-lg btn-block" data-act="assign"
+          data-kind="${o.kind}" data-id="${o.id}" data-person="${s.personId}"
+          data-name="${s.personName}" data-autofocus ${o.count === 0 ? "disabled" : ""}>
+          ${o.count === 0
+            ? "Every face is left out"
+            : html`Yes, name ${faces} ${firstName(s.personName)} <kbd>Enter</kbd>`}
+        </button>`
+    : o.kind === "group"
+      ? html`<div class="suggest suggest-none">
+          <h2>Who is this?</h2>
+          <span class="muted">${o.emptyNote}</span>
+        </div>`
+      : html`<h2 class="picker-q">Who is this?</h2>`
+  const cands = o.alternatives.length
+    ? html`<p class="picker-label">
+          ${o.kind === "group" ? (s ? "Or one of these" : "Closest people") : "Best guesses"}
+        </p>
+        <ol class="cands">
+          ${o.alternatives.map(
+            (c, i) => html`<li>
+              <button type="button" class="cand" data-act="assign" data-kind="${o.kind}"
+                data-id="${o.id}" data-person="${c.personId}" data-name="${c.personName}"
+                ${o.count === 0 ? "disabled" : ""}>
+                <kbd>${i + 1}</kbd>${avatar({ id: c.personId, name: c.personName })}<span
+                  ><strong>${c.personName}</strong><br /><span class="muted">${c.note}</span></span
+                >
+              </button>
+            </li>`,
+          )}
+        </ol>`
+    : o.kind === "ask"
+      ? html`<p class="muted small">${o.emptyNote}</p>`
+      : ""
+  const key = `${o.kind}:${o.id}`
+  const text = whoFor === key ? whoText : ""
+  return html`<div class="picker">
+    ${primary} ${cands}
+    <div class="someone">
+      <label class="picker-label" for="faces-who">Someone else <kbd>/</kbd></label>
+      <input id="faces-who" type="search" autocomplete="off" placeholder="Type a name…"
+        maxlength="200" data-who="${key}" value="${text}" aria-controls="faces-who-list" />
+      <ul class="who-list" id="faces-who-list">
+        ${whoListMarkup(text, o.kind, o.id)}
+      </ul>
     </div>
-    ${canBox
-      ? ""
-      : html`<p class="faces-photo-note" role="note">
-            This photograph's stored dimensions are missing, so the faces can't be placed on it.
-            They are all listed below and every one of them can still be named.
-          </p>
-          <ul class="faces-photo-list">
-            ${photoFaces.map(photoListRowMarkup)}
-          </ul>`}
-    <div class="faces-photo-detail">${photoDetailMarkup()}</div>
-  `
-  if (canBox) positionPhotoBoxes(body)
-  wirePhotoImageFallback(body)
+    <p class="status-note is-error picker-error" role="alert" hidden></p>
+    <div class="picker-minor">
+      <button type="button" class="btn btn-sm btn-ghost" data-act="not-a-face" data-kind="${o.kind}"
+        data-id="${o.id}" ${o.count === 0 ? "disabled" : ""}>
+        Not a face
+      </button>
+      <button type="button" class="btn btn-sm btn-ghost" data-act="skip" data-kind="${o.kind}"
+        data-id="${o.id}">
+        Skip for now <kbd>s</kbd>
+      </button>
+    </div>
+    <p class="fine muted">
+      Nothing here is final. Every naming can be undone from
+      <a href="/admin/faces/history">History</a>.
+    </p>
+  </div>`
 }
 
 /**
- * An accessible name for one face box.
- *
- * It says WHICH face and WHAT STATE, and nothing else — never anything about
- * what the photograph shows or who the person appears to be (CLAUDE.md,
- * "Photographs Are Input To Code, Not To A Reader"). A name in here is only ever
- * one an admin typed; nothing describes a face.
- * @param {Types.MediaFaceEntry} face
- * @param {number} index
+ * The type-ahead's list: people whose name contains the text, then a way to
+ * create one. Creating is always an explicit choice — and when someone with
+ * exactly that name exists, the offer says "also called", and asks first.
+ * @param {string} text @param {string} kind @param {number} id
  */
-function photoFaceLabel(face, index) {
-  const parts = [`Face ${index + 1} of ${photoFaces.length}`]
-  parts.push(face.personName ? `named ${face.personName}` : "not named yet")
-  if (face.provenance === "propagated") parts.push("carried across, not confirmed")
-  if (face.routeState === "set_aside") parts.push("set aside from the queue")
-  return parts.join(", ")
-}
-
-/** @param {Types.MediaFaceEntry} face */
-function photoFaceClasses(face) {
-  const classes = []
-  if (face.faceId === photoSelectedFaceId) classes.push("is-selected")
-  if (face.routeState === "set_aside") classes.push("is-setaside")
-  if (face.personId !== null) classes.push("is-named")
-  if (face.provenance === "propagated") classes.push("is-propagated")
-  return classes.join(" ")
-}
-
-/**
- * One face box. Its geometry is carried as data-* percentages and applied by
- * positionPhotoBoxes rather than written as a `style` attribute — the admin CSP
- * is `style-src 'self' '<hash>'` with no 'unsafe-inline', so an inline style
- * attribute would be dropped and every box would stack in the corner. Setting
- * `.style` through the CSSOM is not covered by that restriction.
- *
- * Percentages, not pixels: the box is in ORIGINAL source pixels and the image is
- * rendered at whatever width the dialog gives it, so `x / media.width` is the
- * one ratio that survives every scale — no reflow hook, no load-order dance.
- * @param {Types.MediaFaceEntry} face
- * @param {number} index
- */
-function photoBoxMarkup(face, index) {
-  const pct = boxPercent(face)
-  const selected = face.faceId === photoSelectedFaceId
-  return html`<button type="button" class="faces-photo-box ${photoFaceClasses(face)}"
-    data-face-id="${face.faceId}" aria-pressed="${selected ? "true" : "false"}"
-    aria-label="${photoFaceLabel(face, index)}"
-    data-left="${pct.left}" data-top="${pct.top}"
-    data-width="${pct.width}" data-height="${pct.height}">
-    <span class="faces-photo-box-num" aria-hidden="true">${index + 1}</span>
-  </button>`
-}
-
-/** The unboxed fallback row — same selection, same naming, no geometry.
- *  @param {Types.MediaFaceEntry} face @param {number} index */
-function photoListRowMarkup(face, index) {
-  const selected = face.faceId === photoSelectedFaceId
-  return html`<li>
-    <button type="button" class="btn btn-secondary btn-sm faces-photo-box ${photoFaceClasses(face)}"
-      data-face-id="${face.faceId}" aria-pressed="${selected ? "true" : "false"}">
-      ${photoFaceLabel(face, index)}
+function whoListMarkup(text, kind, id) {
+  const q = nameKey(text)
+  if (!q) return ""
+  const hits = peopleData.filter((p) => nameKey(p.displayName).includes(q)).slice(0, WHO_MAX)
+  const exact = peopleData.some((p) => nameKey(p.displayName) === q)
+  const typed = text.trim()
+  return html`${hits.map(
+    (p) => html`<li>
+      <button type="button" class="who" data-act="assign" data-kind="${kind}" data-id="${id}"
+        data-person="${p.id}" data-name="${p.displayName}">
+        ${avatar({ id: p.id, name: p.displayName })}${p.displayName}<span class="muted"
+          >${plural(p.faces, "face", "faces")}</span
+        >
+      </button>
+    </li>`,
+  )}
+  <li>
+    <button type="button" class="who who-new" data-act="${exact ? "new-dup" : "new"}"
+      data-kind="${kind}" data-id="${id}" data-name="${typed}">
+      ${exact
+        ? html`+ Another person also called “${typed}”`
+        : html`+ New person “${typed}”`}
     </button>
   </li>`
 }
 
-/** @param {number} value @param {number} max */
-function clampPct(value, max) {
-  if (!Number.isFinite(value)) return 0
-  if (value < 0) return 0
-  return value > max ? max : value
+/** @param {string} msg */
+function showPickerError(msg) {
+  const el = document.querySelector("#tab-faces .picker-error")
+  if (!(el instanceof HTMLElement)) {
+    showError(msg)
+    return
+  }
+  el.textContent = msg
+  el.hidden = false
+}
+
+// ----------------------------------------------------------------- groups
+
+/** @param {Types.FaceGroup} g @param {boolean} on */
+function groupRow(g, on) {
+  const s = g.suggestion
+  const shown = g.media.slice(0, 4)
+  const unclear = g.setAside
+  return html`<li>
+    <a class="row grow" href="${groupHref(g.key)}" data-select
+      aria-current="${on ? "true" : "false"}">
+      <span class="chips4">${shown.map((m) => chip(m, "", CHIP_PX.mini))}</span>
+      <span class="row-main">
+        <span class="row-top"><strong>${s ? `${s.personName}?` : "Who is this?"}</strong></span>
+        <span class="row-sub"
+          >${plural(g.size, "face", "faces")}${unclear ? ` · ${unclear} unclear` : ""}</span
+        >
+      </span>
+    </a>
+  </li>`
+}
+
+/** @param {number | null} faceId */
+function groupsList(faceId) {
+  const left = groupsLeft()
+  const current = faceId !== null ? groupOfFace(faceId) : null
+  const done = named.filter((e) => e.kind === "group" && !e.revoked)
+  const doneOn = faceId !== null ? namedEntryFor(faceId) : null
+  return html`<header class="pane-head pane-head-tight">
+      <h2>${left.length ? `${plural(left.length, "group", "groups")} to name` : "All named"}</h2>
+      <p class="muted small">
+        ${groupOrder === "varied" && left.length > 1 ? "Most varied first." : "Clearest first."}
+        Each group is faces the computer thinks are one person — check before you confirm.
+      </p>
+      ${left.length > 1
+        ? html`<div class="chips" role="group" aria-label="Order">
+            <button type="button" class="chip" data-act="order" data-order="size"
+              aria-current="${groupOrder === "size" ? "true" : "false"}">
+              Clearest first
+            </button>
+            <button type="button" class="chip" data-act="order" data-order="varied"
+              aria-current="${groupOrder === "varied" ? "true" : "false"}">
+              Most varied first
+            </button>
+          </div>`
+        : ""}
+      ${refLinks()}
+    </header>
+    <ul class="rows">
+      ${left.length
+        ? left.map((g) => groupRow(g, current === g))
+        : html`<li class="list-empty">All groups named.</li>`}
+    </ul>
+    ${done.length
+      ? html`<h3 class="rows-heading">Named</h3>
+          <ul class="rows rows-done">
+            ${done.map(
+              (e) => html`<li>
+                <a class="row grow" href="${groupHref(e.anchor)}" data-select
+                  aria-current="${doneOn === e ? "true" : "false"}">
+                  ${chip(e.chip)}
+                  <span class="row-main">
+                    <span class="row-top"
+                      >${icon("check")}<strong>${e.personName ?? "Not a face"}</strong></span
+                    >
+                    <span class="row-sub">${plural(e.count, "face", "faces")}</span>
+                  </span>
+                </a>
+              </li>`,
+            )}
+          </ul>`
+      : ""}
+    <footer class="pane-foot">
+      <kbd>j</kbd> <kbd>k</kbd> groups · <kbd>←</kbd> <kbd>→</kbd> faces
+    </footer>`
+}
+
+/** The middle pane: one group, one face large, every face in a strip.
+ *  @param {Types.FaceGroup} g @param {number} faceId */
+function groupStage(g, faceId) {
+  const left = groupsLeft()
+  const idx = left.indexOf(g)
+  const faces = membersOf(g)
+  const found = faces.findIndex((f) => f.entry.faceId === faceId)
+  const fi = found === -1 ? 0 : found
+  const f = faces[fi]
+  const out = isExcluded(g, f.entry.faceId)
+  const n = nameableIds(g).length
+  const outIds = leftOutIds(g)
+  const prev = left[idx - 1]
+  const next = left[idx + 1]
+  const strip = faces.map((x, i) => {
+    const state = x.setAside ? "unclear" : isExcluded(g, x.entry.faceId) ? "out" : ""
+    const label =
+      `Face ${i + 1} of ${faces.length}` +
+      (state === "out" ? ", left out" : "") +
+      (state === "unclear" ? ", unclear — name it from the photo" : "")
+    return html`<li>
+      <a href="${groupHref(x.entry.faceId)}" data-replace
+        class="strip-face ${state ? `is-${state}` : ""}"
+        aria-current="${x.entry.faceId === f.entry.faceId ? "true" : "false"}" aria-label="${label}"
+        >${chip(x.entry, "", CHIP_PX.strip)}${state
+          ? html`<span class="strip-badge">${state}</span>`
+          : ""}</a
+      >
+    </li>`
+  })
+  return html`${mBack("/admin/faces/groups", "Groups")}
+    <div class="stage">
+      <header class="stage-head">
+        <span class="eyebrow"
+          >Group ${idx + 1} of ${left.length} · ${plural(g.size, "face", "faces")}</span
+        >
+        <nav class="stepper-mini" aria-label="Groups">
+          ${prev
+            ? html`<a href="${groupHref(prev.key)}" data-select aria-label="Previous group (k)"
+                >↑</a
+              >`
+            : html`<span aria-hidden="true">↑</span>`}
+          ${next
+            ? html`<a href="${groupHref(next.key)}" data-select aria-label="Next group (j)">↓</a>`
+            : html`<span aria-hidden="true">↓</span>`}
+        </nav>
+      </header>
+      <figure class="stage-face ${out ? "is-out" : ""}">
+        <span class="chip-face chip-stage">${faceImg(f.entry, STAGE_PAD, Infinity)}</span>
+        <figcaption>
+          <span>Face ${fi + 1} of ${faces.length}</span>
+          <span class="stage-tools">
+            ${f.setAside
+              ? html`<span class="muted"
+                  >Unclear —
+                  <a href="${photoHref(f.entry.mediaId, f.entry.faceId)}"
+                    >name it from the photo</a
+                  ></span
+                >`
+              : html`<a href="${photoHref(f.entry.mediaId, f.entry.faceId)}">Open photo</a>
+                  <button type="button" class="linklike" data-act="exclude"
+                    data-face="${f.entry.faceId}">
+                    ${out ? "Put back in" : "Not the same person"} <kbd>e</kbd>
+                  </button>`}
+          </span>
+        </figcaption>
+      </figure>
+      <ol class="strip" aria-label="Every face in this group">
+        ${strip}
+      </ol>
+      <p class="muted small strip-help">
+        <span class="kbd-hint"><kbd>←</kbd> <kbd>→</kbd> step through. </span>Scan for anyone
+        who doesn't belong and leave them out — confirming names <strong>${n}</strong>.
+      </p>
+      ${outIds.length
+        ? html`<p class="strip-out small">
+            ${plural(outIds.length, "face", "faces")} left out.
+            <button type="button" class="linklike" data-act="out-not-a-face">
+              ${outIds.length === 1 ? "It isn't a face" : "They aren't faces"}
+            </button>
+            ·
+            <button type="button" class="linklike" data-act="out-reset">Put them all back</button>
+          </p>`
+        : ""}
+    </div>`
+}
+
+/** A face that is no longer in any group, said plainly (IA §8).
+ *  @param {number} faceId */
+function resolvedStage(faceId) {
+  const entry = namedEntryFor(faceId)
+  const back = mBack("/admin/faces/groups", "Groups")
+  const nextG = groupsLeft()[0]
+  const nextBtn = nextG
+    ? html`<a class="btn btn-primary" href="${groupHref(nextG.key)}" data-select data-autofocus
+        >Next group →</a
+      >`
+    : ""
+  if (entry) {
+    return html`${back}
+      <div class="done-state">
+        ${chip(entry.chip, "chip-face-lg", 96)}
+        <h2>${entry.personName ? `Named ${entry.personName}` : "Marked not a face"}</h2>
+        <p>${plural(entry.count, "face", "faces")}, this session.</p>
+        <p class="btn-row">
+          <button type="button" class="btn" data-act="undo-named" data-batch="${entry.batchId}">
+            Undo
+          </button>
+          ${nextBtn}
+        </p>
+      </div>`
+  }
+  const a = overview?.anchor && overview.anchor.faceId === faceId ? overview.anchor : null
+  if (a && a.state === "named") {
+    return html`${back}
+      <div class="done-state">
+        <div class="done-icon">${icon("check")}</div>
+        <h2>Named ${a.personName ?? "someone"}</h2>
+        <p>Face ${faceId} already has a name. To take it back, undo the pass in
+          <a href="/admin/faces/history">History</a> or change it on the photo.</p>
+        <p class="btn-row">
+          ${a.mediaId !== null
+            ? html`<a class="btn" href="${photoHref(a.mediaId, faceId)}">Open photo</a>`
+            : ""}
+          ${nextBtn}
+        </p>
+      </div>`
+  }
+  if (a && a.state === "not_a_face") {
+    return html`${back}
+      <div class="done-state">
+        <div class="done-icon">${icon("check")}</div>
+        <h2>Marked not a face</h2>
+        <p>
+          Face ${faceId} was dismissed. Undo the pass in
+          <a href="/admin/faces/history">History</a> to bring it back.
+        </p>
+        <p class="btn-row">${nextBtn}</p>
+      </div>`
+  }
+  if (a && a.state === "unnamed" && a.mediaId !== null) {
+    return html`${back}
+      <div class="done-state">
+        <h2>This face was held back</h2>
+        <p>It's too small or unclear to group. Name it from its photo.</p>
+        <p class="btn-row">
+          <a class="btn btn-primary" href="${photoHref(a.mediaId, faceId)}">Open photo</a>
+        </p>
+      </div>`
+  }
+  return html`${back}
+    <div class="detail-empty">That face isn't in any group any more.</div>`
+}
+
+function groupsView() {
+  const faceId = place.face
+  const g = faceId !== null ? groupOfFace(faceId) : null
+  const live = g && g.size >= 2 ? g : null
+  let stage
+  let picker = ""
+  if (live && faceId !== null) {
+    stage = groupStage(live, faceId)
+    picker = pickerMarkup(groupPicker(live))
+  } else if (faceId !== null) {
+    stage = resolvedStage(faceId)
+  } else {
+    stage = groupsLeft().length
+      ? html`<div class="detail-empty">Pick a group.</div>`
+      : nextStep("groups")
+  }
+  return html`${facesHead("groups")}
+    <div class="faces3 ${faceId !== null ? "has-sel" : ""}">
+      <section class="pane pane-list" aria-label="Groups">${groupsList(faceId)}</section>
+      <section class="pane pane-stage" aria-label="Faces in this group">${stage}</section>
+      ${picker
+        ? html`<section class="pane pane-picker" aria-label="Who is this?">${picker}</section>`
+        : ""}
+    </div>`
+}
+
+// -------------------------------------------------------------------- ask
+
+/** @param {Types.FacesAskItem} item */
+function askReason(item) {
+  if (item.routeState === "ask" && item.routeReason) {
+    return `Held back because it's ${REASONS[item.routeReason] ?? "unclear"}`
+  }
+  return "No other face looked like this one"
+}
+
+function askView() {
+  const left = askLeft()
+  const id = place.face
+  const item = id !== null ? (left.find((x) => x.faceId === id) ?? null) : null
+  const rows = left.map((x) => {
+    const c = x.candidates.find((k) => k.personName !== null)
+    return html`<li>
+      <a class="row grow" href="${askHref(x.faceId)}" data-select
+        aria-current="${x === item ? "true" : "false"}">
+        ${chip(x.entry)}
+        <span class="row-main">
+          <span class="row-top"
+            ><strong>${c && c.personName ? `${c.personName}?` : "Who is this?"}</strong></span
+          >
+          <span class="row-sub"
+            >${x.unlocks !== null && x.unlocks > 1
+              ? `Answering names ${x.unlocks - 1} more ${x.unlocks - 1 === 1 ? "photo" : "photos"}`
+              : askReason(x)}</span
+          >
+        </span>
+      </a>
+    </li>`
+  })
+  let detail
+  let picker = ""
+  if (item) {
+    const i = left.indexOf(item)
+    const prev = left[i - 1]
+    const next = left[i + 1]
+    detail = html`${mBack("/admin/faces/ask", "Questions")}
+      <div class="stage">
+        <header class="stage-head">
+          <span class="eyebrow">Question ${i + 1} of ${left.length}</span>
+          <nav class="stepper-mini" aria-label="Questions">
+            ${prev
+              ? html`<a href="${askHref(prev.faceId)}" data-select aria-label="Previous (k)"
+                  >↑</a
+                >`
+              : html`<span aria-hidden="true">↑</span>`}
+            ${next
+              ? html`<a href="${askHref(next.faceId)}" data-select aria-label="Next (j)">↓</a>`
+              : html`<span aria-hidden="true">↓</span>`}
+          </nav>
+        </header>
+        <figure class="stage-face">
+          <span class="chip-face chip-stage">${faceImg(item.entry, STAGE_PAD, Infinity)}</span>
+          <figcaption>
+            <span>${askReason(item)}</span>
+            <span class="stage-tools"
+              ><a href="${photoHref(item.entry.mediaId, item.faceId)}"
+                >Open photo <kbd>o</kbd></a
+              ></span
+            >
+          </figcaption>
+        </figure>
+        ${item.unlocks !== null && item.unlocks > 1
+          ? html`<p class="muted small">
+              Answering this one names it in ${item.unlocks} photos — that's why it's near the
+              top.
+            </p>`
+          : ""}
+      </div>`
+    picker = pickerMarkup(askPicker(item))
+  } else if (id !== null) {
+    detail = askResolved(id)
+  } else {
+    detail = left.length ? html`<div class="detail-empty">Pick a face.</div>` : nextStep("ask")
+  }
+  return html`${facesHead("ask")}
+    <div class="faces3 ${id !== null ? "has-sel" : ""}">
+      <section class="pane pane-list" aria-label="Questions">
+        <header class="pane-head pane-head-tight">
+          <h2>${plural(left.length, "quick question", "quick questions")}</h2>
+          <p class="muted small">Single faces nothing else looked like, most useful first.</p>
+          ${refLinks()}
+        </header>
+        <ul class="rows">
+          ${rows.length ? rows : html`<li class="list-empty">No questions left.</li>`}
+        </ul>
+        <footer class="pane-foot">
+          <kbd>j</kbd> <kbd>k</kbd> move · <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> pick
+        </footer>
+      </section>
+      <section class="pane pane-stage" aria-label="The face">${detail}</section>
+      ${picker
+        ? html`<section class="pane pane-picker" aria-label="Who is this?">${picker}</section>`
+        : ""}
+    </div>`
+}
+
+/** @param {number} faceId */
+function askResolved(faceId) {
+  const entry = namedEntryFor(faceId)
+  const back = mBack("/admin/faces/ask", "Questions")
+  if (entry) {
+    const nextQ = askLeft()[0]
+    return html`${back}
+      <div class="done-state">
+        ${chip(entry.chip, "chip-face-lg", 96)}
+        <h2>${entry.personName ? `This is ${entry.personName}` : "Not a face"}</h2>
+        <p class="btn-row">
+          <button type="button" class="btn" data-act="undo-named" data-batch="${entry.batchId}">
+            Undo
+          </button>
+          ${nextQ
+            ? html`<a class="btn btn-primary" href="${askHref(nextQ.faceId)}" data-select
+                >Next question →</a
+              >`
+            : ""}
+        </p>
+      </div>`
+  }
+  // A face in a bigger group now (someone was named, it regrouped).
+  const g = groupOfFace(faceId)
+  if (g && g.size >= 2) {
+    return html`${back}
+      <div class="done-state">
+        <h2>This face is in a group now</h2>
+        <p class="btn-row">
+          <a class="btn btn-primary" href="${groupHref(faceId)}">Open its group →</a>
+        </p>
+      </div>`
+  }
+  return resolvedStage(faceId)
+}
+
+// ------------------------------------------------------------ same moment
+
+function sameMomentView() {
+  const left = propsLeft()
+  if (!left.length) {
+    return html`${facesHead("same-moment")}
+      <div class="single">${refLinks()}${nextStep("same-moment")}</div>`
+  }
+  const checked = left.filter((p) => !unticked.has(p.toFaceId)).length
+  return html`${facesHead("same-moment")}
+    <div class="single">
+      <header class="single-head">
+        <h1>Same moment, same person?</h1>
+        <p class="muted">
+          These faces are in near-identical shots taken a second apart from a face you already
+          named. Untick any that look wrong, then confirm them together.
+        </p>
+        ${refLinks()}
+      </header>
+      <ul class="pairs">
+        ${left.map(
+          (p) => html`<li>
+            <label class="pair"
+              title="${`Box overlap ${p.iou.toFixed(2)} · ` +
+              `descriptor distance ${p.distance.toFixed(2)}`}">
+              <input type="checkbox" data-act="tick" data-face="${p.toFaceId}"
+                ${unticked.has(p.toFaceId) ? "" : "checked"} />
+              ${p.from ? chip(p.from) : html`<span class="chip-face"></span>`}
+              <span aria-hidden="true">→</span>
+              ${chip(p)}
+              <span
+                ><strong>${p.personName ?? "Unknown person"}</strong><br /><span class="muted small"
+                  >named → same moment</span
+                ></span
+              >
+              <a href="${photoHref(p.mediaId, p.toFaceId)}" class="small">Open photo</a>
+            </label>
+          </li>`,
+        )}
+      </ul>
+      <div class="actionbar">
+        <button type="button" class="btn btn-primary btn-lg" data-act="propagate"
+          ${checked ? "" : "disabled"}>
+          Confirm ${checked}
+        </button>
+        <span class="muted small actionbar-note">
+          Carried-across names are never used to recognise anyone else.
+        </span>
+      </div>
+    </div>`
+}
+
+// -------------------------------------------------------------- leftovers
+
+/** Ids and counts only — never what the photograph shows.
+ *  @param {Types.FaceSetAsidePhoto} p */
+function leftoverLabel(p) {
+  const left = p.unnamedSetAside
+  const state = left ? `${left} of ${p.setAsideFaces} unclear faces unnamed` : "all named"
+  return `Photo ${p.mediaId}, ${state}`
+}
+
+function leftoversView() {
+  const left = leftoversLeft()
+  return html`${facesHead("leftovers")}
+    <div class="single">
+      <header class="single-head">
+        <h1>Leftovers</h1>
+        <p class="muted">
+          Photos with faces too small, blurry or side-on to group. Open one to name its faces one at
+          a time — or leave them unnamed; that's fine.
+        </p>
+        ${refLinks()}
+      </header>
+      ${left.length ? "" : nextStep("leftovers")}
+      ${setAsidePhotos.length
+        ? html`<ul class="photo-grid">
+            ${setAsidePhotos.map(
+              (p) => html`<li>
+                <a class="photo-card ${p.unnamedSetAside ? "" : "is-done"}"
+                  href="/admin/faces/leftovers/photos/m${p.mediaId}"
+                  aria-label="${leftoverLabel(p)}">
+                  <span class="photo-thumb"
+                    ><img src="/media/${p.fileKey}/thumb" alt="" loading="lazy"
+                  /></span>
+                  <span>Photo ${p.mediaId}</span>
+                  <span class="muted small"
+                    >${p.unnamedSetAside
+                      ? `${p.unnamedSetAside} of ${p.setAsideFaces} unnamed`
+                      : "All named"}</span
+                  >
+                </a>
+              </li>`,
+            )}
+          </ul>`
+        : ""}
+    </div>`
+}
+
+// ----------------------------------------------------------------- people
+
+/** @param {Types.PersonEntry} x */
+function guestLine(x) {
+  if (x.guestId === null) return "Not a guest"
+  return x.guestName ? `On the guest list · ${x.guestName}` : "On the guest list"
+}
+
+function peopleView() {
+  const p = place.person !== null ? personById(place.person) : null
+  const c = overview?.counts
+  const r = overview?.routeCounts
+  const stats = c
+    ? [
+        `${c.identified} of ${c.faces} faces named`,
+        c.notAFace ? `${c.notAFace} not a face` : "",
+        r && r.setAside ? `${r.setAside} unclear` : "",
+        r && r.ungraded ? `${r.ungraded} ungraded` : "",
+      ]
+        .filter((x) => x)
+        .join(" · ")
+    : ""
+  const list = html`<header class="pane-head pane-head-tight">
+      <h2>${plural(peopleData.length, "person", "people")}</h2>
+      <p class="muted small">
+        Everyone who's been named in a photo. A person can be linked to a guest, but doesn't have
+        to be.
+      </p>
+      ${stats ? html`<p class="small faces-stats">${stats}</p>` : ""}
+      ${refLinks()}
+    </header>
+    <ul class="rows">
+      ${peopleData.length
+        ? peopleData.map(
+            (x) => html`<li>
+              <a class="row" href="${personHref(x.id)}" data-select
+                aria-current="${x === p ? "true" : "false"}">
+                ${avatar({ id: x.id, name: x.displayName })}
+                <span class="row-main">
+                  <span class="row-top"
+                    ><strong>${x.displayName}</strong><span class="row-time">${x.faces}</span></span
+                  >
+                  <span class="row-sub">${guestLine(x)}</span>
+                </span>
+              </a>
+            </li>`,
+          )
+        : html`<li class="list-empty">No one yet. Name a group and the person is made there.</li>`}
+    </ul>
+    <footer class="pane-foot"><kbd>j</kbd> <kbd>k</kbd> move</footer>`
+  const detail = p
+    ? personDetail(p)
+    : html`<div class="detail-empty">
+        ${place.person !== null ? "That person is gone — merged or retired." : "Pick a person."}
+      </div>`
+  return html`${facesHead("people")}
+    <div class="split ${place.person !== null ? "has-sel" : ""}">
+      <section class="pane pane-list" aria-label="People">${list}</section>
+      <section class="pane pane-detail" aria-label="Selected person">${detail}</section>
+    </div>`
+}
+
+/** @param {Types.PersonEntry} p */
+function personDetail(p) {
+  const others = peopleData.filter((o) => o.id !== p.id)
+  const edit = personEdit && personEdit.id === p.id ? personEdit.mode : null
+  const pf = personFaces.get(p.id)
+  const retireBlocked = p.identities > 0
+  /** @type {string} */
+  let editor = ""
+  if (edit === "rename") {
+    editor = html`<form class="faces-inline" data-form="rename" data-person="${p.id}">
+      <label class="sr-only" for="faces-rename">Name</label>
+      <input id="faces-rename" name="name" value="${p.displayName}" maxlength="200"
+        autocomplete="off" required />
+      <button type="submit" class="btn btn-sm btn-primary">Save</button>
+      <button type="button" class="btn btn-sm btn-ghost" data-act="edit-cancel">Cancel</button>
+    </form>`
+  } else if (edit === "merge") {
+    editor = html`<form class="faces-inline" data-form="merge" data-person="${p.id}">
+      <label class="sr-only" for="faces-merge">Merge into</label>
+      <select id="faces-merge" name="into" required>
+        <option value="">Merge ${p.displayName} into…</option>
+        ${others.map((o) => html`<option value="${o.id}">${o.displayName}</option>`)}
+      </select>
+      <button type="submit" class="btn btn-sm btn-danger-soft">Merge</button>
+      <button type="button" class="btn btn-sm btn-ghost" data-act="edit-cancel">Cancel</button>
+    </form>`
+  } else if (edit === "link") {
+    editor = html`<form class="faces-inline" data-form="link" data-person="${p.id}">
+      <label class="sr-only" for="faces-link">Guest's name</label>
+      <input id="faces-link" name="guest" list="faces-guest-roster" placeholder="Guest's name…"
+        maxlength="200" autocomplete="off" required ${guestsLoaded ? "" : "disabled"} />
+      <button type="submit" class="btn btn-sm btn-primary" ${guestsLoaded ? "" : "disabled"}>
+        Link
+      </button>
+      <button type="button" class="btn btn-sm btn-ghost" data-act="edit-cancel">Cancel</button>
+    </form>`
+  }
+  return html`${mBack("/admin/faces/people", "People")}
+    <article class="detail">
+      <header class="person-head">
+        ${avatar({ id: p.id, name: p.displayName }, "avatar-xl")}
+        <div>
+          <h1>${p.displayName}</h1>
+          <p class="muted">
+            ${plural(p.faces, "face", "faces")} ·
+            ${p.guestId !== null
+              ? `Linked to ${p.guestName ? `${p.guestName}'s invitation` : "a deleted guest"}`
+              : "Not linked to a guest"}
+          </p>
+        </div>
+      </header>
+      <div class="btn-row">
+        <button type="button" class="btn btn-sm" data-act="edit" data-mode="rename"
+          aria-pressed="${edit === "rename" ? "true" : "false"}">Rename</button>
+        ${others.length
+          ? html`<button type="button" class="btn btn-sm" data-act="edit" data-mode="merge"
+              aria-pressed="${edit === "merge" ? "true" : "false"}">Merge into…</button>`
+          : ""}
+        ${p.guestId !== null
+          ? html`<button type="button" class="btn btn-sm" data-act="unlink">Unlink guest</button>`
+          : html`<button type="button" class="btn btn-sm" data-act="edit" data-mode="link"
+              aria-pressed="${edit === "link" ? "true" : "false"}"
+              ${guestsLoaded ? "" : "disabled"}>
+              Link to a guest
+            </button>`}
+        <button type="button" class="btn btn-sm btn-ghost" data-act="retire"
+          ${retireBlocked ? "disabled" : ""}>
+          Retire
+        </button>
+      </div>
+      ${editor}
+      <p class="status-note is-error person-error" role="alert" hidden></p>
+      ${retireBlocked
+        ? html`<p class="fine muted">
+            Only someone with no named faces can be retired. To fold a duplicate into the right
+            person, use Merge.
+          </p>`
+        : ""}
+      ${pf
+        ? html`<ul class="face-grid" aria-label="${`${p.displayName}'s faces`}">
+              ${pf.faces.map(
+                (f) => html`<li>
+                  <a href="${personHref(p.id)}/photos/m${f.mediaId}?face=f${f.faceId}"
+                    aria-label="${`Face ${f.faceId} — open its photo`}"
+                    >${chip(f, "", CHIP_PX.grid)}</a
+                  >
+                </li>`,
+              )}
+            </ul>
+            ${pf.total > pf.faces.length
+              ? html`<p class="muted small">
+                  Showing the newest ${pf.faces.length} of ${pf.total}.
+                </p>`
+              : ""}`
+        : p.faces
+          ? html`<p class="muted small">Loading faces…</p>`
+          : ""}
+    </article>`
+}
+
+// ---------------------------------------------------------------- history
+
+/** What a pass did, in the words of the button that made it.
+ *  @param {Types.FaceBatchEntry} b */
+function batchLabel(b) {
+  const mine = named.find((e) => e.batchId === b.batchId)
+  if (mine) {
+    return mine.personName
+      ? `Named ${plural(mine.count, "face", "faces")} ${mine.personName}`
+      : `Marked ${mine.count} not a face`
+  }
+  const note = b.note ?? ""
+  const faces = plural(b.faces, "face", "faces")
+  if (b.kind === "propagate") return `Same moment: ${faces}`
+  if (b.kind === "label-import") return `Imported naming work: ${faces}`
+  if (b.kind === "merge-repair") return `Merge repair: ${faces}`
+  if (note.startsWith("bulk assign")) return `Named ${faces}`
+  if (note.startsWith("bulk not-a-face")) return `Marked ${b.faces} not a face`
+  if (note.startsWith("bulk unassign")) return `Cleared ${faces}`
+  return `Bulk change: ${faces}`
+}
+
+function historyView() {
+  const list = batchesData ? batchesData.batches : []
+  return html`${facesHead("history")}
+    <div class="single">
+      <header class="single-head">
+        <h1>History</h1>
+        <p class="muted">
+          Each confirm is one entry. Undoing one takes back exactly what it named — nothing is
+          deleted, and any fixes you made afterwards stay.
+        </p>
+        ${refLinks()}
+      </header>
+      ${batchesError
+        ? html`<p class="status-note is-error" role="alert">
+            ${batchesError}
+            <button type="button" class="btn btn-sm" data-act="history-retry">Try again</button>
+          </p>`
+        : ""}
+      ${batchesData && list.length === 0
+        ? html`<p class="list-empty">
+            Nothing yet. Every time you name a group, it's listed here.
+          </p>`
+        : ""}
+      <ul class="history">
+        ${list.map((b) => {
+          const revoked = b.revokedAt !== null
+          return html`<li class="${revoked ? "is-revoked" : ""}">
+            <span
+              ><strong>${batchLabel(b)}</strong><br /><span class="muted small"
+                >${ledgerTime(b.createdAt)}${revoked
+                  ? ` · undone ${ledgerTime(b.revokedAt)}`
+                  : ""}<code class="batch-id" title="Pass id, for the command line"
+                  >${b.batchId}</code
+                ></span
+              ></span
+            >
+            ${revoked
+              ? html`<span class="muted">Undone</span>`
+              : html`<button type="button" class="btn btn-sm" data-act="revoke"
+                  data-batch="${b.batchId}">
+                  Undo this
+                </button>`}
+          </li>`
+        })}
+      </ul>
+    </div>`
+}
+
+// ---------------------------------------------------------------- render
+
+function emptyIngest() {
+  return html`<div class="single">
+    <div class="done-state">
+      <h2>No faces yet</h2>
+      <p class="muted">Run the face pipeline over a folder of photos from the command line:</p>
+      <pre class="faces-cli-hint">node scripts/vision/ingest-faces.js &lt;run-dir&gt;</pre>
+    </div>
+  </div>`
+}
+
+/** Draw the current place. Keeps the list's scroll and brings the selected row
+ *  into view, so j/k never loses your place in a long list. */
+function render() {
+  const root = getElement("faces-body")
+  if (!overview) return
+  const listBefore = root.querySelector(".pane-list")
+  const listScroll = listBefore ? listBefore.scrollTop : 0
+  const sameView = root.dataset.view === place.view
+  /** @type {string} */
+  let markup
+  if (overview.counts.faces === 0 && place.view !== "history" && place.view !== "people") {
+    markup = html`${facesHead(place.view)}${emptyIngest()}`
+  } else if (place.view === "ask") markup = askView()
+  else if (place.view === "same-moment") markup = sameMomentView()
+  else if (place.view === "leftovers") markup = leftoversView()
+  else if (place.view === "people") markup = peopleView()
+  else if (place.view === "history") markup = historyView()
+  else markup = groupsView()
+  root.innerHTML = markup
+  root.dataset.view = place.view
+  wireChips(root)
+  const list = root.querySelector(".pane-list")
+  if (list && sameView) list.scrollTop = listScroll
+  const sel = root.querySelector('.pane-list .row[aria-current="true"]')
+  if (sel instanceof HTMLElement) sel.scrollIntoView({ block: "nearest" })
+  // Keyboard flow on wide screens: the next decision is one keypress away.
+  // Phones don't move focus — it would scroll the column.
+  const auto = root.querySelector("[data-autofocus]")
+  if (auto instanceof HTMLElement && isWide() && !auto.hasAttribute("disabled")) {
+    auto.focus({ preventScroll: true })
+  }
+  setFacesCrumbs()
+}
+
+function setFacesCrumbs() {
+  const p = place
+  if (p.view === "groups" && p.face !== null) {
+    const g = groupOfFace(p.face)
+    const entry = namedEntryFor(p.face)
+    const a = overview?.anchor && overview.anchor.faceId === p.face ? overview.anchor : null
+    let who = ""
+    if (g && g.size >= 2) who = g.suggestion ? `${g.suggestion.personName}?` : "Who is this?"
+    else if (entry) who = entry.personName ?? "Not a face"
+    else if (a && a.state === "named") who = a.personName ?? "Named"
+    else if (a && a.state === "not_a_face") who = "Not a face"
+    setCrumbs([
+      { label: "Groups", href: "/admin/faces/groups" },
+      { label: who ? `${who} · face ${p.face}` : `Face ${p.face}` },
+    ])
+  } else if (p.view === "ask" && p.face !== null) {
+    setCrumbs([{ label: "Quick questions", href: "/admin/faces/ask" }, { label: `Face ${p.face}` }])
+  } else if (p.view === "people" && p.person !== null) {
+    const who = personById(p.person)
+    setCrumbs([
+      { label: "People", href: "/admin/faces/people" },
+      { label: who ? who.displayName : "Person" },
+    ])
+  } else if (p.view !== "root") {
+    const titles = /** @type {Record<string, string>} */ ({
+      groups: "Groups",
+      ask: "Quick questions",
+      "same-moment": "Same moment",
+      leftovers: "Leftovers",
+      people: "People",
+      history: "History",
+    })
+    setCrumbs([{ label: titles[p.view] ?? "Name faces" }])
+  }
+}
+
+// --------------------------------------------------------------- actions
+
+/** Name a group (or mark it not a face), then go straight to the next one.
+ *  @param {Types.FaceGroup} g @param {number | null} personId @param {string} name */
+async function nameGroup(g, personId, name) {
+  const faceIds = nameableIds(g)
+  if (faceIds.length === 0 || pending.has(g.key)) return
+  pending.add(g.key)
+  try {
+    const res = /** @type {Types.FaceAssignResponse | Types.FaceBatchWriteResponse} */ (
+      personId === null
+        ? await post("/api/admin/faces/not-a-face", { faceIds })
+        : await post("/api/admin/faces/assign", { faceIds, personId })
+    )
+    const left = groupsLeft()
+    const i = left.indexOf(g)
+    const next = left[i + 1] ?? left.find((x) => x !== g) ?? null
+    /** @type {Types.FacesNamedEntry} */
+    const entry = {
+      kind: "group",
+      anchor: g.key,
+      faceIds,
+      personId,
+      personName: personId === null ? null : name,
+      count: faceIds.length,
+      batchId: res.batchId,
+      chip: g.media.find((m) => faceIds.includes(m.faceId)) ?? g.media[0],
+      revoked: false,
+    }
+    named.unshift(entry)
+    saveNamed()
+    // Local first, so the screen moves now; the refetch below corrects it.
+    if (overview) {
+      overview.groups = overview.groups.filter((x) => x !== g)
+      if (personId !== null) overview.counts.identified += faceIds.length
+      else overview.counts.notAFace += faceIds.length
+      overview.counts.unidentified -= faceIds.length
+    }
+    for (const id of g.faceIds) excluded.delete(id)
+    whoText = ""
+    showUndo(
+      personId === null
+        ? `Marked ${plural(faceIds.length, "face", "faces")} not a face`
+        : `Named ${plural(faceIds.length, "face", "faces")} ${name}`,
+      () => void undoEntry(entry),
+    )
+    void navigate(next ? groupHref(next.key) : "/admin/faces/groups", { replace: true })
+    refreshSoon()
+  } catch (err) {
+    showPickerError(getErrorMessage(err))
+  } finally {
+    pending.delete(g.key)
+  }
+}
+
+/** Answer a quick question, then the next. Ask faces are bulk-nameable, so
+ *  this is the bulk route with one face — and so one undoable pass.
+ *  @param {Types.FacesAskItem} item @param {number | null} personId @param {string} name */
+async function answerAsk(item, personId, name) {
+  if (pending.has(item.faceId)) return
+  pending.add(item.faceId)
+  try {
+    const faceIds = [item.faceId]
+    const res = /** @type {Types.FaceBatchWriteResponse} */ (
+      personId === null
+        ? await post("/api/admin/faces/not-a-face", { faceIds })
+        : await post("/api/admin/faces/assign", { faceIds, personId })
+    )
+    const left = askLeft()
+    const i = left.indexOf(left.find((x) => x.faceId === item.faceId) ?? item)
+    const next = left[i + 1] ?? left.find((x) => x.faceId !== item.faceId) ?? null
+    /** @type {Types.FacesNamedEntry} */
+    const entry = {
+      kind: "ask",
+      anchor: item.faceId,
+      faceIds: [item.faceId],
+      personId,
+      personName: personId === null ? null : name,
+      count: 1,
+      batchId: res.batchId,
+      chip: item.entry,
+      revoked: false,
+    }
+    named.unshift(entry)
+    saveNamed()
+    if (overview) overview.groups = overview.groups.filter((g) => !g.faceIds.includes(item.faceId))
+    whoText = ""
+    const said = personId === null ? "Marked not a face" : `That's ${name}`
+    showUndo(said, () => void undoEntry(entry))
+    void navigate(next ? askHref(next.faceId) : "/admin/faces/ask", { replace: true })
+    refreshSoon()
+  } catch (err) {
+    showPickerError(getErrorMessage(err))
+  } finally {
+    pending.delete(item.faceId)
+  }
+}
+
+/** Revoke a pass made here, and go back to the face it was shown by.
+ *  @param {Types.FacesNamedEntry} entry */
+async function undoEntry(entry) {
+  try {
+    await post("/api/admin/faces/revoke", { batchId: entry.batchId })
+    entry.revoked = true
+    saveNamed()
+    showSuccess(entry.kind === "group" ? "Undone — the group is back in the queue" : "Undone")
+    if (isShowing() && (place.view === "groups" || place.view === "ask")) {
+      await reloadAnchoredOnFace(entry.anchor)
+    } else {
+      stale = true
+      if (isShowing()) refreshSoon()
+    }
+  } catch (err) {
+    showError(getErrorMessage(err))
+  }
+}
+
+/** Create a person — only ever from an explicit "+ New person". Returns their
+ *  id, or null when the admin backed out of a same-name create.
+ *  @param {string} name @param {boolean} duplicate the admin chose "another person also called" */
+async function createPerson(name, duplicate) {
+  const created = /** @type {Types.PersonCreateResponse} */ (
+    await post(
+      "/api/admin/people",
+      duplicate ? { displayName: name, confirmDuplicate: true } : { displayName: name },
+    )
+  )
+  await refreshPeople()
+  return created.person.id
+}
+
+/** "+ Another person also called X": the same-name create, asked first.
+ *  @param {string} name @param {(id: number) => void} then */
+function confirmDuplicate(name, then) {
+  const existing = peopleData.find((p) => nameKey(p.displayName) === nameKey(name))
+  const theirs = existing ? existing.displayName : name
+  openConfirm({
+    title: `There's already someone called ${theirs}`,
+    desc:
+      `Make a second, separate person with the same name? Only do this if it really is someone ` +
+      `else. To name these faces as the ${theirs} you already have, pick them from the list ` +
+      `instead.`,
+    confirmLabel: `Make another ${theirs}`,
+    danger: false,
+    run: async () => {
+      then(await createPerson(name, true))
+    },
+  })
+}
+
+/** Dispatch a pick from a picker: an existing person, a new one, or "not a face".
+ *  @param {string} kind @param {number} id @param {number | null} personId @param {string} name */
+function pick(kind, id, personId, name) {
+  if (kind === "group") {
+    const g = overview?.groups.find((x) => x.key === id)
+    if (g) void nameGroup(g, personId, name)
+  } else if (kind === "ask") {
+    const item = askLeft().find((x) => x.faceId === id)
+    if (item) void answerAsk(item, personId, name)
+  }
+}
+
+/** @param {string} kind @param {number} id */
+function skip(kind, id) {
+  if (kind === "group") {
+    const left = groupsLeft()
+    const i = left.findIndex((g) => g.key === id)
+    const next = left[i + 1] ?? left[0]
+    if (next && next.key !== id) void navigate(groupHref(next.key), { replace: true })
+  } else {
+    const left = askLeft()
+    const i = left.findIndex((x) => x.faceId === id)
+    const next = left[i + 1] ?? left[0]
+    if (next && next.faceId !== id) void navigate(askHref(next.faceId), { replace: true })
+  }
+}
+
+/** Leave the on-stage face out of the confirm, or put it back. @param {number} faceId */
+function toggleExclude(faceId) {
+  const g = groupOfFace(faceId)
+  // Only a bulk-nameable face: a set-aside one is already outside every bulk
+  // action, so leaving it out would be a control with no effect.
+  if (!g || !g.faceIds.includes(faceId)) return
+  if (isExcluded(g, faceId)) excluded.delete(faceId)
+  else excluded.set(faceId, g.key)
+  render()
+}
+
+/** The left-out faces of the current group are not faces. One pass, undoable. */
+async function leftOutNotAFace() {
+  const g = place.face !== null ? groupOfFace(place.face) : null
+  if (!g) return
+  const faceIds = leftOutIds(g)
+  if (faceIds.length === 0) return
+  const anchor = membersOf(g).find((f) => !faceIds.includes(f.entry.faceId))
+  try {
+    const res = /** @type {Types.FaceBatchWriteResponse} */ (
+      await post("/api/admin/faces/not-a-face", { faceIds })
+    )
+    for (const id of faceIds) excluded.delete(id)
+    /** @type {Types.FacesNamedEntry} */
+    const entry = {
+      kind: "group",
+      anchor: faceIds[0],
+      faceIds,
+      personId: null,
+      personName: null,
+      count: faceIds.length,
+      batchId: res.batchId,
+      chip: g.media.find((m) => m.faceId === faceIds[0]) ?? g.media[0],
+      revoked: false,
+    }
+    named.unshift(entry)
+    saveNamed()
+    const said = `Marked ${plural(faceIds.length, "face", "faces")} not a face`
+    showUndo(said, () => void undoEntry(entry))
+    await reloadAnchoredOnFace(anchor ? anchor.entry.faceId : null)
+  } catch (err) {
+    showPickerError(getErrorMessage(err))
+  }
+}
+
+async function applyPropagations() {
+  const ids = propsLeft()
+    .map((p) => p.toFaceId)
+    .filter((id) => !unticked.has(id) && !pending.has(id))
+  if (ids.length === 0) return
+  for (const id of ids) pending.add(id)
+  try {
+    const res = /** @type {Types.FaceBatchWriteResponse} */ (
+      await post("/api/admin/faces/propagate", { toFaceIds: ids })
+    )
+    showUndo(`Same moment: named ${plural(res.changed, "face", "faces")}`, () => {
+      void (async () => {
+        try {
+          await post("/api/admin/faces/revoke", { batchId: res.batchId })
+          showSuccess("Undone")
+          refreshSoon()
+        } catch (err) {
+          showError(getErrorMessage(err))
+        }
+      })()
+    })
+    stale = true
+    await ensureLoaded()
+    if (isShowing()) render()
+  } catch (err) {
+    showError(getErrorMessage(err))
+  } finally {
+    for (const id of ids) pending.delete(id)
+  }
 }
 
 /**
- * A face's box as percentages of the ORIGINAL photograph's dimensions, clamped
- * into the frame. A detector box can hang off an edge (a face at the margin),
- * and an overlay that spills outside its stage would be clipped or would widen
- * the dialog, so the visible rectangle is trimmed rather than allowed to escape.
- * @param {Types.MediaFaceEntry} face
+ * Undo a pass from History. Asked first, NOT in danger styling: it destroys
+ * nothing, but it can't itself be undone (a revocation is permanent; running
+ * the pass again reinstates it), and the property most likely to be
+ * misunderstood — later hand corrections survive — is said out loud.
+ * @param {string} batchId
  */
+function revokeFromHistory(batchId) {
+  const b = batchesData?.batches.find((x) => x.batchId === batchId)
+  if (!b) return
+  openConfirm({
+    title: `Undo “${batchLabel(b)}”?`,
+    desc:
+      `Those ${plural(b.faces, "face", "faces")} go back to how they were before it. Nothing is ` +
+      `deleted, and any of them you've fixed by hand since keep your fix. To redo it, name ` +
+      `them again.`,
+    confirmLabel: "Undo it",
+    danger: false,
+    run: async () => {
+      const result = /** @type {Types.FaceRevokeResponse} */ (
+        await api("/api/admin/faces/revoke", { method: "POST", body: JSON.stringify({ batchId }) })
+      )
+      const mine = named.find((e) => e.batchId === batchId)
+      if (mine) {
+        mine.revoked = true
+        saveNamed()
+      }
+      showSuccess(
+        result.alreadyRevoked ? "That was already undone." : "Undone. Later corrections were kept.",
+      )
+      stale = true
+      await Promise.all([ensureLoaded(), refreshBatches()])
+      if (isShowing()) render()
+    },
+  })
+}
+
+// ----------------------------------------------------------- people writes
+
+/** @param {number} personId @param {string} msg */
+function showPersonError(personId, msg) {
+  const el = document.querySelector("#tab-faces .person-error")
+  if (!(el instanceof HTMLElement) || place.person !== personId) {
+    showError(msg)
+    return
+  }
+  el.textContent = msg
+  el.hidden = false
+}
+
+/**
+ * Run a people write, then refetch: a rename or merge changes every
+ * suggestion and count, so nothing is patched locally.
+ * @param {number} personId @param {() => Promise<void>} write
+ */
+async function personWrite(personId, write) {
+  if (pendingPeople.has(personId)) return
+  pendingPeople.add(personId)
+  try {
+    await write()
+    personEdit = null
+    stale = true
+    await ensureLoaded()
+    if (isShowing()) render()
+  } catch (err) {
+    showPersonError(personId, getErrorMessage(err))
+  } finally {
+    pendingPeople.delete(personId)
+  }
+}
+
+/** @param {number} personId @param {Record<string, unknown>} patch */
+function patchPerson(personId, patch) {
+  return api(`/api/admin/people/${personId}`, { method: "PATCH", body: JSON.stringify(patch) })
+}
+
+/** @param {number} personId @param {string} name */
+function renamePerson(personId, name) {
+  const p = personById(personId)
+  const next = name.trim()
+  if (!p) return
+  if (!next) {
+    showPersonError(personId, "A person needs a name.")
+    return
+  }
+  if (next === p.displayName) {
+    personEdit = null
+    render()
+    return
+  }
+  const before = p.displayName
+  void personWrite(personId, async () => {
+    await patchPerson(personId, { displayName: next })
+    showUndo(`Renamed to ${next}`, () => {
+      void personWrite(personId, async () => {
+        await patchPerson(personId, { displayName: before })
+        showSuccess(`Back to ${before}`)
+      })
+    })
+  })
+}
+
+/** @param {number} personId @param {string} typed */
+function linkGuest(personId, typed) {
+  const key = nameKey(typed)
+  const matches = guestOptions.filter((g) => nameKey(g.name) === key)
+  if (matches.length === 0) {
+    showPersonError(personId, "No guest by that name — pick one from the list.")
+    return
+  }
+  if (matches.length > 1) {
+    showPersonError(personId, "More than one guest has that name. Link it from Guests & RSVPs.")
+    return
+  }
+  const guest = matches[0]
+  void personWrite(personId, async () => {
+    await patchPerson(personId, { guestId: guest.id })
+    showUndo(`Linked to ${guest.name}'s invitation`, () => {
+      void personWrite(personId, async () => {
+        await patchPerson(personId, { guestId: null })
+        showSuccess("Unlinked")
+      })
+    })
+  })
+}
+
+/** @param {number} personId */
+function unlinkGuest(personId) {
+  const p = personById(personId)
+  if (!p || p.guestId === null) return
+  const was = p.guestId
+  void personWrite(personId, async () => {
+    await patchPerson(personId, { guestId: null })
+    showUndo("Unlinked from the guest list", () => {
+      void personWrite(personId, async () => {
+        await patchPerson(personId, { guestId: was })
+        showSuccess("Linked again")
+      })
+    })
+  })
+}
+
+/** Merge is the one people action that can't be taken back from here (the
+ *  source is retired and its identities re-pointed), so it asks — in danger
+ *  styling, because it is. @param {number} personId @param {number} intoId */
+function mergePerson(personId, intoId) {
+  const from = personById(personId)
+  const into = personById(intoId)
+  if (!from || !into) return
+  openConfirm({
+    title: `Merge ${from.displayName} into ${into.displayName}?`,
+    desc:
+      `${from.displayName}'s ${plural(from.faces, "face", "faces")} become ` +
+      `${into.displayName}'s, and ` +
+      `${from.displayName} is retired. This can't be undone from here.`,
+    confirmLabel: "Merge",
+    danger: true,
+    run: async () => {
+      const res = /** @type {Types.PersonMergeResponse} */ (
+        await api("/api/admin/people/merge", {
+          method: "POST",
+          body: JSON.stringify({ fromPersonId: personId, intoPersonId: intoId }),
+        })
+      )
+      showSuccess(
+        `Merged into ${into.displayName}` +
+          (res.carriedGuestLink ? " — the guest link came too" : ""),
+      )
+      personEdit = null
+      stale = true
+      await ensureLoaded()
+      void navigate(personHref(intoId), { replace: true })
+    },
+  })
+}
+
+/** @param {number} personId */
+function retirePerson(personId) {
+  const p = personById(personId)
+  if (!p) return
+  openConfirm({
+    title: `Retire ${p.displayName}?`,
+    desc:
+      `${p.displayName} has no named faces, so nothing else changes. ` +
+      `They leave the people list.`,
+    confirmLabel: "Retire",
+    danger: true,
+    run: async () => {
+      await api(`/api/admin/people/${personId}`, { method: "DELETE" })
+      showSuccess(`Retired ${p.displayName}`)
+      stale = true
+      await ensureLoaded()
+      void navigate("/admin/faces/people", { replace: true })
+    },
+  })
+}
+
+// ------------------------------------------------------- photograph dialog
+
+/** The faces of the photograph on screen, `mf.id` order (what "face 3" counts). */
+/** @type {Types.MediaFaceEntry[]} */
+let photoFaces = []
+/** @type {number | null} */
+let photoMediaId = null
+/** @type {number | null} */
+let photoSelected = null
+/** Any write in the dialog: the screen behind it refetches when it closes. */
+let photoDirty = false
+/** The open row's type-ahead text. */
+let photoWho = ""
+
+function photoBody() {
+  return getElement("faces-photo-body")
+}
+
+/** Open (or re-point) the dialog on one photograph. The router has already
+ *  opened the <dialog>; this fills it. @param {number} mediaId @param {number | null} faceId */
+async function openPhoto(mediaId, faceId) {
+  const same = photoMediaId === mediaId
+  photoMediaId = mediaId
+  if (faceId !== null) photoSelected = faceId
+  if (!same) {
+    photoFaces = []
+    photoWho = ""
+    getElement("faces-photo-title").textContent = `Photo ${mediaId}`
+    setPhotoStatus("")
+    showLoading(photoBody())
+  }
+  await refreshPhotoFaces()
+}
+
+async function refreshPhotoFaces() {
+  const mediaId = photoMediaId
+  if (mediaId === null) return
+  try {
+    const data = /** @type {Types.MediaFacesResponse} */ (
+      await api(`/api/admin/media/${mediaId}/faces`)
+    )
+    if (photoMediaId !== mediaId) return
+    photoFaces = data.faces
+    if (!photoFaces.some((f) => f.faceId === photoSelected)) {
+      const firstUnnamed = photoFaces.find((f) => f.personId === null)
+      photoSelected = firstUnnamed ? firstUnnamed.faceId : null
+    }
+    renderPhoto()
+  } catch (err) {
+    console.error("Failed to load the photograph's faces:", err)
+    const retry = () => void refreshPhotoFaces()
+    showLoadError(photoBody(), 1, "Couldn't load this photo's faces.", retry)
+  }
+}
+
+/** A face box's percentages of the ORIGINAL frame, clamped inside it.
+ *  @param {Types.MediaFaceEntry} face */
 function boxPercent(face) {
   const w = photoFaces[0]?.width ?? 0
   const h = photoFaces[0]?.height ?? 0
   const box = face.box
   if (!w || !h || !box) return { left: 0, top: 0, width: 0, height: 0 }
-  const left = clampPct((box.x / w) * 100, 100)
-  const top = clampPct((box.y / h) * 100, 100)
+  /** @param {number} v @param {number} max */
+  const clamp = (v, max) => (!Number.isFinite(v) || v < 0 ? 0 : v > max ? max : v)
+  const left = clamp((box.x / w) * 100, 100)
+  const top = clamp((box.y / h) * 100, 100)
   return {
     left,
     top,
-    width: clampPct((box.w / w) * 100, 100 - left),
-    height: clampPct((box.h / h) * 100, 100 - top),
+    width: clamp((box.w / w) * 100, 100 - left),
+    height: clamp((box.h / h) * 100, 100 - top),
   }
 }
 
-/** @param {ParentNode} container */
-function positionPhotoBoxes(container) {
-  container.querySelectorAll(".faces-photo-box").forEach((el) => {
-    if (!(el instanceof HTMLElement)) return
-    const { left, top, width, height } = el.dataset
-    if (left === undefined || top === undefined) return
-    el.style.left = `${left}%`
-    el.style.top = `${top}%`
-    el.style.width = `${width}%`
-    el.style.height = `${height}%`
+/** Says which face and what state — never what the photograph shows.
+ *  @param {Types.MediaFaceEntry} face @param {number} i */
+function photoFaceLabel(face, i) {
+  const parts = [`Face ${i + 1} of ${photoFaces.length}`]
+  parts.push(face.personName ? `named ${face.personName}` : "not named yet")
+  if (face.provenance === "propagated") parts.push("carried across, not confirmed")
+  if (face.routeState === "set_aside") parts.push("unclear")
+  return parts.join(", ")
+}
+
+function renderPhoto() {
+  const body = photoBody()
+  if (photoFaces.length === 0) {
+    body.innerHTML = html`<p class="muted">No faces are recorded in this photo.</p>`
+    return
+  }
+  const first = photoFaces[0]
+  const canBox = !!(first.width && first.height)
+  const rows = photoFaces.map((f, i) => {
+    const on = f.faceId === photoSelected
+    const unclear = f.routeState === "set_aside" ? html`<span class="tag">unclear</span>` : ""
+    const carried =
+      f.provenance === "propagated" ? html`<span class="tag">carried across</span>` : ""
+    const tags = html`${unclear}${carried}`
+    const nameCell =
+      f.personId !== null && !on
+        ? html`<span class="pf-name"><strong>${f.personName ?? "Named"}</strong>${tags}</span>
+            <span class="pf-tools">
+              ${f.provenance === "propagated"
+                ? html`<button type="button" class="linklike" data-pact="confirm"
+                    data-face="${f.faceId}"
+                    data-person="${f.personId}" data-name="${f.personName ?? ""}">Confirm</button>`
+                : ""}
+              <button type="button" class="linklike" data-pact="select" data-face="${f.faceId}">
+                Change
+              </button>
+              <button type="button" class="linklike" data-pact="clear" data-face="${f.faceId}">
+                Clear
+              </button>
+            </span>`
+        : on
+          ? html`<span class="someone pf-who">
+              <label class="sr-only" for="faces-pf-who">Who is face ${i + 1}?</label>
+              <input id="faces-pf-who" type="search" autocomplete="off" maxlength="200"
+                placeholder="${f.personName
+                  ? `${f.personName} — or type another name…`
+                  : "Who is this?"}"
+                value="${photoWho}" data-face="${f.faceId}" aria-controls="faces-pf-list" />
+              ${tags}
+              <ul class="who-list" id="faces-pf-list">${photoWhoList(photoWho, f.faceId)}</ul>
+            </span>`
+          : html`<button type="button" class="pf-pick" data-pact="select" data-face="${f.faceId}"
+              >Who is this?${tags}</button
+            >`
+    return html`<li class="pf-row ${on ? "is-on" : ""}" data-face="${f.faceId}">
+      <span class="pf-n">${i + 1}</span>
+      ${chip(f)}
+      ${nameCell}
+    </li>`
   })
-}
-
-/** A `display` variant is not guaranteed: an image the browser couldn't decode
- *  at upload time is stored original-only, and `original` is served as an
- *  attachment so it must not be used here. Fall back to `thumb` once — a small
- *  image still places every box correctly, because the boxes are percentages.
- *  @param {ParentNode} container */
-function wirePhotoImageFallback(container) {
-  const img = container.querySelector(".faces-photo-img")
-  if (!(img instanceof HTMLImageElement)) return
-  img.addEventListener(
-    "error",
-    () => {
-      const fallback = img.dataset.fallback
-      if (fallback) img.src = fallback
-    },
-    { once: true },
-  )
-}
-
-function photoDetailMarkup() {
-  const index = photoFaces.findIndex((f) => f.faceId === photoSelectedFaceId)
-  if (index === -1) {
-    const setAside = photoSetAsideCount()
-    return html`<p class="faces-photo-hint text-muted">
-      Choose a face to name it.
-      ${setAside > 0
-        ? html`${setAside} of them ${setAside === 1 ? "was" : "were"} set aside as too small or too
-            soft for the Ask queue — ${setAside === 1 ? "it is" : "they are"} marked with a dashed
-            outline, and this is where ${setAside === 1 ? "it" : "they"} can be named.`
-        : ""}
-    </p>`
-  }
-
-  const face = photoFaces[index]
-  return html`
-    <div class="faces-photo-face" data-face-id="${face.faceId}">
-      <h4 class="faces-photo-face-title">Face ${index + 1} of ${photoFaces.length}</h4>
-      ${face.routeState === "set_aside"
-        ? html`<p class="faces-photo-note" role="note">
-            Held back from the Ask queue as too small or too soft to name off a list. Naming it
-            here is the way in — this is the only place that can.
-          </p>`
-        : ""}
-      ${face.provenance === "propagated"
-        ? html`<p class="faces-photo-note" role="note">
-            This name was carried across from a near-duplicate frame, not confirmed by anyone.
-            Entering it again here records it as confirmed.
-          </p>`
-        : ""}
-      <div class="faces-photo-controls">
-        <input type="text" id="faces-photo-name" class="faces-photo-name-input"
-          list="faces-people-roster" placeholder="Who is this?" autocomplete="off"
-          value="${face.personName ?? ""}" aria-label="Person name for this face" maxlength="200" />
-        <button type="button" class="btn btn-primary btn-sm faces-photo-save">Name this face</button>
-        ${face.identityId !== null
-          ? html`<button type="button" class="btn btn-secondary btn-sm faces-photo-clear">
-              Clear name
-            </button>`
+  body.innerHTML = html`<div class="pf">
+      <figure class="pf-photo">
+        <img class="pf-img" src="/media/${first.fileKey ?? ""}/display" alt=""
+          data-fallback="/media/${first.fileKey ?? ""}/thumb" />
+        ${canBox
+          ? html`<div class="pf-boxes" role="group" aria-label="Faces in this photo">
+              ${photoFaces.map((f, i) => {
+                const pct = boxPercent(f)
+                const cls = [
+                  f.faceId === photoSelected ? "is-on" : "",
+                  f.routeState === "set_aside" ? "is-unclear" : "",
+                  f.personId !== null ? "is-named" : "",
+                ].join(" ")
+                return html`<button type="button" class="pf-box ${cls}"
+                  data-pact="select" data-face="${f.faceId}" aria-label="${photoFaceLabel(f, i)}"
+                  aria-pressed="${f.faceId === photoSelected ? "true" : "false"}"
+                  data-left="${pct.left}" data-top="${pct.top}"
+                  data-width="${pct.width}" data-height="${pct.height}"
+                  ><span aria-hidden="true">${i + 1}</span></button
+                >`
+              })}
+            </div>`
           : ""}
-      </div>
-      <span class="faces-photo-input-error" role="alert" hidden></span>
-      <!-- Same explicit-create step as a group's name input: a person is never
-           created as a side effect of typing an unrecognised name. -->
-      <button type="button" class="btn btn-secondary btn-sm faces-photo-create-person" hidden></button>
+      </figure>
+      <ol class="pf-list">
+        ${rows}
+      </ol>
     </div>
-  `
+    ${canBox
+      ? ""
+      : html`<p class="muted small">
+          This photo's size wasn't recorded, so its faces can't be placed on it. Every one is listed
+          and can still be named.
+        </p>`}`
+  // The frame takes the photo's own shape before the image arrives, so the
+  // boxes (percentages of it) sit right and nothing jumps when it loads.
+  const frame = body.querySelector(".pf-photo")
+  if (frame instanceof HTMLElement && canBox) {
+    frame.style.aspectRatio = `${first.width} / ${first.height}`
+  }
+  body.querySelectorAll(".pf-box").forEach((el) => {
+    if (!(el instanceof HTMLElement)) return
+    el.style.left = `${el.dataset.left}%`
+    el.style.top = `${el.dataset.top}%`
+    el.style.width = `${el.dataset.width}%`
+    el.style.height = `${el.dataset.height}%`
+  })
+  const img = body.querySelector(".pf-img")
+  if (img instanceof HTMLImageElement) {
+    img.addEventListener("error", () => {
+      const fallback = img.dataset.fallback
+      if (fallback && !img.src.endsWith(fallback)) img.src = fallback
+      else img.hidden = true
+    })
+  }
+  wireChips(body)
+  const input = document.getElementById("faces-pf-who")
+  if (input instanceof HTMLInputElement && isWide()) input.focus({ preventScroll: true })
 }
 
-/** @param {number} faceId */
-function selectPhotoFace(faceId) {
-  photoSelectedFaceId = faceId
-  renderPhotoBody()
-  photoNameInput()?.focus()
+/** @param {string} text @param {number} faceId */
+function photoWhoList(text, faceId) {
+  const q = nameKey(text)
+  if (!q) return ""
+  const hits = peopleData.filter((p) => nameKey(p.displayName).includes(q)).slice(0, WHO_MAX)
+  const exact = peopleData.some((p) => nameKey(p.displayName) === q)
+  const typed = text.trim()
+  return html`${hits.map(
+    (p) => html`<li>
+      <button type="button" class="who" data-pact="assign" data-face="${faceId}"
+        data-person="${p.id}"
+        data-name="${p.displayName}">
+        ${avatar({ id: p.id, name: p.displayName })}${p.displayName}<span class="muted"
+          >${plural(p.faces, "face", "faces")}</span
+        >
+      </button>
+    </li>`,
+  )}
+  <li>
+    <button type="button" class="who who-new" data-pact="${exact ? "new-dup" : "new"}"
+      data-face="${faceId}"
+      data-name="${typed}">
+      ${exact
+        ? html`+ Another person also called “${typed}”`
+        : html`+ New person “${typed}”`}
+    </button>
+  </li>`
 }
+
+/** The dialog's footer line: what just happened, with its undo.
+ *  @param {string} msg @param {(() => void) | null} [undo] */
+function setPhotoStatus(msg, undo = null) {
+  const el = getElement("faces-photo-status")
+  if (!msg) {
+    el.textContent = "Back button closes this."
+    return
+  }
+  el.innerHTML = html`<span>${msg}</span>${undo
+    ? html` <button type="button" class="linklike" data-pact="undo">Undo</button>`
+    : ""}`
+  photoUndo = undo
+}
+/** @type {(() => void) | null} */
+let photoUndo = null
 
 /**
- * The single-face escape hatch. `personId: null` clears — the same route, which
- * is why "Clear name" needs nothing else.
- * @param {number} faceId
- * @param {number | null} personId
- * @param {string} name for the confirmation message only
+ * Name (or clear) one face — POST faces/assign-one, the single-face route and
+ * the only one that takes a set-aside face. `personId: null` clears, so the
+ * same route is the undo.
+ * @param {number} faceId @param {number | null} personId @param {string} name
  */
-async function assignOnePhotoFace(faceId, personId, name) {
+async function assignOneFace(faceId, personId, name) {
   if (pending.has(faceId)) return
+  const face = photoFaces.find((f) => f.faceId === faceId)
+  if (!face) return
+  const before = face.personId
+  const beforeName = face.personName ?? ""
   pending.add(faceId)
-  hidePhotoError()
   try {
-    await api("/api/admin/faces/assign-one", {
-      method: "POST",
-      body: JSON.stringify({ faceId, personId }),
-    })
-    showSuccess(personId === null ? "Name cleared" : `Named ${name}`)
+    await post("/api/admin/faces/assign-one", { faceId, personId })
     photoDirty = true
+    photoWho = ""
+    const n = photoFaces.indexOf(face) + 1
+    setPhotoStatus(personId === null ? `Face ${n}: name cleared` : `Face ${n} is ${name}`, () => {
+      void assignOneFace(faceId, before, beforeName).then(() => setPhotoStatus("Undone"))
+    })
+    // On to the next face still without a name, so a photo is named in a row.
+    const after = photoFaces.slice(photoFaces.indexOf(face) + 1).find((f) => f.personId === null)
+    photoSelected = personId === null ? faceId : after ? after.faceId : null
     await refreshPhotoFaces()
-    photoNameInput()?.focus()
   } catch (err) {
-    showPhotoInputError(getErrorMessage(err))
+    setPhotoStatus(getErrorMessage(err))
   } finally {
     pending.delete(faceId)
   }
 }
 
-/** Enter or "Name this face": resolve the typed name to exactly one person and
- *  assign, or reveal the explicit create step. Mirrors handleGroupNameEnter. */
-async function handlePhotoSave() {
-  const face = selectedPhotoFace()
-  const input = photoNameInput()
-  if (!face || !input) return
-  const name = input.value.trim()
-  if (!name) {
-    showPhotoInputError(
-      face.identityId === null
-        ? "Type a name first."
-        : "Type a name, or use “Clear name” to remove the one it has.",
-    )
-    return
-  }
-
-  const resolved = resolvePersonByName(name)
-  if (resolved.status === "ambiguous") {
-    showPhotoInputError(
-      "Multiple people share that name — rename one in the People section, then retry.",
-    )
-    return
-  }
-  if (resolved.status === "none") {
-    const createBtn = document.querySelector(".faces-photo-create-person")
-    if (createBtn instanceof HTMLButtonElement) {
-      createBtn.textContent = `Create person “${name}” & name this face`
-      createBtn.hidden = false
-      showPhotoInputError("No person has that name yet. Create them?")
-    }
-    return
-  }
-
-  await assignOnePhotoFace(face.faceId, resolved.id, name)
-}
-
-/** @param {HTMLButtonElement} btn */
-async function handlePhotoCreatePerson(btn) {
-  const face = selectedPhotoFace()
-  const input = photoNameInput()
-  if (!face || !input) return
-  const name = input.value.trim()
-  if (!name) return
-
-  btn.disabled = true
-  try {
-    const created = /** @type {Types.PersonCreateResponse} */ (
-      await api("/api/admin/people", {
-        method: "POST",
-        body: JSON.stringify({ displayName: name }),
-      })
-    )
-    // Before assigning, so the new person is resolvable (and in the datalist)
-    // for the next face in this same photograph without closing the dialog.
-    await refreshPeople()
-    await assignOnePhotoFace(face.faceId, created.person.id, name)
-  } catch (err) {
-    btn.disabled = false
-    showPhotoInputError(getErrorMessage(err))
-  }
-}
-
-function handlePhotoClear() {
-  const face = selectedPhotoFace()
-  if (!face) return
-  void assignOnePhotoFace(face.faceId, null, "")
-}
-
 /** @param {MouseEvent} e */
-function handlePhotoDialogClick(e) {
-  const target = e.target
-  if (!(target instanceof Element)) return
-
-  const box = target.closest(".faces-photo-box")
-  if (box instanceof HTMLElement) {
-    const faceId = parseInt(box.dataset.faceId || "", 10)
-    if (!Number.isNaN(faceId)) selectPhotoFace(faceId)
-    return
+function onPhotoClick(e) {
+  const t = e.target
+  if (!(t instanceof Element)) return
+  const el = t.closest("[data-pact]")
+  if (!(el instanceof HTMLElement)) return
+  const act = el.dataset.pact
+  const faceId = Number(el.dataset.face)
+  if (act === "undo") {
+    const fn = photoUndo
+    photoUndo = null
+    if (fn) fn()
+  } else if (act === "select") {
+    photoSelected = faceId
+    photoWho = ""
+    renderPhoto()
+  } else if (act === "clear") {
+    void assignOneFace(faceId, null, "")
+  } else if (act === "assign" || act === "confirm") {
+    void assignOneFace(faceId, Number(el.dataset.person), el.dataset.name ?? "")
+  } else if (act === "new" || act === "new-dup") {
+    const name = el.dataset.name ?? ""
+    if (!name) return
+    const go = (/** @type {number} */ id) => void assignOneFace(faceId, id, name)
+    if (act === "new-dup") confirmDuplicate(name, go)
+    else {
+      void createPerson(name, false)
+        .then(go)
+        .catch((err) => setPhotoStatus(getErrorMessage(err)))
+    }
   }
-  if (target.closest(".faces-photo-save")) {
-    void handlePhotoSave()
-    return
-  }
-  if (target.closest(".faces-photo-clear")) {
-    handlePhotoClear()
-    return
-  }
-  const createBtn = target.closest(".faces-photo-create-person")
-  if (createBtn instanceof HTMLButtonElement) void handlePhotoCreatePerson(createBtn)
 }
 
 /** @param {KeyboardEvent} e */
-function handlePhotoDialogKeydown(e) {
-  const target = e.target
-  if (target instanceof HTMLInputElement && target.classList.contains("faces-photo-name-input")) {
-    if (e.key === "Enter") {
-      e.preventDefault()
-      void handlePhotoSave()
-    }
+function onPhotoKeydown(e) {
+  const t = e.target
+  if (!(t instanceof HTMLInputElement) || t.id !== "faces-pf-who") return
+  if (e.key === "Enter") {
+    e.preventDefault()
+    const first = document.querySelector("#faces-pf-list button")
+    if (first instanceof HTMLElement) first.click()
+  } else if (e.key === "ArrowDown") {
+    e.preventDefault()
+    const first = document.querySelector("#faces-pf-list button")
+    if (first instanceof HTMLElement) first.focus()
   }
 }
 
 /** @param {Event} e */
-function handlePhotoDialogInput(e) {
-  const target = e.target
-  if (target instanceof HTMLInputElement && target.classList.contains("faces-photo-name-input")) {
-    hidePhotoInputError()
-  }
+function onPhotoInput(e) {
+  const t = e.target
+  if (!(t instanceof HTMLInputElement) || t.id !== "faces-pf-who") return
+  photoWho = t.value
+  const list = document.getElementById("faces-pf-list")
+  if (list) list.innerHTML = photoWhoList(photoWho, Number(t.dataset.face))
 }
 
-/** Deferred reload: naming a face here changes the groups, the ask queue and
- *  every count behind the dialog, but doing it while the dialog is open would
- *  destroy the trigger element that closeModal focuses on the way out. */
-function handlePhotoDialogClose() {
+function onPhotoClose() {
   photoMediaId = null
   photoFaces = []
-  photoSelectedFaceId = null
-  if (photoDirty) {
-    photoDirty = false
-    void loadFaceAssignment()
-  }
+  photoSelected = null
+  photoWho = ""
+  photoUndo = null
+  // The screen behind is stale if anything was named; the router's up() is
+  // about to mount it, and that mount refetches.
+  if (photoDirty) stale = true
+  photoDirty = false
 }
 
-// ---- event delegation -------------------------------------------------
+// ------------------------------------------------------------ delegation
 
 /** @param {MouseEvent} e */
-function handleFacesBodyClick(e) {
-  const target = e.target
-  if (!(target instanceof Element)) return
-
-  // FIRST, before the row branches below: an "Open photo" button sits inside an
-  // ask row and a propagation row, and both of those branches return early.
-  const openPhoto = target.closest(".faces-open-photo")
-  if (openPhoto instanceof HTMLElement) {
-    const mediaId = parseInt(openPhoto.dataset.mediaId || "", 10)
-    if (!Number.isNaN(mediaId)) void openFacesPhoto(mediaId, openPhoto)
-    return
-  }
-
-  if (target.closest(".faces-setaside-more")) {
-    void loadMoreSetAside()
-    return
-  }
-  const retry = target.closest(".faces-setaside-retry")
-  if (retry instanceof HTMLElement) {
-    void (async () => {
-      await refreshSetAside()
-      renderBody()
-    })()
-    return
-  }
-
-  if (target.closest(".faces-batches-toggle")) {
-    void toggleBatches()
-    return
-  }
-  if (target.closest(".faces-batches-retry")) {
-    void (async () => {
-      await refreshBatches()
-      renderBody()
-    })()
-    return
-  }
-  if (target.closest(".faces-batch-revoke")) {
-    const row = target.closest(".faces-batch-row")
-    const batchId = row instanceof HTMLElement ? row.dataset.batchId : undefined
-    if (batchId) handleRevokeBatch(batchId)
-    return
-  }
-
-  if (target.closest(".faces-ask-more")) {
-    askShown += ASK_PAGE
-    renderBody()
-    // renderBody replaced the button that was clicked; focus its replacement,
-    // or the last row when the list is now complete and the button is gone.
-    const more = document.querySelector(".faces-ask-more")
-    if (more instanceof HTMLElement) more.focus()
+function onClick(e) {
+  const t = e.target
+  if (!(t instanceof Element)) return
+  const el = t.closest("[data-act]")
+  if (!(el instanceof HTMLElement) || el.hasAttribute("disabled")) return
+  const act = el.dataset.act
+  const kind = el.dataset.kind ?? ""
+  const id = Number(el.dataset.id)
+  if (act === "assign") {
+    pick(kind, id, Number(el.dataset.person), el.dataset.name ?? "")
+  } else if (act === "new" || act === "new-dup") {
+    const name = el.dataset.name ?? ""
+    if (!name) return
+    const go = (/** @type {number} */ personId) => pick(kind, id, personId, name)
+    if (act === "new-dup") confirmDuplicate(name, go)
     else {
-      const rows = document.querySelectorAll(".face-ask-row")
-      const last = rows[rows.length - 1]
-      if (last instanceof HTMLElement) last.focus()
+      void createPerson(name, false)
+        .then(go)
+        .catch((err) => showPickerError(getErrorMessage(err)))
     }
-    return
+  } else if (act === "not-a-face") {
+    pick(kind, id, null, "")
+  } else if (act === "skip") {
+    skip(kind, id)
+  } else if (act === "exclude") {
+    toggleExclude(Number(el.dataset.face))
+  } else if (act === "out-not-a-face") {
+    void leftOutNotAFace()
+  } else if (act === "out-reset") {
+    const g = place.face !== null ? groupOfFace(place.face) : null
+    if (g) for (const fid of leftOutIds(g)) excluded.delete(fid)
+    render()
+  } else if (act === "order") {
+    groupOrder = el.dataset.order === "varied" ? "varied" : "size"
+    writeSession(ORDER_KEY, groupOrder)
+    const first = groupsLeft()[0]
+    if (place.face !== null || !first || !isWide()) render()
+    else void navigate(groupHref(first.key), { replace: true })
+  } else if (act === "undo-named") {
+    const entry = named.find((x) => x.batchId === el.dataset.batch && !x.revoked)
+    if (entry) void undoEntry(entry)
+  } else if (act === "tick") {
+    const fid = Number(el.dataset.face)
+    if (el instanceof HTMLInputElement && el.checked) unticked.delete(fid)
+    else unticked.add(fid)
+    render()
+  } else if (act === "propagate") {
+    void applyPropagations()
+  } else if (act === "revoke") {
+    revokeFromHistory(el.dataset.batch ?? "")
+  } else if (act === "history-retry") {
+    void refreshBatches().then(() => render())
+  } else if (act === "edit") {
+    const mode = el.dataset.mode
+    if (place.person === null) return
+    if (mode === "rename" || mode === "merge" || mode === "link") {
+      personEdit = personEdit && personEdit.mode === mode ? null : { id: place.person, mode }
+      render()
+      const field = document.querySelector(
+        "#tab-faces .faces-inline input, #tab-faces .faces-inline select",
+      )
+      if (field instanceof HTMLElement) field.focus()
+    }
+  } else if (act === "edit-cancel") {
+    personEdit = null
+    render()
+  } else if (act === "unlink") {
+    if (place.person !== null) unlinkGuest(place.person)
+  } else if (act === "retire") {
+    if (place.person !== null) retirePerson(place.person)
   }
-  const askRow = target.closest(".face-ask-row")
-  if (askRow instanceof HTMLElement) {
-    handleAskRowClick(askRow, target)
-    return
-  }
-  const propagationRow = target.closest(".face-propagation-row")
-  if (propagationRow instanceof HTMLElement) {
-    handlePropagationRowClick(propagationRow, target)
-    return
-  }
-  if (target.closest(".faces-propagate-all")) {
-    const items = propagationData ? propagationData.items : []
-    void applyPropagations(items.map((i) => i.toFaceId))
-    return
-  }
-  const personRow = target.closest(".faces-person-row")
-  if (personRow instanceof HTMLElement) {
-    handlePersonRowClick(personRow, target)
-    return
-  }
-  // Every control of the review view, in one branch — and the overview row that
-  // opens it. Last, because the review view replaces the body wholesale, so
-  // none of the branches above can be on screen at the same time as these.
-  const overviewRow = target.closest(".face-overview-row")
-  if (overviewRow instanceof HTMLElement) {
-    const key = overviewRow.dataset.groupKey
-    if (key !== undefined) openReview(key)
-    return
-  }
-  handleReviewClick(target)
 }
 
-/** Keyboard: in the review view — arrows walk the filmstrip, brackets walk the
- *  groups, x excludes, Esc goes back and Enter in the name field confirms;
- *  within an ask-queue row — arrows navigate, 1/2/3 pick a candidate, s skips,
- *  x marks not-a-face. Mirrors moderation.js's keydown pattern, just scoped to
- *  the tab body instead of a `<dialog>`.
- *  @param {KeyboardEvent} e */
-function handleFacesBodyKeydown(e) {
-  const target = e.target
-  if (!(target instanceof Element)) return
-
-  // FIRST: the review view owns the whole body while it is up, so nothing below
-  // can be on screen to compete for a key.
-  if (reviewGroupKey !== null) {
-    if (handleReviewKeydown(e)) return
-  }
-
-  if (target instanceof HTMLInputElement && target.classList.contains("person-name-input")) {
-    if (e.key === "Enter") {
-      e.preventDefault()
-      handlePersonRename(target)
-    }
-    return
-  }
-
-  if (target instanceof HTMLInputElement && target.classList.contains("person-guest-input")) {
-    if (e.key === "Enter") {
-      e.preventDefault()
-      handlePersonLinkGuest(target)
-    }
-    return
-  }
-
-  const askRow = target.closest(".face-ask-row")
-  if (askRow instanceof HTMLElement) {
-    if (e.metaKey || e.ctrlKey || e.altKey) return
-    const faceId = parseInt(askRow.dataset.faceId || "", 10)
-    if (Number.isNaN(faceId)) return
-    if (e.key === "ArrowDown") {
-      e.preventDefault()
-      focusAdjacentAskRow(faceId, 1)
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault()
-      focusAdjacentAskRow(faceId, -1)
-    } else if (e.key === "1" || e.key === "2" || e.key === "3") {
-      void confirmAskCandidate(faceId, Number(e.key) - 1)
-    } else if (e.key === "s" || e.key === "S") {
-      focusAdjacentAskRow(faceId, 1)
-    } else if (e.key === "o" || e.key === "O") {
-      const item = queueData?.items.find((i) => i.faceId === faceId)
-      if (item && item.mediaId !== null) void openFacesPhoto(item.mediaId, askRow)
-    } else if (e.key === "x" || e.key === "X") {
-      void handleAskNotAFace(faceId)
-    }
+/** @param {SubmitEvent} e */
+function onSubmit(e) {
+  const form = e.target
+  if (!(form instanceof HTMLFormElement) || !form.dataset.form) return
+  e.preventDefault()
+  const personId = Number(form.dataset.person)
+  const data = new FormData(form)
+  if (form.dataset.form === "rename") renamePerson(personId, String(data.get("name") ?? ""))
+  else if (form.dataset.form === "link") linkGuest(personId, String(data.get("guest") ?? ""))
+  else if (form.dataset.form === "merge") {
+    const into = Number(data.get("into"))
+    if (into) mergePerson(personId, into)
   }
 }
 
 /** @param {Event} e */
-function handleFacesBodyInput(e) {
-  const target = e.target
-  // The typed name is held in module state, not read off the DOM at submit
-  // time: selecting or excluding a face re-renders the whole review view, and
-  // without this a half-typed name vanished the moment the admin checked one
-  // more face — which is the exact thing this view exists to encourage.
-  if (target instanceof HTMLInputElement && target.classList.contains("face-review-name-input")) {
-    reviewNameDraft = target.value
-    hideReviewError()
-    return
-  }
-  // The overview's ordering. `input` covers a <select> change in every browser
-  // this admin runs in, and it is the event already delegated here.
-  if (target instanceof HTMLSelectElement && target.classList.contains("faces-groups-sort-select")) {
-    groupOrder = target.value === "varied" ? "varied" : "size"
-    renderBody()
-    const select = document.querySelector(".faces-groups-sort-select")
-    if (select instanceof HTMLElement) select.focus()
-    return
-  }
-  // Merge is destructive and not undoable from here, so its button stays
-  // disabled until a target is actually chosen — no merging into the
-  // placeholder option by reflex.
-  if (target instanceof HTMLSelectElement && target.classList.contains("person-merge-select")) {
-    const btn = target.closest(".faces-person-actions")?.querySelector(".person-merge")
-    if (btn instanceof HTMLButtonElement) btn.disabled = target.value === ""
-    return
-  }
-  if (!(target instanceof Element)) return
-  const row = target.closest(".faces-person-row")
-  if (row instanceof HTMLElement) hidePersonError(Number(row.dataset.personId))
+function onInput(e) {
+  const t = e.target
+  if (!(t instanceof HTMLInputElement) || t.id !== "faces-who") return
+  whoText = t.value
+  whoFor = t.dataset.who ?? ""
+  const [kind, id] = whoFor.split(":")
+  const list = document.getElementById("faces-who-list")
+  if (list) list.innerHTML = whoListMarkup(whoText, kind, Number(id))
+  const err = document.querySelector("#tab-faces .picker-error")
+  if (err instanceof HTMLElement) err.hidden = true
 }
 
-/** Renaming commits on blur as well as Enter, so a typed name is not silently
- *  discarded by clicking elsewhere. No-ops when the value is unchanged.
- *  @param {FocusEvent} e */
-function handleFacesBodyFocusOut(e) {
-  const target = e.target
-  if (target instanceof HTMLInputElement && target.classList.contains("person-name-input")) {
-    handlePersonRename(target)
+/** Enter in "someone else" takes the first match; ↓ walks the list.
+ *  @param {KeyboardEvent} e */
+function onKeydownInside(e) {
+  const t = e.target
+  if (t instanceof HTMLInputElement && t.id === "faces-who") {
+    if (e.key === "Enter") {
+      e.preventDefault()
+      const first = document.querySelector("#faces-who-list button")
+      if (first instanceof HTMLElement) first.click()
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault()
+      const first = document.querySelector("#faces-who-list button")
+      if (first instanceof HTMLElement) first.focus()
+    }
+    return
+  }
+  const arrow = e.key === "ArrowDown" || e.key === "ArrowUp"
+  if (t instanceof HTMLElement && t.closest(".who-list") && arrow) {
+    e.preventDefault()
+    const li = t.closest("li")
+    const to = e.key === "ArrowDown" ? li?.nextElementSibling : li?.previousElementSibling
+    const btn = to?.querySelector("button")
+    if (btn instanceof HTMLElement) btn.focus()
+    else if (e.key === "ArrowUp") document.getElementById("faces-who")?.focus()
   }
 }
 
-// ---- init -----------------------------------------------------------------
+// ------------------------------------------------------------------ keys
+
+/** @param {KeyboardEvent} e @returns {boolean} */
+function onKeys(e) {
+  const v = place.view
+  if (v === "people") {
+    if (e.key !== "j" && e.key !== "k") return false
+    const i = peopleData.findIndex((p) => p.id === place.person)
+    const to =
+      e.key === "j" ? (peopleData[i + 1] ?? (i < 0 ? peopleData[0] : null)) : peopleData[i - 1]
+    if (to) void navigate(personHref(to.id), { replace: place.person !== null })
+    return true
+  }
+  if (v !== "groups" && v !== "ask") return false
+  if (e.key === "/") {
+    document.getElementById("faces-who")?.focus()
+    return true
+  }
+  const ids = v === "groups" ? groupsLeft().map((g) => g.key) : askLeft().map((x) => x.faceId)
+  const current = v === "groups" ? (place.face !== null ? groupOfFace(place.face) : null) : null
+  const at =
+    v === "groups"
+      ? current
+        ? ids.indexOf(current.key)
+        : -1
+      : place.face !== null
+        ? ids.indexOf(place.face)
+        : -1
+  const href = v === "groups" ? groupHref : askHref
+  if (e.key === "j" || e.key === "]") {
+    const to = ids[at + 1] ?? (at < 0 ? ids[0] : undefined)
+    if (to !== undefined) void navigate(href(to), { replace: place.face !== null })
+    return true
+  }
+  if (e.key === "k" || e.key === "[") {
+    const to = at > 0 ? ids[at - 1] : undefined
+    if (to !== undefined) void navigate(href(to), { replace: true })
+    return true
+  }
+  if (at < 0 || place.face === null) return false
+  if (v === "groups" && current && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
+    const faces = membersOf(current)
+    const fi = faces.findIndex((f) => f.entry.faceId === place.face)
+    const nf = faces[fi + (e.key === "ArrowRight" ? 1 : -1)]
+    if (nf) void navigate(groupHref(nf.entry.faceId), { replace: true })
+    return true
+  }
+  if (v === "groups" && e.key === "e") {
+    toggleExclude(place.face)
+    return true
+  }
+  if (e.key === "s") {
+    skip(v === "groups" ? "group" : "ask", v === "groups" && current ? current.key : place.face)
+    return true
+  }
+  if (e.key === "o") {
+    const a = document.querySelector('#tab-faces .stage-tools a[href*="/photos/"]')
+    if (a instanceof HTMLElement) a.click()
+    return true
+  }
+  if (e.key === "x") {
+    const b = document.querySelector('#tab-faces [data-act="not-a-face"]')
+    if (b instanceof HTMLElement) b.click()
+    return true
+  }
+  if (e.key === "Enter") {
+    const b =
+      v === "groups"
+        ? document.querySelector('#tab-faces .pane-picker .btn-primary[data-act="assign"]')
+        : document.querySelector("#tab-faces .cands .cand")
+    // A focused control's own Enter wins (a candidate, a link) — unless it
+    // is the very button Enter would press.
+    const active = document.activeElement
+    const onControl =
+      active instanceof HTMLElement && !!active.closest("#tab-faces a, #tab-faces button")
+    if (onControl && active !== b) {
+      return false
+    }
+    if (!(b instanceof HTMLButtonElement) || b.disabled) return false
+    b.click()
+    return true
+  }
+  if (e.key === "1" || e.key === "2" || e.key === "3") {
+    const b = document.querySelectorAll("#tab-faces .cands .cand")[Number(e.key) - 1]
+    if (b instanceof HTMLButtonElement && !b.disabled) b.click()
+    return true
+  }
+  return false
+}
+
+// ----------------------------------------------------------------- mount
+
+/** @param {string} path a route pattern ("faces/groups/:face/photos/:media") */
+function viewOf(path) {
+  const seg = path.split("/")[1] ?? ""
+  if (seg === "groups" || seg === "ask" || seg === "same-moment" || seg === "leftovers") return seg
+  if (seg === "people" || seg === "history") return seg
+  if (seg === "photos") return "leftovers"
+  return "root"
+}
+
+/** Does this arrival name a face the data in hand can't place? Then the
+ *  overview is fetched with `?face=` to say what became of it. */
+function needsAnchor() {
+  const id = place.face
+  if (id === null || (place.view !== "groups" && place.view !== "ask")) return false
+  if (groupOfFace(id) || namedEntryFor(id)) return false
+  return !(overview?.anchor && overview.anchor.faceId === id)
+}
+
+/** Whether this arrival is about to be replaced by a redirect (so drawing it
+ *  first would only flash). */
+function willRedirect() {
+  if (place.view === "root") return true
+  if (!isWide()) return false
+  if (place.view === "people") return place.person === null
+  return (place.view === "groups" || place.view === "ask") && place.face === null
+}
+
+/** @type {Types.AdminPanel["mount"]} */
+async function mount(params, query, ctx) {
+  const view = /** @type {Types.FacesView} */ (viewOf(ctx.route.path))
+  if (view !== place.view || parseId(params.person, "p") !== place.person) personEdit = null
+  place = {
+    view,
+    face: parseId(params.face, "f"),
+    person: parseId(params.person, "p"),
+    media: parseId(params.media, "m"),
+    photoFace: parseId(query.get("face"), "f"),
+  }
+  const dialog = !!ctx.route.dialog
+  // The dialog's contents load alongside the screen under it.
+  if (dialog && place.media !== null) void openPhoto(place.media, place.photoFace ?? place.face)
+  if (!dialog && photoDirty) {
+    stale = true
+    photoDirty = false
+  }
+  const body = getElement("faces-body")
+  if (!loaded) showLoading(body)
+  else if (!ctx.samePanel && !willRedirect() && !needsAnchor()) {
+    // Back from another section: draw what's in hand now, refresh under it.
+    render()
+  }
+  try {
+    if (!ctx.samePanel || stale || !loaded || needsAnchor()) {
+      stale = true
+      await ensureLoaded()
+    }
+    if (view === "history" && (!ctx.samePanel || !batchesData)) await refreshBatches()
+  } catch (err) {
+    console.error("Failed to load faces:", err)
+    showLoadError(body, 1, "Couldn't load the faces.", () => void loadFaceAssignment())
+    return
+  }
+  // Moved on while that loaded: the newer arrival draws.
+  if (currentPlace()?.path !== ctx.path) return
+
+  // Redirects are replaces, so they never leave a dead entry (IA §4).
+  if (view === "root") {
+    void navigate(firstUnfinished(), { replace: true })
+    return
+  }
+  if (isWide() && !dialog) {
+    if (view === "groups" && place.face === null && groupsLeft().length) {
+      void navigate(groupHref(groupsLeft()[0].key), { replace: true })
+      return
+    }
+    if (view === "ask" && place.face === null && askLeft().length) {
+      void navigate(askHref(askLeft()[0].faceId), { replace: true })
+      return
+    }
+    if (view === "people" && place.person === null && peopleData.length) {
+      void navigate(personHref(peopleData[0].id), { replace: true })
+      return
+    }
+  }
+  // A new item starts a fresh "someone else"; stepping through one group's
+  // faces keeps a half-typed name (the key is the group's, not the face's).
+  const g = view === "groups" && place.face !== null ? groupOfFace(place.face) : null
+  const key = view === "ask" ? `ask:${place.face}` : g ? `group:${g.key}` : ""
+  if (key !== whoFor) {
+    whoText = ""
+    whoFor = key
+  }
+  render()
+  if (view === "people" && place.person !== null) void loadPersonFaces(place.person)
+}
 
 /** @type {Types.initFaceAssignment} */
 export function initFaceAssignment() {
-  getButtonElement("faces-refresh-btn").addEventListener("click", () =>
-    void loadFaceAssignment(),
-  )
-  // The counts row lives OUTSIDE #faces-body (index.html), so it inherits none
-  // of the delegation below — same reason the photo dialog needs its own
-  // listeners. It is one button, so one delegated click is the whole wiring;
-  // Enter and Space come free from it being a real <button>.
-  getElement("faces-counts").addEventListener("click", (e) => {
-    const target = e.target
-    if (!(target instanceof Element)) return
-    const toggle = target.closest(".faces-setaside-toggle")
-    if (toggle instanceof HTMLElement) void toggleSetAside(toggle)
+  const tab = getElement("tab-faces")
+  tab.addEventListener("click", onClick)
+  tab.addEventListener("input", onInput)
+  tab.addEventListener("keydown", onKeydownInside)
+  tab.addEventListener("submit", onSubmit)
+
+  // The photograph dialog is a top-level <dialog>: none of the above reaches it.
+  const dialog = getElement("faces-photo-modal")
+  dialog.addEventListener("click", onPhotoClick)
+  dialog.addEventListener("keydown", onPhotoKeydown)
+  dialog.addEventListener("input", onPhotoInput)
+  dialog.addEventListener("close", onPhotoClose)
+
+  // Chips crop to their container's size, which changes with the layout.
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
+  let resizeTimer
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer)
+    resizeTimer = setTimeout(() => {
+      const imgs = document.querySelectorAll(
+        "#tab-faces .face-chip-img, #faces-photo-modal .face-chip-img",
+      )
+      imgs.forEach((img) => {
+        if (img instanceof HTMLImageElement && img.complete) positionChip(img)
+      })
+    }, 150)
   })
 
-  const body = getElement("faces-body")
-  body.addEventListener("click", handleFacesBodyClick)
-  body.addEventListener("keydown", handleFacesBodyKeydown)
-  body.addEventListener("input", handleFacesBodyInput)
-  // focusout, not blur: blur does not bubble, so it cannot be delegated here.
-  body.addEventListener("focusout", handleFacesBodyFocusOut)
-
-  // The per-photograph dialog is declared in index.html, OUTSIDE #faces-body, so
-  // none of the delegation above reaches it — it needs its own listeners. Only
-  // `data-close-modal`, backdrop dismissal and focus restore come for free, from
-  // initModals()'s one-time sweep of every <dialog> in the document.
-  const dialog = photoDialog()
-  if (dialog) {
-    dialog.addEventListener("click", handlePhotoDialogClick)
-    dialog.addEventListener("keydown", handlePhotoDialogKeydown)
-    dialog.addEventListener("input", handlePhotoDialogInput)
-    dialog.addEventListener("close", handlePhotoDialogClose)
-  }
+  registerPanel("faces", {
+    mount,
+    keys: (e) => onKeys(e),
+    help: {
+      title: "Name faces",
+      keys: [
+        ["Enter", "Yes — name them as suggested"],
+        ["1 2 3", "Pick one of the alternatives"],
+        ["/", "Someone else: type a name"],
+        ["e", "Not the same person (leave this face out)"],
+        ["← →", "Step through the faces in a group"],
+        ["j k", "Next / previous group or question"],
+        ["s", "Skip for now"],
+        ["o", "Open the photo"],
+        ["x", "Not a face"],
+      ],
+    },
+  })
 }

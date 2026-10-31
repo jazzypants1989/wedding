@@ -1,0 +1,1122 @@
+/* Thank-yous — Gifts, Cards, Replies, the composer and batch send
+   (thank-you.js / thank-you-util.js). Loaded after admin.css; builds on its
+   primitives (WORKSPACE.md). Ported value for value from
+   prototypes/admin-workspace/app.css: .card-preview + .theme-* + .cp-*,
+   .composer*, .flow-head + .flow, .pairs/.pair, .send-list, .channels(-inline),
+   .radio, .summary, .check-grid/.check-card, .reply-glyph, .msg-big, .inline.
+   Everything is scoped under #tab-thankyous or one of this slice's dialogs
+   (.ty-dialog), so nothing leaks into another panel. */
+
+/* ------------------------------------------------------------------ frame */
+#tab-thankyous .ty-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+#tab-thankyous .ty-view[hidden],
+#tab-thankyous .composer[hidden] {
+  display: none;
+}
+
+/* The prototype's initials avatar (an SVG circle in the name's hue). */
+:is(#tab-thankyous, .ty-dialog) .avatar .art {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+:is(#tab-thankyous, .ty-dialog) .avatar text {
+  font-family: var(--font-body);
+  font-weight: 500;
+}
+
+#tab-thankyous .inline {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+/* The same search field as Guests & RSVPs: magnifier, panel ground. */
+#tab-thankyous .pane-search {
+  width: 100%;
+  padding: 8px 11px 8px 34px;
+  background: var(--ws-panel)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23887a80' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M9 15a6 6 0 1 0 0-12 6 6 0 0 0 0 12z M13.5 13.5 17 17'/%3E%3C/svg%3E")
+    no-repeat 11px 50% / 16px;
+  font-size: 0.9rem;
+}
+
+#tab-thankyous .pane-tools .icon-btn {
+  padding: 6px;
+}
+
+#tab-thankyous .pane-tools .icon-btn .icon {
+  width: 16px;
+  height: 16px;
+}
+
+#tab-thankyous .actionbar-end {
+  margin-left: auto;
+}
+
+#tab-thankyous .actionbar .btn .icon {
+  width: 18px;
+  height: 18px;
+}
+
+#tab-thankyous .detail .btn-lg {
+  margin-top: 4px;
+}
+
+#tab-thankyous .gift-notes {
+  max-width: 640px;
+  margin: -4px 0 18px;
+}
+
+#tab-thankyous .gift-notes .eyebrow {
+  margin-right: 6px;
+}
+
+#tab-thankyous .person-head h1 {
+  margin: 2px 0 4px;
+}
+
+#tab-thankyous .person-head .muted {
+  margin: 0;
+}
+
+#tab-thankyous .reply-ping {
+  color: var(--ws-muted);
+}
+
+/* ------------------------------------------------------- the card miniature */
+#tab-thankyous .card-preview {
+  position: relative;
+  max-width: 420px;
+  padding: 18px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, hsl(18 70% 92%), hsl(40 70% 94%));
+  color: #3b2a2a;
+  margin-bottom: 8px;
+}
+
+#tab-thankyous .theme-golden {
+  background: linear-gradient(135deg, hsl(38 85% 85%), hsl(20 70% 88%));
+}
+
+#tab-thankyous .theme-garden {
+  background: linear-gradient(135deg, hsl(110 30% 86%), hsl(60 40% 92%));
+}
+
+#tab-thankyous .theme-confetti {
+  background: linear-gradient(135deg, hsl(320 60% 92%), hsl(200 60% 92%));
+}
+
+#tab-thankyous .theme-romantic {
+  background: linear-gradient(135deg, hsl(345 60% 90%), hsl(15 70% 93%));
+}
+
+#tab-thankyous .theme-celestial {
+  background: linear-gradient(135deg, hsl(250 40% 88%), hsl(210 50% 92%));
+}
+
+#tab-thankyous .theme-winter {
+  background: linear-gradient(135deg, hsl(200 40% 90%), hsl(220 30% 95%));
+}
+
+#tab-thankyous .theme-coastal {
+  background: linear-gradient(135deg, hsl(180 35% 86%), hsl(45 60% 92%));
+}
+
+#tab-thankyous .cp-paper {
+  background: #fffaf3;
+  border-radius: 10px;
+  padding: 16px;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.08);
+}
+
+#tab-thankyous .cp-text {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  line-height: 1.4;
+  margin: 0 0 0.6em;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+#tab-thankyous .cp-sign {
+  text-align: right;
+  font-size: 0.85rem;
+  margin: 8px 0 0;
+  color: #7a5a55;
+}
+
+#tab-thankyous .cp-photos {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+#tab-thankyous .cp-polaroid {
+  width: 64px;
+  margin: 0;
+  padding: 4px 4px 12px;
+  background: #fff;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.15);
+  transform: rotate(-3deg);
+}
+
+#tab-thankyous .cp-polaroid:nth-child(2n) {
+  transform: rotate(3deg);
+}
+
+#tab-thankyous .cp-polaroid img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  /* A photo that hasn't loaded still reads as a photo. */
+  background: linear-gradient(160deg, hsl(200 45% 80%), hsl(140 25% 70%));
+  color: transparent;
+}
+
+#tab-thankyous .cp-more {
+  font-size: 0.8rem;
+  color: #7a5a55;
+}
+
+/* --------------------------------------------------------------- replies */
+#tab-thankyous .reply-glyph {
+  font-size: 2.6rem;
+  line-height: 1.1;
+  margin: 0 0 8px;
+  color: var(--ws-brand);
+}
+
+#tab-thankyous .msg-big {
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  line-height: 1.35;
+  margin: 0 0 20px;
+  color: var(--ws-ink);
+  overflow-wrap: anywhere;
+}
+
+#tab-thankyous .thread {
+  max-width: 640px;
+  margin: 0 0 20px;
+}
+
+#tab-thankyous .thread h2 {
+  font-size: 0.78rem;
+  color: var(--ws-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+}
+
+#tab-thankyous .thread-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+#tab-thankyous .thread-list li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 8px 12px;
+  border: 1px solid var(--ws-line);
+  border-radius: 10px;
+}
+
+#tab-thankyous .thread-list li > span:nth-child(2) {
+  flex: 1;
+}
+
+/* -------------------------------------------------------------- composer */
+#tab-thankyous .composer {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+#tab-thankyous .composer-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--ws-line);
+  background: var(--ws-panel);
+}
+
+#tab-thankyous .composer-head .btn-ghost .icon {
+  width: 18px;
+  height: 18px;
+}
+
+#tab-thankyous .composer-title {
+  flex: 1;
+  min-width: 0;
+}
+
+#tab-thankyous .composer-title h1 {
+  font-size: 1.3rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#tab-thankyous .composer-title p {
+  margin: 2px 0 0;
+}
+
+#tab-thankyous .composer-actions {
+  display: flex;
+  gap: 8px;
+}
+
+#tab-thankyous .composer-note {
+  margin: 12px 20px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+#tab-thankyous .composer-note > span {
+  flex: 1;
+}
+
+#tab-thankyous .composer-note[hidden] {
+  display: none;
+}
+
+#tab-thankyous .composer-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+#tab-thankyous .composer-form {
+  overflow-y: auto;
+  padding: 20px;
+  align-content: start;
+}
+
+#tab-thankyous .composer-preview {
+  overflow-y: auto;
+  padding: 28px;
+  background: var(--ws-bg);
+  border-left: 1px solid var(--ws-line);
+  display: grid;
+  place-items: start center;
+  align-content: start;
+  gap: 14px;
+}
+
+#tab-thankyous .field {
+  display: grid;
+  gap: 6px;
+}
+
+#tab-thankyous .composer-form .form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+#tab-thankyous .field-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+#tab-thankyous .field-head label,
+#tab-thankyous .field-label {
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+#tab-thankyous .field-tools {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+#tab-thankyous .field-tools select {
+  flex: 0 1 auto;
+  width: auto;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+}
+
+#tab-thankyous .field-count {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+#tab-thankyous #tc-editor-message {
+  resize: vertical;
+  min-height: 9em;
+}
+
+#tab-thankyous .story,
+#tab-thankyous .effects {
+  border: 1px solid var(--ws-line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--ws-panel);
+}
+
+#tab-thankyous .story > summary,
+#tab-thankyous .effects > summary {
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+#tab-thankyous .story-body {
+  display: grid;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+#tab-thankyous .story-block h3 {
+  font-size: 0.75rem;
+  color: var(--ws-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+#tab-thankyous .story-block p,
+#tab-thankyous .story-block ul {
+  margin: 0 0 6px;
+  font-size: 0.9rem;
+}
+
+#tab-thankyous .story-block ul {
+  padding-left: 18px;
+}
+
+#tab-thankyous .story-quote {
+  font-style: italic;
+}
+
+#tab-thankyous .story-thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+#tab-thankyous .story-thumbs img {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--ws-hover);
+}
+
+#tab-thankyous .effects .tc-effect-stack {
+  margin-top: 10px;
+}
+
+#tab-thankyous .effects .tc-effect-row {
+  border-color: var(--ws-line);
+  border-radius: 8px;
+}
+
+#tab-thankyous .effects .tc-effect-add select {
+  padding: 6px 10px;
+  font-size: 0.85rem;
+}
+
+/* The photo strip: the prototype's polaroids, each with move / remove. */
+#tab-thankyous .cp-photos-edit {
+  gap: 14px;
+  margin-top: 2px;
+  padding: 6px 2px;
+}
+
+#tab-thankyous .cp-photos-edit .cp-polaroid {
+  position: relative;
+  width: 76px;
+}
+
+#tab-thankyous .pol-tools {
+  position: absolute;
+  left: 50%;
+  bottom: -12px;
+  translate: -50% 0;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity var(--duration-fast, 150ms);
+}
+
+#tab-thankyous .cp-polaroid:hover .pol-tools,
+#tab-thankyous .cp-polaroid:focus-within .pol-tools {
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  #tab-thankyous .pol-tools {
+    opacity: 1;
+  }
+}
+
+#tab-thankyous .pol-tools button {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--ws-line);
+  border-radius: 50%;
+  background: var(--ws-panel);
+  color: var(--ws-ink);
+  font: 500 0.85rem/1 var(--font-body);
+  cursor: pointer;
+}
+
+#tab-thankyous .pol-tools button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* The live preview: the real card page in an iframe, phone-width by default. */
+#tab-thankyous .preview-bar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+#tab-thankyous .seg button {
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ws-ink);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+#tab-thankyous .seg button[aria-pressed="true"] {
+  background: var(--ws-panel);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+  font-weight: 500;
+}
+
+#tab-thankyous .tc-preview-wrap {
+  width: 100%;
+  justify-self: stretch;
+  display: flex;
+  justify-content: center;
+}
+
+#tab-thankyous .tc-preview-wrap.device-mobile .tc-preview-frame {
+  width: min(390px, 100%);
+}
+
+#tab-thankyous .tc-preview-wrap.device-desktop .tc-preview-frame {
+  width: 100%;
+}
+
+#tab-thankyous .tc-preview-frame {
+  height: min(720px, calc(100dvh - 210px));
+  min-height: 460px;
+  border: 1px solid var(--ws-line);
+  border-radius: 16px;
+  background: var(--ws-panel);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.08);
+}
+
+/* ------------------------------------------------------------ batch send */
+#tab-thankyous .flow-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+#tab-thankyous .flow-head > .btn .icon {
+  width: 18px;
+  height: 18px;
+}
+
+#tab-thankyous .flow {
+  display: flex;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  gap: 4px;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+#tab-thankyous .flow li {
+  display: flex;
+  align-items: center;
+}
+
+#tab-thankyous .flow li + li::before {
+  content: "";
+  width: 18px;
+  height: 1px;
+  background: var(--ws-line);
+  margin-right: 4px;
+}
+
+#tab-thankyous .flow li > a,
+#tab-thankyous .flow li > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  text-decoration: none;
+  color: var(--ws-muted);
+  font-size: 0.88rem;
+}
+
+#tab-thankyous .flow a:hover {
+  background: var(--ws-hover);
+}
+
+#tab-thankyous .flow [aria-current="step"] {
+  background: var(--ws-panel);
+  color: var(--ws-ink);
+  font-weight: 500;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+
+#tab-thankyous .flow-n {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.75rem;
+  border: 1px solid currentColor;
+}
+
+#tab-thankyous .flow-n .icon {
+  width: 14px;
+  height: 14px;
+}
+
+#tab-thankyous .flow [aria-current="step"] .flow-n {
+  background: var(--ws-accent);
+  color: var(--ws-accent-ink);
+  border-color: var(--ws-accent);
+}
+
+#tab-thankyous .flow .is-done .flow-n {
+  background: var(--color-status-responded-bg);
+  color: var(--ws-ok);
+  border-color: transparent;
+}
+
+#tab-thankyous .single-head h1 {
+  font-size: 1.6rem;
+}
+
+#tab-thankyous .single-head .status-note {
+  margin: 4px 0 0;
+}
+
+#tab-thankyous .pairs {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 16px;
+  display: grid;
+  gap: 8px;
+}
+
+#tab-thankyous .pair {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--ws-line);
+  border-radius: 12px;
+  background: var(--ws-panel);
+  cursor: pointer;
+}
+
+#tab-thankyous .pair > span:nth-last-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+
+#tab-thankyous .pair-sub {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#tab-thankyous .send-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 16px;
+  display: grid;
+  gap: 8px;
+}
+
+#tab-thankyous .send-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--ws-line);
+  border-radius: 12px;
+  background: var(--ws-panel);
+  flex-wrap: wrap;
+}
+
+#tab-thankyous .send-list li strong {
+  flex: 1;
+  min-width: 120px;
+  font-weight: 500;
+}
+
+#tab-thankyous .send-list li > .icon {
+  width: 20px;
+  height: 20px;
+  color: var(--ws-ok);
+}
+
+#tab-thankyous .send-list li.is-failed {
+  border-color: color-mix(in srgb, var(--ws-danger) 45%, var(--ws-line));
+}
+
+#tab-thankyous .send-list .status-note {
+  padding: 3px 8px;
+}
+
+:is(#tab-thankyous, .ty-dialog) .channels-inline {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+:is(#tab-thankyous, .ty-dialog) .radio {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+:is(#tab-thankyous, .ty-dialog) .radio.is-off {
+  opacity: 0.4;
+  cursor: default;
+}
+
+#tab-thankyous .summary {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0;
+}
+
+#tab-thankyous .summary span {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--ws-hover);
+  font-size: 0.85rem;
+}
+
+#tab-thankyous .check-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+#tab-thankyous .check-card {
+  margin: 0;
+}
+
+#tab-thankyous .check-card .card-preview {
+  padding: 10px;
+}
+
+#tab-thankyous .check-card .cp-text {
+  font-size: 0.9rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+#tab-thankyous .check-card figcaption {
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+#tab-thankyous .check-card figcaption strong {
+  font-weight: 500;
+}
+
+#tab-thankyous .batch-progress {
+  align-self: center;
+  flex: 1;
+  max-width: 220px;
+  accent-color: var(--ws-accent);
+}
+
+#tab-thankyous .done-icon.is-failed {
+  background: var(--color-danger-bg);
+  color: var(--ws-danger);
+}
+
+#tab-thankyous .done-state h2 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 1.6rem;
+  color: var(--ws-title);
+}
+
+#tab-thankyous .done-state p {
+  margin: 0;
+}
+
+#tab-thankyous .done-state .btn-row {
+  justify-content: center;
+}
+
+#tab-thankyous .single > .status-note,
+#tab-thankyous .done-tools {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 0 0 12px;
+}
+
+/* ----------------------------------------------------------------- dialogs */
+.ty-dialog .form {
+  gap: 12px;
+}
+
+.ty-dialog .form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.ty-dialog .form label .muted {
+  font-weight: 400;
+}
+
+.ty-dialog .dlg-actions .btn-ghost {
+  margin-right: auto;
+}
+
+.ty-dialog .dlg-actions .btn-ghost[hidden] + .btn {
+  margin-left: auto;
+}
+
+/* Write a card: the guest list as rows. */
+#tc-guest-picker-modal input[type="search"] {
+  width: 100%;
+  margin: 4px 0 8px;
+}
+
+.ty-dialog .guest-pick {
+  max-height: min(52dvh, 460px);
+  overflow-y: auto;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.ty-dialog .guest-pick .row {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* Send one card. */
+.ty-dialog .channels {
+  border: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
+.ty-dialog .channels .radio {
+  font-size: 0.95rem;
+}
+
+.ty-dialog .status-note {
+  margin: 8px 0;
+}
+
+.ty-dialog .send-note {
+  margin-top: 10px;
+}
+
+.ty-dialog .send-note summary {
+  cursor: pointer;
+  color: var(--ws-accent);
+  font-size: 0.88rem;
+}
+
+.ty-dialog .send-note textarea {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.ty-dialog .send-default {
+  white-space: pre-wrap;
+  font: inherit;
+  font-size: 0.85rem;
+  background: var(--ws-hover);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin: 4px 0 0;
+}
+
+.ty-dialog .send-preview {
+  margin-top: 12px;
+}
+
+.ty-dialog .send-email-frame {
+  width: 100%;
+  height: 380px;
+  border: 1px solid var(--ws-line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.ty-dialog .send-done {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
+.ty-dialog .send-done .done-icon {
+  justify-self: center;
+}
+
+.ty-dialog .send-done label {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+}
+
+.ty-dialog .send-done textarea {
+  width: 100%;
+}
+
+.ty-dialog .copy-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.ty-dialog .copy-row input {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+}
+
+/* The photo picker: "Photos they're in" first, then the gallery. */
+.ty-picker-dialog {
+  width: calc(100vw - 32px);
+}
+
+.ty-picker-dialog .picker-body {
+  max-height: min(60dvh, 560px);
+  overflow-y: auto;
+  margin: 0 -4px;
+  padding: 0 4px;
+}
+
+.ty-picker-dialog .pick-section + .pick-section {
+  margin-top: 6px;
+}
+
+.ty-picker-dialog .rows-heading {
+  padding: 8px 0 6px;
+}
+
+.ty-picker-dialog .pick-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+}
+
+.ty-picker-dialog .pick-empty {
+  margin: 0 0 4px;
+}
+
+.ty-picker-dialog .pick {
+  position: relative;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  background: var(--ws-hover);
+  aspect-ratio: 1;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.ty-picker-dialog .pick img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: linear-gradient(160deg, hsl(200 45% 80%), hsl(140 25% 70%));
+  color: transparent;
+}
+
+.ty-picker-dialog .pick[aria-pressed="true"] {
+  border-color: var(--ws-accent);
+}
+
+.ty-picker-dialog .pick-check {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 0.35);
+  color: #fff;
+  opacity: 0;
+}
+
+.ty-picker-dialog .pick-check .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.ty-picker-dialog .pick:hover .pick-check {
+  opacity: 0.7;
+}
+
+.ty-picker-dialog .pick[aria-pressed="true"] .pick-check {
+  opacity: 1;
+  background: var(--ws-accent);
+  color: var(--ws-accent-ink);
+}
+
+/* ------------------------------------------------------------------ phones */
+@media (max-width: 899px) {
+  #tab-thankyous .composer-body {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+
+  #tab-thankyous .composer-form,
+  #tab-thankyous .composer-preview {
+    overflow: visible;
+  }
+
+  #tab-thankyous .composer-preview {
+    border-left: 0;
+    border-top: 1px solid var(--ws-line);
+    padding: 20px 14px;
+  }
+
+  #tab-thankyous .composer-form {
+    padding: 16px 14px;
+  }
+
+  #tab-thankyous .composer-head {
+    flex-wrap: wrap;
+    padding: 10px 12px;
+    gap: 6px 10px;
+  }
+
+  #tab-thankyous .composer-head .btn-ghost {
+    padding-inline: 4px;
+  }
+
+  #tab-thankyous .composer-title h1 {
+    font-size: 1.05rem;
+  }
+
+  #tab-thankyous .composer-actions {
+    width: 100%;
+  }
+
+  #tab-thankyous .composer-actions .btn {
+    flex: 1;
+  }
+
+  #tab-thankyous .composer-note {
+    margin: 10px 12px 0;
+  }
+
+  #tab-thankyous .composer-form .form-row {
+    grid-template-columns: 1fr;
+  }
+
+  #tab-thankyous .tc-preview-frame {
+    height: 560px;
+    min-height: 0;
+  }
+
+  #tab-thankyous .flow {
+    flex-wrap: nowrap;
+  }
+
+  #tab-thankyous .flow li + li::before {
+    width: 8px;
+  }
+
+  #tab-thankyous .flow-label {
+    display: none;
+  }
+
+  #tab-thankyous .flow [aria-current="step"] .flow-label {
+    display: inline-flex;
+  }
+
+  #tab-thankyous .flow-head > .btn {
+    padding-inline: 4px;
+  }
+
+  #tab-thankyous .send-list .channels-inline {
+    width: 100%;
+    padding-left: 48px;
+  }
+
+  #tab-thankyous .actionbar-end {
+    margin-left: 0;
+    flex: 0 0 auto;
+  }
+
+  .ty-dialog .form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .ty-picker-dialog .pick-grid {
+    grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  }
+}

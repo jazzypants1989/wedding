@@ -397,7 +397,7 @@ export async function overview(req, res) {
   }
   const byVersion = loadUnidentifiedByModelVersion()
 
-  /** @type {Array<{ faceIds: number[], media: Array<ReturnType<typeof chipOf>>, setAsideMedia: Array<ReturnType<typeof chipOf>>, suggestion: { personId: number, personName: string, margin: number } | null, abstained: boolean, mostlyClear: boolean, size: number, shown: number, setAside: number, weld: { diameter: number, ratio: number } | null }>} */
+  /** @type {Array<{ faceIds: number[], media: Array<ReturnType<typeof chipOf>>, setAsideMedia: Array<ReturnType<typeof chipOf>>, suggestion: { personId: number, personName: string, margin: number } | null, abstained: boolean, candidates: Array<{ personId: number, personName: string, distance: number }>, mostlyClear: boolean, size: number, shown: number, setAside: number, weld: { diameter: number, ratio: number } | null }>} */
   const rawGroups = []
 
   for (const [modelVersion, { faces, set }] of byVersion) {
@@ -441,6 +441,8 @@ export async function overview(req, res) {
       // True when there WAS someone to suggest but nobody cleared the bar — the
       // UI says "no confident match" rather than "no suggestion yet".
       let abstained = false
+      /** @type {Array<{ personId: number, personName: string, distance: number }>} */
+      const candidates = []
       if (prototypes.length > 0) {
         // The centroid is over the FULL cluster, not the shown subset: the
         // suggestion is about who this group is, and a face being too small to
@@ -453,6 +455,16 @@ export async function overview(req, res) {
         const info = best ? meta.get(best.label) : undefined
         if (info) suggestion = { personId: info.personId, personName: info.personName, margin: match.margin }
         else abstained = true
+        // The nearest people in order, exactly as matchFace ranked them — the
+        // picker's numbered alternatives. No bar is applied and none is meant:
+        // these are offered as choices for a human to make, the way the ask
+        // queue's candidates are, never as a suggestion. The confident one
+        // above is still the only name the UI ever puts forward on its own.
+        for (const c of match.candidates.slice(0, 3)) {
+          const who = meta.get(c.label)
+          if (!who) continue
+          candidates.push({ personId: who.personId, personName: who.personName, distance: c.distance })
+        }
       }
 
       // "Mostly clear": a strict majority of the WHOLE cluster routed `accept`.
@@ -467,6 +479,7 @@ export async function overview(req, res) {
         setAsideMedia: heldBackMembers.map((i) => chipOf(faces[i], chips)),
         suggestion,
         abstained,
+        candidates,
         mostlyClear,
         size: cluster.size,
         shown: shownMembers.length,
@@ -500,6 +513,9 @@ export async function overview(req, res) {
     suggestion: g.suggestion,
     /** People exist to suggest, but none cleared the confidence bar. */
     abstained: g.abstained,
+    /** The nearest people, nearest first, with no bar applied — choices for
+     *  the picker to offer, never a suggestion. */
+    candidates: g.candidates,
     /** A strict majority of the cluster routed `accept`. */
     mostlyClear: g.mostlyClear,
     /** Total cluster size, INCLUDING faces not shown — so the UI can say
@@ -510,7 +526,43 @@ export async function overview(req, res) {
     weld: g.weld,
   }))
 
-  return sendJson(res, 200, { counts, routeCounts, groups })
+  // `?face=` — what became of one face, for a deep link that names it. A
+  // group link is a face id (the URL survives regrouping), so when the face is
+  // no longer in any group the screen has to say why: named, dismissed, held
+  // back, or gone. Ids and a name someone typed; nothing about a photograph.
+  const faceParam = new URL(req.url ?? "/", `http://${req.headers.host}`).searchParams.get("face")
+  const anchorId = faceParam === null ? NaN : parseInt(faceParam, 10)
+  if (Number.isNaN(anchorId) || anchorId < 1) {
+    return sendJson(res, 200, { counts, routeCounts, groups })
+  }
+  return sendJson(res, 200, { counts, routeCounts, groups, anchor: faceAnchor(anchorId) })
+}
+
+/**
+ * One face's state, for `overview?face=`. `unnamed` covers both "in a group"
+ * and "held back from every group" — the client already holds the groups and
+ * tells the two apart by membership.
+ * @param {number} faceId
+ */
+function faceAnchor(faceId) {
+  const face = getFaceById(faceId)
+  if (!face) return { faceId, mediaId: null, state: "gone", personId: null, personName: null }
+  // `deleted_at` on a face row is the projection of a `not_a_face` event (or a
+  // superseded upload row, which no admin link ever pointed at).
+  if (face.deleted_at) {
+    return { faceId, mediaId: face.media_id, state: "not_a_face", personId: null, personName: null }
+  }
+  if (face.face_identity_id === null) {
+    return { faceId, mediaId: face.media_id, state: "unnamed", personId: null, personName: null }
+  }
+  const named = facesForMediaWithNames(face.media_id).find((row) => row.id === face.id)
+  return {
+    faceId,
+    mediaId: face.media_id,
+    state: "named",
+    personId: named ? named.person_id : null,
+    personName: named ? named.person_name : null,
+  }
 }
 
 /**

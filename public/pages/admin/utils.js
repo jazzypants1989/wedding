@@ -20,61 +20,80 @@ let dismissTimer
  */
 let authRedirectPending = false
 
+/** The last reversible action's undo, while its toast is up (`z` runs it). */
+/** @type {(() => void) | null} */
+let pendingUndo = null
+
+/** A toast never covers the action bar it is reporting on (Approve, Hide, Save…):
+ *  when one is showing, the toast floats just above it instead of at the foot. */
+function liftAboveActionBar() {
+  let top = Infinity
+  for (const bar of document.querySelectorAll(".tab-content.active .actionbar")) {
+    if (!(bar instanceof HTMLElement) || bar.offsetParent === null) continue
+    const r = bar.getBoundingClientRect()
+    // Pinned to the foot of the view (on phones, just above the bottom bar).
+    if (r.height > 0 && r.bottom > window.innerHeight - 100) top = Math.min(top, r.top)
+  }
+  banner.style.bottom = top === Infinity ? "" : `${Math.round(window.innerHeight - top + 12)}px`
+}
+
+/** @param {string} kind @param {number} ms */
+function raiseToast(kind, ms) {
+  clearTimeout(dismissTimer)
+  banner.className = `admin-toast is-${kind}`
+  liftAboveActionBar()
+  banner.hidden = false
+  dismissTimer = setTimeout(() => {
+    banner.hidden = true
+    pendingUndo = null
+  }, ms)
+}
+
 /** @type {Types.showError} */
 export function showError(message) {
   if (authRedirectPending) {
     authRedirectPending = false
     return
   }
-  clearTimeout(dismissTimer)
+  pendingUndo = null
   banner.textContent = message
-  banner.className = "alert alert-error"
-  banner.hidden = false
-  dismissTimer = setTimeout(() => {
-    banner.hidden = true
-  }, 8000)
+  raiseToast("error", 8000)
 }
 
 /** @type {Types.showSuccess} */
 export function showSuccess(message) {
-  clearTimeout(dismissTimer)
+  pendingUndo = null
   banner.textContent = message
-  banner.className = "alert alert-success"
-  banner.hidden = false
-  dismissTimer = setTimeout(() => {
-    banner.hidden = true
-  }, 6000)
+  raiseToast("success", 6000)
 }
 
 /**
- * Success banner with an inline "Undo" button for a reversible moderation
- * action. The button fires `onUndo` once; the banner stays up for a generous
- * window (an undo must stay reachable longer than a plain confirmation).
+ * The Undo toast for a reversible action (IA §1.7: undo instead of confirm).
+ * The button — or `z` anywhere (router.js) — fires `onUndo` once; the toast
+ * stays up for a generous window, since an undo must stay reachable longer
+ * than a plain confirmation.
  * @param {string} message @param {() => void} onUndo
  */
 export function showUndo(message, onUndo) {
-  clearTimeout(dismissTimer)
-  banner.className = "alert alert-success notification-undo"
   banner.innerHTML = html`<span>${message}</span>
-    <button type="button" class="btn btn-secondary btn-sm" data-undo-action>Undo</button>`
-  banner.hidden = false
+    <button type="button" class="toast-undo" data-undo-action>Undo <kbd>z</kbd></button>`
+  pendingUndo = onUndo
+  raiseToast("success", 10000)
   const btn = banner.querySelector("[data-undo-action]")
   if (btn instanceof HTMLButtonElement) {
-    btn.addEventListener(
-      "click",
-      () => {
-        clearTimeout(dismissTimer)
-        banner.hidden = true
-        banner.className = "alert"
-        onUndo()
-      },
-      { once: true },
-    )
+    btn.addEventListener("click", () => runUndo(), { once: true })
   }
-  dismissTimer = setTimeout(() => {
-    banner.hidden = true
-    banner.className = "alert"
-  }, 10000)
+}
+
+/** @type {Types.runUndo} */
+export function runUndo() {
+  const fn = pendingUndo
+  if (!fn) return false
+  pendingUndo = null
+  clearTimeout(dismissTimer)
+  banner.hidden = true
+  fn()
+  return true
 }
 
 /** @type {Types.showLoading} */
@@ -93,6 +112,7 @@ export function showLoading(el, colspan) {
 export function clearNotification() {
   clearTimeout(dismissTimer)
   banner.hidden = true
+  pendingUndo = null
 }
 
 /** @type {Types.showLoadError} */
@@ -101,7 +121,7 @@ export function showLoadError(el, colspan, message, retry) {
   // auto-dismisses and leaves the view stuck on a spinner with no way back.
   const content = html`<div class="load-error">
     <span>${message}</span>
-    <button type="button" class="btn btn-secondary btn-sm" data-load-retry>Try again</button>
+    <button type="button" class="btn btn-sm" data-load-retry>Try again</button>
   </div>`
   if (el instanceof HTMLTableSectionElement) {
     el.innerHTML = html`<tr>
@@ -112,6 +132,20 @@ export function showLoadError(el, colspan, message, retry) {
   }
   const btn = el.querySelector("[data-load-retry]")
   if (btn) btn.addEventListener("click", () => retry(), { once: true })
+}
+
+/** Dialogs opened through openModal, oldest first — the top layer's order,
+ *  which the DOM can't tell us. The router closes the last one on Back. */
+/** @type {HTMLDialogElement[]} */
+const modalStack = []
+
+/** @type {Types.topModal} */
+export function topModal() {
+  for (let i = modalStack.length - 1; i >= 0; i--) {
+    if (modalStack[i].open) return modalStack[i]
+    modalStack.splice(i, 1)
+  }
+  return null
 }
 
 /** @type {Types.openModal} */
@@ -126,9 +160,13 @@ export function openModal(dialog, trigger) {
   }
 
   dialog.showModal()
+  const at = modalStack.indexOf(dialog)
+  if (at !== -1) modalStack.splice(at, 1)
+  modalStack.push(dialog)
 
   const firstFocusable = dialog.querySelector(
-    'input:not([type="hidden"]):not([disabled]), button:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    'input:not([type="hidden"]):not([disabled]), button:not([disabled]), ' +
+      'select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
   )
   if (firstFocusable instanceof HTMLElement) {
     firstFocusable.focus()
@@ -169,6 +207,10 @@ export function initModals() {
     })
 
     dialog.addEventListener("click", (e) => {
+      // A backdrop click targets the <dialog> itself. Anything else is a
+      // click inside — including a keyboard-activated button, which reports
+      // clientX/Y = 0 and would otherwise read as "outside".
+      if (e.target !== dialog) return
       const rect = dialog.getBoundingClientRect()
       const isInDialog =
         rect.top <= e.clientY &&

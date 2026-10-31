@@ -232,6 +232,9 @@ route("POST", "/api/admin/guests/:id/restore", restore, { admin: true })
 // Guest "story" sidecar for the thank-you composer + guest detail panel
 // (implemented in api/admin/thank-you.js — it already aggregates gifts/cards).
 route("GET", "/api/admin/guests/:id/story", adminThankYou.guestStory, { admin: true })
+// "Photos they're in" (IA §13.1): media with a named face linked to this guest,
+// listed first in the card composer's photo picker.
+route("GET", "/api/admin/guests/:id/photos", adminThankYou.guestPhotos, { admin: true })
 
 // Admin RSVP routes
 route("GET", "/api/admin/rsvps", rsvps.list, { admin: true })
@@ -291,6 +294,8 @@ route("GET", "/api/admin/moderation/queue", moderation.queue, { admin: true })
 route("GET", "/api/admin/moderation/counts", moderation.counts, { admin: true })
 route("POST", "/api/admin/moderation/bulk", moderation.bulk, { admin: true })
 route("POST", "/api/admin/moderation/approve-all", moderation.approveAllPending, { admin: true })
+route("POST", "/api/admin/moderation/restore", moderation.restore, { admin: true })
+route("GET", "/api/admin/moderation/:type/:id", moderation.item, { admin: true })
 route("POST", "/api/admin/moderation/:type/:id/approve", moderation.approve, { admin: true })
 route("POST", "/api/admin/moderation/:type/:id/reject", moderation.reject, { admin: true })
 route("POST", "/api/admin/moderation/:type/:id/hide", moderation.hide, { admin: true })
@@ -303,6 +308,10 @@ route("POST", "/api/admin/guestbook/:id/unpin", adminGuestbook.unpin, { admin: t
 
 // Admin account-management routes (Phase 6)
 route("GET", "/api/admin/accounts", adminAccounts.list, { admin: true })
+route("GET", "/api/admin/accounts/:id", adminAccounts.detail, { admin: true })
+route("POST", "/api/admin/accounts/:id/approve-pending", moderation.approveWaiting, {
+  admin: true,
+})
 route("POST", "/api/admin/accounts/:id/trust", adminAccounts.trust, { admin: true })
 route("POST", "/api/admin/accounts/:id/untrust", adminAccounts.untrust, { admin: true })
 route("DELETE", "/api/admin/accounts/:id", adminAccounts.remove, { admin: true })

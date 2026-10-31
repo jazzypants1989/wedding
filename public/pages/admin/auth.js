@@ -76,6 +76,9 @@ function handleAuthRequired() {
   if (reauthModal.open) return
   reauthError.hidden = true
   getInputElement("reauth-password").value = ""
+  const path = location.pathname
+  const where = path.startsWith("/admin/") ? path.slice("/admin".length) : ""
+  getElement("reauth-where").textContent = where || "Home"
   // showModal stacks it above any dialog already open, which stays open behind.
   reauthModal.showModal()
 }
@@ -115,7 +118,7 @@ async function handleReauthSubmit(e) {
     // Deliberately NOT onLoginSuccess: that reloads every tab and lands on the
     // Inbox, which is exactly the lost place this dialog exists to prevent.
     // Whatever request hit the 401 did not happen, so say so.
-    showSuccess("Signed back in. If something didn't save just now, try it once more.")
+    showSuccess("Signed back in, right where you were. If something didn't save, try it once more.")
   } catch (err) {
     reauthError.textContent = getErrorMessage(err)
     reauthError.hidden = false
@@ -164,7 +167,8 @@ export async function checkSession() {
 /** Distinguish a connection blip from an expired session on the login screen. */
 function showTransientSessionNotice() {
   loginError.textContent =
-    "We couldn't reach the server to check your session — this is usually a temporary connection issue, not a sign-out. Please try logging in again."
+    "We couldn't reach the server to check your session — this is usually a temporary " +
+    "connection issue, not a sign-out. Please try logging in again."
   loginError.hidden = false
 }
 

@@ -2265,3 +2265,122 @@ describe("merge is a redirect on identities, never a rewrite of faces", () => {
     assertColumnMatchesReplay(faceLegacy)
   })
 })
+
+// The Workspace "Name faces" screen (public/pages/admin/face-assignment.js)
+// leans on three read-only additions: numbered alternatives on every group,
+// `?face=` on the overview so a link to a face that left every group can say
+// why, and `?faces=` on the people list for the People page's face grid.
+describe("Name faces workspace reads", () => {
+  /** @param {number[]} faceIds @param {number} personId */
+  async function assignVia(faceIds, personId) {
+    const res = await asAdmin("/api/admin/faces/assign", {
+      method: "POST",
+      body: JSON.stringify({ faceIds, personId }),
+    })
+    assert.strictEqual(res.status, 200)
+    return json(res)
+  }
+
+  it("every group carries its nearest people as alternatives, with no bar applied", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const faceA1 = seedFace(seedMedia(), CLUSTER_A1)
+    const faceA2 = seedFace(seedMedia(), CLUSTER_A2)
+    const faceB1 = seedFace(seedMedia(), CLUSTER_B1)
+    seedFace(seedMedia(), CLUSTER_B2)
+
+    const before = await json(await asAdmin("/api/admin/faces/overview"))
+    for (const g of before.groups) {
+      assert.deepStrictEqual(g.candidates, [], "nobody named yet -> nobody to offer")
+    }
+
+    const ann = seedPerson({ display_name: "Ann Alternative" })
+    await assignVia([faceA1], ann)
+
+    const overview = await json(await asAdmin("/api/admin/faces/overview"))
+    assertNoDescriptor(overview)
+    const groupA = overview.groups.find((/** @type {any} */ g) => g.faceIds.includes(faceA2))
+    const groupB = overview.groups.find((/** @type {any} */ g) => g.faceIds.includes(faceB1))
+    assert.strictEqual(groupA.candidates[0].personId, ann)
+    assert.strictEqual(groupA.candidates[0].personName, "Ann Alternative")
+    assert.strictEqual(typeof groupA.candidates[0].distance, "number")
+    assert.deepStrictEqual(Object.keys(groupA.candidates[0]).sort(), ["distance", "personId", "personName"])
+    // B is nobody's: no suggestion (the bar holds), but Ann is still OFFERED as
+    // a choice — that is what makes it an alternative and not a suggestion.
+    assert.strictEqual(groupB.suggestion, null)
+    assert.strictEqual(groupB.candidates[0].personId, ann)
+  })
+
+  it("?face= says what became of a face: unnamed, named, not a face, or gone", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const media = seedMedia({ width: 1600, height: 1067 })
+    const faceA1 = seedFace(media, CLUSTER_A1)
+    const faceB1 = seedFace(seedMedia(), CLUSTER_B1)
+    const faceB2 = seedFace(seedMedia(), CLUSTER_B2)
+    const bea = seedPerson({ display_name: "Bea Anchor" })
+    await assignVia([faceA1], bea)
+    const dismissed = await asAdmin("/api/admin/faces/not-a-face", {
+      method: "POST",
+      body: JSON.stringify({ faceIds: [faceB2] }),
+    })
+    assert.strictEqual(dismissed.status, 200)
+
+    /** @param {string} q */
+    const anchorOf = async (q) => (await json(await asAdmin(`/api/admin/faces/overview${q}`))).anchor
+
+    assert.strictEqual(await anchorOf(""), undefined, "no param -> no anchor")
+    assert.strictEqual(await anchorOf("?face=abc"), undefined, "not an id -> no anchor")
+    assert.deepStrictEqual(await anchorOf(`?face=${faceA1}`), {
+      faceId: faceA1,
+      mediaId: media,
+      state: "named",
+      personId: bea,
+      personName: "Bea Anchor",
+    })
+    assert.strictEqual((await anchorOf(`?face=${faceB1}`)).state, "unnamed")
+    assert.strictEqual((await anchorOf(`?face=${faceB2}`)).state, "not_a_face")
+    const gone = await anchorOf("?face=987654")
+    assert.strictEqual(gone.state, "gone")
+    assert.strictEqual(gone.mediaId, null)
+    // Asking about one face changes nothing else in the payload.
+    const plain = await json(await asAdmin("/api/admin/faces/overview"))
+    const withAnchor = await json(await asAdmin(`/api/admin/faces/overview?face=${faceA1}`))
+    delete withAnchor.anchor
+    assert.deepStrictEqual(withAnchor, plain)
+  })
+
+  it("?faces= on the people list adds that person's live faces as chips", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const cy = seedPerson({ display_name: "Cy Grid" })
+    const m1 = seedMedia({ width: 1600, height: 1067 })
+    const f1 = seedFace(m1, CLUSTER_A1, { box: { x: 100, y: 120, w: 60, h: 70 } })
+    const f2 = seedFace(seedMedia({ width: 800, height: 600 }), CLUSTER_A2)
+    const f3 = seedFace(seedMedia(), [1, 0.01, 0.02, 0])
+    await assignVia([f1, f2, f3], cy)
+    // A face later dismissed is not one of theirs to show.
+    await asAdmin("/api/admin/faces/not-a-face", { method: "POST", body: JSON.stringify({ faceIds: [f3] }) })
+
+    const plain = await json(await asAdmin("/api/admin/people"))
+    assert.strictEqual(plain.personFaces, undefined)
+
+    const body = await json(await asAdmin(`/api/admin/people?faces=${cy}`))
+    assertNoDescriptor(body)
+    assert.ok(body.people.some((/** @type {any} */ p) => p.id === cy), "the list itself is unchanged")
+    assert.strictEqual(body.personFaces.personId, cy)
+    assert.strictEqual(body.personFaces.total, 2)
+    assert.deepStrictEqual(
+      body.personFaces.faces.map((/** @type {any} */ f) => f.faceId),
+      [f2, f1],
+      "newest first",
+    )
+    const chip = body.personFaces.faces.find((/** @type {any} */ f) => f.faceId === f1)
+    assert.strictEqual(chip.mediaId, m1)
+    assert.strictEqual(chip.width, 1600)
+    assert.strictEqual(chip.height, 1067)
+    assert.deepStrictEqual(chip.box, { x: 100, y: 120, w: 60, h: 70 })
+    assert.strictEqual(chip.fileKey.length, 32)
+    assert.ok([...chip.fileKey].every((c) => "0123456789abcdef".includes(c)), "a hex file key")
+
+    const bad = await asAdmin("/api/admin/people?faces=nope")
+    assert.strictEqual(bad.status, 400)
+  })
+})

@@ -28,10 +28,18 @@ import { init, close, getDb } from "../../db/connection.js"
 import { createThankYouCard, markCardSent, setCardReply } from "../../db/thank-you-cards.js"
 import { createGift as createGiftDb } from "../../db/gifts.js"
 import {
+  insertFace,
+  createIdentity,
+  mergeIdentityInto,
+  softDeleteFace,
+} from "../../db/media-faces.js"
+import { recordAssignment } from "../../db/face-assignments.js"
+import {
   startServer,
   stopServer,
   startAuxServer,
   createTestGuest,
+  createTestPerson,
   createTestAccount,
   createTestAccountSession,
   cleanupTestData,
@@ -1055,6 +1063,141 @@ describe("Digital thank-you cards (Phase 3 public API)", () => {
       assert.strictEqual(res.status, 200, "beacon should 200 on a delivered card")
       return json(res)
     }
+
+    describe("photos they're in (GET /api/admin/guests/:id/photos)", () => {
+      /** Raw media row (no upload API to go through). @param {string} status @param {string} [section] */
+      function seedMedia(status, section = "guest") {
+        const fileKey = crypto.randomBytes(16).toString("hex")
+        const r = db
+          .prepare(
+            `INSERT INTO media (file_key, account_id, kind, section, status) VALUES (?, NULL, 'image', ?, ?)`,
+          )
+          .run(fileKey, section, status)
+        return { id: Number(r.lastInsertRowid), fileKey }
+      }
+
+      /** A detected face on a media row, assigned through the ledger (the only
+       *  writer of media_faces.face_identity_id). @param {number} mediaId @param {number} identityId */
+      function assignedFace(mediaId, identityId) {
+        const face = insertFace({
+          mediaId,
+          bbox: { x: 1, y: 1, w: 10, h: 10 },
+          landmarks: null,
+          signals: null,
+          descriptor: null,
+          modelVersion: "ty-test",
+          source: "cli",
+        })
+        recordAssignment({ faceId: face.id, op: "assign", identityId, actor: "test" })
+        return face.id
+      }
+
+      it("lists approved media with a live face of a person linked to the guest, and nothing else", async (t) => {
+        if (!hasAdmin) return t.skip("TEST_ADMIN_PASSWORD not set")
+
+        const guest = createTestGuest(db)
+        const other = createTestGuest(db)
+        const person = createTestPerson(db, { guest_id: Number(guest.id) })
+        const otherPerson = createTestPerson(db, { guest_id: Number(other.id) })
+        const offRoster = createTestPerson(db)
+        const identity = createIdentity({ personId: person.id })
+        const otherIdentity = createIdentity({ personId: otherPerson.id })
+        const offRosterIdentity = createIdentity({ personId: offRoster.id })
+        try {
+          const inOfficial = seedMedia("approved", "official")
+          const inGuest = seedMedia("approved")
+          const pending = seedMedia("pending")
+          const deletedMedia = seedMedia("approved")
+          const deletedFace = seedMedia("approved")
+          const someoneElse = seedMedia("approved")
+          const unassigned = seedMedia("approved")
+          const content = seedMedia("approved", "content")
+
+          assignedFace(inOfficial.id, identity.id)
+          assignedFace(inGuest.id, identity.id)
+          assignedFace(inGuest.id, otherIdentity.id) // a group photo still counts
+          assignedFace(pending.id, identity.id)
+          assignedFace(deletedMedia.id, identity.id)
+          db.prepare(`UPDATE media SET deleted_at = datetime('now') WHERE id = ?`).run(deletedMedia.id)
+          softDeleteFace(assignedFace(deletedFace.id, identity.id))
+          assignedFace(someoneElse.id, otherIdentity.id)
+          assignedFace(unassigned.id, offRosterIdentity.id)
+          assignedFace(content.id, identity.id)
+
+          const res = await asAdmin(`/api/admin/guests/${guest.id}/photos`)
+          assert.strictEqual(res.status, 200)
+          const data = await json(res)
+          const keys = data.items.map((/** @type {any} */ i) => i.file_key).sort()
+          assert.deepStrictEqual(keys, [inOfficial.fileKey, inGuest.fileKey].sort())
+          const item = data.items.find((/** @type {any} */ i) => i.file_key === inGuest.fileKey)
+          assert.strictEqual(item.kind, "image")
+          assert.strictEqual(item.section, "guest")
+          assert.strictEqual(item.faces, 1)
+          assert.strictEqual(typeof item.needs_display, "boolean")
+        } finally {
+          db.prepare(`DELETE FROM media`).run()
+          db.prepare(`DELETE FROM face_identities WHERE id IN (?, ?, ?)`).run(
+            identity.id,
+            otherIdentity.id,
+            offRosterIdentity.id,
+          )
+          db.prepare(`DELETE FROM people WHERE id IN (?, ?, ?)`).run(
+            person.id,
+            otherPerson.id,
+            offRoster.id,
+          )
+        }
+      })
+
+      it("follows a merged identity to its survivor, and drops a retired person", async (t) => {
+        if (!hasAdmin) return t.skip("TEST_ADMIN_PASSWORD not set")
+
+        const guest = createTestGuest(db)
+        const person = createTestPerson(db, { guest_id: Number(guest.id) })
+        const survivor = createIdentity({ personId: person.id })
+        // A second person's identity, assigned first and then folded into the
+        // guest's: its faces now belong to the survivor without being re-pointed.
+        const stray = createTestPerson(db)
+        const folded = createIdentity({ personId: stray.id })
+        try {
+          const merged = seedMedia("approved")
+          assignedFace(merged.id, folded.id)
+          assert.ok(mergeIdentityInto(folded.id, survivor.id), "merge succeeds")
+
+          let data = await json(await asAdmin(`/api/admin/guests/${guest.id}/photos`))
+          assert.deepStrictEqual(
+            data.items.map((/** @type {any} */ i) => i.file_key),
+            [merged.fileKey],
+          )
+
+          db.prepare(`UPDATE people SET deleted_at = datetime('now') WHERE id = ?`).run(person.id)
+          data = await json(await asAdmin(`/api/admin/guests/${guest.id}/photos`))
+          assert.deepStrictEqual(data.items, [])
+        } finally {
+          db.prepare(`DELETE FROM media`).run()
+          db.prepare(`DELETE FROM face_identities WHERE id IN (?, ?)`).run(survivor.id, folded.id)
+          db.prepare(`DELETE FROM people WHERE id IN (?, ?)`).run(person.id, stray.id)
+        }
+      })
+
+      it("404s an unknown guest, 400s a bad id, 401s without a session", async (t) => {
+        if (!hasAdmin) return t.skip("TEST_ADMIN_PASSWORD not set")
+        assert.strictEqual((await asAdmin(`/api/admin/guests/999999/photos`)).status, 404)
+        assert.strictEqual((await asAdmin(`/api/admin/guests/abc/photos`)).status, 400)
+        assert.strictEqual((await fetch(`${BASE_URL}/api/admin/guests/1/photos`)).status, 401)
+      })
+    })
+
+    describe("card list carries the recipient's contact (batch send pre-picks channels)", () => {
+      it("returns guest_email and guest_phone on every row", async (t) => {
+        if (!hasAdmin) return t.skip("TEST_ADMIN_PASSWORD not set")
+        const { guest, card } = await createGuestAndDraftCard()
+        const data = await json(await asAdmin("/api/admin/thank-you"))
+        const row = data.cards.find((/** @type {any} */ c) => c.id === card.id)
+        assert.strictEqual(row.guest_email, guest.email)
+        assert.strictEqual(row.guest_phone, null)
+      })
+    })
 
     describe("infrastructure", () => {
       it("always has an admin session (self-provisioned when .env omits one)", () => {

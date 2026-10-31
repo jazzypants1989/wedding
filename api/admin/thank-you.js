@@ -34,6 +34,7 @@ import {
   getGuestStory,
   getRecentReplies,
 } from "../../db/thank-you-cards.js"
+import { getMediaFeaturingGuest } from "../../db/guest-photos.js"
 import { getGuestById } from "../guests/data.js"
 import { getRsvpByGuestId } from "../rsvp.js"
 import { getMediaByFileKey } from "../../db/media.js"
@@ -564,6 +565,18 @@ export async function guestStory(req, res, { params }) {
     gifts: story.gifts,
     cards: story.cards,
   })
+}
+
+/** @type {Types.adminThankYouGuestPhotosHandler} */
+export async function guestPhotos(req, res, { params }) {
+  const idResult = validateId(params.id, "guest ID")
+  if (!idResult.valid) throw new ValidationError(idResult.error)
+
+  const guest = getGuestById(idResult.value)
+  if (!guest) throw new NotFoundError("Guest")
+
+  // The composer's photo picker lists these first, then the rest of the gallery.
+  return sendJson(res, 200, { items: getMediaFeaturingGuest(idResult.value) })
 }
 
 /** @type {Types.adminThankYouCountsHandler} */

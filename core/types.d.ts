@@ -783,6 +783,11 @@ export function variantDiskPath(fileKey: string, variant: string, ext: string): 
  * deleting it. No-op when the directory doesn't exist. */
 export function quarantineItemDir(fileKey: string): void
 
+/** Move a quarantined item's directory back into media/ (Undo of a reject).
+ * The newest copy wins if the key was quarantined twice. True when the files
+ * are in place afterwards; false when the sweep already purged them. */
+export function restoreQuarantinedItemDir(fileKey: string): boolean
+
 /** Content-Type for a storage extension (jpg -> image/jpeg, etc.). */
 export function contentTypeForExt(ext: string): string
 

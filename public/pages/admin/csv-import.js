@@ -1,8 +1,9 @@
-/** @file CSV Import module */
+/** @file The CSV import dialog (dialog route /admin/guests/import). The router
+ *  opens and closes it; mountImport() resets it for each arrival. */
 /** @import * as Types from './types.js' */
 
-import { api, openModal, closeModal } from "./utils.js"
-import { loadGuests, loadStats } from "./guests.js"
+import { api, closeModal } from "./utils.js"
+import { loadGuests } from "./guests.js"
 import {
   html,
   getElement,
@@ -91,20 +92,20 @@ function showCSVPreview(csvText) {
   getElement("csv-preview").hidden = false
 }
 
-/** @type {Types.openImportModal} */
-function openImportModal() {
+/** Reset the dialog for a fresh import. @type {Types.mountImport} */
+export function mountImport() {
   getInputElement("csv-file").value = ""
-  getElement("file-name").textContent = "Choose CSV file..."
+  getElement("file-name").textContent = "Choose a CSV file…"
   getElement("csv-preview").hidden = true
   getElement("import-results").hidden = true
   getElement("import-instructions").hidden = false
   getElement("import-form-error").hidden = true
   const submitBtn = getButtonElement("import-submit-btn")
   submitBtn.disabled = true
-  submitBtn.textContent = "Import Guests"
+  submitBtn.textContent = "Import guests"
   submitBtn.removeAttribute("data-done")
+  getButtonElement("import-cancel-btn").hidden = false
   moduleState.csvData = null
-  openModal(getDialogElement("import-modal"))
 }
 
 /** @type {Types.handleFileSelect} */
@@ -119,10 +120,10 @@ async function handleFileSelect(e) {
   const submitBtn = getButtonElement("import-submit-btn")
 
   if (file.size > MAX_FILE_SIZE) {
-    errorEl.textContent = "File too large. Maximum size is 5MB."
+    errorEl.textContent = "That file is over 5MB — is it the right one?"
     errorEl.hidden = false
     getInputElement("csv-file").value = ""
-    getElement("file-name").textContent = "Choose CSV file..."
+    getElement("file-name").textContent = "Choose a CSV file…"
     submitBtn.disabled = true
     return
   }
@@ -155,7 +156,7 @@ async function handleImportSubmit() {
   const errorEl = getElement("import-form-error")
 
   submitBtn.disabled = true
-  submitBtn.textContent = "Importing..."
+  submitBtn.textContent = "Importing…"
   errorEl.hidden = true
 
   try {
@@ -169,55 +170,49 @@ async function handleImportSubmit() {
     getElement("import-results").hidden = false
 
     getElement("import-results-content").innerHTML = html`
-      <div class="import-summary">
-        <div class="import-stat success">
-          <strong>${result.added}</strong> guests added
-        </div>
-        <div class="import-stat warning">
-          <strong>${result.skipped.length}</strong> skipped
-        </div>
-        <div class="import-stat error">
-          <strong>${result.errors.length}</strong> errors
-        </div>
+      <div class="done-state invite-done">
+        <span class="done-icon"
+          ><svg class="icon" viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor"
+            stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 10l4 4 8-8" /></svg
+        ></span>
+        <h3>${result.added} ${result.added === 1 ? "guest" : "guests"} added</h3>
+        <p class="muted">
+          ${result.skipped.length} skipped as already on the list · ${result.errors.length}
+          ${result.errors.length === 1 ? "row" : "rows"} with a problem
+        </p>
       </div>
-      ${result.skipped.length > 0 &&
-      html`
-        <h4>Skipped (duplicates):</h4>
-        <ul class="import-list">
-          ${result.skipped.map(
-            (s) => html`
-              <li><strong>Line ${s.line}:</strong> ${s.name} - ${s.reason}</li>
-            `,
-          )}
-        </ul>
-      `}
-      ${result.errors.length > 0 &&
-      html`
-        <h4>Errors:</h4>
-        <ul class="import-list error-list">
-          ${result.errors.map(
-            (e) => html` <li><strong>Line ${e.line}:</strong> ${e.error}</li> `,
-          )}
-        </ul>
-      `}
+      ${result.skipped.length > 0
+        ? html`<p class="invite-label">Already on the list</p>
+            <ul class="invite-list">
+              ${result.skipped.map(
+                (s) => html`<li><strong>Line ${s.line}</strong> · ${s.name} — ${s.reason}</li>`,
+              )}
+            </ul>`
+        : ""}
+      ${result.errors.length > 0
+        ? html`<p class="invite-label">Couldn't import</p>
+            <ul class="invite-list is-error">
+              ${result.errors.map((e) => html`<li><strong>Line ${e.line}</strong> — ${e.error}</li>`)}
+            </ul>`
+        : ""}
     `
     submitBtn.textContent = "Done"
     submitBtn.disabled = false
     submitBtn.dataset.done = "1"
+    getButtonElement("import-cancel-btn").hidden = true
 
     await loadGuests()
-    await loadStats()
   } catch (err) {
     errorEl.textContent = getErrorMessage(err)
     errorEl.hidden = false
     submitBtn.disabled = false
-    submitBtn.textContent = "Import Guests"
+    submitBtn.textContent = "Import guests"
   }
 }
 
 /** @type {Types.initCSVImport} */
 export function initCSVImport() {
-  getElement("import-csv-btn").addEventListener("click", openImportModal)
   getInputElement("csv-file").addEventListener("change", handleFileSelect)
   getButtonElement("import-submit-btn").addEventListener(
     "click",

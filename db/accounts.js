@@ -46,12 +46,28 @@ export function listAccounts({ trusted = null, limit, offset }) {
       (SELECT COUNT(*) FROM guestbook_entries e WHERE e.account_id = a.id AND e.deleted_at IS NULL)
       + (SELECT COUNT(*) FROM comments c WHERE c.account_id = a.id AND c.deleted_at IS NULL)
       + (SELECT COUNT(*) FROM media m WHERE m.account_id = a.id AND m.deleted_at IS NULL)
-      AS post_count
+      AS post_count,
+      (SELECT COUNT(*) FROM guestbook_entries e
+        WHERE e.account_id = a.id AND e.status = 'pending' AND e.deleted_at IS NULL)
+      + (SELECT COUNT(*) FROM comments c
+        WHERE c.account_id = a.id AND c.status = 'pending' AND c.deleted_at IS NULL)
+      + (SELECT COUNT(*) FROM media m
+        WHERE m.account_id = a.id AND m.status = 'pending' AND m.deleted_at IS NULL)
+      AS pending_count
     FROM accounts a
     LEFT JOIN guests g ON g.id = a.guest_id
     WHERE a.deleted_at IS NULL ${trustedFilter}
     ORDER BY a.created_at DESC, a.id DESC
     LIMIT ${limit} OFFSET ${offset}`.all()
+}
+
+/** @type {Types.getAccountSummary} */
+export function getAccountSummary(id) {
+  return sql`SELECT a.id, a.name, a.relation, a.trusted, a.guest_id,
+      a.contact_email, a.created_at, g.name AS guest_name
+    FROM accounts a
+    LEFT JOIN guests g ON g.id = a.guest_id
+    WHERE a.id = ${id} AND a.deleted_at IS NULL`.get()
 }
 
 /** @type {Types.countAccounts} */

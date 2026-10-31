@@ -1,17 +1,16 @@
-/** @file Blocklist management module */
+/** @file Requests › Blocked: the people who won't see the invitation-request
+ *  form. Drawn inside the Requests split view (petitions.js owns the panel);
+ *  this module holds the list, its markup, the "Block someone" dialog route
+ *  (/admin/requests/blocked/new) and the Unblock confirm. */
 /** @import * as Types from './types.js' */
+/** @import * as GlobalTypes from '../../../types.js' */
 
-import { state } from "./state.js"
-import {
-  api,
-  openModal,
-  closeModal,
-  showSuccess,
-  showLoading,
-  showLoadError,
-} from "./utils.js"
+import { api, openModal, closeModal, showSuccess } from "./utils.js"
+import { navigate } from "./router.js"
+import { icon } from "./icons.js"
 import {
   html,
+  formatDate,
   getElement,
   getFormElement,
   getInputElement,
@@ -21,60 +20,100 @@ import {
   getErrorMessage,
 } from "../utils.js"
 
-/** @type {Types.BlocklistState} */
-const moduleState = { deleteId: null }
+/** @type {GlobalTypes.BlocklistEntry[]} */
+let entries = []
+/** The entry the Unblock confirm is about, and where to go after. */
+/** @type {{ id: number, next: () => string } | null} */
+let pendingUnblock = null
 
 /** @type {Types.loadBlocklist} */
 export async function loadBlocklist() {
-  try {
-    showLoading(getElement("blocklist-tbody"), 5)
-    const data = await api("/api/admin/blocklist")
-    const response = /** @type {Types.BlocklistResponse} */ (data)
-    state.currentBlocklist = response.blocklist
-    renderBlocklist(response.blocklist)
-  } catch (err) {
-    console.error("Failed to load blocklist:", err)
-    showLoadError(
-      getElement("blocklist-tbody"),
-      5,
-      "Couldn't load the blocklist.",
-      loadBlocklist,
-    )
-  }
+  const res = /** @type {Types.BlocklistResponse} */ (await api("/api/admin/blocklist"))
+  entries = res.blocklist
 }
 
-/** @type {Types.renderBlocklist} */
-function renderBlocklist(entries) {
-  const tbody = getElement("blocklist-tbody")
-
-  if (entries.length === 0) {
-    tbody.innerHTML = html`<tr>
-      <td colspan="5" class="empty-state">No blocklist entries yet</td>
-    </tr>`
-    return
-  }
-
-  tbody.innerHTML = html`${entries.map(
-    (entry) =>
-      html` <tr data-id="${entry.id}">
-        <td>${entry.name || "-"}</td>
-        <td>${entry.email || "-"}</td>
-        <td>${entry.phone || "-"}</td>
-        <td class="hide-mobile">${entry.reason || "-"}</td>
-        <td class="actions-cell">
-          <button class="btn btn-danger btn-sm" data-action="remove">
-            Remove
-          </button>
-        </td>
-      </tr>`,
-  )}`
+/** Newest first. @type {Types.blockedItems} */
+export function blockedItems() {
+  return entries
+    .slice()
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0))
 }
 
-/** @type {Types.openAddBlocklistModal} */
-function openAddBlocklistModal() {
+/** What a blocked entry is called in a list. @param {GlobalTypes.BlocklistEntry} e */
+function label(e) {
+  return e.name || e.email || e.phone || "Someone"
+}
+
+/** @type {Types.blockedListMarkup} */
+export function blockedListMarkup(selected) {
+  const items = blockedItems()
+  const tools = html`<div class="pane-tools blocked-tools">
+    <span class="muted small">${items.length
+      ? `${items.length} blocked · they don't see the request form`
+      : "Nobody is blocked."}</span>
+    <a class="btn btn-sm" href="/admin/requests/blocked/new">+ Block someone</a>
+  </div>`
+  if (!items.length) {
+    return html`${tools}<p class="list-empty">
+        People you block won't be offered the invitation-request form when they look up their
+        invitation. Denying a request can block them too.
+      </p>`
+  }
+  return html`${tools}
+    <ul class="rows">
+      ${items.map((e) => {
+        const also = [e.name ? e.email : null, e.name || e.email ? e.phone : null].filter(Boolean)
+        return html`<li>
+          <a class="row" href="/admin/requests/blocked/b${e.id}" data-select
+            aria-current="${e.id === selected ? "true" : "false"}">
+            <span class="row-main">
+              <span class="row-top"><strong>${label(e)}</strong></span>
+              <span class="row-sub">Blocked ${formatDate(e.created_at)}${e.reason
+                ? ` · ${e.reason}`
+                : also.length
+                  ? ` · ${also.join(" · ")}`
+                  : ""}</span>
+            </span>
+          </a>
+        </li>`
+      })}
+    </ul>`
+}
+
+/** @type {Types.blockedDetailMarkup} */
+export function blockedDetailMarkup(id) {
+  const back = html`<a class="m-back" href="/admin/requests/blocked" data-up>${icon("back")}Blocked</a>`
+  const e = id !== null ? entries.find((x) => x.id === id) : undefined
+  if (!e) {
+    return id !== null
+      ? html`${back}<div class="detail-empty">That entry isn't on the list any more.</div>`
+      : html`<div class="detail-empty">
+          ${entries.length ? "Pick someone." : "Nobody is blocked. That's a good thing."}
+        </div>`
+  }
+  return html`${back}
+    <article class="detail">
+      <header class="detail-head">
+        <span class="eyebrow">Blocked · since ${formatDate(e.created_at)}</span>
+      </header>
+      <h1>${label(e)}</h1>
+      <dl class="facts">
+        <div><dt>Name <span class="fact-note">close spellings match</span></dt><dd>${e.name || "—"}</dd></div>
+        <div><dt>Email <span class="fact-note">exact</span></dt><dd class="fact-break">${e.email || "—"}</dd></div>
+        <div><dt>Phone <span class="fact-note">exact</span></dt><dd>${e.phone || "—"}</dd></div>
+      </dl>
+      ${e.reason ? html`<p class="status-note">Why: ${e.reason}</p>` : ""}
+      <p class="muted">They won't see the invitation-request form when they look up their invitation.</p>
+    </article>
+    <div class="actionbar">
+      <button type="button" class="btn btn-lg btn-danger-soft" data-block-action="unblock">Unblock…</button>
+    </div>`
+}
+
+/** Reset the Block someone dialog for a fresh arrival. @type {Types.prepareBlockForm} */
+export function prepareBlockForm() {
   getFormElement("blocklist-form").reset()
   getElement("blocklist-form-error").hidden = true
-  openModal(getDialogElement("blocklist-modal"))
 }
 
 /** @type {Types.handleBlocklistFormSubmit} */
@@ -82,30 +121,30 @@ async function handleBlocklistFormSubmit(e) {
   e.preventDefault()
   const errorEl = getElement("blocklist-form-error")
   errorEl.hidden = true
-
   const name = getInputElement("blocklist-name").value.trim() || null
   const email = getInputElement("blocklist-email").value.trim() || null
   const phone = getInputElement("blocklist-phone").value.trim() || null
   const reason = getTextAreaElement("blocklist-reason").value.trim() || null
-
   if (!name && !email && !phone) {
-    errorEl.textContent = "At least one of name, email, or phone is required"
+    errorEl.textContent = "Fill in a name, an email or a phone number."
     errorEl.hidden = false
     return
   }
-
   const submitBtn = getButtonElement("blocklist-form-submit")
   submitBtn.disabled = true
-
   try {
-    await api("/api/admin/blocklist", {
-      method: "POST",
-      body: JSON.stringify({ name, email, phone, reason }),
-    })
-
-    closeModal(getDialogElement("blocklist-modal"))
+    const res = /** @type {{ id?: number }} */ (
+      await api("/api/admin/blocklist", {
+        method: "POST",
+        body: JSON.stringify({ name, email, phone, reason }),
+      })
+    )
     await loadBlocklist()
-    showSuccess("Added to blocklist")
+    const id = res.id
+    // The new entry replaces the dialog's history entry.
+    const to = id ? `/admin/requests/blocked/b${id}` : "/admin/requests/blocked"
+    void navigate(to, { replace: true })
+    showSuccess(`Blocked ${name || email || phone}`)
   } catch (err) {
     errorEl.textContent = getErrorMessage(err)
     errorEl.hidden = false
@@ -114,79 +153,45 @@ async function handleBlocklistFormSubmit(e) {
   }
 }
 
-/** @type {Types.confirmRemoveBlocklist} */
-export function confirmRemoveBlocklist(id) {
-  const entry = state.getBlockedEntryById(id)
-  if (!entry) return
-
-  moduleState.deleteId = id
-  const identifier = entry.name || entry.email || entry.phone || "this entry"
-  getElement("blocklist-delete-message").textContent =
-    `Are you sure you want to remove "${identifier}" from the blocklist?`
-
+/** @type {Types.confirmUnblock} */
+export function confirmUnblock(id, next) {
+  const e = entries.find((x) => x.id === id)
+  if (!e) return
+  pendingUnblock = { id, next }
+  getElement("blocklist-delete-modal-title").textContent = `Unblock ${label(e)}?`
+  getElement("blocklist-delete-error").hidden = true
   openModal(getDialogElement("blocklist-delete-modal"))
 }
 
 /** @type {Types.handleBlocklistDeleteConfirm} */
 async function handleBlocklistDeleteConfirm() {
-  if (!moduleState.deleteId) return
-
+  const p = pendingUnblock
+  if (!p) return
   const btn = getButtonElement("confirm-blocklist-delete-btn")
   btn.disabled = true
   const errorEl = getElement("blocklist-delete-error")
   errorEl.hidden = true
-
+  const to = p.next()
   try {
-    await api(`/api/admin/blocklist/${moduleState.deleteId}`, {
-      method: "DELETE",
-    })
+    await api(`/api/admin/blocklist/${p.id}`, { method: "DELETE" })
     closeModal(getDialogElement("blocklist-delete-modal"))
     await loadBlocklist()
-    showSuccess("Removed from blocklist")
+    void navigate(to, { replace: true })
+    showSuccess("Unblocked")
   } catch (err) {
     errorEl.textContent = getErrorMessage(err)
     errorEl.hidden = false
   } finally {
     btn.disabled = false
-    moduleState.deleteId = null
-  }
-}
-
-/** @type {Types.handleBlocklistTableClick} */
-function handleBlocklistTableClick(e) {
-  const target = e.target
-  if (!(target instanceof Element)) return
-
-  const btn = target.closest("button[data-action]")
-  if (!btn) return
-
-  const row = btn.closest("tr")
-  if (!row || !(row instanceof HTMLTableRowElement)) return
-
-  const id = parseInt(row.dataset.id || "", 10)
-  if (isNaN(id)) return
-
-  if (btn.getAttribute("data-action") === "remove") {
-    confirmRemoveBlocklist(id)
+    pendingUnblock = null
   }
 }
 
 /** @type {Types.initBlocklist} */
 export function initBlocklist() {
-  getElement("add-blocklist-btn").addEventListener(
-    "click",
-    openAddBlocklistModal,
-  )
-  getFormElement("blocklist-form").addEventListener(
-    "submit",
-    handleBlocklistFormSubmit,
-  )
+  getFormElement("blocklist-form").addEventListener("submit", handleBlocklistFormSubmit)
   getButtonElement("confirm-blocklist-delete-btn").addEventListener(
     "click",
     handleBlocklistDeleteConfirm,
-  )
-  getElement("blocklist-tbody").addEventListener(
-    "click",
-    handleBlocklistTableClick,
   )
 }

@@ -1,8 +1,10 @@
-/** @file Manual SMS module for copy-paste texting workflow */
+/** @file "Text invites by hand" (dialog route /admin/guests/text): copy each
+ *  guest's message, send it from your own phone, mark it sent. One at a time
+ *  or as a list. The router opens and closes the dialog. */
 /** @import * as Types from './types.js' */
 
-import { loadGuests, loadStats } from "./guests.js"
-import { api, openModal, closeModal, showError } from "./utils.js"
+import { loadGuests } from "./guests.js"
+import { api, closeModal, showError } from "./utils.js"
 import {
   html,
   getElement,
@@ -78,12 +80,10 @@ function updateProgressCounter() {
   const counter = getElement("msms-progress-counter")
   const sent = moduleState.sentIds.size
   const total = moduleState.guests.length
-  if (moduleState.viewMode === "focus") {
-    counter.textContent =
-      moduleState.currentIndex + 1 + " of " + total + " (sent: " + sent + ")"
-  } else {
-    counter.textContent = "Sent: " + sent + " of " + total
-  }
+  counter.textContent =
+    moduleState.viewMode === "focus"
+      ? `${moduleState.currentIndex + 1} of ${total} · ${sent} sent`
+      : `${sent} of ${total} sent`
 }
 
 /** @type {Types.renderFocusView} */
@@ -100,20 +100,12 @@ function renderFocusView() {
   getElement("msms-guest-message").textContent = message
 
   const markBtn = getButtonElement("msms-mark-sent-btn")
-  if (isSent) {
-    markBtn.textContent = "Sent"
-    markBtn.disabled = true
-    markBtn.classList.remove("btn-primary")
-    markBtn.classList.add("btn-secondary")
-  } else {
-    markBtn.textContent = "Mark as Sent"
-    markBtn.disabled = false
-    markBtn.classList.remove("btn-secondary")
-    markBtn.classList.add("btn-primary")
-  }
+  markBtn.textContent = isSent ? "Sent ✓" : "Mark as sent"
+  markBtn.disabled = isSent
+  markBtn.classList.toggle("btn-primary", !isSent)
 
   const copyBtn = getButtonElement("msms-copy-btn")
-  copyBtn.textContent = "Copy Message"
+  copyBtn.textContent = "Copy message"
   copyBtn.disabled = false
 
   getButtonElement("msms-prev-btn").disabled = moduleState.currentIndex === 0
@@ -131,38 +123,20 @@ function renderListView() {
   tbody.innerHTML = html`${moduleState.guests.map((guest) => {
     const isSent = moduleState.sentIds.has(guest.id)
     const message = renderMessage(template, guest)
-    const previewText =
-      message.length > 80 ? message.slice(0, 80) + "..." : message
-
-    return html`
-      <tr>
-        <td>${guest.name}</td>
-        <td><span class="msms-phone">${guest.phone}</span></td>
-        <td class="hide-mobile">
-          <span class="text-muted msms-preview-text"
-            >${previewText}</span
-          >
-        </td>
-        <td class="msms-list-actions">
-          <button
-            type="button"
-            class="btn btn-secondary btn-sm msms-list-copy-btn"
-            data-guest-id="${guest.id}"
-          >
-            Copy
-          </button>
-          ${isSent
-            ? html`<span class="msms-sent-badge">Sent</span>`
-            : html`<button
-                type="button"
-                class="btn btn-primary btn-sm msms-list-mark-btn"
-                data-guest-id="${guest.id}"
-              >
-                Send
-              </button>`}
-        </td>
-      </tr>
-    `
+    const previewText = message.length > 90 ? message.slice(0, 90) + "…" : message
+    return html`<li class="msms-row ${isSent ? "is-sent" : ""}">
+      <span class="msms-row-main">
+        <span class="row-top"><strong>${guest.name}</strong><span class="msms-phone">${guest.phone}</span></span>
+        <span class="msms-preview-text muted small">${previewText}</span>
+      </span>
+      <span class="msms-row-actions">
+        <button type="button" class="btn btn-sm msms-list-copy-btn" data-guest-id="${guest.id}">Copy</button>
+        ${isSent
+          ? html`<span class="pill st-opened">Sent</span>`
+          : html`<button type="button" class="btn btn-sm btn-primary msms-list-mark-btn"
+              data-guest-id="${guest.id}">Mark sent</button>`}
+      </span>
+    </li>`
   })}`
   updateProgressCounter()
 }
@@ -211,91 +185,66 @@ function isManualSmsData(data) {
   )
 }
 
-/** @type {Types.openManualSmsModal} */
-async function openManualSmsModal() {
+/** Load the eligible guests and open on the first one not yet sent.
+ *  @type {Types.mountManualSms} */
+export async function mountManualSms() {
+  const focus = getElement("msms-focus-view")
+  const list = getElement("msms-list-view")
+  moduleState.guests = []
+  focus.hidden = true
+  list.hidden = true
+  getElement("msms-progress-counter").textContent = "Loading…"
   try {
     const data = await api("/api/admin/manual-sms/guests")
-    if (!isManualSmsData(data)) {
-      throw new Error("Invalid data format")
-    }
+    if (!isManualSmsData(data)) throw new Error("Invalid data format")
     moduleState.guests = data.guests || []
     moduleState.weddingInfo = data.wedding || null
     moduleState.template = data.defaultTemplate || ""
     // Seed "Sent" from persisted state (markSent flips status → invited), so
-    // reopening the modal keeps the checkmarks and the couple's place instead of
-    // starting over. Focus mode opens on the first guest not yet sent.
+    // reopening keeps the ticks and the couple's place instead of starting over.
     moduleState.sentIds = new Set(
       moduleState.guests.filter((g) => g.status === "invited").map((g) => g.id),
     )
-    const firstUnsent = moduleState.guests.findIndex(
-      (g) => !moduleState.sentIds.has(g.id),
-    )
+    const firstUnsent = moduleState.guests.findIndex((g) => !moduleState.sentIds.has(g.id))
     moduleState.currentIndex = firstUnsent === -1 ? 0 : firstUnsent
   } catch (err) {
-    showError("Failed to load guests: " + getErrorMessage(err))
-    return
-  }
-
-  if (moduleState.guests.length === 0) {
-    showError(
-      "No eligible guests found. Guests need a phone number and status of pending or invited.",
-    )
+    getElement("msms-progress-counter").textContent = ""
+    showError("Couldn't load the guests to text: " + getErrorMessage(err))
     return
   }
 
   getTextAreaElement("msms-template").value = moduleState.template
-
-  // Collapse template section by default
-  const details = /** @type {HTMLDetailsElement} */ (
-    getElement("msms-template-section")
-  )
+  const details = /** @type {HTMLDetailsElement} */ (getElement("msms-template-section"))
   details.open = false
 
-  // Default to focus mode
-  moduleState.viewMode = "focus"
-  getElement("msms-focus-view").hidden = false
-  getElement("msms-list-view").hidden = true
-  getButtonElement("msms-mode-focus").classList.add("active")
-  getButtonElement("msms-mode-list").classList.remove("active")
-
-  renderFocusView()
-  openModal(getDialogElement("manual-sms-modal"))
+  if (moduleState.guests.length === 0) {
+    getElement("msms-progress-counter").textContent =
+      "Nobody to text: guests need a phone number and no reply yet."
+    return
+  }
+  switchViewMode("focus")
 }
 
 /** @type {Types.handleDone} */
-async function handleDone() {
+function handleDone() {
   closeModal(getDialogElement("manual-sms-modal"))
-  await loadGuests()
-  await loadStats()
+  void loadGuests()
 }
 
 /** @type {Types.switchViewMode} */
 function switchViewMode(mode) {
   moduleState.viewMode = mode
 
-  const focusBtn = getButtonElement("msms-mode-focus")
-  const listBtn = getButtonElement("msms-mode-list")
-  const focusView = getElement("msms-focus-view")
-  const listView = getElement("msms-list-view")
-
-  if (mode === "focus") {
-    focusBtn.classList.add("active")
-    listBtn.classList.remove("active")
-    focusView.hidden = false
-    listView.hidden = true
-    renderFocusView()
-  } else {
-    focusBtn.classList.remove("active")
-    listBtn.classList.add("active")
-    focusView.hidden = true
-    listView.hidden = false
-    renderListView()
-  }
+  getButtonElement("msms-mode-focus").setAttribute("aria-pressed", String(mode === "focus"))
+  getButtonElement("msms-mode-list").setAttribute("aria-pressed", String(mode === "list"))
+  getElement("msms-focus-view").hidden = mode !== "focus"
+  getElement("msms-list-view").hidden = mode !== "list"
+  if (mode === "focus") renderFocusView()
+  else renderListView()
 }
 
 /** @type {Types.initManualSms} */
 export function initManualSms() {
-  getElement("manual-sms-btn").addEventListener("click", openManualSmsModal)
   getButtonElement("msms-done-btn").addEventListener("click", handleDone)
 
   // Re-render when template changes
@@ -358,7 +307,7 @@ export function initManualSms() {
     if (!guest) return
     const btn = getButtonElement("msms-mark-sent-btn")
     btn.disabled = true
-    btn.textContent = "Saving..."
+    btn.textContent = "Saving…"
     await markGuestSent(guest.id)
     renderFocusView()
   })
@@ -366,20 +315,21 @@ export function initManualSms() {
   // List view delegation
   getElement("msms-list-tbody").addEventListener("click", async (e) => {
     const target = e.target
-    if (!(target instanceof HTMLButtonElement)) return
+    const btn = target instanceof Element ? target.closest("button") : null
+    if (!(btn instanceof HTMLButtonElement)) return
 
-    const guestId = parseInt(target.dataset.guestId || "", 10)
+    const guestId = parseInt(btn.dataset.guestId || "", 10)
     if (isNaN(guestId)) return
 
-    if (target.classList.contains("msms-list-copy-btn")) {
+    if (btn.classList.contains("msms-list-copy-btn")) {
       const guest = moduleState.guests.find((g) => g.id === guestId)
       if (!guest) return
       const template = getTemplate()
       const message = renderMessage(template, guest)
-      await copyToClipboard(message, target)
-    } else if (target.classList.contains("msms-list-mark-btn")) {
-      target.disabled = true
-      target.textContent = "..."
+      await copyToClipboard(message, btn)
+    } else if (btn.classList.contains("msms-list-mark-btn")) {
+      btn.disabled = true
+      btn.textContent = "…"
       await markGuestSent(guestId)
       renderListView()
     }

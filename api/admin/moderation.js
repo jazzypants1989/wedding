@@ -13,7 +13,7 @@ import {
   NotFoundError,
   ConflictError,
 } from "../../core/validation.js"
-import { quarantineItemDir } from "../../core/media-storage.js"
+import { quarantineItemDir, restoreQuarantinedItemDir } from "../../core/media-storage.js"
 import { PAGINATION, MODERATION, CONTENT_STATUS, CONTENT_STATUS_VALUES } from "../../types.js"
 import { withTransaction } from "../../db/utils.js"
 import {
@@ -23,7 +23,11 @@ import {
 } from "../../db/guestbook-entries.js"
 import { getCommentById, setCommentStatus } from "../../db/comments.js"
 import { getMediaById, setMediaStatus } from "../../db/media.js"
-import { getModerationQueue, approvePendingForAccount } from "../../db/moderation.js"
+import {
+  getModerationQueue,
+  getModerationItem,
+  approvePendingForAccount,
+} from "../../db/moderation.js"
 import { getAccountById, setAccountTrusted } from "../../db/accounts.js"
 
 /**
@@ -55,8 +59,13 @@ const MODERATABLE = Object.freeze({
     reject: (/** @type {number} */ id) =>
       setGuestbookStatus(id, [CONTENT_STATUS.PENDING], CONTENT_STATUS.REJECTED),
     /** approved → hidden */
+    /** pending|approved → hidden (off the site, kept: the Review "h") */
     hide: (/** @type {number} */ id) =>
-      setGuestbookStatus(id, [CONTENT_STATUS.APPROVED], CONTENT_STATUS.HIDDEN),
+      setGuestbookStatus(
+        id,
+        [CONTENT_STATUS.PENDING, CONTENT_STATUS.APPROVED],
+        CONTENT_STATUS.HIDDEN,
+      ),
     /** generic from→to setter for undo (uniform signature keeps the union callable) */
     /** @type {(id: number, from: string[], to: string) => boolean} */
     set: (id, from, to) =>
@@ -78,8 +87,13 @@ const MODERATABLE = Object.freeze({
       ),
     reject: (/** @type {number} */ id) =>
       setCommentStatus(id, [CONTENT_STATUS.PENDING], CONTENT_STATUS.REJECTED),
+    /** pending|approved → hidden (off the site, kept: the Review "h") */
     hide: (/** @type {number} */ id) =>
-      setCommentStatus(id, [CONTENT_STATUS.APPROVED], CONTENT_STATUS.HIDDEN),
+      setCommentStatus(
+        id,
+        [CONTENT_STATUS.PENDING, CONTENT_STATUS.APPROVED],
+        CONTENT_STATUS.HIDDEN,
+      ),
     /** @type {(id: number, from: string[], to: string) => boolean} */
     set: (id, from, to) =>
       setCommentStatus(
@@ -100,8 +114,13 @@ const MODERATABLE = Object.freeze({
       ),
     reject: (/** @type {number} */ id) =>
       setMediaStatus(id, [CONTENT_STATUS.PENDING], CONTENT_STATUS.REJECTED),
+    /** pending|approved → hidden (off the site, kept: the Review "h") */
     hide: (/** @type {number} */ id) =>
-      setMediaStatus(id, [CONTENT_STATUS.APPROVED], CONTENT_STATUS.HIDDEN),
+      setMediaStatus(
+        id,
+        [CONTENT_STATUS.PENDING, CONTENT_STATUS.APPROVED],
+        CONTENT_STATUS.HIDDEN,
+      ),
     /** @type {(id: number, from: string[], to: string) => boolean} */
     set: (id, from, to) =>
       setMediaStatus(
@@ -175,7 +194,17 @@ export async function queue(req, res) {
   // is a UNION ALL where a plain count is comparatively costly).
   const rows = getModerationQueue({ type, status, accountId, limit: limit + 1, offset })
   const hasMore = rows.length > limit
-  const items = rows.slice(0, limit).map((row) => ({
+  const items = rows.slice(0, limit).map(projectItem)
+
+  return sendJson(res, 200, { items, type, status, hasMore })
+}
+
+/**
+ * One queue row as the client sees it (booleans, `author_relation`).
+ * @param {GlobalTypes.ModerationQueueRow} row
+ */
+function projectItem(row) {
+  return {
     content_type: row.content_type,
     id: row.id,
     account_id: row.account_id,
@@ -195,9 +224,21 @@ export async function queue(req, res) {
     parent_author: row.parent_author,
     parent_file_key: row.parent_file_key,
     parent_kind: row.parent_kind,
-  }))
+  }
+}
 
-  return sendJson(res, 200, { items, type, status, hasMore })
+/**
+ * GET /api/admin/moderation/:type/:id — one post in any status, so a link to
+ * a post that has since been decided shows "this is now approved" (IA §1.4).
+ * @type {Types.ParamsHandler}
+ */
+export async function item(req, res, { params }) {
+  resolveType(params.type)
+  const idResult = validateId(params.id, "entry ID")
+  if (!idResult.valid) throw new ValidationError(idResult.error)
+  const row = getModerationItem(/** @type {ModeratableType} */ (params.type), idResult.value)
+  if (!row) throw new NotFoundError("Post")
+  return sendJson(res, 200, { item: projectItem(row) })
 }
 
 /** @type {Types.moderationCountsHandler} */
@@ -274,7 +315,7 @@ function auditActionFor(action, wasHidden) {
  * entry per changed item — documented granularity). Shared by bulk() and
  * approveAllPending().
  * @param {TransitionResult[]} results
- * @param {{ action: 'approve' | 'reject', req: import('node:http').IncomingMessage, session?: { token?: string } }} ctx
+ * @param {{ action: 'approve' | 'reject' | 'hide', req: import('node:http').IncomingMessage, session?: { token?: string } }} ctx
  * @returns {{ changed: number, trusted: number }}
  */
 function tallyAndAudit(results, { action, req, session }) {
@@ -438,8 +479,8 @@ export async function hide(req, res, routeInfo) {
 export async function bulk(req, res, { session }) {
   const body = await parseBody(req)
   const action = body.action
-  if (action !== "approve" && action !== "reject") {
-    throw new ValidationError("action must be 'approve' or 'reject'")
+  if (action !== "approve" && action !== "reject" && action !== "hide") {
+    throw new ValidationError("action must be 'approve', 'reject' or 'hide'")
   }
 
   const rawItems = body.items
@@ -493,7 +534,167 @@ export async function bulk(req, res, { session }) {
 
   // `trusted` surfaces the standing side effect of a bulk approve (each newly
   // trusted author's future posts skip review) so the client can disclose it.
-  return sendJson(res, 200, { success: true, changed, total: items.length, trusted })
+  // `items` + `trustedAccounts` are exactly what an Undo needs to put back.
+  return sendJson(res, 200, {
+    success: true,
+    changed,
+    total: items.length,
+    trusted,
+    ...undoFacts(results),
+  })
+}
+
+/**
+ * What a batch changed, in the shape POST /restore takes back: each changed
+ * item with the status it left, and every account the batch auto-trusted.
+ * @param {TransitionResult[]} results
+ * @returns {{ items: { type: ModeratableType, id: number, previousStatus: string }[], trustedAccounts: number[] }}
+ */
+function undoFacts(results) {
+  /** @type {{ type: ModeratableType, id: number, previousStatus: string }[]} */
+  const changedItems = []
+  /** @type {Set<number>} */
+  const trustedAccounts = new Set()
+  for (const { item, outcome } of results) {
+    if (!outcome) continue
+    changedItems.push({ type: item.type, id: item.id, previousStatus: outcome.row.status })
+    if (outcome.autoTrusted && outcome.row.account_id !== null) {
+      trustedAccounts.add(outcome.row.account_id)
+    }
+  }
+  return { items: changedItems, trustedAccounts: [...trustedAccounts] }
+}
+
+/**
+ * The (from → to) moves an Undo, or "Move back to review", may make. A reject
+ * comes back too: its files are moved out of quarantine first, and if the
+ * sweep has already purged them the item stays rejected.
+ * @type {Readonly<Record<string, readonly string[]>>}
+ */
+const RESTORABLE = Object.freeze({
+  [CONTENT_STATUS.APPROVED]: [CONTENT_STATUS.PENDING, CONTENT_STATUS.HIDDEN],
+  [CONTENT_STATUS.HIDDEN]: [CONTENT_STATUS.APPROVED, CONTENT_STATUS.PENDING],
+  [CONTENT_STATUS.REJECTED]: [CONTENT_STATUS.PENDING],
+})
+
+/**
+ * POST /api/admin/moderation/restore — { items: [{ type, id, to }], untrust?: [accountId] }.
+ * Puts posts back where an action found them (the Undo toast, for one post or
+ * a batch) and un-trusts the authors that action auto-trusted. Items that have
+ * moved on since are skipped, not failed: `restored` says how many came back.
+ * @type {Types.AuthedHandler}
+ */
+export async function restore(req, res, { session }) {
+  const body = await parseBody(req)
+  const rawItems = body.items
+  if (!Array.isArray(rawItems) || rawItems.length === 0) {
+    throw new ValidationError("items must be a non-empty array")
+  }
+  if (rawItems.length > MODERATION.APPROVE_ALL_MAX) {
+    throw new ValidationError("Too many items")
+  }
+  /** @type {{ type: ModeratableType, id: number, to: string }[]} */
+  const items = []
+  for (const raw of rawItems) {
+    if (typeof raw !== "object" || raw === null) {
+      throw new ValidationError("Each item must be an object with a type, id and to")
+    }
+    const entry = /** @type {Record<string, unknown>} */ (raw)
+    const type = entry.type
+    if (typeof type !== "string" || !isModeratableType(type)) {
+      throw new ValidationError("Invalid item type")
+    }
+    const idResult = validateId(entry.id, "item ID")
+    if (!idResult.valid) throw new ValidationError(idResult.error)
+    if (typeof entry.to !== "string") throw new ValidationError("Invalid target status")
+    items.push({ type, id: idResult.value, to: entry.to })
+  }
+  /** @type {number[]} */
+  const untrust = []
+  if (body.untrust !== undefined) {
+    if (!Array.isArray(body.untrust)) throw new ValidationError("untrust must be an array")
+    for (const raw of body.untrust) {
+      const idResult = validateId(raw, "account ID")
+      if (!idResult.valid) throw new ValidationError(idResult.error)
+      untrust.push(idResult.value)
+    }
+  }
+
+  const ip = getClientIp(req)
+  /** @type {import('../../core/types.js').AuditEvent[]} */
+  const entries = []
+  let restored = 0
+  for (const { type, id, to } of items) {
+    const target = MODERATABLE[type]
+    const row = target.getRow(id)
+    if (!row) continue
+    const from = row.status
+    if (!(RESTORABLE[from] ?? []).includes(to)) continue
+    // A rejected photo's files are in quarantine: bring them back first, and
+    // leave the item rejected if the sweep got there before the Undo did.
+    const unquarantine = target.unlink && from === CONTENT_STATUS.REJECTED && !!row.file_key
+    if (unquarantine && !restoreQuarantinedItemDir(/** @type {string} */ (row.file_key))) continue
+    const changed = withTransaction(() => target.set(id, [from], to))
+    if (!changed) {
+      if (unquarantine) quarantineItemDir(/** @type {string} */ (row.file_key))
+      continue
+    }
+    restored++
+    entries.push({
+      action: AUDIT_ACTIONS.MODERATION_UNDO,
+      adminId: session?.token,
+      ip,
+      resourceType: type,
+      resourceId: id,
+      details: { from, to },
+    })
+  }
+  let untrusted = 0
+  for (const accountId of untrust) {
+    if (!setAccountTrusted(accountId, false)) continue
+    untrusted++
+    entries.push({
+      action: AUDIT_ACTIONS.ACCOUNT_UNTRUST,
+      adminId: session?.token,
+      ip,
+      resourceType: "account",
+      resourceId: accountId,
+      details: { undo: true },
+    })
+  }
+  logBatch(entries)
+  return sendJson(res, 200, { success: true, restored, untrusted, total: items.length })
+}
+
+/**
+ * POST /api/admin/accounts/:id/approve-pending — "Approve their N waiting" on
+ * the Review author card and in Accounts. Approves exactly the rows the queue
+ * shows for this author (same transition as one approve, so auto-trust rides
+ * along) and returns them, so the Undo toast can put them back.
+ * @type {Types.ParamsHandler}
+ */
+export async function approveWaiting(req, res, { params, session }) {
+  const idResult = validateId(params.id, "account ID")
+  if (!idResult.valid) throw new ValidationError(idResult.error)
+  if (!getAccountById(idResult.value)) throw new NotFoundError("Account")
+
+  const rows = getModerationQueue({
+    status: CONTENT_STATUS.PENDING,
+    accountId: idResult.value,
+    limit: MODERATION.APPROVE_ALL_MAX,
+    offset: 0,
+  })
+  /** @type {Map<number, boolean>} */
+  const trustCache = new Map()
+  const results = withTransaction(() =>
+    rows.map((row) => {
+      const type = /** @type {ModeratableType} */ (row.content_type)
+      const outcome = applyTransition(MODERATABLE[type], "approve", row.id, false, trustCache)
+      return { item: { type, id: row.id }, outcome }
+    }),
+  )
+  const { changed } = tallyAndAudit(results, { action: "approve", req, session })
+  return sendJson(res, 200, { success: true, changed, ...undoFacts(results) })
 }
 
 /** @type {Types.moderationApproveAllHandler} */

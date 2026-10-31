@@ -14,12 +14,14 @@ import { withTransaction } from "../../db/utils.js"
 import {
   listAccounts,
   countAccounts,
+  getAccountSummary,
   setAccountTrusted,
   softDeleteAccount,
 } from "../../db/accounts.js"
 import {
   approvePendingForAccount,
   hideApprovedContentForAccount,
+  getModerationStatusCounts,
 } from "../../db/moderation.js"
 import { deleteAccountSessionsForAccount } from "../../db/account-sessions.js"
 
@@ -58,11 +60,41 @@ export async function list(req, res) {
     guest_id: a.guest_id,
     contact_email: a.contact_email,
     post_count: a.post_count,
+    pending_count: a.pending_count,
     created_at: a.created_at,
   }))
   const total = countAccounts({ trusted })
 
   return sendJson(res, 200, { accounts, total })
+}
+
+/**
+ * GET /api/admin/accounts/:id — one account plus how many of its posts sit in
+ * each status (the Review author card's "Approve their 3 waiting" and trust
+ * nudge, and the Accounts detail).
+ * @type {Types.ParamsHandler}
+ */
+export async function detail(req, res, { params }) {
+  const idResult = validateId(params.id, "account ID")
+  if (!idResult.valid) throw new ValidationError(idResult.error)
+  const a = getAccountSummary(idResult.value)
+  if (!a) throw new NotFoundError("Account")
+  const counts = getModerationStatusCounts(a.id)
+  return sendJson(res, 200, {
+    account: {
+      id: a.id,
+      name: a.name,
+      relation: a.relation,
+      trusted: !!a.trusted,
+      source: a.guest_name ?? "open registration",
+      guest_id: a.guest_id,
+      contact_email: a.contact_email,
+      post_count: counts.pending + counts.approved + counts.hidden + counts.rejected,
+      pending_count: counts.pending,
+      created_at: a.created_at,
+      counts,
+    },
+  })
 }
 
 /** @type {Types.accountTrustHandler} */

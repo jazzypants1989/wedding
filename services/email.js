@@ -253,7 +253,7 @@ function getModerationDigestEmail({ counts, oldestCreatedAt, unreadThankYouRepli
   const noun = reviewTotal === 1 ? "item" : "items"
   const replyNoun = unreadThankYouReplies === 1 ? "reply" : "replies"
   const adminUrl = `${SERVER.baseUrl}/admin`
-  const repliesUrl = `${SERVER.baseUrl}/admin#thankyous`
+  const repliesUrl = `${SERVER.baseUrl}/admin/thank-yous/replies`
   const age = formatAge(oldestCreatedAt)
 
   // Subject reflects both signals without conflating the counts: the review

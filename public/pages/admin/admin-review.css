@@ -1,0 +1,343 @@
+/* Review posts + Accounts — the split views (moderation.js).
+   Loaded after admin.css. Builds on its primitives (.split, .rows, .row,
+   .detail, .actionbar, .bulkbar, .chips, .seg — see WORKSPACE.md); the
+   review-only pieces (.media-big, .msg-big, .parent-ctx, .parent-card,
+   .author) are ported value for value from prototypes/admin-workspace/app.css.
+   Every rule is scoped under #tab-moderation so nothing leaks into another
+   panel. */
+
+/* The panel holds two splits (Review, Accounts); .split's display:grid would
+   otherwise beat the [hidden] attribute. */
+#tab-moderation > .split[hidden] {
+  display: none;
+}
+
+/* ------------------------------------------------------------- list pane */
+/* The header and the bulk bar stick together, so a long scroll keeps both
+   (two separately sticky blocks would stack on top of each other). */
+#tab-moderation .rv-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+
+#tab-moderation .rv-sticky > .pane-head,
+#tab-moderation .rv-sticky .bulkbar {
+  position: static;
+}
+
+#tab-moderation .rv-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#tab-moderation .rv-title h1 {
+  flex: 1;
+}
+
+#tab-moderation .chip-x span {
+  margin-left: 2px;
+  opacity: 0.75;
+}
+
+/* Media rows show the photo; message and comment rows the author's monogram. */
+#tab-moderation .thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: var(--ws-hover);
+}
+
+#tab-moderation .thumb {
+  position: relative;
+}
+
+#tab-moderation .thumb.is-video::before,
+#tab-moderation .thumb.is-video::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+}
+
+#tab-moderation .thumb.is-video::before {
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 0.55);
+}
+
+#tab-moderation .thumb.is-video::after {
+  width: 7px;
+  height: 8px;
+  margin: -4px 0 0 -2px;
+  background: #fff;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+
+#tab-moderation .thumb-empty {
+  display: grid;
+  place-items: center;
+  background: var(--ws-hover);
+  color: var(--ws-muted);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+}
+
+#tab-moderation .thumb-avatar .art,
+#tab-moderation .avatar .art {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#tab-moderation .row-top .tag {
+  flex: none;
+}
+
+#tab-moderation .rows-more {
+  padding: 8px 10px 4px;
+}
+
+#tab-moderation .list-empty .done-state {
+  padding: 32px 8px;
+}
+
+#tab-moderation .list-empty p {
+  margin-bottom: 10px;
+}
+
+/* On a wide screen the detail pane shows "All caught up"; the list just
+   says it's empty. Phones (list only) keep the whole done state. */
+@media (min-width: 900px) {
+  #rv-rows .list-empty .done-state > :not(h2) {
+    display: none;
+  }
+
+  #rv-rows .list-empty .done-state {
+    padding: 8px;
+  }
+
+  #rv-rows .list-empty .done-state h2 {
+    font-size: 0.95rem;
+    font-weight: 400;
+    color: var(--ws-muted);
+  }
+}
+
+#tab-moderation .bulkbar .linklike {
+  font-weight: 400;
+}
+
+/* ----------------------------------------------------------- detail pane */
+#tab-moderation .media-big {
+  margin: 0 0 20px;
+  border-radius: 12px;
+  overflow: hidden;
+  max-width: 640px;
+  aspect-ratio: 4 / 3;
+  position: relative;
+  background: light-dark(#2b2126, #0e0a12);
+}
+
+#tab-moderation .media-big img,
+#tab-moderation .media-big video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+#tab-moderation .media-big figcaption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 12px 16px;
+  color: #fff;
+  background: linear-gradient(transparent, rgb(0 0 0 / 0.55));
+}
+
+#tab-moderation .media-big.is-missing {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
+  color: #e9dfe6;
+}
+
+#tab-moderation .media-caption {
+  max-width: 640px;
+  margin: -8px 0 20px;
+  color: var(--ws-muted);
+}
+
+#tab-moderation .msg-big {
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  line-height: 1.35;
+  margin: 0 0 20px;
+  color: var(--ws-ink);
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+#tab-moderation .parent-ctx {
+  margin-bottom: 14px;
+  font-size: 0.85rem;
+  max-width: 640px;
+}
+
+#tab-moderation .parent-card {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px solid var(--ws-line);
+  border-radius: 10px;
+  background: var(--ws-bg);
+  color: var(--ws-ink);
+  text-decoration: none;
+}
+
+#tab-moderation .parent-card:hover {
+  border-color: var(--ws-accent);
+}
+
+#tab-moderation .parent-text {
+  flex: 1;
+  min-width: 0;
+}
+
+#tab-moderation .parent-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ws-accent);
+  font-size: 0.8rem;
+  flex: none;
+}
+
+#tab-moderation .parent-open .icon {
+  width: 14px;
+  height: 14px;
+}
+
+#tab-moderation .rv-post .status-note {
+  max-width: 640px;
+  margin-bottom: 16px;
+}
+
+/* A photo in sent thank-you cards: say what hiding it would do. */
+#tab-moderation .status-note.is-warn {
+  background: var(--ws-accent-soft);
+  color: var(--ws-ink);
+}
+
+#tab-moderation .author {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid var(--ws-line);
+  border-radius: 12px;
+  max-width: 640px;
+}
+
+#tab-moderation .author > div {
+  flex: 1;
+}
+
+/* The trust nudge (IA §13.7) and the second line of the card take a row each. */
+#tab-moderation .author > .trust-nudge,
+#tab-moderation .author > .author-more {
+  flex-basis: 100%;
+}
+
+#tab-moderation .trust-nudge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--ws-accent-soft);
+  font-size: 0.9rem;
+}
+
+#tab-moderation .trust-nudge > span {
+  flex: 1;
+}
+
+#tab-moderation .author-more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  font-size: 0.85rem;
+}
+
+#tab-moderation .author-more:not(:has(.btn)) {
+  margin-top: -6px;
+  padding-left: 48px;
+}
+
+#tab-moderation .author-links a {
+  color: var(--ws-accent);
+}
+
+#tab-moderation .rv-extras {
+  margin: 14px 0 0;
+  max-width: 640px;
+  gap: 4px;
+}
+
+#tab-moderation .rv-extras .btn {
+  color: var(--ws-muted);
+}
+
+#tab-moderation .rv-extras .btn:hover {
+  color: var(--ws-ink);
+}
+
+/* ------------------------------------------------------------- accounts */
+#tab-moderation .ac-detail .facts dd {
+  overflow-wrap: anywhere;
+}
+
+#tab-moderation .ac-note {
+  max-width: 560px;
+}
+
+/* ---------------------------------------------------------------- phones */
+@media (max-width: 899px) {
+  #tab-moderation .msg-big {
+    font-size: 1.25rem;
+  }
+
+  #tab-moderation .author-more:not(:has(.btn)) {
+    padding-left: 0;
+    margin-top: 0;
+  }
+
+  #tab-moderation .trust-nudge {
+    flex-wrap: wrap;
+  }
+
+  #tab-moderation .trust-nudge .btn {
+    flex: 1;
+  }
+
+  #tab-moderation .bulkbar {
+    flex-wrap: wrap;
+  }
+
+  #tab-moderation .bulkbar > span {
+    flex-basis: 100%;
+  }
+}

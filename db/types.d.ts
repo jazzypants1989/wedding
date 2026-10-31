@@ -227,6 +227,12 @@ export function listAccounts(options: {
   offset: number
 }): AccountSummary[]
 
+/** One live account with its household's guest name (the Accounts detail and
+ *  the Review author card). Counts come from getModerationStatusCounts. */
+export function getAccountSummary(
+  id: number,
+): Omit<AccountSummary, "post_count" | "pending_count"> | undefined
+
 /** Total non-deleted accounts (optionally filtered by trusted) for pagination. */
 export function countAccounts(options: { trusted?: boolean | null }): number
 
@@ -862,6 +868,26 @@ export function getModerationQueue(options: {
   offset: number
 }): ModerationQueueRow[]
 
+/** One moderatable row by type + id, in ANY status, with the queue's
+ *  projection (author, parent context). Undefined when it doesn't exist or its
+ *  author was deleted. */
+export function getModerationItem(
+  type: ModerationContentType,
+  id: number,
+): ModerationQueueRow | undefined
+
+/** How many of one author's posts sit in each status, counted over the same
+ *  rows the queue shows. */
+export interface ModerationStatusCounts {
+  pending: number
+  approved: number
+  hidden: number
+  rejected: number
+}
+
+/** Per-status post counts for one account (the author card, Accounts). */
+export function getModerationStatusCounts(accountId: number): ModerationStatusCounts
+
 /** Approve all of an account's pending items across the three tables (in a
  *  caller-supplied transaction). Returns the total number of rows released. */
 export function approvePendingForAccount(accountId: number): number
@@ -911,6 +937,7 @@ export function setPhysicalCardSent(id: number, sent: boolean): boolean
 import type {
   ThankYouCard,
   ThankYouCardWithGuest,
+  ThankYouCardListRow,
   ThankYouCardReply,
   PublicThankYouCard,
   ThankYouCardForGuest,
@@ -944,8 +971,8 @@ export function getPublicCardByShareToken(
   shareToken: string,
 ): PublicThankYouCard | undefined
 
-/** Admin list, joined guest name, newest first. */
-export function listCards(): ThankYouCardWithGuest[]
+/** Admin list, joined guest name + contact, newest first. */
+export function listCards(): ThankYouCardListRow[]
 
 export interface UpdateCardFields {
   giftId?: number | null
@@ -1076,6 +1103,27 @@ export interface GuestStoryData {
 
 /** Gather a guest's approved guestbook/media plus their gift + card ledger. */
 export function getGuestStory(guestId: number): GuestStoryData
+
+/** @file guest-photos.js - "Photos they're in" for the thank-you composer */
+
+/** One approved gallery item a guest appears in (via a named, roster-linked face). */
+export interface GuestPhoto {
+  id: number
+  file_key: string
+  kind: "image" | "video"
+  section: "official" | "guest"
+  width: number | null
+  height: number | null
+  needs_display: boolean
+  created_at: string
+  /** How many of the guest's faces are in it (a photo can hold two of their faces
+   *  only by mistake, but the count is honest). */
+  faces: number
+}
+
+/** Approved, live gallery media with a live face assigned (through a live,
+ *  unmerged identity) to a live person linked to this guest. Most faces first. */
+export function getMediaFeaturingGuest(guestId: number): GuestPhoto[]
 
 /** @file account-recovery.js - Account recovery tokens (Phase 6) */
 

@@ -432,3 +432,93 @@ three-pane. After slice 1 every later slice is independent.
    acceptable, or should SMS stay one at a time?
 5. **Before-the-wedding mode** for this couple is history. Should the mode switch
    stay visible in the footer, or move into Settings?
+
+## 13. Taken from Today and Journeys (owner picked Workspace, 2026-10-29)
+
+Workspace is the build. These are the ideas from the other two proposals that
+are worth folding into it. Each is small, and none of them changes the shape
+above. The build session starts from this list. The other two prototypes stay
+as reference (`prototypes/admin-today/`, `prototypes/admin-journeys/`).
+
+1. **"Photos they're in" in the card composer** (Journeys §5 C). Once a face
+   group is named and its person is linked to a roster guest
+   (`people.guest_id`), the composer's photo picker
+   (`/admin/cards/c17/edit/photos`) lists that guest's photos first, then the
+   rest of the gallery. This is the point where face tagging pays off in the
+   thank-you work, and it is the strongest idea in either proposal. It needs one
+   query: media with a live face assigned to a person whose `guest_id` is the
+   card's guest. About a day.
+2. **"Save and write the next one"** in the composer (Journeys). It saves, then
+   replaces the URL with the next un-thanked guest's card. It replaces §5 C's
+   toast. The last card says "Save and finish" and goes up to Cards.
+3. **A three-way leave guard**: Keep editing / Discard / **Save and leave**
+   (both Today and Journeys have it). §6's dialog gains the third button; the
+   guard's `save()` is the composer's and Site content's existing save.
+4. **Drop the heartbeat in §7** (Today's reasoning, checked against the code).
+   `BADGE_POLL_MS` (3 min, `public/pages/admin/main.js`) already runs while the
+   tab is visible, and every admin request calls `updateSessionActivity`, so a
+   visible tab never reaches the 30-minute idle limit. The idle limit only bites
+   on a hidden tab or at the 24-hour cap, and the re-login overlay (`e571b37`)
+   already covers both. So: no `GET /api/admin/session` ping.
+5. **Collapse on finish for batch send** (Today §4 "C"). Sent replaces Check, and
+   Back from Sent rewinds to where step 1 was opened, not to step 2.
+   §5 C's "That batch has gone out" card stays for anyone who reaches a step
+   with Forward.
+6. **Progress in each job's own unit** on Home's step cards (Journeys §2): "38 of
+   212 faces named", "4 of 12 guests thanked", alongside the waiting counts.
+7. **A trust nudge** on the Review author card (Journeys §5 A): "Posted 9 times.
+   Trust them?" for an untrusted author with several approved posts. One tap is
+   the same action as `t`.
+8. *Optional, later:* a **⌘K / `/` jump-to-name palette** over guests, people and
+   cards (Today §5, about half a day), and **faces in sittings** of about 5 groups
+   with a break screen (Today §6.2). Revisit sittings after the tuning pass, once
+   the group count is known.
+
+Left out on purpose: Today's to-do Home with Later and Done today, and
+Journeys' intro panels and pulsing Next. Workspace's Home and empty states
+already say what to do next.
+
+## 14. Built so far: slice 1 (router + shell), 2026-10-30
+
+In the real admin, uncommitted on `face-tagging` until the owner reviews it:
+
+- `public/pages/admin/routes.js` (pure route table, unit-tested in
+  `tests/unit/admin-routes.test.js`) and `public/pages/admin/router.js`.
+  Push/replace, `history.state.idx`, and the popstate veto that waits for its
+  own `history.go(-delta)` to land before asking.
+- The 11-tab bar is now the grouped sidebar from §2. The links keep their
+  `tab-btn-*` ids, so the modules that click them to jump (Inbox, the guest
+  dialog) work unchanged. Today's panels are mounted as-is. Pills record their
+  path (`/admin/accounts`, `/admin/gallery/loved`, `/admin/thank-yous/replies`).
+- The in-app leave dialog (`#admin-leave-modal`) replaces `window.confirm` for
+  Site content and the card composer, on sidebar clicks, Back/Forward and
+  re-opening the same section.
+- Old `/admin#tab` links redirect. The digest email now links
+  `/admin/thank-yous/replies`. Stat cards show only on Guests and RSVPs.
+- Phones (<900px) get §9's bottom bar: Inbox · Review · Faces · Cards · More,
+  counts as corner badges, and a dot on More when a section it holds has one.
+  `/admin/more` lists every section, built from the sidebar itself; on a wide
+  screen it redirects to the Inbox. Sticky bars and padding clear the bar
+  (`--admin-bar`), and the viewport is `viewport-fit=cover` for the home
+  indicator.
+- Back with a dialog open closes the dialog instead of changing the section
+  under it (`topModal()` in `utils.js` tracks the opening order). The leave
+  guard and the re-login overlay are never closed this way.
+- A new section opens at its top; Back and Forward restore each entry's scroll.
+- The success/Undo banner is sticky, so Undo stays in view down a long list.
+- Moderation's per-account "View" records `/admin/review`, so Back returns to
+  Accounts.
+
+Not yet, on purpose (each belongs to a later slice or waits on §12):
+
+- No mode-aware ordering. The post-wedding order is fixed, which is the only
+  one this couple needs now.
+- Labels follow today's panels: "Inbox" (not Home yet), "Cards & gifts" (the
+  Gifts / Cards split is slice 3), RSVPs separate from Guests, and Blocked as
+  its own link.
+- No section memory (§12 question 1), and no "Save and leave" (§13 item 3)
+  until the panels expose a save.
+- The account filter itself isn't in the URL yet (§4's `?author=`), so a
+  reload of a filtered queue shows the whole queue.
+- The card composer is still a view inside Cards & gifts, not its own route
+  (slice 3), so its URL is `/admin/thank-yous` while editing.

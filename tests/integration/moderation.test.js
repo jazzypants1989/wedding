@@ -901,3 +901,237 @@ describe("account recovery (magic link)", () => {
     assert.strictEqual(res.headers.get("location"), "/guestbook?recover=expired")
   })
 })
+
+describe("Review split view (Workspace): single item, hide-from-pending, restore", () => {
+  it("GET /:type/:id returns one post in any status; unknown → 404", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const a = signIn({ name: "Deep Link" })
+    const approvedId = seedEntry(a.accountId, "approved")
+
+    const res = await asAdmin(`/api/admin/moderation/guestbook/${approvedId}`)
+    assert.strictEqual(res.status, 200)
+    const body = await json(res)
+    assert.strictEqual(body.item.id, approvedId)
+    assert.strictEqual(body.item.status, "approved")
+    assert.strictEqual(body.item.author_name, "Deep Link")
+
+    assert.strictEqual((await asAdmin("/api/admin/moderation/guestbook/999999")).status, 404)
+    assert.strictEqual((await asAdmin(`/api/admin/moderation/bogus/${approvedId}`)).status, 404)
+  })
+
+  it("hide works straight from pending (off the site, kept)", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const a = signIn({ trusted: 0, name: "Hide Pending" })
+    const entryId = seedEntry(a.accountId, "pending")
+    const res = await asAdmin(`/api/admin/moderation/guestbook/${entryId}/hide`, { method: "POST" })
+    assert.strictEqual(res.status, 200)
+    assert.strictEqual((await json(res)).previousStatus, "pending")
+    assert.strictEqual(statusOf("guestbook_entries", entryId), "hidden")
+    // Hiding is not approving: no auto-trust.
+    assert.strictEqual(isTrusted(a.accountId), 0)
+  })
+
+  it("bulk hide reports what changed; restore puts every one back", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const a = signIn({ trusted: 1, name: "Bulk Hide" })
+    const pendingId = seedEntry(a.accountId, "pending")
+    const approvedId = seedEntry(a.accountId, "approved")
+
+    const res = await asAdmin("/api/admin/moderation/bulk", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "hide",
+        items: [
+          { type: "guestbook", id: pendingId },
+          { type: "guestbook", id: approvedId },
+        ],
+      }),
+    })
+    assert.strictEqual(res.status, 200)
+    const body = await json(res)
+    assert.strictEqual(body.changed, 2)
+    const prev = Object.fromEntries(
+      body.items.map((/** @type {any} */ i) => [i.id, i.previousStatus]),
+    )
+    assert.deepStrictEqual(prev, { [pendingId]: "pending", [approvedId]: "approved" })
+
+    const undo = await asAdmin("/api/admin/moderation/restore", {
+      method: "POST",
+      body: JSON.stringify({
+        items: body.items.map((/** @type {any} */ i) => ({
+          type: i.type,
+          id: i.id,
+          to: i.previousStatus,
+        })),
+      }),
+    })
+    assert.strictEqual(undo.status, 200)
+    assert.strictEqual((await json(undo)).restored, 2)
+    assert.strictEqual(statusOf("guestbook_entries", pendingId), "pending")
+    assert.strictEqual(statusOf("guestbook_entries", approvedId), "approved")
+  })
+
+  it("restore un-trusts the author an approve auto-trusted", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const a = signIn({ trusted: 0, name: "Undo Trust" })
+    const entryId = seedEntry(a.accountId, "pending")
+    const ap = await json(
+      await asAdmin(`/api/admin/moderation/guestbook/${entryId}/approve`, { method: "POST" }),
+    )
+    assert.strictEqual(ap.autoTrusted, true)
+    assert.strictEqual(isTrusted(a.accountId), 1)
+
+    const res = await asAdmin("/api/admin/moderation/restore", {
+      method: "POST",
+      body: JSON.stringify({
+        items: [{ type: "guestbook", id: entryId, to: "pending" }],
+        untrust: [a.accountId],
+      }),
+    })
+    assert.strictEqual(res.status, 200)
+    const body = await json(res)
+    assert.strictEqual(body.restored, 1)
+    assert.strictEqual(body.untrusted, 1)
+    assert.strictEqual(statusOf("guestbook_entries", entryId), "pending")
+    assert.strictEqual(isTrusted(a.accountId), 0)
+  })
+
+  it("restore skips moves it doesn't allow (pending → approved is not an undo)", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const a = signIn({ name: "No Shortcut" })
+    const entryId = seedEntry(a.accountId, "pending")
+    const res = await asAdmin("/api/admin/moderation/restore", {
+      method: "POST",
+      body: JSON.stringify({ items: [{ type: "guestbook", id: entryId, to: "approved" }] }),
+    })
+    assert.strictEqual(res.status, 200)
+    assert.strictEqual((await json(res)).restored, 0)
+    assert.strictEqual(statusOf("guestbook_entries", entryId), "pending")
+
+    const bad = await asAdmin("/api/admin/moderation/restore", {
+      method: "POST",
+      body: JSON.stringify({ items: [] }),
+    })
+    assert.strictEqual(bad.status, 400)
+  })
+
+  it("restoring a rejected photo brings its files back out of quarantine", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const a = signIn({ trusted: 0, name: "Quarantine Return" })
+    const media = seedMedia(a.accountId, "pending")
+    const dir = serverItemDir(media.fileKey)
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, "original.jpg"), makeJpeg(64))
+
+    const rej = await asAdmin(`/api/admin/moderation/media/${media.id}/reject`, { method: "POST" })
+    assert.strictEqual(rej.status, 200)
+    assert.ok(!fs.existsSync(dir), "files left media/ on reject")
+
+    const res = await asAdmin("/api/admin/moderation/restore", {
+      method: "POST",
+      body: JSON.stringify({ items: [{ type: "media", id: media.id, to: "pending" }] }),
+    })
+    assert.strictEqual((await json(res)).restored, 1)
+    assert.strictEqual(statusOf("media", media.id), "pending")
+    assert.ok(fs.existsSync(path.join(dir, "original.jpg")), "files are back in media/")
+    assert.ok(!fs.existsSync(serverQuarantineDir(media.fileKey)), "nothing left in quarantine")
+  })
+
+  it("a rejected photo whose files were purged stays rejected", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const a = signIn({ trusted: 0, name: "Purged" })
+    const media = seedMedia(a.accountId, "rejected")
+    const res = await asAdmin("/api/admin/moderation/restore", {
+      method: "POST",
+      body: JSON.stringify({ items: [{ type: "media", id: media.id, to: "pending" }] }),
+    })
+    assert.strictEqual((await json(res)).restored, 0)
+    assert.strictEqual(statusOf("media", media.id), "rejected")
+  })
+})
+
+describe("Accounts + author card (Workspace)", () => {
+  it("GET /api/admin/accounts/:id carries per-status counts; unknown → 404", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const a = signIn({ trusted: 0, name: "Counted" })
+    seedEntry(a.accountId, "pending")
+    seedEntry(a.accountId, "pending")
+    seedEntry(a.accountId, "approved")
+    seedEntry(a.accountId, "hidden")
+    seedMedia(a.accountId, "rejected")
+
+    const res = await asAdmin(`/api/admin/accounts/${a.accountId}`)
+    assert.strictEqual(res.status, 200)
+    const { account } = await json(res)
+    assert.strictEqual(account.name, "Counted")
+    assert.strictEqual(account.trusted, false)
+    assert.deepStrictEqual(account.counts, { pending: 2, approved: 1, hidden: 1, rejected: 1 })
+    assert.strictEqual(account.pending_count, 2)
+    assert.strictEqual(account.post_count, 5)
+
+    assert.strictEqual((await asAdmin("/api/admin/accounts/999999")).status, 404)
+
+    const list = await json(await asAdmin("/api/admin/accounts"))
+    const row = list.accounts.find((/** @type {any} */ x) => x.id === a.accountId)
+    assert.strictEqual(row.pending_count, 2)
+  })
+
+  it("approve-pending approves exactly their waiting posts, and restore undoes it", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const a = signIn({ trusted: 0, name: "Waiting" })
+    const other = signIn({ trusted: 0, name: "Someone Else" })
+    const e1 = seedEntry(a.accountId, "pending")
+    const m1 = seedMedia(a.accountId, "pending")
+    const hiddenId = seedEntry(a.accountId, "hidden")
+    const theirs = seedEntry(other.accountId, "pending")
+
+    const res = await asAdmin(`/api/admin/accounts/${a.accountId}/approve-pending`, {
+      method: "POST",
+    })
+    assert.strictEqual(res.status, 200)
+    const body = await json(res)
+    assert.strictEqual(body.changed, 2)
+    assert.deepStrictEqual(
+      body.items.map((/** @type {any} */ i) => `${i.type}:${i.id}:${i.previousStatus}`).sort(),
+      [`guestbook:${e1}:pending`, `media:${m1.id}:pending`].sort(),
+    )
+    // Same transition as one approve: the untrusted author is trusted now.
+    assert.deepStrictEqual(body.trustedAccounts, [a.accountId])
+    assert.strictEqual(statusOf("guestbook_entries", e1), "approved")
+    assert.strictEqual(statusOf("media", m1.id), "approved")
+    assert.strictEqual(statusOf("guestbook_entries", hiddenId), "hidden")
+    assert.strictEqual(statusOf("guestbook_entries", theirs), "pending")
+
+    const undo = await asAdmin("/api/admin/moderation/restore", {
+      method: "POST",
+      body: JSON.stringify({
+        items: body.items.map((/** @type {any} */ i) => ({
+          type: i.type,
+          id: i.id,
+          to: i.previousStatus,
+        })),
+        untrust: body.trustedAccounts,
+      }),
+    })
+    assert.strictEqual((await json(undo)).restored, 2)
+    assert.strictEqual(statusOf("guestbook_entries", e1), "pending")
+    assert.strictEqual(statusOf("media", m1.id), "pending")
+    assert.strictEqual(isTrusted(a.accountId), 0)
+
+    const missing = await asAdmin("/api/admin/accounts/999999/approve-pending", { method: "POST" })
+    assert.strictEqual(missing.status, 404)
+  })
+
+  it("trust without approve_pending leaves the waiting posts waiting", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const a = signIn({ trusted: 0, name: "Future Only" })
+    const waiting = seedEntry(a.accountId, "pending")
+    const res = await asAdmin(`/api/admin/accounts/${a.accountId}/trust`, {
+      method: "POST",
+      body: JSON.stringify({ approve_pending: false }),
+    })
+    assert.strictEqual(res.status, 200)
+    assert.strictEqual(isTrusted(a.accountId), 1)
+    assert.strictEqual(statusOf("guestbook_entries", waiting), "pending")
+  })
+})

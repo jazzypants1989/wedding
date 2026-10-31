@@ -1,0 +1,1015 @@
+/* The remaining panels — Guests & RSVPs, Requests | Blocked, Gallery, Site
+   content, Effects — and their dialogs (phase 2). Loaded after admin.css and
+   built on its primitives (WORKSPACE.md). Every rule is scoped under its
+   panel (#tab-…) or its dialog (#…-modal), so nothing leaks.
+
+   Ported from prototypes/admin-workspace/app.css value for value: .msg-big,
+   .photo-grid / .photo-card, the .single page's .actionbar, the avatar
+   (initials on a hue). Added where the prototype sketch had no home for a
+   real capability: the list search, the ⋯ tools menu, chip counts, the
+   detail's RSVP / notes / thank-you blocks, the photo card's caption and
+   position, the site-content jump chips and sections. */
+
+/* ------------------------------------------------- shared by these panels */
+
+/* The prototype's avatar (art.js avatarSvg): white initials in a plain sans
+   at 35% of the circle, on a mid hue. The hue comes from monogram.js's 30°
+   bucket classes (social.css). */
+:is(#tab-guests, #tab-petitions) .avatar .monogram {
+  width: 100%;
+  height: 100%;
+  background: hsl(var(--mono-hue, 210) 40% 55%);
+  font-family: sans-serif;
+  font-size: 12.6px;
+  font-weight: 400;
+}
+
+:is(#tab-guests, #tab-petitions) .avatar-xl .monogram {
+  font-size: 25.2px;
+}
+
+/* A selected row's avatar keeps its colour; a row's two lines never wrap. */
+:is(#tab-guests, #tab-petitions) .rows .row {
+  min-height: 60px;
+}
+
+:is(#tab-guests, #tab-petitions) .list-empty .btn-row {
+  margin: 12px 0 0;
+}
+
+/* Detail sections below the facts: a quiet heading, then the content. */
+:is(#tab-guests, #tab-petitions) .detail-block {
+  margin: 0 0 18px;
+}
+
+:is(#tab-guests, #tab-petitions) .detail-block > h2 {
+  font-size: 0.75rem;
+  color: var(--ws-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 500;
+  margin: 0 0 8px;
+}
+
+:is(#tab-guests, #tab-petitions) .detail-block .facts {
+  margin: 0 0 12px;
+}
+
+:is(#tab-guests, #tab-petitions) .detail h1 {
+  overflow-wrap: anywhere;
+}
+
+/* Long emails break inside their fact box instead of overflowing it. */
+:is(#tab-guests, #tab-petitions, #tab-moderation) .fact-break {
+  overflow-wrap: anywhere;
+}
+
+:is(#tab-guests, #tab-petitions) .fact-note {
+  text-transform: none;
+  letter-spacing: 0;
+  opacity: 0.8;
+}
+
+:is(#tab-guests, #tab-petitions, dialog) .status-note.is-ok {
+  background: var(--color-status-responded-bg);
+  color: var(--color-status-responded-text);
+}
+
+/* --------------------------------------------------------- Guests & RSVPs */
+
+#tab-guests .pane-tools .muted {
+  min-width: 0;
+}
+
+#tab-guests .ws-search input {
+  width: 100%;
+  padding: 8px 11px 8px 34px;
+  background: var(--ws-panel)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23887a80' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M9 15a6 6 0 1 0 0-12 6 6 0 0 0 0 12z M13.5 13.5 17 17'/%3E%3C/svg%3E")
+    no-repeat 11px 50% / 16px;
+  font-size: 0.9rem;
+}
+
+#tab-guests .chip-n {
+  color: var(--ws-muted);
+  font-variant-numeric: tabular-nums;
+  margin-left: 2px;
+}
+
+#tab-guests .chip[aria-current="true"] .chip-n {
+  color: inherit;
+  opacity: 0.7;
+}
+
+#tab-guests .row-time {
+  font-variant-numeric: tabular-nums;
+}
+
+#tab-guests .row.is-archived .row-main {
+  opacity: 0.65;
+}
+
+#tab-guests .person-head p {
+  margin: 4px 0 0;
+}
+
+#tab-guests .person-head .tag {
+  vertical-align: 1px;
+}
+
+#tab-guests .rsvp-msg {
+  margin: 0;
+  padding: 12px 16px;
+  border-left: 3px solid var(--ws-accent-soft);
+  background: var(--ws-bg);
+  border-radius: 0 10px 10px 0;
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+#tab-guests .guest-notes {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+#tab-guests .cta-strip {
+  max-width: 640px;
+}
+
+/* The ⋯ tools menu (the prototype's "Prototype" menu, as a real popover). */
+.ws-menu {
+  position: relative;
+}
+
+.ws-menu > summary {
+  list-style: none;
+  min-width: 34px;
+  letter-spacing: 0.04em;
+}
+
+.ws-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.ws-menu[open] > summary {
+  background: var(--ws-hover);
+}
+
+.ws-menu-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+  width: 230px;
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  background: var(--ws-panel);
+  border: 1px solid var(--ws-line);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+}
+
+.ws-menu-pop hr {
+  border: 0;
+  border-top: 1px solid var(--ws-line);
+  margin: 4px 2px;
+}
+
+:where(.dashboard) .ws-menu-item {
+  display: block;
+  padding: 8px 10px;
+  border-radius: 7px;
+  color: var(--ws-ink);
+  text-decoration: none;
+  font-size: 0.88rem;
+}
+
+.ws-menu-item:hover,
+.ws-menu-item:focus-visible {
+  background: var(--ws-hover);
+}
+
+/* ------------------------------------------------------ Requests | Blocked */
+
+/* The prototype's .msg-big: the request itself, in the display face. */
+#tab-petitions .msg-big {
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  line-height: 1.35;
+  margin: 0 0 20px;
+  color: var(--ws-ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+#tab-petitions .detail > h1 {
+  margin: 0 0 4px;
+}
+
+#tab-petitions .request-match {
+  margin: 0 0 4px;
+}
+
+#tab-petitions .blocked-tools {
+  padding: 10px 16px 0;
+}
+
+#tab-petitions .done-state h2 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 1.4rem;
+}
+
+/* ---------------------------------------------------------------- Gallery */
+
+/* The header's "+ Add official photos" is the prototype's full-width bar. */
+#tab-gallery .single-head > .btn[hidden] {
+  display: none;
+}
+
+#tab-gallery .photo-grid {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 24px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 14px;
+}
+
+#tab-gallery .photo-grid[hidden] {
+  display: none;
+}
+
+/* The li was the old curated card; the .photo-card inside it is the card now. */
+#tab-gallery .curated-item,
+#tab-gallery .loved-item {
+  display: block;
+  border: 0;
+  padding: 0;
+  background: none;
+  min-width: 0;
+}
+
+#tab-gallery .photo-card {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--ws-line);
+  border-radius: 12px;
+  background: var(--ws-panel);
+  color: var(--ws-ink);
+  height: 100%;
+  align-content: start;
+}
+
+#tab-gallery .photo-frame {
+  position: relative;
+  display: block;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--ws-hover);
+}
+
+#tab-gallery .photo-frame .art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* A file that won't load (gallery-admin.js marks it) shows the empty frame,
+   not the browser's broken-image glyph. */
+#tab-gallery .photo-frame.is-missing .art {
+  visibility: hidden;
+}
+
+#tab-gallery .photo-stand-in {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--ws-muted);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+}
+
+#tab-gallery .photo-play {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 0.55);
+  color: #fff;
+  font-size: 0.65rem;
+}
+
+#tab-gallery .photo-line {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 4px;
+}
+
+#tab-gallery .photo-pos {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  font-size: 0.82rem;
+  color: var(--ws-ink);
+}
+
+/* The position is a number you can type into; at rest it reads as "#3". */
+#tab-gallery .photo-pos .curated-pos {
+  position: static;
+  width: 2.2ch;
+  padding: 3px 2px 3px 1px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ws-ink);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  appearance: textfield;
+}
+
+#tab-gallery .photo-pos .curated-pos:hover {
+  border-color: var(--ws-line);
+}
+
+#tab-gallery .photo-pos .curated-pos:focus {
+  outline: none;
+  border-color: var(--ws-accent);
+  background: var(--ws-bg);
+  box-shadow: 0 0 0 3px var(--ws-accent-soft);
+}
+
+#tab-gallery .curated-caption {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 5px;
+  font-size: 0.82rem;
+  border-color: transparent;
+  background: transparent;
+}
+
+#tab-gallery .curated-caption:hover {
+  border-color: var(--ws-line);
+}
+
+#tab-gallery .curated-caption:focus {
+  background: var(--ws-bg);
+}
+
+#tab-gallery .curated-caption.is-error {
+  border-color: var(--ws-danger);
+}
+
+#tab-gallery .curated-caption-error {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--ws-danger);
+}
+
+#tab-gallery .photo-card .btn-row {
+  margin: 6px 0 0;
+  gap: 4px;
+  align-items: center;
+}
+
+#tab-gallery .photo-remove {
+  margin-left: auto;
+  padding-inline: 6px;
+}
+
+#tab-gallery .loved-meta {
+  margin-top: 2px;
+}
+
+#tab-gallery .loved-heart {
+  color: var(--ws-brand);
+}
+
+#tab-gallery .grid-empty {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+  text-align: center;
+  padding: 40px 16px;
+  border: 1px dashed var(--ws-line);
+  border-radius: 12px;
+  color: var(--ws-ink);
+}
+
+#tab-gallery .status-note[hidden] {
+  display: none;
+}
+
+/* ------------------------------------------------- Site content + Effects */
+
+:is(#tab-site-content, #tab-effects) .single-head p {
+  margin: 0;
+  max-width: 72ch;
+}
+
+#tab-site-content .sc-jump {
+  margin-top: 4px;
+}
+
+#tab-site-content .sc-jump .chip {
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+#tab-site-content .sc-jump .chip:hover {
+  background: var(--ws-hover);
+}
+
+/* Sections read as headed groups in one column, not boxes in boxes. */
+#tab-site-content .sc-form {
+  gap: 0;
+}
+
+#tab-site-content .form-section {
+  border: 0;
+  border-top: 1px solid var(--ws-line);
+  border-radius: 0;
+  margin: 0;
+  padding: 18px 0 8px;
+  min-width: 0;
+  scroll-margin-top: 12px;
+}
+
+#tab-site-content .form-section:first-of-type {
+  border-top: 0;
+  padding-top: 4px;
+}
+
+#tab-site-content .form-section legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+  margin: 0 0 12px;
+  font-family: var(--font-body);
+  font-size: 1.05rem;
+  font-weight: 500;
+  color: var(--ws-ink);
+}
+
+#tab-site-content .form-section legend + * {
+  clear: both;
+}
+
+#tab-site-content .form-group > label:not(.checkbox-label) {
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+#tab-site-content .form-group > :is(input, textarea, select),
+#tab-site-content .form-group > .wedding-date-picker > input {
+  width: 100%;
+}
+
+#tab-site-content .form-group > .card-text {
+  margin: 6px 0 8px;
+  font-size: 0.85rem;
+}
+
+#tab-site-content .checkbox-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+#tab-site-content .checkbox-label input {
+  margin-top: 4px;
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+#tab-site-content .wedding-date-picker select {
+  flex: 1 1 14rem;
+}
+
+#tab-site-content .schedule-card,
+#tab-site-content .dc-card {
+  border: 1px solid var(--ws-line);
+  border-radius: 10px;
+  background: var(--ws-panel);
+  padding: 12px;
+}
+
+#tab-site-content .schedule-editor,
+#tab-site-content .dc-image-editor,
+#tab-site-content .nav-editor {
+  margin-bottom: 10px;
+}
+
+#tab-site-content .dc-card-thumb {
+  border-radius: 8px;
+  background: var(--ws-hover);
+}
+
+/* The sticky bar: the prototype's .actionbar, across the column. */
+:is(#tab-site-content, #tab-effects) .actionbar {
+  align-items: center;
+  margin-top: 16px;
+  z-index: 3;
+}
+
+:is(#tab-site-content, #tab-effects) .actionbar .form-error {
+  margin: 0;
+  flex: 1 1 100%;
+  order: 5;
+}
+
+:is(#tab-site-content, #tab-effects) .actionbar .form-error[hidden],
+:is(#tab-site-content, #tab-effects) .dirty-note[hidden] {
+  display: none;
+}
+
+:is(#tab-site-content, #tab-effects) .sc-reset {
+  margin-left: auto;
+  color: var(--ws-muted);
+}
+
+:is(#tab-site-content, #tab-effects) .sc-reset:hover {
+  color: var(--ws-danger);
+}
+
+#tab-effects .form {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#tab-effects .fx-hint {
+  display: block;
+  font-weight: 400;
+}
+
+#tab-effects .code-input {
+  width: 100%;
+  min-height: 320px;
+  flex: 1;
+  resize: vertical;
+  font: 0.85rem/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+  white-space: pre;
+  tab-size: 2;
+}
+
+/* -------------------------------------------------------------- dialogs */
+
+/* A row of choices / a tick with its words beside it. */
+:is(#invite-modal, #petition-approve-modal, #petition-deny-modal) :is(.radio, .check) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+:is(#petition-approve-modal, #petition-deny-modal) .form {
+  margin: 12px 0 0;
+}
+
+:is(#petition-approve-modal, #petition-deny-modal) select {
+  width: auto;
+  min-width: 6rem;
+}
+
+/* The prototype's .form-row: two fields side by side. */
+dialog .form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+dialog .status-note[hidden] {
+  display: none;
+}
+
+dialog .form .status-note {
+  margin: 0;
+}
+
+/* Invite */
+#invite-modal .invite-summary {
+  margin: 0 0 14px;
+}
+
+#invite-modal .invite-summary p {
+  margin: 0 0 4px;
+}
+
+#invite-modal .channels {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+}
+
+#invite-modal .channels input:disabled + span {
+  opacity: 0.45;
+}
+
+:is(#invite-modal, #import-modal) .invite-label {
+  float: none;
+  width: 100%;
+  padding: 0;
+  margin: 0 0 8px;
+  font-size: 0.75rem;
+  color: var(--ws-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 500;
+}
+
+#invite-modal .invite-default-preview {
+  margin: -6px 0 0;
+  padding: 10px 12px;
+  max-height: 9rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--ws-muted);
+  background: var(--ws-bg);
+  border: 1px dashed var(--ws-line);
+  border-radius: 8px;
+}
+
+#invite-modal .invite-default-preview:empty {
+  display: none;
+}
+
+#invite-modal .invite-previews {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+  max-height: 46dvh;
+  overflow-y: auto;
+}
+
+#invite-modal .invite-previews > li:not(.muted) {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--ws-line);
+  border-radius: 10px;
+  background: var(--ws-bg);
+}
+
+#invite-modal .invite-msg {
+  font-size: 0.85rem;
+  color: var(--ws-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+:is(#invite-modal, #import-modal) .invite-list {
+  margin: 0 0 12px;
+  padding: 0 0 0 18px;
+  max-height: 180px;
+  overflow-y: auto;
+  font-size: 0.88rem;
+}
+
+:is(#invite-modal, #import-modal) .invite-list.is-error {
+  color: var(--ws-danger);
+}
+
+#invite-modal .status-note .invite-list {
+  margin: 6px 0 0;
+}
+
+:is(#invite-modal, #import-modal) .invite-done {
+  padding: 12px 8px 16px;
+  max-width: none;
+}
+
+:is(#invite-modal, #import-modal) .invite-done h3 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 1.4rem;
+}
+
+:is(#invite-modal, #import-modal) .invite-done p {
+  margin: 0;
+}
+
+/* Import */
+#import-modal .import-section p {
+  margin: 0 0 8px;
+}
+
+#import-modal .file-drop {
+  display: grid;
+  place-items: center;
+  margin: 12px 0;
+  padding: 26px 16px;
+  border: 2px dashed var(--ws-line);
+  border-radius: 12px;
+  color: var(--ws-muted);
+  cursor: pointer;
+  text-align: center;
+}
+
+#import-modal .file-drop:hover,
+#import-modal .file-drop:focus-within {
+  border-color: var(--ws-accent);
+  color: var(--ws-ink);
+}
+
+#import-modal .csv-preview {
+  margin: 0 0 8px;
+  padding: 0;
+  background: none;
+}
+
+#import-modal .preview-table {
+  border: 1px solid var(--ws-line);
+  border-radius: 10px;
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+  font-size: 0.82rem;
+}
+
+#import-modal .preview-table :is(th, td) {
+  padding: 6px 10px;
+}
+
+#import-modal .preview-table th {
+  background: var(--ws-bg);
+}
+
+/* Upload */
+#gallery-upload-modal .gallery-upload-drop {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  margin: 14px 0 12px;
+  padding: 22px 16px;
+  border: 2px dashed var(--ws-line);
+  border-radius: 12px;
+  text-align: center;
+}
+
+#gallery-upload-modal .gallery-upload-drop .btn-row {
+  margin: 0;
+  justify-content: center;
+}
+
+#gallery-upload-modal .gallery-upload-drop.drag-over {
+  border-color: var(--ws-accent);
+  background: var(--ws-accent-soft);
+}
+
+#gallery-upload-modal .upload-tray-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+}
+
+#gallery-upload-modal .upload-tray-summary {
+  flex: 1;
+  margin: 0;
+}
+
+#gallery-upload-modal .upload-tray-head .btn[hidden] {
+  display: none;
+}
+
+#gallery-upload-modal .upload-tray-list {
+  max-height: 40dvh;
+  overflow-y: auto;
+}
+
+/* Text invites by hand */
+#manual-sms-modal .msms-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 14px;
+  flex-wrap: wrap;
+}
+
+#manual-sms-modal .msms-progress {
+  margin-left: auto;
+  font-weight: 400;
+}
+
+#manual-sms-modal .seg-btn {
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ws-ink);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+#manual-sms-modal .seg-btn[aria-pressed="true"] {
+  background: var(--ws-panel);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+  font-weight: 500;
+}
+
+#manual-sms-modal .msms-card {
+  padding: 16px;
+  border: 1px solid var(--ws-line);
+  border-radius: 12px;
+  background: var(--ws-bg);
+}
+
+#manual-sms-modal .msms-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 10px;
+}
+
+#manual-sms-modal .msms-card-head strong {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 1.25rem;
+}
+
+#manual-sms-modal .msms-phone {
+  font: 0.85rem ui-monospace, monospace;
+  background: none;
+  padding: 0;
+  color: var(--ws-muted);
+}
+
+#manual-sms-modal .msms-message-box {
+  background: var(--ws-panel);
+  border: 1px solid var(--ws-line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 0.92rem;
+}
+
+#manual-sms-modal .msms-card .btn-row {
+  margin: 12px 0 0;
+}
+
+#manual-sms-modal .msms-nav {
+  display: flex;
+  justify-content: space-between;
+  margin: 10px 0 0;
+}
+
+#manual-sms-modal .msms-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  max-height: 50dvh;
+  overflow-y: auto;
+}
+
+#manual-sms-modal .msms-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--ws-line);
+  border-radius: 10px;
+}
+
+#manual-sms-modal .msms-row.is-sent {
+  opacity: 0.7;
+}
+
+#manual-sms-modal .msms-row-main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+#manual-sms-modal .msms-row-main .msms-phone {
+  margin-left: auto;
+}
+
+#manual-sms-modal .msms-preview-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#manual-sms-modal .msms-row-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex: none;
+}
+
+#manual-sms-modal .msms-template-section {
+  margin: 14px 0 0;
+  border-radius: 10px;
+  border-color: var(--ws-line);
+}
+
+#manual-sms-modal .msms-template-body textarea {
+  width: 100%;
+}
+
+#manual-sms-modal .msms-placeholder-tag {
+  font: 0.8rem ui-monospace, monospace;
+  border-radius: 999px;
+  background: transparent;
+}
+
+/* ---------------------------------------------------------------- phones */
+@media (max-width: 899.98px) {
+  #tab-guests .pane-tools {
+    flex-wrap: wrap;
+  }
+
+  #tab-guests .pane-tools .muted {
+    flex: 1 1 100%;
+    order: -1;
+  }
+
+  /* Three thumb-sized buttons fit across a phone; the key hints don't. */
+  #tab-petitions .actionbar kbd {
+    display: none;
+  }
+
+  #tab-gallery .photo-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px;
+  }
+
+  #tab-gallery .photo-card .btn-row .btn {
+    padding-inline: 8px;
+  }
+
+  /* Typing 1 into the position does the same; the row stays one line. */
+  #tab-gallery .photo-card [data-action="top"] {
+    display: none;
+  }
+
+  #tab-gallery .single-head > .btn {
+    width: 100%;
+  }
+
+  :is(#tab-site-content, #tab-effects) .actionbar {
+    margin-inline: -14px;
+  }
+
+  :is(#tab-site-content, #tab-effects) .actionbar .btn-lg {
+    flex: 0 1 auto;
+    padding-inline: 22px;
+  }
+
+  #tab-site-content .sc-jump {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    margin-inline: -14px;
+    padding: 2px 14px;
+    scrollbar-width: none;
+  }
+
+  #tab-site-content .sc-jump .chip {
+    flex: none;
+  }
+
+  dialog .form-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* A label's hint reads as an aside, not part of the label. */
+:is(dialog, #tab-effects) .form label .muted {
+  font-weight: 400;
+}
