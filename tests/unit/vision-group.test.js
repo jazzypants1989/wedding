@@ -12,6 +12,7 @@ import {
   cosineDistance,
   distanceMatrix,
   groupFaces,
+  groupThenAttach,
   l2Normalize,
 } from "../../public/vision/group.js"
 
@@ -177,4 +178,56 @@ test("grouping a few hundred descriptors stays quick", () => {
   const groups = groupFaces(set(rows), { cutoff: 0.01 })
   assert.ok(Date.now() - started < 5000, "400 descriptors should not take seconds")
   assert.ok(groups.length >= 30 && groups.length <= 50, `got ${groups.length} groups`)
+})
+
+// --- groupThenAttach ---------------------------------------------------------
+// On the unit circle the cosine distance at angle θ is 1 - cos θ, so 0.55 sits
+// near 63°. A at 0° and B at 70° are two people (0.66 apart). J at 30° is junk
+// close to both, which is exactly the face that chained people together.
+
+const DEG = Math.PI / 180
+
+test("groupFaces lets a junk face in the middle chain two people together", () => {
+  // The failure groupThenAttach exists to prevent, pinned so the fixture stays honest.
+  const s = set([onCircle(0), onCircle(30 * DEG), onCircle(70 * DEG)])
+  assert.deepEqual(shape(groupFaces(s, { cutoff: 0.55, photoIds: [1, 2, 3] })), ["0,1,2"])
+})
+
+test("groupThenAttach: a non-seed face joins a group but never bridges two", () => {
+  const s = set([onCircle(0), onCircle(30 * DEG), onCircle(70 * DEG)])
+  const groups = groupThenAttach(s, [true, false, true], { cutoff: 0.55, photoIds: [1, 2, 3] })
+  assert.deepEqual(shape(groups), ["0,1", "2"])
+  const withJunk = groups.find((g) => g.members.includes(1))
+  assert.deepEqual(withJunk?.seeds, [0])
+  assert.deepEqual(withJunk?.attached, [1])
+  assert.equal(withJunk?.size, 2)
+})
+
+test("groupThenAttach: a non-seed face far from every group attaches nowhere", () => {
+  const s = set([onCircle(0), onCircle(150 * DEG)])
+  const groups = groupThenAttach(s, [true, false], { cutoff: 0.55, photoIds: [1, 2] })
+  assert.deepEqual(shape(groups), ["0"])
+})
+
+test("groupThenAttach: never attaches into a group holding a face from the same photo", () => {
+  // J is nearest A, but shares A's photograph, so it goes to B (still in range).
+  const s = set([onCircle(0), onCircle(30 * DEG), onCircle(75 * DEG)])
+  const groups = groupThenAttach(s, [true, false, true], { cutoff: 0.55, photoIds: [1, 1, 3] })
+  assert.deepEqual(shape(groups), ["0", "1,2"])
+})
+
+test("groupThenAttach: two non-seeds from one photo cannot both join one group", () => {
+  const s = set([onCircle(0), onCircle(10 * DEG), onCircle(-10 * DEG)])
+  const groups = groupThenAttach(s, [true, false, false], { cutoff: 0.55, photoIds: [1, 2, 2] })
+  assert.equal(groups.length, 1)
+  assert.equal(groups[0].attached.length, 1)
+})
+
+test("groupThenAttach with every face a seed is groupFaces", () => {
+  const rows = [0, 5, 10, 80, 85, 170].map((a) => onCircle(a * DEG))
+  const photoIds = [1, 2, 3, 4, 5, 6]
+  assert.deepEqual(
+    shape(groupThenAttach(set(rows), rows.map(() => true), { cutoff: 0.55, photoIds })),
+    shape(groupFaces(set(rows), { cutoff: 0.55, photoIds })),
+  )
 })

@@ -231,7 +231,7 @@ test("PROFILE pins every constant a routing decision reads", () => {
   // re-means every stored grade just as surely as moving a number would, which
   // is why the profile moved even though this table did not.
   const { gate, route } = allDefaults()
-  assert.equal(PROFILE, "route-r2")
+  assert.equal(PROFILE, "route-r3")
   assert.deepEqual(gate, {
     minBoxPx: 40,
     minBorderPx: 0,
@@ -242,7 +242,7 @@ test("PROFILE pins every constant a routing decision reads", () => {
     maxOutside: 0.02,
     minSharpness: 0.004,
   })
-  assert.deepEqual(route, { acceptMinBoxPx: 96, acceptMinSharpness: 0.01 })
+  assert.deepEqual(route, { acceptMinBoxPx: 96, acceptMinSharpness: 0.045 })
 })
 
 test("the accept bars sit above the gate floors they refine", () => {

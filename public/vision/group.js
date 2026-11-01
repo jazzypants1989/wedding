@@ -208,6 +208,53 @@ export function groupFaces(set, options) {
   return groups
 }
 
+/** @type {Types.groupThenAttach} */
+export function groupThenAttach(set, seed, options) {
+  const { dim, data } = set
+  const n = data.length / dim
+  /** @type {number[]} */
+  const seedIdx = []
+  for (let i = 0; i < n; i++) if (seed[i]) seedIdx.push(i)
+  const sub = new Float32Array(seedIdx.length * dim)
+  seedIdx.forEach((i, k) => sub.set(data.subarray(i * dim, (i + 1) * dim), k * dim))
+  const clusters = groupFaces(
+    { dim, data: sub },
+    {
+      cutoff: options.cutoff,
+      photoIds: seedIdx.map((i) => options.photoIds[i]),
+      cannotLinkWithinPhoto: options.cannotLinkWithinPhoto,
+    },
+  )
+  const useCannotLink = options.cannotLinkWithinPhoto !== false
+  const groups = clusters.map((c) => {
+    const seeds = c.members.map((k) => seedIdx[k])
+    return { seeds, attached: /** @type {number[]} */ ([]), photos: new Set(seeds.map((i) => options.photoIds[i])) }
+  })
+  for (let i = 0; i < n; i++) {
+    if (seed[i]) continue
+    let best = -1
+    let bestDist = Infinity
+    for (let g = 0; g < groups.length; g++) {
+      if (useCannotLink && groups[g].photos.has(options.photoIds[i])) continue
+      let sum = 0
+      for (const j of groups[g].seeds) sum += cosineDistance(data, data, i * dim, j * dim, dim)
+      const avg = sum / groups[g].seeds.length
+      if (avg < bestDist) {
+        bestDist = avg
+        best = g
+      }
+    }
+    // Negated so a NaN distance attaches nowhere.
+    if (best === -1 || !(bestDist <= options.cutoff)) continue
+    groups[best].attached.push(i)
+    groups[best].photos.add(options.photoIds[i])
+  }
+  return groups.map((g) => {
+    const members = [...g.seeds, ...g.attached].sort((x, y) => x - y)
+    return { members, size: members.length, seeds: g.seeds, attached: g.attached }
+  })
+}
+
 /** @type {Types.centroid} */
 export function centroid(set, indices) {
   const { dim, data } = set

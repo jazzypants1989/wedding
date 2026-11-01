@@ -303,6 +303,26 @@ export function groupFaces(set: DescriptorSet, options: GroupOptions): FaceGroup
 /** Mean of the given members, re-normalised to unit length. */
 export function centroid(set: DescriptorSet, indices: readonly number[]): Float32Array
 
+export interface AttachedGroup extends FaceGroup {
+  /** The members that SEEDED the group (`seed[i]` was true), ascending. */
+  seeds: number[]
+  /** The members attached afterwards, ascending. */
+  attached: number[]
+}
+
+/**
+ * Cluster only the faces `seed` marks, then attach every other face to the
+ * single group it sits closest to (average distance to that group's seeds),
+ * when that distance is within `cutoff` and the group holds no face from the
+ * same photograph. Attached faces never seed, so they cannot chain two groups
+ * together. Indices are into the full `set`; `photoIds` is per full index.
+ */
+export function groupThenAttach(
+  set: DescriptorSet,
+  seed: readonly boolean[],
+  options: Omit<GroupOptions, "matrix" | "photoIds"> & { photoIds: readonly number[] },
+): AttachedGroup[]
+
 // --- metrics.js ---
 
 export interface Histogram {

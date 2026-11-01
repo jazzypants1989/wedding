@@ -89,7 +89,7 @@ import {
   recentBatches,
 } from "../../db/face-assignments.js"
 import { now } from "../../db/utils.js"
-import { groupFaces, distanceMatrix, centroid } from "../../public/vision/group.js"
+import { groupThenAttach, distanceMatrix, centroid } from "../../public/vision/group.js"
 import { buildPrototypes, matchFace, confidentMatch } from "../../public/vision/assign.js"
 import { propagateWithinFrames } from "../../public/vision/must-link.js"
 import { getDefaults } from "../../public/vision/defaults.js"
@@ -404,23 +404,28 @@ export async function overview(req, res) {
     if (faces.length === 0) continue
     const chips = mediaChipInfo([...new Set(faces.map((f) => f.media_id))])
     const photoIds = faces.map((f) => f.media_id)
-    // A SECOND, un-mutated distance matrix, for the weld measurement below.
-    // groupFaces runs Lance-Williams in place over the matrix it uses, so the
-    // one it works on is not a table of pairwise distances by the time it is
-    // done — reading a group's diameter out of it would read merged-cluster
-    // distances instead. Computed before, so it is untouched.
+    // The weld measurement below reads pairwise distances, so it gets its own
+    // matrix; the clustering builds (and mutates) its own over the seeds.
     const raw = distanceMatrix(set)
-    const clusters = groupFaces(set, {
-      cutoff,
-      photoIds,
-      cannotLinkWithinPhoto: /** @type {boolean} */ (groupDefaults.cannotLinkWithinPhoto),
-    })
+    // Only faces routing would SHOW seed a group; set-aside faces (backs of
+    // heads, blur, fragments) are attached afterwards to the one group they sit
+    // closest to. Junk resembles everything a little, so letting it seed let it
+    // chain unrelated people into one big group through itself — faces issue #2,
+    // "all sides and back of heads". Attached, it can join a group but never
+    // bridge two. Still shown, dimmed, in that group's filmstrip.
+    const clusters = groupThenAttach(
+      set,
+      faces.map((face) => isShown(face)),
+      {
+        cutoff,
+        photoIds,
+        cannotLinkWithinPhoto: /** @type {boolean} */ (groupDefaults.cannotLinkWithinPhoto),
+      },
+    )
     const { prototypes, meta } = loadPrototypesByModelVersion(modelVersion)
 
     for (const cluster of clusters) {
-      // The group was CLUSTERED over every face, including the set-aside ones —
-      // that is the rule, routing filters the display and never the input. What
-      // is filtered is what leaves this function: the chips the admin sees, and
+      // What leaves this function is filtered too: the chips the admin sees, and
       // `faceIds`, which is what the bulk-confirm button posts back. So a bulk
       // confirm cannot carry a face that was not on screen, by construction and
       // not only by the server-side check that also refuses it.
@@ -444,10 +449,10 @@ export async function overview(req, res) {
       /** @type {Array<{ personId: number, personName: string, distance: number }>} */
       const candidates = []
       if (prototypes.length > 0) {
-        // The centroid is over the FULL cluster, not the shown subset: the
-        // suggestion is about who this group is, and a face being too small to
-        // show is not a reason to drop its evidence.
-        const vec = centroid(set, cluster.members)
+        // The centroid is over the SHOWN faces: the attached set-aside ones are
+        // the least reliable descriptors in the group, and the suggestion bar
+        // (assign.suggestMinMargin) was derived from shown-face centroids.
+        const vec = centroid(set, shownMembers)
         const match = matchFace(vec, prototypes)
         // matchFace always names its nearest prototype; the bar is what lets a
         // group the recogniser cannot place arrive with no name on it.

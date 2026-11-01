@@ -113,16 +113,18 @@ const VISION_CONFIG = {
      * "is it a face" but "can a human put a name to it" — and size and
      * sharpness are what that turns on.
      *
-     * ⚠ **NEITHER OF THESE IS TUNED.** They are placed deliberately
-     * conservatively — erring toward `ask`, which costs a question, over
-     * `accept`, which costs a wrong name — and they are the reference values
-     * this ships with, not values derived from anything. See the tuning note
-     * below. Changing either means bumping `PROFILE` in route.js.
+     * Tuned once (route-r3), from the calibration check in the tuning note
+     * below: route a labelled run under these values and look at the faces a
+     * human declined to name or called not-a-face that still come out
+     * `accept`. `acceptMinSharpness` sits where raising it stops removing
+     * those faster than it removes faces the human named. `acceptMinBoxPx`
+     * was left alone: raising it cost far more named faces than it caught.
+     * Changing either means bumping `PROFILE` in route.js.
      */
     /** Minimum shorter box edge, in SOURCE pixels, to be worth auto-accepting. */
     acceptMinBoxPx: 96,
     /** Normalised Laplacian energy, same scale as `gate.minSharpness`. */
-    acceptMinSharpness: 0.01,
+    acceptMinSharpness: 0.045,
   },
 
   group: {
@@ -192,11 +194,13 @@ const VISION_CONFIG = {
     suggestMaxDistance: 0.64,
     /**
      * Minimum lead of the best person over the runner-up (cosine distance).
-     * ⚠ **UNTUNED placeholder**, deliberately on the abstaining side: a missing
-     * suggestion costs a typed name, a wrong one costs a wrong bulk confirm.
-     * In the tuning pass's list below.
+     * A missing suggestion costs a typed name; a wrong one costs a wrong bulk
+     * confirm. Derived locally by holding out half of each person's confirmed
+     * faces as prototypes, grouping the other half as if unnamed, and matching
+     * each group's centroid: the bar sits at the knee, where the wrong-suggestion
+     * rate stops falling much faster than correct suggestions are withheld.
      */
-    suggestMinMargin: 0.05,
+    suggestMinMargin: 0.1,
   },
 
   propagate: {
@@ -249,7 +253,7 @@ const VISION_CONFIG = {
  *    this a face at all", so a signal's cutoff belongs where it stops
  *    discarding real detections.
  * 3. `group.cutoff`, from the same/different distance distributions.
- * 4. `route`, last, because it is defined relative to the gate. **The 22
+ * 4. `route`, last, because it is defined relative to the gate. **The
  *    skipped pool-A faces are the calibration set**: they are faces a careful
  *    human looked at and declined to name, so any of them this table would
  *    route `accept` is a threshold that needs moving. `route.acceptMinBoxPx`
@@ -258,9 +262,17 @@ const VISION_CONFIG = {
  *    far enough is unnameable long before it stops being detectable.
  * 5. `propagate` and `assign` last of all — both are vetoes and priority
  *    signals rather than identity decisions, so they are the least sensitive.
- *    `assign.suggestMinMargin` is the untuned one: derive it from the margins
- *    of groups whose suggestion the human accepted against those they renamed,
- *    and put the bar where a wrong suggestion stops being common.
+ *    `assign.suggestMinMargin`: derive it from the margins of suggestions that
+ *    named the right person against those that did not, and put the bar where
+ *    a wrong suggestion stops being common.
+ *
+ * **Done 2026-10-31, as `route-r3`** (steps 4 and 5; steps 1–3 were not
+ * re-opened): `route.acceptMinSharpness` raised, the pose bar on accept
+ * considered and NOT added (it moved far more nameable faces into the queue
+ * than declined ones out of `accept`), `assign.suggestMinMargin` derived by
+ * held-out simulation. And one structural change instead of a threshold:
+ * set-aside faces no longer seed groups (`groupThenAttach` in group.js), which
+ * is what had chained unrelated people into one group through junk detections.
  *
  * **Then bump `PROFILE` in route.js**, and re-grade. `media_faces.route_profile`
  * exists exactly so that old rows say which table they were graded under

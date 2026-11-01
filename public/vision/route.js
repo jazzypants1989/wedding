@@ -47,7 +47,7 @@ import { applyGate } from "./gate.js"
  * point of the column: an old row's grade should be readable as "graded under
  * r1", not as "graded under whatever the file says today".
  */
-export const PROFILE = "route-r2"
+export const PROFILE = "route-r3"
 
 /**
  * Order of attribution when more than one condition holds. Cheapest and most
