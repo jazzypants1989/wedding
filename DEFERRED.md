@@ -1,9 +1,7 @@
 # Deferred Work
 
 Forward-looking operations, deployment, and hardening items. Each needs a production/deploy
-decision, off-repo access, an owner call, or a manual go-live step — not a quick code edit. The
-**reusable-product roadmap** (themeable effects, no-code onboarding, content-as-data) lives in
-`TODO.md`.
+decision, off-repo access, an owner call, or a manual go-live step — not a quick code edit.
 
 Severity tags: 🔴 high · 🟡 medium · 🟢 low.
 
@@ -67,27 +65,13 @@ scripts/backup-db.js`, so they're in sync, but drift is possible. Both hardcode 
 (`scripts/deploy.js`, `deploy.yml`). Collapse to one path — CI invokes `scripts/deploy.js`, or the
 SSH step runs a single committed remote script.
 
-### Quarantine directory housekeeping 🟢
+### Quarantine directory housekeeping — done
 
-The daily media sweep (`core/media-sweep.js`) moves DB-orphaned files into
-`data/uploads/quarantine/` (`QUARANTINE_DIR` in `core/media-storage.js`) and, by design, **never
-auto-hard-deletes** — it's a safety net, not a self-emptying trash. So it grows unbounded; someone
-must periodically inspect and `rm -rf data/uploads/quarantine/*` once satisfied nothing there is
-wanted, so it doesn't silently eat the disk headroom `MEDIA_MIN_FREE_BYTES` guards.
-
-*Update (2026-07 UX pass):* **admin-rejected media now also moves here** instead of being
-`rm -rf`'d (`quarantineItemDir` in `core/media-storage.js`, used by `api/admin/moderation.js`),
-so a mis-clicked Reject is hand-recoverable until quarantine is emptied. Expect more volume in
-this directory than before — same manual-emptying doctrine applies.
-
-*Update (2026-07 UX pass, 2):* **admin gallery Remove** (`api/admin/media.js`) now quarantines
-too (was a hard `fs.rmSync`), and the moderation queue gained a one-tap **Undo** toast. Undo is
-intentionally **status-only** (approve→pending, hide→approved, unhide→hidden); it does **not**
-cover Reject, because a reject's files were already moved to quarantine and there's no
-restore-from-quarantine path (`undo` in `api/admin/moderation.js` returns 409 for a rejected
-item). A mis-clicked Reject therefore stays *hand*-recoverable from this directory, not one-tap
-recoverable. If a first-class "restore rejected media" affordance is ever wanted, it needs a
-`restoreItemDir()` inverse of `quarantineItemDir()` plus the collision/TTL-purge edge cases.
+Quarantine now empties itself and Reject is undoable. The daily sweep purges entries older than
+`MEDIA_QUARANTINE_TTL_DAYS` (default 7) and only then frees their quota
+(`core/media-sweep.js`); quota sums count quarantined bytes until that purge (`db/media.js`).
+Undo of a Reject restores the files (`restoreQuarantinedItemDir` in `core/media-storage.js`).
+Nothing to do here beyond choosing the TTL in the production `.env`.
 
 ---
 
@@ -193,17 +177,6 @@ Run `npm run doctor` for the current drift/gaps.
   (`services/twilio.js`, `services/email.js`). Keep `.env.example` as the source of truth.
 - **Rotate secrets 🔴 (if live):** if the working `.env` holds real Twilio credentials, rotate
   them. (Gitignored — never committed — but treat any long-lived plaintext secret as rotatable.)
-
-### Admin-authenticated tests skip in CI 🟡
-
-Every admin integration suite (`accounts`, `media`, `guestbook`, `api`, `site-content`) gates its
-authenticated tests on `TEST_ADMIN_PASSWORD`, because `adminLogin()` needs the server booted with
-a matching `ADMIN_PASSWORD_HASH`. CI runs bare `npm test` with neither set, so **all** admin tests
-silently skip — CI can go green while the admin surface is unexercised. Fix in the CI test step:
-generate an `ADMIN_PASSWORD_HASH` for a known password (e.g. call `scripts/setup-admin.js`
-non-interactively) and export it plus `TEST_ADMIN_PASSWORD` before `npm test`. Keep the per-suite
-gate — don't un-gate one suite in isolation, or it becomes the lone admin test to run in CI and
-fails for lack of a configured hash.
 
 ### `__Host-` prefix on guest cookies 🟢
 
