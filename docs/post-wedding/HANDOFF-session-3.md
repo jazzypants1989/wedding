@@ -18,9 +18,21 @@ done; its other half is the vision tuning pass, which the owner wants to watch.
 **Part 4 (2026-10-30) superseded the review step above.** The owner found
 slice 1 unfinished (old panels inside the new frame) and asked for the whole
 Workspace admin plus a guestbook polish before seeing anything again. Every
-admin section is now built to the prototype and all of it is uncommitted —
-see §3.5. **First thing with a fresh agent:** the owner reviews §3.5 on
-`:3031`, then commit (§3.5 lists how).
+admin section is now built to the prototype — see §3.5 — and committed
+(`90a23ee`, `f06524a`). The owner reviewed it on `:3031`.
+
+**Part 5 (2026-10-31): finishing and shipping.** Committed on `face-tagging`:
+`docs/archive/` gitignored and the archived docs dropped (`dcd93be`); the last
+TODO.md leftovers fixed and TODO.md retired (`b760cd9`, `0b1eebb`); CI made
+test-only, because production moved to **vps3** and is deployed from the
+homelab repo (`homelab deploy wedding`), while the old deploy job SSHed to the
+spare (`1f80498`); and **the tuning pass, as `route-r3`** (`fcf08d7`):
+blurry faces are never auto-accepted, set-aside faces no longer seed groups
+(the cause of faces #2), and `suggestMinMargin` is derived. `tmp/smoke.db` is
+regraded (backup before it: `tmp/smoke-pre-r3.db`). All agent worktrees are
+removed; every unmerged commit they held is on a `design/*` branch. **Next:
+merge to main, deploy, the production face pass** — the plan is
+`~/.claude/plans/where-do-we-stand-prancy-boot.md` steps 3–5.
 
 ---
 
@@ -193,7 +205,7 @@ added tests). Group the commits by §3.5's pieces instead.
 ### 3.5 Part 4: the whole Workspace admin, and the guestbook polish
 
 Built by parallel agents (each on its own port and scratch DB), then one QA
-pass per side. All uncommitted. `npm run typecheck` clean; `npm test`
+pass per side. Committed as `90a23ee` and `f06524a`. `npm run typecheck` clean; `npm test`
 **2363/2363** plus integration **446/446**.
 
 - **Foundation:** the prototype's tokens, type, sidebar, icon rail
@@ -240,7 +252,7 @@ pass per side. All uncommitted. `npm run typecheck` clean; `npm test`
 - **Next session:** the faces tuning pass (§6 item 3) with the owner
   watching. The owner has more design notes queued for later. Issues ready
   to propose as resolved once the owner says so: site #11, #13; faces #1,
-  #3, #4. Commit is still pending (group by §3.5's pieces).
+  #3, #4. Committed.
 - **Review server:** `sh tmp/owner-review/restart.sh` → `:3031`, DB
   `tmp/owner-review/wedding.db` (fictional; synthetic faces on stub media),
   password `scratch-pass-1234`. Prototype for comparison stays on `:4700`.
@@ -299,6 +311,9 @@ test` green (2301/2301 by `4933c4b`).
   agent worktrees are kept.
 
 ## 6. Not done: the next session's list, in order
+
+*Items 1 and 2 are done (part 4 built slices 2–4; the owner reviewed). Item 3
+is done (part 5, `route-r3`). Kept for the record.*
 
 1. **Owner review of §3** in the running `:3031` server:
    - guestbook at http://localhost:3031/guestbook and the memory book at
