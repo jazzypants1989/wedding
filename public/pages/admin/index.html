@@ -197,14 +197,16 @@
       </div>
 
       <!-- Gallery Tab -->
-      <!-- GALLERY (gallery-admin.js): Official (curated, in order) | Most loved
-           by guests (ranked by reactions; promote into Official). -->
+      <!-- GALLERY (gallery-admin.js): Official | Honeymoon (the two curated
+           sets, each in order; a photo moves between them) | Most loved by
+           guests (ranked by reactions; promote into Official). -->
       <div id="tab-gallery" class="tab-content panel-fill" role="region" aria-label="Gallery" hidden>
         <div class="single single-wide">
           <header class="single-head">
             <h1>Gallery</h1>
             <nav class="seg" aria-label="Gallery">
               <a href="/admin/gallery" id="gallery-seg-official">Official</a>
+              <a href="/admin/gallery/honeymoon" id="gallery-seg-honeymoon">Honeymoon</a>
               <a href="/admin/gallery/loved" id="gallery-seg-loved">Most loved by guests</a>
             </nav>
             <p class="muted" id="gallery-lede"></p>
@@ -956,15 +958,17 @@
     </div>
   </dialog>
 
-  <!-- Dialog route /admin/gallery/upload (gallery-admin.js): the shared
-       media-uploader tray. Uploads keep going with the dialog closed. -->
+  <!-- Dialog routes /admin/gallery/upload and /admin/gallery/honeymoon/upload
+       (gallery-admin.js): the shared media-uploader tray, one queue per
+       section; the title and lede follow the section. Uploads keep going with
+       the dialog closed. -->
   <dialog id="gallery-upload-modal" class="route-dialog" aria-labelledby="gallery-upload-title">
     <header class="dlg-head">
       <h2 id="gallery-upload-title">Add official photos</h2>
       <button type="button" class="dlg-x" data-close-modal aria-label="Close">&times;</button>
     </header>
-    <p class="muted">They publish to Official straight away, at the end of the order. Big uploads keep
-      going if you close this.</p>
+    <p class="muted" id="gallery-upload-lede">They publish to Official straight away, at the end of the
+      order. Big uploads keep going if you close this.</p>
     <input type="file" id="gallery-upload-input" accept="image/*,video/*" multiple hidden>
     <!-- A second input: webkitdirectory makes an input folder-ONLY, so it cannot
          be combined with the multi-file one above. Both feed the same queue. -->

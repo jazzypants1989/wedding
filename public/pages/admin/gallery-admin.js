@@ -1,12 +1,14 @@
 /** @file Gallery (prototypes/admin-workspace views/misc.js, IA §4): Official
- *  — the curated set, in order, as a photo grid with arrows and a typed
- *  position to reorder (no drag — binding decision), captions that save on
- *  blur, Remove (with the thank-you-card warning) — and Most loved by guests,
- *  guest photos ranked by reactions, each one promotable into Official.
+ *  and Honeymoon — the two curated sets, each in order, as a photo grid with
+ *  arrows and a typed position to reorder (no drag — binding decision),
+ *  captions that save on blur, a move between the two sets, Remove (with the
+ *  thank-you-card warning) — and Most loved by guests, guest photos ranked by
+ *  reactions, each one promotable into Official.
  *
- *  Routes: /admin/gallery · /admin/gallery/loved · dialog route
- *  /admin/gallery/upload, which drives the shared media-uploader as the admin
- *  principal (csrf cookie + section:'official', reconciliation 7). */
+ *  Routes: /admin/gallery · /admin/gallery/honeymoon · /admin/gallery/loved ·
+ *  dialog routes /admin/gallery/upload and /admin/gallery/honeymoon/upload,
+ *  which drive the shared media-uploader as the admin principal (csrf cookie +
+ *  section:'official' | 'honeymoon', reconciliation 7). */
 /** @import * as Types from './types.js' */
 /** @import * as GlobalTypes from '../../../types.js' */
 /** @import * as Components from '../../components/types.js' */
@@ -25,8 +27,20 @@ import {
 } from "../utils.js"
 import { createUploadQueue, sniffKind } from "../../components/media-uploader.js"
 
-/** @type {Components.UploadQueue} */
-let queue
+/** Display names for the curated sections. */
+const SECTION_LABEL = /** @type {const} */ ({ official: "Official", honeymoon: "Honeymoon" })
+
+/** The curated section on screen, from the route. */
+let section = /** @type {GlobalTypes.CuratedMediaSection} */ ("official")
+/** The section `state.currentCurated` holds; null until loaded, or once stale. */
+let loadedSection = /** @type {GlobalTypes.CuratedMediaSection | null} */ (null)
+
+/** One upload queue per curated section. A queue fixes its section when it is
+ *  created, so the tray shows the queue for the section on screen while the
+ *  other keeps uploading. Created in initUploadModal. */
+let queues = /** @type {Record<GlobalTypes.CuratedMediaSection, Components.UploadQueue> | null} */ (
+  null
+)
 /** Debounce handle for the batched reorder POST. */
 let reorderTimer = /** @type {ReturnType<typeof setTimeout> | undefined} */ (undefined)
 /** Debounce handle coalescing the post-upload grid reload across a batch. */
@@ -44,35 +58,48 @@ const failedCaptions = /** @type {Map<number, string>} */ (new Map())
 
 /** @type {Types.loadGalleryAdmin} */
 export async function loadGalleryAdmin() {
+  const want = section
   try {
-    if (!officialLoaded) {
+    if (loadedSection !== want) {
       getElement("curated-grid").innerHTML = html`<li class="grid-empty">Loading…</li>`
     }
     const data = /** @type {GlobalTypes.MediaListResponse} */ (
-      await api("/api/media?section=official&limit=500")
+      await api(`/api/media?section=${want}&limit=500`)
     )
+    // The couple switched sections while this was in flight: that view's own
+    // load owns the grid now.
+    if (want !== section) return
     state.currentCurated = data.items
-    officialLoaded = true
+    loadedSection = want
     renderGrid()
   } catch (err) {
-    console.error("Failed to load official gallery:", err)
-    showLoadError(getElement("curated-grid"), 1, "Couldn't load the official gallery.", () =>
-      void loadGalleryAdmin(),
+    if (want !== section) return
+    console.error(`Failed to load the ${want} gallery:`, err)
+    showLoadError(
+      getElement("curated-grid"),
+      1,
+      `Couldn't load the ${SECTION_LABEL[want]} photos.`,
+      () => void loadGalleryAdmin(),
     )
   }
 }
-
-let officialLoaded = false
 
 function renderGrid() {
   const grid = getElement("curated-grid")
   const items = state.currentCurated
   if (items.length === 0) {
-    grid.innerHTML = html`<li class="grid-empty">
-      <strong>No official photos yet.</strong>
-      <span class="muted">Add your photographer's best with “+ Add official photos”, or promote a guest
-        favourite from Most loved.</span>
-    </li>`
+    grid.innerHTML =
+      section === "honeymoon"
+        ? html`<li class="grid-empty">
+            <strong>No honeymoon photos yet.</strong>
+            <span class="muted">Add them with “+ Add honeymoon photos”, or move one here from
+              Official. Guests only see a Honeymoon tab once there's at least one.</span>
+          </li>`
+        : html`<li class="grid-empty">
+            <strong>No official photos yet.</strong>
+            <span class="muted">Add your photographer's best with “+ Add official photos”, or
+              promote a guest favourite from Most loved.</span>
+          </li>`
     return
   }
   grid.innerHTML = html`${items.map(itemMarkup)}`
@@ -166,7 +193,7 @@ function handleLovedGridClick(e) {
       await api(`/api/admin/media/${id}/promote`, { method: "POST" })
       wrap.remove()
       showSuccess("Added to Official")
-      officialLoaded = false
+      if (loadedSection === "official") loadedSection = null
       void loadLoved()
     },
   })
@@ -204,8 +231,19 @@ function itemMarkup(item, index) {
         <button type="button" class="btn btn-sm btn-ghost btn-danger-soft photo-remove" data-action="remove"
           >Remove</button>
       </span>
+      <span class="btn-row">
+        <button type="button" class="btn btn-sm btn-ghost" data-action="move"
+          title="Move to the end of ${SECTION_LABEL[otherSection(section)]}"
+          >Move to ${SECTION_LABEL[otherSection(section)]}</button>
+      </span>
     </div>
   </li>`
+}
+
+/** The curated section that isn't `s`. @param {GlobalTypes.CuratedMediaSection} s
+ *  @returns {GlobalTypes.CuratedMediaSection} */
+function otherSection(s) {
+  return s === "official" ? "honeymoon" : "official"
 }
 
 /** @param {string} msg */
@@ -252,24 +290,38 @@ function moveTo(id, to) {
 
 function scheduleReorder() {
   clearTimeout(reorderTimer)
-  reorderTimer = setTimeout(saveOrder, 600)
+  reorderTimer = setTimeout(() => {
+    reorderTimer = undefined
+    void saveOrder()
+  }, 600)
+}
+
+/** Send a debounced reorder now (before the grid's contents change under it:
+ *  a section switch or a move). Resolves once it has been saved or recovered. */
+async function flushReorder() {
+  if (reorderTimer === undefined) return
+  clearTimeout(reorderTimer)
+  reorderTimer = undefined
+  await saveOrder()
 }
 
 async function saveOrder() {
+  // Snapshot synchronously: the grid may switch section while this is in flight.
+  const sec = loadedSection ?? section
   const ids = state.currentCurated.map((i) => i.id)
   try {
     await api("/api/admin/media/reorder", {
       method: "POST",
-      body: JSON.stringify({ ids }),
+      body: JSON.stringify({ ids, section: sec }),
     })
     showSuccess("Order saved ✓")
   } catch (err) {
-    // Most likely the official set changed under us (a promote from the
-    // moderation tab, a concurrent save). Refresh and RE-APPLY the attempted
-    // order to the new set instead of discarding the couple's sequencing.
+    // Most likely the set changed under us (a promote from the moderation tab,
+    // a move, a concurrent save). Refresh and RE-APPLY the attempted order to
+    // the new set instead of discarding the couple's sequencing.
     try {
       const data = /** @type {GlobalTypes.MediaListResponse} */ (
-        await api("/api/media?section=official&limit=500")
+        await api(`/api/media?section=${sec}&limit=500`)
       )
       const rank = new Map(ids.map((id, i) => [id, i]))
       // Unknown (new) items sort to the end, keeping their server order.
@@ -277,16 +329,43 @@ async function saveOrder() {
       const fresh = data.items.slice().sort((a, b) => rankOf(a.id) - rankOf(b.id))
       await api("/api/admin/media/reorder", {
         method: "POST",
-        body: JSON.stringify({ ids: fresh.map((i) => i.id) }),
+        body: JSON.stringify({ ids: fresh.map((i) => i.id), section: sec }),
       })
-      state.currentCurated = fresh
-      renderGrid()
+      if (loadedSection === sec) {
+        state.currentCurated = fresh
+        renderGrid()
+      }
       showSuccess("Order saved ✓ (the list had changed — your order was re-applied)")
     } catch {
       showGalleryError("Couldn't save the new order — reloading the current order.")
       loadGalleryAdmin()
     }
   }
+}
+
+// ---- move between Official and Honeymoon ----------------------------------
+
+/** MOVE a photo to the other curated section (appended at its end). Not a
+ *  confirm: it's one click to move it back. @param {number} id */
+async function moveToOtherSection(id) {
+  const from = section
+  const to = otherSection(from)
+  // A pending reorder names this photo; send it first so it isn't refused.
+  await flushReorder()
+  try {
+    await api(`/api/admin/media/${id}/section`, {
+      method: "POST",
+      body: JSON.stringify({ section: to }),
+    })
+  } catch (err) {
+    showGalleryError(`Couldn't move that photo: ${getErrorMessage(err)}`)
+    return
+  }
+  if (loadedSection === from) {
+    state.currentCurated = state.currentCurated.filter((i) => i.id !== id)
+    renderGrid()
+  }
+  showSuccess(`Moved to ${SECTION_LABEL[to]} — it's at the end of that order`)
 }
 
 // ---- caption + remove -----------------------------------------------------
@@ -436,6 +515,12 @@ function handleGridClick(e) {
   const action = btn.getAttribute("data-action")
   if (action === "top" || action === "up" || action === "down") moveTo(id, action)
   else if (action === "remove") removeItem(id)
+  else if (action === "move") {
+    btn.disabled = true
+    void moveToOtherSection(id).finally(() => {
+      btn.disabled = false
+    })
+  }
 }
 
 /** @param {FocusEvent} e */
@@ -483,15 +568,26 @@ function handleGridKeydown(e) {
 
 // ---- upload modal (admin curated uploads) ---------------------------------
 
-function initUploadModal() {
-  queue = createUploadQueue(
-    { onChange: onUploadChange },
-    { csrfCookie: "csrf", section: "official" },
+/** The upload queue for the section on screen. @returns {Components.UploadQueue} */
+function currentQueue() {
+  if (!queues) throw new Error("gallery upload queues not initialised")
+  return queues[section]
+}
+
+/** @param {GlobalTypes.CuratedMediaSection} sec @returns {Components.UploadQueue} */
+function makeQueue(sec) {
+  return createUploadQueue(
+    { onChange: (item) => onUploadChange(sec, item) },
+    { csrfCookie: "csrf", section: sec },
   )
+}
+
+function initUploadModal() {
+  queues = { official: makeQueue("official"), honeymoon: makeQueue("honeymoon") }
 
   const input = getInputElement("gallery-upload-input")
   input.addEventListener("change", () => {
-    if (input.files && input.files.length) queue.add(input.files)
+    if (input.files && input.files.length) currentQueue().add(input.files)
     input.value = "" // allow re-selecting the same file
   })
   getButtonElement("gallery-upload-pick").addEventListener("click", () =>
@@ -514,7 +610,7 @@ function initUploadModal() {
 
   wireModalDragDrop(getElement("gallery-upload-drop"))
   getButtonElement("gallery-upload-cancel-all").addEventListener("click", () => {
-    queue.cancelAll()
+    currentQueue().cancelAll()
     renderUploadTray()
   })
   getElement("gallery-upload-list").addEventListener("click", handleUploadListClick)
@@ -527,6 +623,8 @@ function initUploadModal() {
  * @param {FileList} files
  */
 async function addFiltered(files) {
+  // The section the files were picked for, even if the view changes mid-sniff.
+  const queue = currentQueue()
   /** @type {File[]} */
   const media = []
   let dropped = 0
@@ -572,23 +670,30 @@ function wireModalDragDrop(dropZone) {
   })
 }
 
-/** @param {Components.UploadQueueItem} item */
-function onUploadChange(item) {
-  // Official uploads auto-approve (admin principal); fold each finished item into
+/** @param {GlobalTypes.CuratedMediaSection} sec @param {Components.UploadQueueItem} item */
+function onUploadChange(sec, item) {
+  // Curated uploads auto-approve (admin principal); fold each finished item into
   // the grid once it lands. A batch of N files would otherwise fire N sequential
   // full-grid reloads, so coalesce them into one reload after the burst settles.
-  if (
-    (item.state === "done" || item.state === "pending") &&
-    !foldedIn.has(item.id)
-  ) {
-    foldedIn.add(item.id)
-    clearTimeout(uploadReloadTimer)
-    uploadReloadTimer = setTimeout(() => loadGalleryAdmin(), 400)
+  // An upload into the section NOT on screen just marks it stale: the next
+  // arrival there loads it fresh.
+  const key = `${sec}:${item.id}`
+  if ((item.state === "done" || item.state === "pending") && !foldedIn.has(key)) {
+    foldedIn.add(key)
+    if (sec === section) {
+      clearTimeout(uploadReloadTimer)
+      uploadReloadTimer = setTimeout(() => {
+        if (sec === section) void loadGalleryAdmin()
+      }, 400)
+    } else if (loadedSection === sec) {
+      loadedSection = null
+    }
   }
-  renderUploadTray()
+  if (sec === section) renderUploadTray()
 }
 
 function renderUploadTray() {
+  const queue = currentQueue()
   const items = queue.getItems()
   const active = queue.activeCount()
   const failed = items.filter((i) => i.state === "failed").length
@@ -673,6 +778,7 @@ function handleUploadListClick(e) {
   if (!(target instanceof Element)) return
   const btn = target.closest("[data-action]")
   if (!(btn instanceof HTMLElement) || !btn.dataset.id) return
+  const queue = currentQueue()
   if (btn.dataset.action === "retry") {
     const item = queue.getItems().find((i) => String(i.id) === btn.dataset.id)
     if (item && item.errorStatus === 401) {
@@ -691,25 +797,55 @@ function handleUploadListClick(e) {
 
 // ---- init -----------------------------------------------------------------
 
-/** Official or Most loved, from the route. @param {Types.RouteContext} ctx */
+/** Official, Honeymoon or Most loved, from the route (an upload dialog route
+ *  belongs to the section it sits over). @param {Types.RouteContext} ctx */
 function mount(ctx) {
-  const loved = ctx.route.path === "gallery/loved"
-  getElement("gallery-seg-official").setAttribute("aria-current", loved ? "false" : "page")
+  const path = ctx.route.path
+  const loved = path === "gallery/loved"
+  const view = loved ? "loved" : path.startsWith("gallery/honeymoon") ? "honeymoon" : "official"
+  if (view !== "loved" && view !== section) {
+    // Send a debounced reorder for the section being left before its grid goes.
+    void flushReorder()
+    section = view
+  }
+  getElement("gallery-seg-official").setAttribute(
+    "aria-current",
+    view === "official" ? "page" : "false",
+  )
+  getElement("gallery-seg-honeymoon").setAttribute(
+    "aria-current",
+    view === "honeymoon" ? "page" : "false",
+  )
   getElement("gallery-seg-loved").setAttribute("aria-current", loved ? "page" : "false")
   getElement("gallery-lede").textContent = loved
     ? "Guest photos ranked by reactions. Promote the best into Official."
-    : "The curated set, in order — what guests see first. " +
-      "Use the arrows (or type a number) to reorder; captions save as you go."
-  getElement("gallery-add-btn").hidden = loved
+    : view === "honeymoon"
+      ? "Your honeymoon photos, in order — guests get a Honeymoon tab once there's one. " +
+        "Use the arrows (or type a number) to reorder; captions save as you go."
+      : "The curated set, in order — what guests see first. " +
+        "Use the arrows (or type a number) to reorder; captions save as you go."
+  const label = section === "honeymoon" ? "honeymoon" : "official"
+  const addBtn = getElement("gallery-add-btn")
+  addBtn.hidden = loved
+  addBtn.textContent = `+ Add ${label} photos`
+  addBtn.setAttribute(
+    "href",
+    section === "honeymoon" ? "/admin/gallery/honeymoon/upload" : "/admin/gallery/upload",
+  )
+  getElement("gallery-upload-title").textContent = `Add ${label} photos`
+  getElement("gallery-upload-lede").textContent =
+    `They publish to ${SECTION_LABEL[section]} straight away, at the end of the order. ` +
+    "Big uploads keep going if you close this."
+  if (queues) renderUploadTray()
   getElement("curated-grid").hidden = loved
   getElement("loved-grid").hidden = !loved
   setCrumbs([])
   // Fresh on every arrival at a view; a dialog opening over it is not one.
-  const arrived = !ctx.samePanel || lastView !== (loved ? "loved" : "official")
-  lastView = loved ? "loved" : "official"
+  const arrived = !ctx.samePanel || lastView !== view
+  lastView = view
   if (loved) {
     if (arrived) void loadLoved()
-  } else if (!officialLoaded || arrived) {
+  } else if (loadedSection !== section || arrived) {
     void loadGalleryAdmin()
   }
 }
@@ -747,10 +883,12 @@ export function initGalleryAdmin() {
   // Resume network-failed curated uploads when connectivity returns (a 401 is
   // handled via onAuthRequired, terminal errors aren't retryable).
   window.addEventListener("online", () => {
-    if (!queue) return
-    for (const item of queue.getItems()) {
-      if (item.state === "failed" && item.retryable && item.errorStatus === 0) {
-        queue.retry(item.id)
+    if (!queues) return
+    for (const queue of [queues.official, queues.honeymoon]) {
+      for (const item of queue.getItems()) {
+        if (item.state === "failed" && item.retryable && item.errorStatus === 0) {
+          queue.retry(item.id)
+        }
       }
     }
   })

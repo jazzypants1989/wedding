@@ -1,6 +1,8 @@
 /** @file Gallery grid: batched rendering, keyset paging, content-visibility
- *  virtualization. Two persistent grids (official/guest) that hide/show without
- *  re-rendering; the default "all" view shows both stacked, official first.
+ *  virtualization. Three persistent grids (official/honeymoon/guest) that
+ *  hide/show without re-rendering; the default "all" view stacks them, official
+ *  first. Honeymoon stays out of sight — its grid and its tab — until it holds
+ *  a photo, so an empty section changes nothing on the page.
  *  See docs/post-wedding/04-gallery.md §4. */
 /** @import * as Types from "./types.js" */
 
@@ -17,7 +19,10 @@ import { renderMonogram } from "../../components/monogram.js"
 
 const BATCH_SIZE = 100
 const GUEST_LIMIT = 100
-const OFFICIAL_LIMIT = 500
+/** A curated section (official, honeymoon) loads whole, in one page. */
+const CURATED_LIMIT = 500
+/** Every grid, in page order. @type {readonly Types.MediaSection[]} */
+const SECTIONS = ["official", "honeymoon", "guest"]
 const MAX_AUTO_BATCHES = 20
 /** Overlapping monogram chips shown in the "Shared by" strip before "+N more". */
 const MAX_CONTRIB_CHIPS = 12
@@ -50,10 +55,10 @@ function inView(section) {
 }
 
 /** The section the shared load-more button acts on: guest is the only keyset
- *  feed (official loads whole in one page), so it owns the button everywhere
- *  except the official-only view. @returns {Types.MediaSection} */
+ *  feed (a curated section loads whole in one page), so it owns the button
+ *  everywhere except a curated section's own view. @returns {Types.MediaSection} */
 function buttonSection() {
-  return active === "official" ? "official" : "guest"
+  return active === "official" || active === "honeymoon" ? active : "guest"
 }
 
 /** @type {IntersectionObserver} */
@@ -63,8 +68,8 @@ let observer
 export function initGrid(cb) {
   callbacks = cb
 
-  for (const section of /** @type {Types.MediaSection[]} */ (["official", "guest"])) {
-    const container = getElement(section === "official" ? "grid-official" : "grid-guest")
+  for (const section of SECTIONS) {
+    const container = getElement(`grid-${section}`)
     container.dataset.section = section
     const sentinel = document.createElement("div")
     sentinel.className = "grid-sentinel"
@@ -107,8 +112,7 @@ export function initGrid(cb) {
     },
     { rootMargin: "1200px 0px" },
   )
-  observer.observe(sections.official.sentinel)
-  observer.observe(sections.guest.sentinel)
+  for (const section of SECTIONS) observer.observe(sections[section].sentinel)
 
   getButtonElement("gallery-loadmore").addEventListener("click", () => {
     const section = buttonSection()
@@ -179,16 +183,32 @@ export function showSection(view) {
   active = view
   sections.official.container.hidden = !inView("official")
   sections.guest.container.hidden = !inView("guest")
+  updateHoneymoon()
   // The contributors strip belongs to the guest grid only.
   getElement("gallery-contributors").hidden = !(inView("guest") && hasContributors)
-  for (const section of /** @type {Types.MediaSection[]} */ (["official", "guest"])) {
-    if (!inView(section)) continue
+  for (const section of SECTIONS) {
+    // Honeymoon loads whatever the view: whether its tab shows depends on it.
+    if (!inView(section) && section !== "honeymoon") continue
     const s = sections[section]
     if (s.items.length === 0 && !s.reachedEnd && !s.loading) {
       void loadMore(section)
     }
   }
   updateLoadMore()
+}
+
+/**
+ * Honeymoon is the one section that can be absent: until it holds a photo its
+ * tab is hidden and its grid takes no space in the "all" view (no skeleton, no
+ * empty-state line). Reached directly (?section=honeymoon) it behaves like any
+ * other section, empty state included, so a shared link never lands on nothing.
+ */
+function updateHoneymoon() {
+  const s = sections.honeymoon
+  const own = active === "honeymoon"
+  const hasItems = s.items.length > 0
+  s.container.hidden = !(own || (inView("honeymoon") && hasItems))
+  getElement("tab-honeymoon").hidden = !(own || hasItems)
 }
 
 /** @type {Types.loadMore} */
@@ -201,10 +221,10 @@ export async function loadMore(section) {
   const firstPaint = s.items.length === 0
   if (firstPaint) showSkeleton(s)
   try {
-    const isOfficial = section === "official"
-    const limit = isOfficial ? OFFICIAL_LIMIT : GUEST_LIMIT
+    const isCurated = section !== "guest"
+    const limit = isCurated ? CURATED_LIMIT : GUEST_LIMIT
     const beforeParam =
-      !isOfficial && s.nextCursor !== null ? `&before=${s.nextCursor}` : ""
+      !isCurated && s.nextCursor !== null ? `&before=${s.nextCursor}` : ""
     const data = /** @type {Types.GalleryListResponse} */ (
       await api(`/api/media?section=${section}&limit=${limit}${beforeParam}`)
     )
@@ -216,6 +236,7 @@ export async function loadMore(section) {
     s.nextCursor = data.nextCursor
     if (data.nextCursor === null) s.reachedEnd = true
     if (s.reachedEnd && s.items.length === 0) showEmpty(s)
+    if (section === "honeymoon") updateHoneymoon()
     updateCount(section)
     updateLoadMore()
     return data.items.length
@@ -264,6 +285,8 @@ function showEmpty(s) {
     div.innerHTML = html`
       No guest photos yet — got some from the big day? 📸
       <button type="button" class="auth-link" id="gallery-empty-cta">Add the first photos</button>`
+  } else if (s.section === "honeymoon") {
+    div.textContent = "No honeymoon photos yet — they'll land here soon. 🌴"
   } else {
     div.textContent =
       "No official photos yet — the couple's favorites will land here soon. 📷"
@@ -406,9 +429,11 @@ export function prependItem(item) {
 export function ensureItemLoaded(item) {
   const s = sections[item.section]
   if (s.items.some((i) => i.id === item.id)) return
+  clearEmpty(s)
   s.items.unshift(item)
   appendCell(s, item, true)
   upgradeTimes(s.container)
+  if (item.section === "honeymoon") updateHoneymoon()
 }
 
 /** @type {Types.removeItem} */
@@ -423,6 +448,7 @@ export function removeItem(section, id) {
   updateCount(section)
   // A section emptied entirely by deletes should show its warm empty state.
   if (s.items.length === 0 && s.reachedEnd) showEmpty(s)
+  if (section === "honeymoon") updateHoneymoon()
 }
 
 /** @type {Types.getSectionItems} */

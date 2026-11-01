@@ -72,7 +72,11 @@ export const MEDIA_SECTION: {
   readonly OFFICIAL: "official"
   readonly GUEST: "guest"
   readonly CONTENT: "content"
+  readonly HONEYMOON: "honeymoon"
 }
+
+/** The admin-curated, sort_order-ordered gallery sections. */
+export const CURATED_MEDIA_SECTIONS: readonly ["official", "honeymoon"]
 
 export const TARGET_TYPE: {
   readonly GUESTBOOK: "guestbook"
@@ -202,7 +206,7 @@ export const COMMUNICATION_TYPE_VALUES: readonly ["email", "sms"]
 export const CONTENT_STATUS_VALUES: readonly ["pending", "approved", "hidden", "rejected"]
 export const MEDIA_STATUS_VALUES: readonly ["uploading", "pending", "approved", "hidden", "rejected"]
 export const MEDIA_KIND_VALUES: readonly ["image", "video"]
-export const MEDIA_SECTION_VALUES: readonly ["official", "guest", "content"]
+export const MEDIA_SECTION_VALUES: readonly ["official", "guest", "content", "honeymoon"]
 export const TARGET_TYPE_VALUES: readonly ["guestbook", "media"]
 export const REACTION_EMOJI_VALUES: readonly [
   "heart",
@@ -233,7 +237,11 @@ export type CommunicationStatus = "sent" | "failed"
 export type ContentStatus = "pending" | "approved" | "hidden" | "rejected"
 export type MediaStatus = "uploading" | "pending" | "approved" | "hidden" | "rejected"
 export type MediaKind = "image" | "video"
-export type MediaSection = "official" | "guest" | "content"
+export type MediaSection = "official" | "guest" | "content" | "honeymoon"
+/** A section the admin curates: admin-only upload, auto-approved, one sort_order page. */
+export type CuratedMediaSection = "official" | "honeymoon"
+/** A section the public gallery feed lists ("content" never is). */
+export type GalleryMediaSection = "official" | "guest" | "honeymoon"
 export type TargetType = "guestbook" | "media"
 export type ReactionEmoji =
   | "heart"
@@ -263,6 +271,7 @@ export function isContentStatus(value: unknown): value is ContentStatus
 export function isMediaStatus(value: unknown): value is MediaStatus
 export function isMediaKind(value: unknown): value is MediaKind
 export function isMediaSection(value: unknown): value is MediaSection
+export function isCuratedMediaSection(value: unknown): value is CuratedMediaSection
 export function isTargetType(value: unknown): value is TargetType
 export function isReactionEmoji(value: unknown): value is ReactionEmoji
 export function isThankYouCardStatus(value: unknown): value is ThankYouCardStatus

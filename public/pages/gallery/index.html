@@ -86,9 +86,12 @@
 
       <div class="gallery-switcher" role="tablist" aria-label="Gallery sections">
         <button type="button" role="tab" class="gallery-tab" id="tab-all" aria-selected="true"
-          aria-controls="grid-official grid-guest" tabindex="0">All</button>
+          aria-controls="grid-official grid-honeymoon grid-guest" tabindex="0">All</button>
         <button type="button" role="tab" class="gallery-tab" id="tab-official" aria-selected="false"
           aria-controls="grid-official" tabindex="-1">Official</button>
+        <!-- Hidden until the section has a photo (grid.js updateHoneymoon). -->
+        <button type="button" role="tab" class="gallery-tab" id="tab-honeymoon" aria-selected="false"
+          aria-controls="grid-honeymoon" tabindex="-1" hidden>Honeymoon</button>
         <button type="button" role="tab" class="gallery-tab" id="tab-guest" aria-selected="false"
           aria-controls="grid-guest" tabindex="-1">Guest Photos <span class="gallery-tab-count" id="count-guest"></span></button>
       </div>
@@ -105,11 +108,12 @@
       <div id="gallery-pending-note" role="status" hidden></div>
       <div id="gallery-nudge" role="status" hidden></div>
 
-      <!-- Two persistent grids: hidden/shown, never re-rendered on switch.
-           In the default "All" view both are visible, official first. The
-           contributors strip belongs to the guest grid, so it sits between
-           them. -->
+      <!-- Three persistent grids: hidden/shown, never re-rendered on switch.
+           In the default "All" view they stack official, honeymoon, guest
+           (honeymoon only once it has a photo). The contributors strip belongs
+           to the guest grid, so it sits just above it. -->
       <div id="grid-official" class="gallery-grid-container" role="tabpanel" aria-labelledby="tab-official"></div>
+      <div id="grid-honeymoon" class="gallery-grid-container" role="tabpanel" aria-labelledby="tab-honeymoon" hidden></div>
       <!-- "Shared by …" monogram chips for the distinct authors of visible
            guest uploads. Populated by grid.js from the first-page aggregate. -->
       <div id="gallery-contributors" class="gallery-contributors" hidden></div>

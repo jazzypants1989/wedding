@@ -998,7 +998,7 @@ export interface GuestPhotoItem {
   id: number
   file_key: string
   kind: "image" | "video"
-  section: "official" | "guest"
+  section: "official" | "guest" | "honeymoon"
   width: number | null
   height: number | null
   needs_display: boolean

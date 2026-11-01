@@ -52,13 +52,19 @@
 }
 
 /* Breathing room between the stacked grids in the "All" view: the gap sits
-   before the contributors strip when it has content, else before the guest
-   grid itself. */
-#grid-official:not([hidden]) + .gallery-contributors:not([hidden]) {
+   before the honeymoon grid when it shows, then before the contributors strip
+   when it has content, else before the guest grid itself. `~` rather than `+`
+   because the honeymoon grid (hidden while empty) sits between official and
+   the strip. */
+#grid-official:not([hidden]) + #grid-honeymoon:not([hidden]) {
   margin-top: var(--spacing-xl);
 }
 
-#grid-official:not([hidden]) + .gallery-contributors[hidden] + #grid-guest {
+#grid-official:not([hidden]) ~ .gallery-contributors:not([hidden]) {
+  margin-top: var(--spacing-xl);
+}
+
+#grid-official:not([hidden]) ~ .gallery-contributors[hidden] + #grid-guest {
   margin-top: var(--spacing-xl);
 }
 

@@ -1,7 +1,8 @@
-/** @file Admin curated-gallery management (Phase 6): reorder the official
- *  section, MOVE an approved guest item into it, edit captions, and soft-delete
- *  any media. Admin *uploads* are NOT here — they reuse the Phase 3
- *  /api/media/* withAccountOrAdmin routes via adminFetch (reconciliation 7).
+/** @file Admin curated-gallery management (Phase 6): reorder a curated section
+ *  (official or honeymoon), move an item between those two, MOVE an approved
+ *  guest item into official, edit captions, and soft-delete any media. Admin
+ *  *uploads* are NOT here — they reuse the Phase 3 /api/media/*
+ *  withAccountOrAdmin routes via adminFetch (reconciliation 7).
  *  All routes are {admin:true}. */
 /** @import * as Types from './types.js' */
 
@@ -9,13 +10,14 @@ import { sendJson, parseBody } from "../../core/http.js"
 import { log, AUDIT_ACTIONS } from "../../core/utils.js"
 import { getClientIp } from "../../core/rate-limit.js"
 import { validateId, ValidationError, NotFoundError, ConflictError } from "../../core/validation.js"
-import { LIMITS } from "../../types.js"
+import { LIMITS, MEDIA_SECTION, isCuratedMediaSection } from "../../types.js"
 import { withTransaction } from "../../db/utils.js"
 import { quarantineItemDir } from "../../core/media-storage.js"
 import {
   getMediaById,
-  getOfficialMediaIds,
+  getCuratedMediaIds,
   setMediaSortOrders,
+  moveCuratedMedia,
   promoteMediaToOfficial,
   updateMediaCaption,
   softDeleteMedia,
@@ -64,33 +66,75 @@ export async function reorder(req, res, { session }) {
     ids.push(n)
   }
 
-  // The submitted set must be EXACTLY the current official ids — no more, no
+  // Which curated section is being ordered. Absent means official — the only
+  // one there was before honeymoon, so older callers (the HTTP import sink)
+  // keep working unchanged. Anything else present is a 400, never a guess.
+  const section = body.section === undefined ? MEDIA_SECTION.OFFICIAL : body.section
+  if (!isCuratedMediaSection(section)) {
+    throw new ValidationError("section must be 'official' or 'honeymoon'")
+  }
+
+  // The submitted set must be EXACTLY the section's current ids — no more, no
   // fewer, no duplicates, no foreign ids. This rejects a stale/tampered payload
   // (400) rather than silently reordering a subset.
-  const official = getOfficialMediaIds()
-  const officialSet = new Set(official)
+  const current = getCuratedMediaIds(section)
+  const currentSet = new Set(current)
   const seen = new Set()
-  if (ids.length !== official.length) {
-    throw new ValidationError("ids must match the current official set exactly")
+  const mismatch = `ids must match the current ${section} set exactly`
+  if (ids.length !== current.length) {
+    throw new ValidationError(mismatch)
   }
   for (const id of ids) {
-    if (!officialSet.has(id) || seen.has(id)) {
-      throw new ValidationError("ids must match the current official set exactly")
+    if (!currentSet.has(id) || seen.has(id)) {
+      throw new ValidationError(mismatch)
     }
     seen.add(id)
   }
 
-  withTransaction(() => setMediaSortOrders(ids))
+  withTransaction(() => setMediaSortOrders(ids, section))
 
   log({
     action: AUDIT_ACTIONS.MEDIA_REORDER,
     adminId: session?.token,
     ip: getClientIp(req),
     resourceType: "media",
-    details: { count: ids.length },
+    details: { count: ids.length, section },
   })
 
   return sendJson(res, 200, { success: true, ids })
+}
+
+/** @type {Types.mediaSectionMoveHandler} */
+export async function moveSection(req, res, { params, session }) {
+  const idResult = validateId(params.id, "media ID")
+  if (!idResult.valid) throw new ValidationError(idResult.error)
+
+  const body = await parseBody(req)
+  const section = body.section
+  if (!isCuratedMediaSection(section)) {
+    throw new ValidationError("section must be 'official' or 'honeymoon'")
+  }
+
+  // MOVE semantics, between the two curated sections only: the item leaves one
+  // order and is appended to the other. Missing, deleted, a guest/content item,
+  // or already in that section → 409 (promote is the guest → official path).
+  const changed = moveCuratedMedia(idResult.value, section)
+  if (!changed) {
+    throw new ConflictError(
+      `Cannot move — item must be a curated photo that isn't already in ${section}`,
+    )
+  }
+
+  log({
+    action: AUDIT_ACTIONS.MEDIA_SECTION_MOVE,
+    adminId: session?.token,
+    ip: getClientIp(req),
+    resourceType: "media",
+    resourceId: idResult.value,
+    details: { section },
+  })
+
+  return sendJson(res, 200, { success: true, section })
 }
 
 /** @type {Types.mediaPromoteHandler} */

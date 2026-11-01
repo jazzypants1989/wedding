@@ -1,7 +1,8 @@
 /** @file Gallery page entry: nav/theme/session bootstrap, view switcher
- *  (all / official / guest), ?section / ?item deep links, and lightbox URL
- *  sync. The default "all" view stacks both grids — official first — and the
- *  lightbox navigates them as one list. */
+ *  (all / official / honeymoon / guest), ?section / ?item deep links, and
+ *  lightbox URL sync. The default "all" view stacks the grids — official, then
+ *  honeymoon, then guest — and the lightbox navigates them as one list. The
+ *  Honeymoon tab is hidden until that section has a photo (grid.js). */
 /** @import * as Types from "./types.js" */
 
 import { initMobileNav } from "../../components/mobile-nav.js"
@@ -41,8 +42,12 @@ let view = "all"
 
 /** @param {string | null} value @returns {Types.GalleryView} */
 function normalizeView(value) {
-  return value === "official" || value === "guest" ? value : "all"
+  return value === "official" || value === "honeymoon" || value === "guest" ? value : "all"
 }
+
+/** The grids in "all" order: official, honeymoon, then the guest wall.
+ *  @type {readonly Types.MediaSection[]} */
+const ALL_ORDER = ["official", "honeymoon", "guest"]
 
 /** The ?section query suffix for a view ("" for the default "all"). Callers
  *  append &item=… so the empty case must carry no stray separator.
@@ -53,27 +58,28 @@ function viewQuery(v) {
 
 // ---- "all"-aware lightbox source ----
 // The lightbox treats its key as opaque; these wrappers make "all" mean
-// official-then-guest as one list, so arrows/slideshow flow across both.
+// official, honeymoon, then guest as one list, so arrows/slideshow flow across.
 
 /** @param {Types.GalleryView} v @returns {Types.MediaListItem[]} */
 function viewItems(v) {
   if (v !== "all") return getSectionItems(v)
-  return [...getSectionItems("official"), ...getSectionItems("guest")]
+  return ALL_ORDER.flatMap((section) => getSectionItems(section))
 }
 
 /** @param {Types.GalleryView} v @returns {boolean} */
 function viewHasMore(v) {
   if (v !== "all") return hasMore(v)
-  return hasMore("official") || hasMore("guest")
+  return ALL_ORDER.some((section) => hasMore(section))
 }
 
 /** @param {Types.GalleryView} v @returns {Promise<number>} */
 async function viewLoadMore(v) {
   if (v !== "all") return loadMore(v)
-  // Official is a single full page; once it's exhausted the guest keyset
-  // feed is the only thing left to extend.
-  if (hasMore("official")) {
-    const n = await loadMore("official")
+  // The curated sections are single full pages; once they're exhausted the
+  // guest keyset feed is the only thing left to extend.
+  for (const section of ALL_ORDER) {
+    if (section === "guest" || !hasMore(section)) continue
+    const n = await loadMore(section)
     if (n > 0) return n
   }
   return loadMore("guest")
@@ -82,9 +88,8 @@ async function viewLoadMore(v) {
 /** @param {Types.GalleryView} v @param {number} id */
 function viewRemoveItem(v, id) {
   if (v !== "all") return removeItem(v, id)
-  const section = getSectionItems("official").some((i) => i.id === id)
-    ? "official"
-    : "guest"
+  const section =
+    ALL_ORDER.find((s) => getSectionItems(s).some((i) => i.id === id)) ?? "guest"
   removeItem(section, id)
 }
 
@@ -148,7 +153,7 @@ function wireSocialWriteback() {
 
 /** @param {number} id @returns {Types.MediaListItem | undefined} */
 function findLoadedItem(id) {
-  for (const sec of /** @type {Types.MediaSection[]} */ (["guest", "official"])) {
+  for (const sec of ALL_ORDER) {
     const found = getSectionItems(sec).find((i) => i.id === id)
     if (found) return found
   }
@@ -158,7 +163,7 @@ function findLoadedItem(id) {
 // ---- view switcher (tablist) ----
 
 /** @type {Types.GalleryView[]} */
-const VIEWS = ["all", "official", "guest"]
+const VIEWS = ["all", "official", "honeymoon", "guest"]
 
 function wireSwitcher() {
   const tabs = VIEWS.map((v) => getButtonElement(`tab-${v}`))
@@ -169,7 +174,12 @@ function wireSwitcher() {
     tab.addEventListener("keydown", (e) => {
       if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return
       e.preventDefault()
-      const next = (i + (e.key === "ArrowRight" ? 1 : -1) + VIEWS.length) % VIEWS.length
+      // Step over a hidden tab (Honeymoon, while it has no photos).
+      const step = e.key === "ArrowRight" ? 1 : -1
+      let next = i
+      do {
+        next = (next + step + VIEWS.length) % VIEWS.length
+      } while (tabs[next].hidden && next !== i)
       tabs[next].focus()
       selectView(VIEWS[next], true)
     })
@@ -188,8 +198,9 @@ function selectView(next, updateUrl) {
     // in wireSwitcher) move between them, and Tab exits the tablist (2.5).
     tab.tabIndex = v === view ? 0 : -1
   }
-  // Upload CTA belongs with the guest grid (present in "all" too).
-  getElement("guest-cta").hidden = view === "official"
+  // Upload CTA belongs with the guest grid (present in "all" too) — never on a
+  // curated section's own view, which guests can't add to.
+  getElement("guest-cta").hidden = view === "official" || view === "honeymoon"
   showSection(view)
   window.dispatchEvent(new CustomEvent("gallery:sectionchange"))
   if (updateUrl && !isLightboxOpen()) {
@@ -213,7 +224,7 @@ function openFromCell(section, id) {
  * @param {number} id
  */
 async function openItemById(id) {
-  for (const sec of /** @type {Types.MediaSection[]} */ (["guest", "official"])) {
+  for (const sec of ALL_ORDER) {
     if (getSectionItems(sec).some((i) => i.id === id)) {
       openLightbox(view === "all" ? "all" : sec, id)
       return

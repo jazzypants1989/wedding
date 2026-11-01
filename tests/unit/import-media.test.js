@@ -79,7 +79,16 @@ describe("parseArgs", () => {
     const parsed = parseArgs([])
     assert.equal(parsed.valid, false)
     assert.ok(!parsed.valid && parsed.error.includes("No directory given"))
-    assert.ok(!parsed.valid && parsed.error.includes("--section=official|guest"))
+    assert.ok(!parsed.valid && parsed.error.includes("--section=official|honeymoon|guest"))
+  })
+
+  it("accepts --section=honeymoon, and still refuses a section it doesn't know", () => {
+    assert.equal(args(["/photos", "--section=honeymoon"]).section, "honeymoon")
+    assert.equal(args(["/photos", "--section=guest"]).section, "guest")
+    for (const bad of ["content", "Honeymoon", "honeymoon "]) {
+      const parsed = parseArgs(["/photos", `--section=${bad}`])
+      assert.equal(parsed.valid, false, `--section=${bad} refused`)
+    }
   })
 
   it("defaults to the official section, name order and a real concurrency", () => {

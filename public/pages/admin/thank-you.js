@@ -1519,7 +1519,11 @@ async function showComposer(ctx) {
     let mediaItems = /** @type {ThanksTypes.ThankYouMediaItem[]} */ ([])
     if (mediaKeys.length) {
       try {
-        await Promise.all([ensureMediaLoaded("official"), ensureMediaLoaded("guest")])
+        await Promise.all([
+          ensureMediaLoaded("official"),
+          ensureMediaLoaded("honeymoon"),
+          ensureMediaLoaded("guest"),
+        ])
         mediaItems = mapMediaItems(mediaKeys)
       } catch {
         // The preview omits photos it couldn't resolve.
@@ -2035,7 +2039,7 @@ function handlePhotoStripClick(e) {
 }
 
 /** Each picker open refetches (photos get approved while the couple writes).
- *  @param {"official" | "guest"} section @param {boolean} [force] */
+ *  @param {"official" | "honeymoon" | "guest"} section @param {boolean} [force] */
 async function ensureMediaLoaded(section, force = false) {
   if (loadedSections.has(section) && !force) return
   const data = /** @type {GlobalTypes.MediaListResponse} */ (
@@ -2074,7 +2078,7 @@ function cacheMedia(m) {
     id: 0,
     file_key: m.file_key,
     kind: m.kind === "video" ? "video" : "image",
-    section: m.section === "official" ? "official" : "guest",
+    section: m.section === "official" || m.section === "honeymoon" ? m.section : "guest",
     status: "approved",
     caption: null,
     width: m.width ?? null,
@@ -2105,6 +2109,7 @@ async function openPhotoPicker() {
     const [photos] = await Promise.all([
       api(`/api/admin/guests/${draft.guestId}/photos`),
       ensureMediaLoaded("official", true),
+      ensureMediaLoaded("honeymoon", true),
       ensureMediaLoaded("guest", true),
     ])
     theirs = /** @type {Types.GuestPhotosResponse} */ (photos).items
@@ -2121,6 +2126,7 @@ async function openPhotoPicker() {
     (m) => m.status === "approved" && !theirKeys.has(m.file_key),
   )
   const official = rest.filter((m) => m.section === "official")
+  const honeymoon = rest.filter((m) => m.section === "honeymoon")
   const guest = rest.filter((m) => m.section === "guest")
   /** @param {string} key @param {string} kind @param {number} [faces] */
   const tile = (key, kind, faces) => {
@@ -2152,6 +2158,12 @@ async function openPhotoPicker() {
       ? html`<section class="pick-section">
           <h3 class="rows-heading">Official photos</h3>
           <div class="pick-grid">${official.map((m) => tile(m.file_key, m.kind))}</div>
+        </section>`
+      : ""}
+    ${honeymoon.length
+      ? html`<section class="pick-section">
+          <h3 class="rows-heading">Honeymoon</h3>
+          <div class="pick-grid">${honeymoon.map((m) => tile(m.file_key, m.kind))}</div>
         </section>`
       : ""}
     ${guest.length

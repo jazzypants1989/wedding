@@ -35,7 +35,7 @@ import {
   createMediaRow,
   finalizeMedia,
   getMediaById,
-  getOfficialMediaIds,
+  getCuratedMediaIds,
   hardDeleteMedia,
   setMediaOriginalExt,
   setMediaSortOrders,
@@ -45,7 +45,13 @@ import {
   updateMediaCaption,
 } from "../../db/media.js"
 import { withTransaction } from "../../db/utils.js"
-import { MEDIA_KIND, MEDIA_STATUS, MEDIA_STORAGE, expectedVariants } from "../../types.js"
+import {
+  MEDIA_KIND,
+  MEDIA_SECTION,
+  MEDIA_STATUS,
+  MEDIA_STORAGE,
+  expectedVariants,
+} from "../../types.js"
 import { MediaImportError } from "./media-errors.js"
 
 /** Same 32 bytes core/upload.js buffers to sniff a stream. */
@@ -306,18 +312,18 @@ export function createLocalSink(options = {}) {
       hardDeleteMedia(row.id)
     },
 
-    async applyOrder(orderedIds) {
+    async applyOrder(orderedIds, section = MEDIA_SECTION.OFFICIAL) {
       if (orderedIds.length === 0) return { ok: true }
       db()
       // Exact, unlike the HTTP sink: sort_order is a column, and this is the
       // same helper the admin reorder endpoint calls. Ids the importer did not
       // create keep their existing order by being appended in current order —
       // an import must not reshuffle photos that were already curated.
-      const existing = getOfficialMediaIds()
+      const existing = getCuratedMediaIds(section)
       const imported = new Set(orderedIds)
       const untouched = existing.filter((id) => !imported.has(id))
       const ids = [...untouched, ...orderedIds.filter((id) => existing.includes(id))]
-      withTransaction(() => setMediaSortOrders(ids))
+      withTransaction(() => setMediaSortOrders(ids, section))
       return { ok: true }
     },
 

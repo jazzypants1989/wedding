@@ -551,6 +551,7 @@ import type {
   MediaSection,
   MediaStatus,
   MediaFeedRow,
+  CuratedMediaSection,
 } from "../types.js"
 
 /** Result from a SUM(...) query. */
@@ -570,8 +571,9 @@ export interface MediaFeedOptions {
 
 /**
  * The public gallery feed for one section. Guest: approved + the caller's own
- * pending, newest-first (id DESC), keyset-paginated. Official: sort_order, id,
- * single page. LEFT JOIN accounts, so author_name is null for official uploads.
+ * pending, newest-first (id DESC), keyset-paginated. Curated (official,
+ * honeymoon): sort_order, id, single page. LEFT JOIN accounts, so author_name
+ * is null for admin (curated) uploads.
  */
 export function getMediaFeed(options: MediaFeedOptions): MediaFeedRow[]
 
@@ -652,12 +654,18 @@ export function setMediaStatus(
   toStatus: MediaStatus,
 ): boolean
 
-/** All official, non-deleted media ids in display order (reorder validation). */
-export function getOfficialMediaIds(): number[]
+/** All non-deleted media ids in one curated section (official | honeymoon), in
+ *  display order (reorder validation). */
+export function getCuratedMediaIds(section: CuratedMediaSection): number[]
 
-/** Rewrite official items' sort_order to the given id order (array index).
- *  Caller wraps in withTransaction; only official non-deleted rows are touched. */
-export function setMediaSortOrders(ids: number[]): void
+/** Rewrite one curated section's sort_order to the given id order (array index).
+ *  Caller wraps in withTransaction; only that section's non-deleted rows are touched. */
+export function setMediaSortOrders(ids: number[], section: CuratedMediaSection): void
+
+/** MOVE a curated item (official ⇄ honeymoon) into the other curated section,
+ *  appended at the end of its order. Returns true if a row changed (false when
+ *  the item is missing, deleted, not curated, or already in `toSection`). */
+export function moveCuratedMedia(id: number, toSection: CuratedMediaSection): boolean
 
 /** MOVE an approved guest item into the official section, appended at the end.
  *  Returns true if a row changed (false if not an approved guest item). */
@@ -1111,7 +1119,7 @@ export interface GuestPhoto {
   id: number
   file_key: string
   kind: "image" | "video"
-  section: "official" | "guest"
+  section: "official" | "guest" | "honeymoon"
   width: number | null
   height: number | null
   needs_display: boolean

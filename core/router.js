@@ -322,6 +322,8 @@ route("DELETE", "/api/admin/accounts/:id", adminAccounts.remove, { admin: true }
 route("GET", "/api/admin/media/guest-loved", adminMedia.guestLoved, { admin: true })
 route("POST", "/api/admin/media/reorder", adminMedia.reorder, { admin: true })
 route("POST", "/api/admin/media/:id/promote", adminMedia.promote, { admin: true })
+// Move a curated photo between Official and Honeymoon (appended to the end).
+route("POST", "/api/admin/media/:id/section", adminMedia.moveSection, { admin: true })
 route("GET", "/api/admin/media/:id/references", adminMedia.references, { admin: true })
 route("PATCH", "/api/admin/media/:id", adminMedia.caption, { admin: true })
 route("DELETE", "/api/admin/media/:id", adminMedia.remove, { admin: true })

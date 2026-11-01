@@ -25,7 +25,7 @@ import os from "node:os"
 import path from "node:path"
 
 import { sanitize } from "../core/http.js"
-import { LIMITS, MEDIA_KIND, MEDIA_SECTION } from "../types.js"
+import { LIMITS, MEDIA_KIND, MEDIA_SECTION, isCuratedMediaSection } from "../types.js"
 import { describeBackends, imageBackendInstallHint, videoBackendInstallHint } from "./lib/image-backend.js"
 import {
   hashFile,
@@ -44,7 +44,8 @@ const USAGE = `Usage: npm run import:media -- <dir> [options]
 
   <dir>                     Directory of photos/videos to import (required).
 
-  --section=official|guest  Which gallery section. Default: official.
+  --section=official|honeymoon|guest
+                            Which gallery section. Default: official.
   --dry-run                 Report what would happen. Touches no write path.
   --url=URL                 Import over the API instead of writing locally.
 
@@ -56,7 +57,7 @@ const USAGE = `Usage: npm run import:media -- <dir> [options]
   --manifest=PATH           Idempotency record. Default: <data dir>/import-manifest.json.
   --report=PATH             Write the run summary as JSON.
   --force                   Import even files the manifest already records.
-  --skip-reorder            Leave sort_order alone (official section only).
+  --skip-reorder            Leave sort_order alone (official/honeymoon only).
 
   --strip-original          Also remove EXIF from the stored originals.
   --heic-original=keep|jpeg Store HEIC originals as-is, or re-encode to JPEG.
@@ -67,7 +68,7 @@ const USAGE = `Usage: npm run import:media -- <dir> [options]
 /** Flags whose value must come from a fixed set.
  *  @type {Record<string, string[]>} */
 const ENUM_FLAGS = {
-  section: [MEDIA_SECTION.OFFICIAL, MEDIA_SECTION.GUEST],
+  section: [MEDIA_SECTION.OFFICIAL, MEDIA_SECTION.HONEYMOON, MEDIA_SECTION.GUEST],
   order: ["name", "mtime"],
   captions: ["none", "sidecar"],
   "heic-original": ["keep", "jpeg"],
@@ -212,7 +213,9 @@ export function parseArgs(argv) {
     concurrency = n
   }
 
-  const section = /** @type {"official" | "guest"} */ (values.section ?? MEDIA_SECTION.OFFICIAL)
+  const section = /** @type {"official" | "honeymoon" | "guest"} */ (
+    values.section ?? MEDIA_SECTION.OFFICIAL
+  )
 
   return {
     valid: true,
@@ -778,14 +781,15 @@ export async function runImport(args, deps = {}) {
 
     // ---- Ordering --------------------------------------------------------
 
-    if (args.section === MEDIA_SECTION.OFFICIAL && !args.skipReorder && report.imported.length > 0) {
+    const curated = isCuratedMediaSection(args.section) ? args.section : null
+    if (curated !== null && !args.skipReorder && report.imported.length > 0) {
       // The imported ids in plan order, so sort_order matches the filename (or
-      // mtime) order the user asked for.
+      // mtime) order the user asked for — within the curated section imported to.
       const byFile = new Map(report.imported.map((row) => [row.file, row.id]))
       const orderedIds = plan.items
         .map((item) => byFile.get(item.file.relative))
         .filter((id) => typeof id === "number")
-      const ordering = await sink.applyOrder(orderedIds)
+      const ordering = await sink.applyOrder(orderedIds, curated)
       if (!ordering.ok) {
         report.warnings.push(ordering.message ?? "Couldn't set the gallery order.")
         note(`! ${ordering.message ?? "Couldn't set the gallery order."}`)
@@ -810,7 +814,7 @@ export async function runImport(args, deps = {}) {
     if (report.imported.length > 0) {
       write("")
       write(
-        args.section === MEDIA_SECTION.OFFICIAL
+        curated !== null
           ? "Check them in the admin Gallery tab; captions are editable inline there."
           : "They are live in the guest gallery at /gallery.",
       )

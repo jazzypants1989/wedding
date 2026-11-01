@@ -58,6 +58,7 @@ import {
   MEDIA_STORAGE,
   TARGET_TYPE,
   isMediaKind,
+  isCuratedMediaSection,
   expectedVariants,
 } from "../types.js"
 import { getWeddingFacts } from "../core/wedding-facts.js"
@@ -224,7 +225,8 @@ function finalizeByteViolation(principal) {
 // ---- Gallery read endpoints (public) ------------------------------------
 
 const GUEST_PAGE_MAX = 100
-const OFFICIAL_PAGE_MAX = 500
+/** A curated section (official, honeymoon) is served whole, in one page. */
+const CURATED_PAGE_MAX = 500
 
 /**
  * Parse the keyset cursor. Only a positive integer is a valid cursor; anything
@@ -292,20 +294,19 @@ export async function list(req, res) {
 
   const urlObj = new URL(req.url ?? "/", `http://${req.headers.host}`)
   const sectionParam = urlObj.searchParams.get("section")
-  // Public gallery feed serves only the two gallery sections. 'content' passes
-  // isMediaSection() but is admin-only site-content (dress-code figures) and must
-  // never be listable here — clamp anything else to the guest feed.
-  const section =
-    sectionParam === MEDIA_SECTION.OFFICIAL || sectionParam === MEDIA_SECTION.GUEST
-      ? sectionParam
-      : MEDIA_SECTION.GUEST
-  const isOfficial = section === MEDIA_SECTION.OFFICIAL
+  // Public gallery feed serves only the gallery sections: guest, and the curated
+  // ones (official, honeymoon). 'content' passes isMediaSection() but is
+  // admin-only site-content (dress-code figures) and must never be listable
+  // here — clamp anything else to the guest feed.
+  /** @type {GlobalTypes.GalleryMediaSection} */
+  const section = isCuratedMediaSection(sectionParam) ? sectionParam : MEDIA_SECTION.GUEST
+  const isCurated = section !== MEDIA_SECTION.GUEST
 
-  // Official is a single sort_order page (no cursor); guest is a keyset feed.
-  const before = isOfficial ? null : parseCursor(urlObj.searchParams.get("before"))
+  // A curated section is a single sort_order page (no cursor); guest is a keyset feed.
+  const before = isCurated ? null : parseCursor(urlObj.searchParams.get("before"))
   const limit = clampLimit(
     urlObj.searchParams.get("limit"),
-    isOfficial ? OFFICIAL_PAGE_MAX : GUEST_PAGE_MAX,
+    isCurated ? CURATED_PAGE_MAX : GUEST_PAGE_MAX,
   )
 
   const rows = getMediaFeed({ callerId, section, before, limit })
@@ -313,17 +314,17 @@ export async function list(req, res) {
   // Attach reaction summaries + comment counts (Phase 5). Guarded internally
   // against an empty page (sql.list throws on []).
   enrichSocial(items, TARGET_TYPE.MEDIA, callerId)
-  // A full page means there may be more → last id is the next cursor. Official
-  // never paginates, so it always reports nextCursor null.
+  // A full page means there may be more → last id is the next cursor. A curated
+  // section never paginates, so it always reports nextCursor null.
   const nextCursor =
-    !isOfficial && rows.length === limit ? rows[rows.length - 1].id : null
+    !isCurated && rows.length === limit ? rows[rows.length - 1].id : null
 
   // Contributors strip data ("Shared by …") rides on the FIRST guest page only —
   // it's a section-wide aggregate, so recomputing it on every keyset page would
   // be wasted work. `before === null` identifies the first page.
   /** @type {GlobalTypes.MediaContributors | undefined} */
   const contributors =
-    !isOfficial && before === null ? getGuestContributors() : undefined
+    !isCurated && before === null ? getGuestContributors() : undefined
 
   return sendJson(res, 200, { items, nextCursor, contributors })
 }
@@ -375,13 +376,14 @@ export async function createSession(req, res, { principal }) {
     return sendJson(res, 413, { error: "File is too large", code: "PAYLOAD_TOO_LARGE" })
   }
 
-  // Only an admin may place an item outside the guest feed: the curated
-  // 'official' gallery, or the 'content' section (site-content images such as
-  // dress-code figures, which are image-only and never appear in a gallery feed).
+  // Only an admin may place an item outside the guest feed: a curated gallery
+  // section ('official' or 'honeymoon'), or the 'content' section (site-content
+  // images such as dress-code figures, which are image-only and never appear in
+  // a gallery feed). A guest naming any of them lands in 'guest', as always.
   /** @type {GlobalTypes.MediaSection} */
   let section = MEDIA_SECTION.GUEST
-  if (principal.isAdmin && body.section === MEDIA_SECTION.OFFICIAL) {
-    section = MEDIA_SECTION.OFFICIAL
+  if (principal.isAdmin && isCuratedMediaSection(body.section)) {
+    section = body.section
   } else if (principal.isAdmin && body.section === MEDIA_SECTION.CONTENT) {
     if (kind !== MEDIA_KIND.IMAGE) {
       throw new ValidationError("content section accepts images only")

@@ -278,7 +278,7 @@ export function describeBackends(backends: MediaBackends): BackendNote[]
 
 // --- Variant generation (scripts/lib/media-variants.js) ---
 
-import type { MediaKind, MediaSection } from "../../types.js"
+import type { MediaKind, MediaSection, CuratedMediaSection } from "../../types.js"
 
 /** Container types core/sniff.js recognizes. */
 export type SourceSniff = "jpeg" | "png" | "webp" | "heic" | "mp4" | "mov"
@@ -459,8 +459,12 @@ export interface ImportSink {
   ): Promise<{ id: number; status: string }>
   /** Throw away a created-but-unfinalized session (SIGINT, mid-file failure). */
   discard(id: number): Promise<void>
-  /** Set sort_order across the official section. */
-  applyOrder(orderedIds: number[]): Promise<{ ok: boolean; message?: string }>
+  /** Set sort_order across one curated section (default official): the
+   *  section's other photos keep their order, the imported ones follow. */
+  applyOrder(
+    orderedIds: number[],
+    section?: CuratedMediaSection,
+  ): Promise<{ ok: boolean; message?: string }>
   close(): Promise<void>
 }
 
@@ -549,7 +553,7 @@ export function normalizeOrigin(origin: string): string
 export interface ImportArgs {
   /** Absolute; always a positional argument, never guessed. */
   dir: string
-  section: "official" | "guest"
+  section: "official" | "honeymoon" | "guest"
   dryRun: boolean
   /** Normalized origin (no trailing slash), or null for the local sink. */
   url: string | null

@@ -14,8 +14,8 @@
  *  COALESCE(merged_into, id) names the end of the chain — the same answer
  *  resolveIdentity() gives.
  *
- *  Read-only. Only approved, non-deleted gallery media (official + guest);
- *  site-content figures are never a card photo. */
+ *  Read-only. Only approved, non-deleted gallery media (official, honeymoon,
+ *  guest); site-content figures are never a card photo. */
 /** @import * as Types from './types.js' */
 
 import { sql } from "./sql.js"
@@ -33,14 +33,14 @@ export function getMediaFeaturingGuest(guestId) {
     JOIN people p ON p.id = live.person_id AND p.deleted_at IS NULL
     WHERE p.guest_id = ${guestId}
       AND m.status = 'approved' AND m.deleted_at IS NULL
-      AND m.section IN ('official', 'guest')
+      AND m.section IN ('official', 'honeymoon', 'guest')
     GROUP BY m.id
     ORDER BY faces DESC, m.id DESC`.all()
   return rows.map((r) => ({
     id: r.id,
     file_key: r.file_key,
     kind: /** @type {"image" | "video"} */ (r.kind),
-    section: /** @type {"official" | "guest"} */ (r.section),
+    section: /** @type {"official" | "honeymoon" | "guest"} */ (r.section),
     width: r.width,
     height: r.height,
     needs_display: !!r.needs_display,

@@ -211,6 +211,7 @@ export function serveMedia(req, res) {
     headers["Content-Disposition"] = "attachment"
   } else if (
     row.section === MEDIA_SECTION.OFFICIAL ||
+    row.section === MEDIA_SECTION.HONEYMOON ||
     row.section === MEDIA_SECTION.CONTENT
   ) {
     // Curated/site-content variants are stable for the life of the file_key.

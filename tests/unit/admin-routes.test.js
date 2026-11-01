@@ -58,6 +58,9 @@ test("the sidebar groups name every item once, and the bottom bar is four of the
 test("the longest whole-segment match wins; deeper paths keep their section", () => {
   assert.strictEqual(routeFor("/admin/gallery/loved")?.sub, "loved")
   assert.strictEqual(routeFor("/admin/gallery")?.sub, "official")
+  assert.strictEqual(routeFor("/admin/gallery/honeymoon")?.sub, "honeymoon")
+  assert.strictEqual(routeFor("/admin/gallery/honeymoon/upload")?.parent, "gallery/honeymoon")
+  assert.strictEqual(routeFor("/admin/gallery/honeymoon/upload")?.dialog, "gallery-upload-modal")
   assert.strictEqual(routeFor("/admin/thank-yous/replies/")?.nav, "replies")
   assert.strictEqual(routeFor("/admin/faces/ask/f2003")?.tab, "faces")
   // Whole segments only: "review-x" is not "review".

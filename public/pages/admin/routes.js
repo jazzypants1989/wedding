@@ -158,6 +158,21 @@ export const ROUTES = [
     dialog: "gallery-upload-modal",
     parent: "gallery",
   },
+  {
+    path: "gallery/honeymoon",
+    tab: "gallery",
+    sub: "honeymoon",
+    nav: "gallery",
+    title: "Honeymoon",
+  },
+  {
+    path: "gallery/honeymoon/upload",
+    tab: "gallery",
+    nav: "gallery",
+    title: "Add honeymoon photos",
+    dialog: "gallery-upload-modal",
+    parent: "gallery/honeymoon",
+  },
   // The old single Thank-yous section; its links (bookmarks, emails) land on Cards.
   {
     path: "thank-yous",

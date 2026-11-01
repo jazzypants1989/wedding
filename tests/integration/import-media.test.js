@@ -254,6 +254,56 @@ describe("import-media — local sink", () => {
     )
   })
 
+  it("--section=honeymoon imports and orders there, leaving official alone", async () => {
+    // An official photo already curated, whose order the honeymoon import must not touch.
+    const officialDir = scratch("local-honeymoon-official")
+    write(officialDir, "ceremony.jpg", photo(640, 480))
+    const first = await run(argsFor(officialDir))
+    assert.strictEqual(first.imported.length, 1)
+    const officialId = first.imported[0].id
+    const officialBefore = localRows().find((r) => r.id === officialId)
+
+    const dir = scratch("local-honeymoon")
+    write(dir, "BEACH_0002.jpg", photo(1000, 750))
+    write(dir, "BEACH_0001.jpg", photo(750, 1000))
+    const parsed = parseArgs([dir, "--section=honeymoon"])
+    assert.ok(parsed.valid, "the CLI accepts --section=honeymoon")
+    const report = await run({
+      ...parsed.value,
+      manifestPath: path.join(dir, "manifest.json"),
+      concurrency: 2,
+    })
+
+    assert.strictEqual(report.exitCode, 0, JSON.stringify(report.failed))
+    assert.strictEqual(report.imported.length, 2)
+    const ids = new Set(report.imported.map((i) => i.id))
+    const rows = localRows().filter((r) => ids.has(r.id))
+    for (const row of rows) {
+      assert.strictEqual(row.section, "honeymoon")
+      assert.strictEqual(row.status, "approved")
+      assert.strictEqual(row.account_id, null)
+      assert.strictEqual(row.display_bytes, 2048)
+      assert.strictEqual(row.thumb_bytes, 512)
+    }
+    // Ordered within honeymoon by filename: 0 and 1, whatever official holds.
+    const nameById = new Map(report.imported.map((i) => [i.id, i.file]))
+    const byOrder = rows.slice().sort((a, b) => a.sort_order - b.sort_order)
+    assert.deepStrictEqual(
+      byOrder.map((r) => [nameById.get(r.id), r.sort_order]),
+      [
+        ["BEACH_0001.jpg", 0],
+        ["BEACH_0002.jpg", 1],
+      ],
+    )
+    const officialAfter = localRows().find((r) => r.id === officialId)
+    assert.strictEqual(officialAfter.section, "official")
+    assert.strictEqual(
+      officialAfter.sort_order,
+      officialBefore.sort_order,
+      "official order untouched",
+    )
+  })
+
   it("is a no-op on a second run, and re-imports once the manifest is gone", async () => {
     const dir = scratch("local-idempotent")
     write(dir, "one.jpg", photo(300, 200))
@@ -418,6 +468,34 @@ describe("import-media — http sink", { skip: !hasAdmin && "TEST_ADMIN_PASSWORD
     assert.deepStrictEqual(
       rows.slice().sort((a, b) => a.sort_order - b.sort_order).map((r) => nameById.get(r.id)),
       ["IMG_0001.jpg", "IMG_0002.jpg"],
+    )
+  })
+
+  it("--section=honeymoon over the API lands in honeymoon, in filename order", async () => {
+    const dir = scratch("http-honeymoon")
+    write(dir, "SUNSET_2.jpg", photo(900, 600))
+    write(dir, "SUNSET_1.jpg", photo(600, 900))
+    const parsed = parseArgs([dir, "--section=honeymoon", `--url=${BASE_URL}`])
+    assert.ok(parsed.valid)
+    const report = await run({
+      ...parsed.value,
+      manifestPath: path.join(dir, "manifest.json"),
+      concurrency: 2,
+    })
+
+    assert.strictEqual(report.exitCode, 0, JSON.stringify(report.failed))
+    assert.deepStrictEqual(report.warnings, [], "the honeymoon reorder call was accepted")
+    const ids = new Set(report.imported.map((i) => i.id))
+    const rows = serverRows().filter((r) => ids.has(r.id))
+    assert.strictEqual(rows.length, 2)
+    for (const row of rows) {
+      assert.strictEqual(row.section, "honeymoon")
+      assert.strictEqual(row.status, "approved")
+    }
+    const nameById = new Map(report.imported.map((i) => [i.id, i.file]))
+    assert.deepStrictEqual(
+      rows.slice().sort((a, b) => a.sort_order - b.sort_order).map((r) => nameById.get(r.id)),
+      ["SUNSET_1.jpg", "SUNSET_2.jpg"],
     )
   })
 

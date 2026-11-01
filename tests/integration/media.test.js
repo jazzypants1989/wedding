@@ -642,6 +642,225 @@ describe("content section: dress-code images (requires TEST_ADMIN_PASSWORD)", ()
   })
 })
 
+describe("honeymoon section: a second curated set", () => {
+  /** @returns {Promise<any>} */
+  async function adminAuthFor() {
+    const a = await adminLogin(process.env.TEST_ADMIN_PASSWORD)
+    return { cookieHeader: a.cookieHeader, csrfToken: a.csrfToken }
+  }
+
+  /** Full admin image upload into a curated section → { id, fileKey, status }.
+   * @param {any} adminAuth @param {string} section */
+  async function uploadCurated(adminAuth, section) {
+    const { res, data } = await createSession(
+      { kind: "image", originalBytes: 256, section },
+      adminAuth,
+      adminFetch,
+    )
+    assert.strictEqual(res.status, 201)
+    await putVariant(data.id, "original", makeJpeg(256), "image/jpeg", adminAuth, adminFetch)
+    await putVariant(data.id, "display", makeJpeg(200), "image/jpeg", adminAuth, adminFetch)
+    await putVariant(data.id, "thumb", makeJpeg(120), "image/jpeg", adminAuth, adminFetch)
+    const fin = await finalize(data.id, { width: 1200, height: 800 }, adminAuth, adminFetch)
+    return { id: Number(data.id), fileKey: String(data.fileKey), status: (await json(fin)).status }
+  }
+
+  /** @param {string} section @returns {Promise<number[]>} public feed ids, in order */
+  async function feedIds(section) {
+    const body = await json(await fetch(`${BASE_URL}/api/media?section=${section}`))
+    return body.items.map((/** @type {any} */ i) => i.id)
+  }
+
+  /** @param {any} adminAuth @param {Record<string, unknown>} body */
+  function reorder(adminAuth, body) {
+    return adminFetch(
+      "/api/admin/media/reorder",
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
+      adminAuth,
+    )
+  }
+
+  /** @param {any} adminAuth @param {number} id @param {string} section */
+  function moveTo(adminAuth, id, section) {
+    return adminFetch(
+      `/api/admin/media/${id}/section`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ section }),
+      },
+      adminAuth,
+    )
+  }
+
+  it("a guest can never upload into honeymoon — the session lands in guest, like official", async () => {
+    const { auth, accountId } = signIn({ trusted: 1, name: "Sneaky" })
+    for (const section of ["honeymoon", "official"]) {
+      const { res, data } = await createSession(
+        { kind: "image", originalBytes: 256, section },
+        auth,
+      )
+      assert.strictEqual(res.status, 201, "the upload itself is allowed")
+      const row = /** @type {any} */ (
+        db.prepare("SELECT section, account_id FROM media WHERE id = ?").get(data.id)
+      )
+      assert.strictEqual(row.section, "guest", `a guest asking for ${section} gets guest`)
+      assert.strictEqual(row.account_id, accountId)
+    }
+
+    // End to end: a finished guest upload asking for honeymoon is never listed there.
+    const { data } = await createSession(
+      { kind: "image", originalBytes: 256, section: "honeymoon" },
+      auth,
+    )
+    await putVariant(data.id, "original", makeJpeg(256), "image/jpeg", auth)
+    await putVariant(data.id, "display", makeJpeg(200), "image/jpeg", auth)
+    await putVariant(data.id, "thumb", makeJpeg(120), "image/jpeg", auth)
+    await finalize(data.id, { width: 1200, height: 800 }, auth)
+    assert.ok(!(await feedIds("honeymoon")).includes(data.id), "absent from honeymoon")
+    assert.ok((await feedIds("guest")).includes(data.id), "present in guest")
+  })
+
+  it("admin upload: auto-approved, account_id NULL, listed in honeymoon only", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const adminAuth = await adminAuthFor()
+    const one = await uploadCurated(adminAuth, "honeymoon")
+    const two = await uploadCurated(adminAuth, "honeymoon")
+    assert.strictEqual(one.status, "approved")
+
+    const row = /** @type {any} */ (
+      db.prepare("SELECT account_id, section FROM media WHERE id = ?").get(one.id)
+    )
+    assert.strictEqual(row.account_id, null)
+    assert.strictEqual(row.section, "honeymoon")
+
+    // The public list: one sort_order page (no cursor), the couple as author.
+    const body = await json(await fetch(`${BASE_URL}/api/media?section=honeymoon`))
+    assert.deepStrictEqual(
+      body.items.map((/** @type {any} */ i) => i.id),
+      [one.id, two.id],
+    )
+    assert.strictEqual(body.items[0].section, "honeymoon")
+    assert.strictEqual(body.items[0].author_name, getWeddingFacts().coupleNames)
+    assert.strictEqual(body.nextCursor, null, "honeymoon is a single page")
+    assert.strictEqual(body.contributors, undefined, "no guest contributors strip")
+
+    // Kept out of the other feeds.
+    assert.ok(!(await feedIds("official")).includes(one.id))
+    assert.ok(!(await feedIds("guest")).includes(one.id))
+
+    // Deep link + curated (immutable) caching, like official.
+    assert.strictEqual((await fetch(`${BASE_URL}/api/media/${one.id}`)).status, 200)
+    const get = await fetch(`${BASE_URL}/media/${one.fileKey}/display`)
+    assert.strictEqual(get.headers.get("cache-control"), "public, max-age=31536000, immutable")
+  })
+
+  it("guests react to and comment on a honeymoon photo exactly as on official", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const adminAuth = await adminAuthFor()
+    const photo = await uploadCurated(adminAuth, "honeymoon")
+    const { auth } = signIn({ trusted: 1, name: "Reactor" })
+
+    const react = await accountFetch(
+      "/api/reactions/toggle",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target_type: "media", target_id: photo.id, emoji: "heart" }),
+      },
+      auth,
+    )
+    assert.strictEqual(react.status, 200)
+    const comment = await accountFetch(
+      `/api/media/${photo.id}/comments`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "Gorgeous!" }),
+      },
+      auth,
+    )
+    assert.strictEqual(comment.status, 201)
+  })
+
+  it("admin reorders honeymoon on its own; official's order and calls are untouched", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const adminAuth = await adminAuthFor()
+    const o1 = await uploadCurated(adminAuth, "official")
+    const o2 = await uploadCurated(adminAuth, "official")
+    const h1 = await uploadCurated(adminAuth, "honeymoon")
+    const h2 = await uploadCurated(adminAuth, "honeymoon")
+    const h3 = await uploadCurated(adminAuth, "honeymoon")
+
+    const reversed = [h3.id, h2.id, h1.id]
+    const ok = await reorder(adminAuth, { ids: reversed, section: "honeymoon" })
+    assert.strictEqual(ok.status, 200)
+    assert.deepStrictEqual(await feedIds("honeymoon"), reversed)
+    assert.deepStrictEqual(await feedIds("official"), [o1.id, o2.id], "official untouched")
+
+    // The set is checked per section: official ids against honeymoon → 400.
+    const crossed = await reorder(adminAuth, { ids: [o2.id, o1.id], section: "honeymoon" })
+    assert.strictEqual(crossed.status, 400)
+    // A short honeymoon set → 400.
+    const short = await reorder(adminAuth, { ids: [h1.id, h2.id], section: "honeymoon" })
+    assert.strictEqual(short.status, 400)
+    // Not a curated section → 400, never a guess.
+    const guestSection = await reorder(adminAuth, { ids: [h1.id], section: "guest" })
+    assert.strictEqual(guestSection.status, 400)
+
+    // No section still means official (the HTTP import sink's call shape).
+    const legacy = await reorder(adminAuth, { ids: [o2.id, o1.id] })
+    assert.strictEqual(legacy.status, 200)
+    assert.deepStrictEqual(await feedIds("official"), [o2.id, o1.id])
+    assert.deepStrictEqual(await feedIds("honeymoon"), reversed)
+  })
+
+  it("admin moves a photo between official and honeymoon, appended at the end", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const adminAuth = await adminAuthFor()
+    const official = await uploadCurated(adminAuth, "official")
+    const h1 = await uploadCurated(adminAuth, "honeymoon")
+    const h2 = await uploadCurated(adminAuth, "honeymoon")
+    await reorder(adminAuth, { ids: [h2.id, h1.id], section: "honeymoon" })
+
+    const moved = await moveTo(adminAuth, official.id, "honeymoon")
+    assert.strictEqual(moved.status, 200)
+    assert.deepStrictEqual(await feedIds("honeymoon"), [h2.id, h1.id, official.id])
+    assert.deepStrictEqual(await feedIds("official"), [])
+
+    // And back again.
+    assert.strictEqual((await moveTo(adminAuth, official.id, "official")).status, 200)
+    assert.deepStrictEqual(await feedIds("official"), [official.id])
+
+    // Already there → 409; a guest photo isn't curated → 409 (promote is its path);
+    // a non-curated target → 400.
+    assert.strictEqual((await moveTo(adminAuth, official.id, "official")).status, 409)
+    const { auth } = signIn({ trusted: 1 })
+    const guest = await uploadImage(auth)
+    assert.strictEqual((await moveTo(adminAuth, guest.id, "honeymoon")).status, 409)
+    assert.strictEqual((await moveTo(adminAuth, official.id, "content")).status, 400)
+    const row = /** @type {any} */ (
+      db.prepare("SELECT section FROM media WHERE id = ?").get(guest.id)
+    )
+    assert.strictEqual(row.section, "guest", "the guest photo stayed put")
+  })
+
+  it("the section move is admin-only", async () => {
+    const { auth } = signIn({ trusted: 1 })
+    const guest = await uploadImage(auth)
+    const res = await accountFetch(
+      `/api/admin/media/${guest.id}/section`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ section: "honeymoon" }),
+      },
+      auth,
+    )
+    assert.ok(res.status === 401 || res.status === 403, `refused (${res.status})`)
+  })
+})
+
 describe("guest photo captions", () => {
   it("finalize stores an optional caption, surfaced on the item", async () => {
     const { auth } = signIn({ trusted: 1, name: "Capper" })

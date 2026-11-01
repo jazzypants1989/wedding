@@ -217,7 +217,7 @@ export function createTables(db) {
       file_key TEXT UNIQUE NOT NULL,                 -- 32 lowercase hex, crypto.randomBytes(16)
       account_id INTEGER,                            -- NULL = admin/official upload
       kind TEXT NOT NULL,                            -- image|video
-      section TEXT NOT NULL DEFAULT 'guest',         -- official|guest|content
+      section TEXT NOT NULL DEFAULT 'guest',         -- official|guest|content|honeymoon
       status TEXT NOT NULL DEFAULT 'uploading',      -- uploading|pending|approved|hidden|rejected
       caption TEXT,
       original_ext TEXT,                             -- derived from sniff: jpg|png|webp|heic|mp4|mov
@@ -226,7 +226,7 @@ export function createTables(db) {
       width INTEGER, height INTEGER,
       duration_seconds REAL,                         -- video only
       needs_display INTEGER NOT NULL DEFAULT 0,      -- HEIC-decode fallback: original-only (no display/thumb)
-      sort_order INTEGER NOT NULL DEFAULT 0,         -- official-section ordering (Phase 6)
+      sort_order INTEGER NOT NULL DEFAULT 0,         -- per-section order: official|honeymoon
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
       reviewed_at TEXT,
@@ -1999,6 +1999,54 @@ export function runMigrations(db) {
         END;
       `)
       record.run("reply_emoji_glyphs")
+      db.exec("COMMIT")
+      committed = true
+    } finally {
+      if (!committed) {
+        try {
+          db.exec("ROLLBACK")
+        } catch {
+          /* already rolled back */
+        }
+      }
+    }
+  }
+
+  // The Honeymoon gallery section: a second admin-curated section beside
+  // 'official' (admin-only upload, auto-approved, its own sort_order order).
+  // Only the two section CHECK triggers change — the same widening
+  // add_content_ladder did. The media table is NOT rebuilt: media_faces
+  // cascades from media, and a rebuild on a live database is the TRAPS.md
+  // hazard. Nothing here touches a row.
+  //
+  // Explicitly transactional, because migrations are not (TRAPS.md): dropping
+  // the old triggers and failing before the new ones exist would leave the
+  // section column unguarded with no ledger row.
+  if (!applied.get("add_honeymoon_section")) {
+    let committed = false
+    try {
+      db.exec("BEGIN")
+      db.exec(`
+        DROP TRIGGER IF EXISTS check_media_section_insert;
+        DROP TRIGGER IF EXISTS check_media_section_update;
+
+        CREATE TRIGGER check_media_section_insert
+        BEFORE INSERT ON media
+        FOR EACH ROW
+        WHEN NEW.section NOT IN ('official', 'guest', 'content', 'honeymoon')
+        BEGIN
+          SELECT RAISE(ABORT, 'Invalid media section. Must be: official, guest, content, or honeymoon');
+        END;
+
+        CREATE TRIGGER check_media_section_update
+        BEFORE UPDATE ON media
+        FOR EACH ROW
+        WHEN NEW.section NOT IN ('official', 'guest', 'content', 'honeymoon')
+        BEGIN
+          SELECT RAISE(ABORT, 'Invalid media section. Must be: official, guest, content, or honeymoon');
+        END;
+      `)
+      record.run("add_honeymoon_section")
       db.exec("COMMIT")
       committed = true
     } finally {

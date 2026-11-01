@@ -3,7 +3,7 @@
 
 import { sql } from "./sql.js"
 import { now } from "./utils.js"
-import { MEDIA_SECTION } from "../types.js"
+import { MEDIA_SECTION, isCuratedMediaSection } from "../types.js"
 
 // Fixed variant -> byte-column map. Variant strings arrive from a frozen route
 // allowlist, but we still resolve the column through this object (never
@@ -52,12 +52,13 @@ export function getMediaFeed({ callerId = null, section, before = null, limit })
   const isOwn =
     callerId !== null ? sql`(m.account_id = ${callerId})` : sql`0`
 
-  // Guest is a newest-first keyset feed; official is a single sort_order page
-  // (no cursor — it stays small), so the `before` filter applies to guest only.
-  const isOfficial = section === "official"
+  // Guest is a newest-first keyset feed; a curated section (official,
+  // honeymoon) is a single sort_order page (no cursor — it stays small), so the
+  // `before` filter applies to guest only.
+  const isCurated = isCuratedMediaSection(section)
   const beforeFilter =
-    !isOfficial && before !== null ? sql`AND m.id < ${before}` : sql.empty
-  const ordering = isOfficial
+    !isCurated && before !== null ? sql`AND m.id < ${before}` : sql.empty
+  const ordering = isCurated
     ? sql`m.sort_order, m.id`
     : sql`m.id DESC`
 
@@ -161,23 +162,41 @@ export function setMediaStatus(id, fromStatuses, toStatus) {
   return result.changes > 0
 }
 
-/** @type {Types.getOfficialMediaIds} */
-export function getOfficialMediaIds() {
+/** @type {Types.getCuratedMediaIds} */
+export function getCuratedMediaIds(section) {
   /** @type {{ id: number }[]} */
   const rows = sql`SELECT id FROM media
-    WHERE section = 'official' AND deleted_at IS NULL
+    WHERE section = ${section} AND deleted_at IS NULL
     ORDER BY sort_order, id`.all()
   return rows.map((r) => r.id)
 }
 
 /** @type {Types.setMediaSortOrders} */
-export function setMediaSortOrders(ids) {
-  // Caller wraps this in withTransaction. sort_order = array index; only official,
-  // non-deleted rows are touched (the API validates the id set first).
+export function setMediaSortOrders(ids, section) {
+  // Caller wraps this in withTransaction. sort_order = array index; only rows of
+  // this curated section, non-deleted, are touched (the API validates the id set
+  // first).
   for (let i = 0; i < ids.length; i++) {
     sql`UPDATE media SET sort_order = ${i}
-      WHERE id = ${ids[i]} AND section = 'official' AND deleted_at IS NULL`.run()
+      WHERE id = ${ids[i]} AND section = ${section} AND deleted_at IS NULL`.run()
   }
+}
+
+/** @type {Types.moveCuratedMedia} */
+export function moveCuratedMedia(id, toSection) {
+  // MOVE a curated item into the other curated section (official ⇄ honeymoon),
+  // appended at the end of that section's order — the same insertion promote
+  // uses. Reactions and comments key on media.id, so they travel with it. A
+  // guest or content item is never moved here (promote is the guest → official
+  // path), and a move into the section it is already in changes nothing.
+  const result = sql`UPDATE media
+    SET section = ${toSection},
+        sort_order = (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM media
+                      WHERE section = ${toSection} AND deleted_at IS NULL)
+    WHERE id = ${id} AND deleted_at IS NULL
+      AND section IN (${MEDIA_SECTION.OFFICIAL}, ${MEDIA_SECTION.HONEYMOON})
+      AND section != ${toSection}`.run()
+  return result.changes > 0
 }
 
 /** @type {Types.promoteMediaToOfficial} */

@@ -342,8 +342,18 @@ export function adminGuestLovedHandler(
   res: ServerResponse,
 ): Promise<void>
 
-/** POST /api/admin/media/reorder — { ids:number[] } → sort_order = index. */
+/** POST /api/admin/media/reorder — { ids:number[], section?: "official" |
+ *  "honeymoon" } → sort_order = index within that curated section (default
+ *  official, so older callers keep working). */
 export function mediaReorderHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** POST /api/admin/media/:id/section — { section: "official" | "honeymoon" }:
+ *  MOVE a curated item into the other curated section, appended at the end. */
+export function mediaSectionMoveHandler(
   req: IncomingMessage,
   res: ServerResponse,
   routeInfo: AuthenticatedRouteInfo,

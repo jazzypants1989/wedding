@@ -46,7 +46,16 @@ export const MEDIA_SECTION = Object.freeze({
   OFFICIAL: "official", // admin-curated, explicitly ordered
   GUEST: "guest", // guest uploads, newest-first
   CONTENT: "content", // admin site-content images (e.g. dress-code); never in a gallery feed
+  HONEYMOON: "honeymoon", // the couple's honeymoon photos: admin-curated + ordered, like official
 })
+
+// The admin-curated gallery sections: admin-only upload, auto-approved, one
+// sort_order page each, and movable between each other by the admin. A guest
+// upload can never land in one (api/media.js createSession).
+export const CURATED_MEDIA_SECTIONS = Object.freeze([
+  MEDIA_SECTION.OFFICIAL,
+  MEDIA_SECTION.HONEYMOON,
+])
 
 // Polymorphic content targets — comments and reactions attach to either a
 // guestbook entry or a media item (00-overview: single polymorphic tables with
@@ -349,6 +358,14 @@ export function isMediaKind(value) {
 /** @type {Types.isMediaSection} */
 export function isMediaSection(value) {
   return typeof value === "string" && /** @type {readonly string[]} */ (MEDIA_SECTION_VALUES).includes(value)
+}
+
+/** @type {Types.isCuratedMediaSection} */
+export function isCuratedMediaSection(value) {
+  return (
+    typeof value === "string" &&
+    /** @type {readonly string[]} */ (CURATED_MEDIA_SECTIONS).includes(value)
+  )
 }
 
 /** @type {Types.isTargetType} */

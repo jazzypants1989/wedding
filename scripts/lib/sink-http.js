@@ -12,7 +12,7 @@
  *  docs/post-wedding/08-bulk-import.md:
  *
  *  1. It cannot set sort_order exactly. POST /api/admin/media/reorder validates
- *     the submitted ids against getOfficialMediaIds(), which includes hidden and
+ *     the submitted ids against getCuratedMediaIds(), which includes hidden and
  *     rejected rows, while a client can only enumerate the approved-only public
  *     feed. When that mismatch happens the reorder 400s and this sink warns
  *     rather than failing the run — the admin drag-and-drop UI has the identical
@@ -26,6 +26,7 @@ import fs from "node:fs"
 import http from "node:http"
 import https from "node:https"
 
+import { MEDIA_SECTION } from "../../types.js"
 import { MediaImportError } from "./media-errors.js"
 import { canPrompt, prompt } from "./prompt.js"
 
@@ -373,15 +374,18 @@ export function createHttpSink(options) {
       fileKeys.delete(id)
     },
 
-    async applyOrder(orderedIds) {
+    async applyOrder(orderedIds, section = MEDIA_SECTION.OFFICIAL) {
       if (orderedIds.length === 0) return { ok: true }
       await login()
 
-      // reorder demands the EXACT current official set, so the existing photos
-      // have to be enumerated and the imported ones appended in plan order.
-      const listed = await retryRequest("GET", "/api/media?section=official&limit=500")
+      // reorder demands the EXACT current set of the section, so the existing
+      // photos have to be enumerated and the imported ones appended in plan order.
+      const listed = await retryRequest("GET", `/api/media?section=${section}&limit=500`)
       if (listed.status !== 200) {
-        return { ok: false, message: `Couldn't read the official gallery to reorder it (${listed.status}).` }
+        return {
+          ok: false,
+          message: `Couldn't read the ${section} gallery to reorder it (${listed.status}).`,
+        }
       }
       /** @type {number[]} */
       const existing = Array.isArray(listed.json?.items)
@@ -390,18 +394,20 @@ export function createHttpSink(options) {
       const imported = new Set(orderedIds)
       const ids = [...existing.filter((id) => !imported.has(id)), ...orderedIds]
 
-      const response = await retryRequest("POST", "/api/admin/media/reorder", { json: { ids } })
+      const response = await retryRequest("POST", "/api/admin/media/reorder", {
+        json: { ids, section },
+      })
       if (response.status === 200) return { ok: true }
       if (response.status === 400) {
-        // The set didn't match: the gallery holds official rows the public feed
-        // cannot see (hidden or rejected). Warn — the photos imported fine, only
-        // their order is whatever sort_order they were created with.
+        // The set didn't match: the section holds rows the public feed cannot
+        // see (hidden or rejected). Warn — the photos imported fine, only their
+        // order is whatever sort_order they were created with.
         return {
           ok: false,
           message:
-            "The gallery order wasn't applied: the site has official photos that aren't publicly " +
-            "listed (hidden or rejected), so the reorder call can't name the full set. Drag them " +
-            "into place in the admin Gallery tab, or import locally for exact ordering.",
+            `The gallery order wasn't applied: the site has ${section} photos that aren't ` +
+            "publicly listed (hidden or rejected), so the reorder call can't name the full set. " +
+            "Drag them into place in the admin Gallery tab, or import locally for exact ordering.",
         }
       }
       return { ok: false, message: `Reorder failed (${response.status}).` }

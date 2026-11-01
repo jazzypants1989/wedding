@@ -434,10 +434,11 @@ function wireFab() {
   const fab = getElement("upload-fab")
   const onScroll = () => {
     // Uploads land in the guest grid, which is on screen everywhere except
-    // the official-only view.
-    const officialOnly =
-      getElement("tab-official").getAttribute("aria-selected") === "true"
-    fab.hidden = !(!officialOnly && window.scrollY > 400)
+    // a curated section's own view (official, honeymoon).
+    const curatedOnly =
+      getElement("tab-official").getAttribute("aria-selected") === "true" ||
+      getElement("tab-honeymoon").getAttribute("aria-selected") === "true"
+    fab.hidden = !(!curatedOnly && window.scrollY > 400)
   }
   window.addEventListener("scroll", onScroll, { passive: true })
   // Re-evaluate when the section switches (custom event from main.js).
