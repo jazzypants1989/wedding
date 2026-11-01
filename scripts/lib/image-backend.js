@@ -6,8 +6,8 @@
  *
  *  1. Every invocation is an argv ARRAY passed to execFile, never a shell
  *     string. Filenames come from a user-supplied directory and can contain
- *     spaces, quotes, `$`, `;` and newlines. (scripts/deploy.js uses execSync
- *     with a shell string, which is fine only because its command is fixed.)
+ *     spaces, quotes, `$`, `;` and newlines. (A shell string is safe only when the
+ *     command is a fixed literal with nothing from input in it.)
  *  2. Detection is try-exec, not `which` and not a hard-coded path. Catching
  *     ENOENT proves the binary exists AND runs; /opt/homebrew paths would break
  *     Linux and Intel Macs.

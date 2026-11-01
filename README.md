@@ -105,7 +105,7 @@ This creates 4 test guests covering different scenarios (solo, group, already ac
 | `npm run setup` | Set admin password (interactive) |
 | `npm run seed` | Seed preview data (`--gallery N` also adds media rows) |
 | `npm run export` | Export a self-contained sunset archive (JSON + CSV + media tree) |
-| `npm run deploy` | Deploy to the configured host |
+| `npm run deploy` | Prints how to deploy (deploys run from the homelab repo) |
 
 ## Architecture
 

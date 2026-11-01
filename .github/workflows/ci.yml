@@ -1,0 +1,41 @@
+name: CI
+
+# Tests only. Deploys are run from the homelab repo (`homelab deploy wedding`),
+# which owns the production host; this workflow never touches a server.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # typecheck needs the `typescript` devDependency; `npm test` is zero-dep
+      # but we install once so both steps run.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Without a configured admin hash, adminLogin() can't authenticate and every
+      # admin integration suite silently skips. Generate a scrypt hash
+      # for a known password via the zero-dep policy module and export it plus
+      # TEST_ADMIN_PASSWORD so the admin surface is actually exercised in CI.
+      - name: Configure admin auth for tests
+        run: |
+          PW='CiTestPassw0rd'
+          HASH=$(node -e "import('./core/password-policy.js').then(m => process.stdout.write(m.hashPassword('$PW')))")
+          echo "TEST_ADMIN_PASSWORD=$PW" >> "$GITHUB_ENV"
+          echo "ADMIN_PASSWORD_HASH=$HASH" >> "$GITHUB_ENV"
+
+      - name: Run tests
+        run: npm test

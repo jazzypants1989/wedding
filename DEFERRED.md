@@ -38,6 +38,12 @@ recovery**: lose the volume and every copy is gone. Still needed:
 - **Restore drill:** actually restore from a snapshot into a throwaway environment once — an
   untested backup is a hope, not a backup.
 
+*Update (homelab):* a nightly restic job in the homelab repo now archives the whole
+`wedding_wedding-data` volume to two off-host targets, with restore drills
+(`docs/state/backups.md` there). What's still open here: a file-level copy can catch the
+SQLite WAL mid-write, so point that job at the newest `VACUUM INTO` snapshot (or run
+`backup-db.js` just before it) rather than trusting the live `wedding.db` file.
+
 (`scripts/export-archive.js` is the separate *whole-archive* export for eventual site sunset, not
 the incremental nightly backup.)
 
@@ -57,13 +63,14 @@ matters most. *(2026-07 UX pass: the moderation digest now retries ~hourly after
 instead of silently skipping an interval, and the admin dashboard polls badge counts every 3
 minutes — but external uptime/disk alerting is still unaddressed.)*
 
-### Consolidate the two deploy paths 🟢
+### Deploys run from the homelab repo 🟢
 
-The CI inline script (`.github/workflows/deploy.yml`) and `scripts/deploy.js` duplicate the same
-backup → pull → `compose up` → health-poll logic; both call `docker exec wedding node
-scripts/backup-db.js`, so they're in sync, but drift is possible. Both hardcode the host/port
-(`scripts/deploy.js`, `deploy.yml`). Collapse to one path — CI invokes `scripts/deploy.js`, or the
-SSH step runs a single committed remote script.
+Production is the vps3 box, deployed by the homelab repo's `homelab deploy wedding`
+(`services/wedding/service.js` there: it fast-forwards `~/services/wedding` to
+`origin/main` and runs `docker compose up -d --build`). This repo's CI is tests only
+(`.github/workflows/ci.yml`) and `scripts/deploy.js` is a stub that says so.
+Two things the old in-repo path did that `homelab deploy` does not, so do them by hand:
+`docker exec wedding node scripts/backup-db.js` before, and a `/api/health` check after.
 
 ### Quarantine directory housekeeping — done
 
