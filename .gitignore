@@ -40,3 +40,7 @@ CLAUDE.md
 # screenshots are pruned. This repository is public, and those records carry
 # page DOM snippets, console output, and cropped screenshots of authed views.
 .devloop/
+
+# Build-time working notes (old specs, session records). Local only — nobody
+# else needs them and they are not kept for later.
+docs/archive/
