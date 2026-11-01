@@ -1943,3 +1943,40 @@ export function renderMore(): void
 
 /** @file icons.js - Stroke icons (20px grid), shared by the shell and panels */
 export function icon(name: string): string
+
+// --- guest-match.js -----------------------------------------------------------
+
+/** A roster guest as the Faces tab's linker needs it. */
+export interface GuestOption {
+  id: number
+  name: string
+  email: string | null
+  phone: string | null
+  inviteCode: string
+}
+
+/** A guest plus the type-ahead label that tells it apart from a namesake. */
+export interface GuestChoice extends GuestOption {
+  label: string
+}
+
+export type GuestChoiceResult =
+  | { kind: "one"; guest: GuestChoice }
+  | { kind: "ambiguous" }
+  | { kind: "none" }
+
+/** How well an informal person name matches a guest's name; 0 is no match. */
+export function guestMatchScore(personName: string, guestName: string): number
+/** The guests an informal name most likely refers to, best first. */
+export function suggestGuests<T extends { name: string }>(
+  personName: string,
+  guests: readonly T[],
+  limit?: number,
+): T[]
+/** Every guest with a unique label: a shared name gets its email, phone or code. */
+export function guestChoices(guests: readonly GuestOption[]): GuestChoice[]
+/** What was typed or picked → exactly one guest, a name shared by several, or nothing. */
+export function resolveGuestChoice(
+  typed: string,
+  choices: readonly GuestChoice[],
+): GuestChoiceResult

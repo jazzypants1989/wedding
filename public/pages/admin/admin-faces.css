@@ -678,6 +678,16 @@
   margin-top: 12px;
 }
 
+/* "On the guest list as…" suggestions and the rename-to-guest-name button. */
+#tab-faces .person-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 12px 0 0;
+  max-width: 560px;
+}
+
 #tab-faces .face-grid {
   list-style: none;
   padding: 0;

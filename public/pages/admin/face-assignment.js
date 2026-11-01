@@ -60,6 +60,7 @@ import { api, showError, showSuccess, showUndo, showLoading, showLoadError } fro
 import { html, getElement, getErrorMessage } from "../utils.js"
 import { openConfirm } from "./confirm.js"
 import { chipVariant } from "./chip-variant.js"
+import { guestChoices, resolveGuestChoice, suggestGuests } from "./guest-match.js"
 import { icon } from "./icons.js"
 import { registerPanel, navigate, setCrumbs, setNavBadge, currentPlace } from "./router.js"
 
@@ -117,8 +118,9 @@ let batchesData = null
 let batchesError = null
 /** @type {Types.PersonEntry[]} */
 let peopleData = []
-/** Guest roster, only for linking a person to an invitation. */
-/** @type {{ id: number, name: string }[]} */
+/** Guest roster, only for linking a person to an invitation. Each carries a
+ *  type-ahead label that tells namesakes apart. */
+/** @type {Types.GuestChoice[]} */
 let guestOptions = []
 let guestsLoaded = false
 /** A person's faces for the People page, by person id. */
@@ -528,10 +530,18 @@ async function ensureGuestsLoaded() {
     const data = /** @type {Types.GuestsApiResponse} */ (
       await api("/api/admin/guests?limit=1000&offset=0")
     )
-    guestOptions = data.guests.map((g) => ({ id: g.id, name: g.name }))
+    guestOptions = guestChoices(
+      data.guests.map((g) => ({
+        id: g.id,
+        name: g.name,
+        email: g.email,
+        phone: g.phone,
+        inviteCode: g.invite_code,
+      })),
+    )
     guestsLoaded = true
     const dl = document.getElementById("faces-guest-roster")
-    const options = guestOptions.map((g) => html`<option value="${g.name}"></option>`)
+    const options = guestOptions.map((g) => html`<option value="${g.label}"></option>`)
     if (dl) dl.innerHTML = html`${options}`
   } catch (err) {
     console.error("Failed to load the guest roster:", err)
@@ -1422,7 +1432,10 @@ function leftoversView() {
 
 /** @param {Types.PersonEntry} x */
 function guestLine(x) {
-  if (x.guestId === null) return "Not a guest"
+  if (x.guestId === null) {
+    const likely = guestsLoaded ? suggestGuests(x.displayName, guestOptions, 1) : []
+    return likely.length ? `Not linked · maybe ${likely[0].label}?` : "Not a guest"
+  }
   return x.guestName ? `On the guest list · ${x.guestName}` : "On the guest list"
 }
 
@@ -1478,6 +1491,38 @@ function peopleView() {
       <section class="pane pane-list" aria-label="People">${list}</section>
       <section class="pane pane-detail" aria-label="Selected person">${detail}</section>
     </div>`
+}
+
+/**
+ * Under the buttons: for an unlinked person, the guests their (often informal)
+ * name most likely is, one click each; for a linked one whose name differs
+ * from the invitation's, the invitation's name, one click. Never automatic: an
+ * invitation is often a whole party ("Michael & Dana Rossi"), which is not a
+ * name for one face.
+ * @param {Types.PersonEntry} p @param {string | null} edit
+ */
+function linkHelp(p, edit) {
+  if (!guestsLoaded) return ""
+  if (p.guestId === null) {
+    if (edit === "link") return ""
+    const likely = suggestGuests(p.displayName, guestOptions)
+    if (likely.length === 0) return ""
+    return html`<p class="small person-suggest">
+      <span class="muted">On the guest list as…</span>
+      ${likely.map(
+        (g) => html`<button type="button" class="btn btn-sm" data-act="link-guest"
+          data-guest="${g.id}">${g.label}</button>`,
+      )}
+    </p>`
+  }
+  if (p.guestName && nameKey(p.guestName) !== nameKey(p.displayName)) {
+    return html`<p class="small person-suggest">
+      <button type="button" class="btn btn-sm btn-ghost" data-act="use-guest-name">
+        Rename to “${p.guestName}”
+      </button>
+    </p>`
+  }
+  return ""
 }
 
 /** @param {Types.PersonEntry} p */
@@ -1551,6 +1596,7 @@ function personDetail(p) {
         </button>
       </div>
       ${editor}
+      ${linkHelp(p, edit)}
       <p class="status-note is-error person-error" role="alert" hidden></p>
       ${retireBlocked
         ? html`<p class="fine muted">
@@ -2089,17 +2135,23 @@ function renamePerson(personId, name) {
 
 /** @param {number} personId @param {string} typed */
 function linkGuest(personId, typed) {
-  const key = nameKey(typed)
-  const matches = guestOptions.filter((g) => nameKey(g.name) === key)
-  if (matches.length === 0) {
+  const found = resolveGuestChoice(typed, guestOptions)
+  if (found.kind === "none") {
     showPersonError(personId, "No guest by that name — pick one from the list.")
     return
   }
-  if (matches.length > 1) {
-    showPersonError(personId, "More than one guest has that name. Link it from Guests & RSVPs.")
+  if (found.kind === "ambiguous") {
+    showPersonError(
+      personId,
+      "More than one guest has that name — pick the one with the right email or phone from the list.",
+    )
     return
   }
-  const guest = matches[0]
+  linkGuestId(personId, found.guest)
+}
+
+/** @param {number} personId @param {{ id: number, name: string }} guest */
+function linkGuestId(personId, guest) {
   void personWrite(personId, async () => {
     await patchPerson(personId, { guestId: guest.id })
     showUndo(`Linked to ${guest.name}'s invitation`, () => {
@@ -2593,6 +2645,12 @@ function onClick(e) {
     render()
   } else if (act === "unlink") {
     if (place.person !== null) unlinkGuest(place.person)
+  } else if (act === "link-guest") {
+    const guest = guestOptions.find((g) => g.id === Number(el.dataset.guest))
+    if (place.person !== null && guest) linkGuestId(place.person, guest)
+  } else if (act === "use-guest-name") {
+    const p = place.person !== null ? personById(place.person) : null
+    if (p && p.guestName) renamePerson(p.id, p.guestName)
   } else if (act === "retire") {
     if (place.person !== null) retirePerson(place.person)
   }

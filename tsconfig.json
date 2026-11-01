@@ -25,6 +25,7 @@
     "tests/unit/note-flower.test.js",
     "tests/unit/admin-routes.test.js",
     "tests/unit/emoji.test.js",
+    "tests/unit/guest-match.test.js",
     "tests/unit/chip-variant.test.js",
     "tests/unit/dresscode-descriptor.test.js",
     "tests/unit/effect-themes.test.js",
