@@ -19,7 +19,7 @@ import {
   MEDIA_DIR,
   QUARANTINE_DIR,
   itemDir,
-  quarantineItemDir,
+  quarantineDirAs,
   variantExistsOnDisk,
 } from "./media-storage.js"
 import { MEDIA_LIMITS, MEDIA_STORAGE, expectedVariants } from "../types.js"
@@ -100,16 +100,10 @@ export function runMediaIntegrityPass() {
     for (const key of keys) {
       if (knownKeys.has(key)) continue
       try {
-        if (key.slice(0, 2) === prefix) {
-          // Normal layout: itemDir(key) resolves to prefixPath/key, so the shared
-          // helper (with its collision-suffix guard) can move it.
-          quarantineItemDir(key)
-        } else {
-          // Misplaced dir under a non-matching prefix — the helper would look in
-          // the wrong place, so move it by hand.
-          fs.mkdirSync(QUARANTINE_DIR, { recursive: true })
-          fs.renameSync(path.join(prefixPath, key), path.join(QUARANTINE_DIR, key))
-        }
+        // The real path, not itemDir(key): a dir misplaced under a non-matching
+        // prefix lives here too. Same mover, so the same collision suffix and
+        // quarantine-time stamp either way.
+        quarantineDirAs(path.join(prefixPath, key), key)
         quarantined++
         console.warn(`media integrity: quarantined orphan directory ${key}`)
       } catch {

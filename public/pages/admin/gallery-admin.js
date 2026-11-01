@@ -225,27 +225,25 @@ function curatedIndex(id) {
   return state.currentCurated.findIndex((i) => i.id === id)
 }
 
-/** @param {number} id @param {"top" | "up" | "down"} dir */
-function move(id, dir) {
-  const idx = curatedIndex(id)
-  if (idx === -1) return
-  moveTo(id, dir === "top" ? 0 : dir === "up" ? idx - 1 : idx + 1)
+/** Clamp an index into the curated list. @param {number} i @returns {number} */
+function clampIndex(i) {
+  return Math.max(0, Math.min(state.currentCurated.length - 1, i))
 }
 
 /**
- * Move an item to an absolute index (the typed position number — up/down
- * buttons alone made "position 40 → 3" a 37-click job).
- * @param {number} id @param {number} target
+ * Move an item by a button (top/up/down) or to an absolute index (the typed
+ * position number — up/down buttons alone made "position 40 → 3" a 37-click
+ * job). A move that lands where it started does nothing: re-rendering the grid
+ * would wipe uncommitted caption edits in other rows.
+ * @param {number} id @param {"top" | "up" | "down" | number} to
  */
-function moveTo(id, target) {
+function moveTo(id, to) {
   const items = state.currentCurated
   const idx = curatedIndex(id)
   if (idx === -1) return
-  const clamped = Math.max(0, Math.min(items.length - 1, target))
-  if (clamped === idx) {
-    renderGrid() // reset a no-op / out-of-range entry back to the real number
-    return
-  }
+  const target = to === "top" ? 0 : to === "up" ? idx - 1 : to === "down" ? idx + 1 : to
+  const clamped = clampIndex(target)
+  if (clamped === idx) return
   const [it] = items.splice(idx, 1)
   items.splice(clamped, 0, it)
   renderGrid()
@@ -436,9 +434,7 @@ function handleGridClick(e) {
   if (Number.isNaN(id)) return
 
   const action = btn.getAttribute("data-action")
-  if (action === "top") move(id, "top")
-  else if (action === "up") move(id, "up")
-  else if (action === "down") move(id, "down")
+  if (action === "top" || action === "up" || action === "down") moveTo(id, action)
   else if (action === "remove") removeItem(id)
 }
 
@@ -449,21 +445,18 @@ function handleGridBlur(e) {
   const id = parseInt(target.dataset.id || "", 10)
   if (Number.isNaN(id)) return
   if (target.classList.contains("curated-pos")) {
-    const n = parseInt(target.value, 10)
-    if (Number.isNaN(n)) {
-      renderGrid() // restore the real number over a cleared/garbage entry
-      return
-    }
     const idx = curatedIndex(id)
     if (idx === -1) return
-    if (n - 1 === idx) {
-      // Position unchanged — don't call moveTo (its renderGrid would rebuild
-      // the whole grid and wipe uncommitted caption edits in sibling rows).
-      // Just normalize this one input (e.g. "03" → "3").
+    const n = parseInt(target.value, 10)
+    const want = Number.isNaN(n) ? idx : clampIndex(n - 1)
+    if (want === idx) {
+      // Unchanged, cleared, garbage, or clamped back to where it is: fix this
+      // one input ("03" → "3", "999" on the last row → its number). Never
+      // renderGrid here — it would wipe uncommitted caption edits in sibling rows.
       target.value = String(idx + 1)
       return
     }
-    moveTo(id, n - 1)
+    moveTo(id, want)
     return
   }
   if (!target.classList.contains("curated-caption")) return

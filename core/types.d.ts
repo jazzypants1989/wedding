@@ -783,6 +783,12 @@ export function variantDiskPath(fileKey: string, variant: string, ext: string): 
  * deleting it. No-op when the directory doesn't exist. */
 export function quarantineItemDir(fileKey: string): void
 
+/** Move any directory into quarantine/ under `name`: the shared mover behind
+ * quarantineItemDir, also used by the sweep for a dir under the wrong prefix.
+ * Suffixes the name on a collision and stamps the quarantine time (the TTL
+ * purge measures from it). No-op when `src` doesn't exist. */
+export function quarantineDirAs(src: string, name: string): void
+
 /** Move a quarantined item's directory back into media/ (Undo of a reject).
  * The newest copy wins if the key was quarantined twice. True when the files
  * are in place afterwards; false when the sweep already purged them. */

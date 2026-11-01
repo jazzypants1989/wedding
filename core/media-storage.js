@@ -61,10 +61,14 @@ export function variantDiskPath(fileKey, variant, ext) {
 
 /** @type {Types.quarantineItemDir} */
 export function quarantineItemDir(fileKey) {
-  const src = itemDir(fileKey)
+  quarantineDirAs(itemDir(fileKey), fileKey)
+}
+
+/** @type {Types.quarantineDirAs} */
+export function quarantineDirAs(src, name) {
   if (!fs.existsSync(src)) return
   fs.mkdirSync(QUARANTINE_DIR, { recursive: true })
-  let dest = path.join(QUARANTINE_DIR, fileKey)
+  let dest = path.join(QUARANTINE_DIR, name)
   // A prior quarantine of the same key (re-reject after manual restore) would
   // make the rename fail — pick a suffixed name instead of throwing.
   if (fs.existsSync(dest)) dest = dest + "-" + Date.now()
