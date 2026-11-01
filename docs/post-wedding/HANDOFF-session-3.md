@@ -1,5 +1,8 @@
 # Hand-off: session 3 (2026-10-28 → 30)
 
+> **Superseded 2026-11-01 by [`HANDOFF-launch.md`](./HANDOFF-launch.md)** — the current
+> record of what's deployed and what's next. This file stays for its §1 rules and §7 notes.
+
 Session 3 in `SESSION-PLAN.md` was "fix the faces UI issues". The owner widened
 it to all twelve open issues, absorbing session 4's non-vision backlog. It has
 run in three parts: part 1 (one context, which ran out), part 2 (the design

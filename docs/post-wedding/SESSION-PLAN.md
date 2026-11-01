@@ -1,5 +1,9 @@
 # The remaining sessions, and what to hand each one
 
+> **Current status (2026-11-01): see [`HANDOFF-launch.md`](./HANDOFF-launch.md).** Session 5
+> (deploy) is done — production is vps3, deployed from the homelab repo, not `scripts/deploy.js`.
+> Session 6 (the production face pass) is next, with exact commands in that hand-off.
+
 **Written 2026-08-06.** This is the **entry point for planning a session**, not
 for doing one. It answers exactly one question: _what is the next session, and
 which documents does the agent running it need?_
