@@ -41,8 +41,8 @@ const FALLBACK_WIDTH = 640
 const FALLBACK_HEIGHT = 360
 
 /** @typedef {[number, number, number]} Rgb */
-/** @typedef {{ x: number, y: number, w: number, h: number, landmarks: number[] | null }} DrawnFace */
-/** @typedef {{ ow: number, oh: number, faces: DrawnFace[] }} FaceEntry */
+/** @typedef {Types.DrawnFace} DrawnFace */
+/** @typedef {Types.FaceEntry} FaceEntry */
 
 /** @type {Types.parseProxyArgs} */
 export function parseProxyArgs(argv) {
@@ -253,12 +253,9 @@ function paintFace(canvas, face, scale, seed) {
 }
 
 /**
- * @param {string} seedText
- * @param {number} width
- * @param {number} height
- * @param {FaceEntry} entry
+ * @type {Types.drawPlaceholder}
  */
-function drawPlaceholder(seedText, width, height, entry) {
+export function drawPlaceholder(seedText, width, height, entry) {
   const seed = hashString(seedText)
   const canvas = new Canvas(width, height)
   paintBackground(canvas, seed)

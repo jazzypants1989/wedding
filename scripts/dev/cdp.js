@@ -27,6 +27,7 @@ const USAGE = `Usage: node scripts/dev/cdp.js <url> <width>x<height> [options]
   --eval=FILE         Evaluate FILE as an expression; prints the awaited value. Repeatable.
   --wait=MS           Pause after each --eval. Default 600.
   --settle=MS         Pause after navigation. Default 1500.
+  --errors            Report console errors and uncaught exceptions; exit 1 if any.
   --print-media       Emulate print media.
   --reduced-motion    Emulate prefers-reduced-motion.
   --profile=DIR       Keep and reuse this profile. Default: fresh, then deleted.
@@ -53,13 +54,15 @@ export function parseCdpArgs(argv) {
     evals: [],
     waitMs: 600,
     settleMs: 1500,
+    errors: false,
     printMedia: false,
     reducedMotion: false,
     profile: null,
     chrome: null,
   }
   for (const arg of rest) {
-    if (arg === "--print-media") args.printMedia = true
+    if (arg === "--errors") args.errors = true
+    else if (arg === "--print-media") args.printMedia = true
     else if (arg === "--reduced-motion") args.reducedMotion = true
     else if (arg.startsWith("--shot=")) args.shot = arg.slice(7)
     else if (arg.startsWith("--eval=")) args.evals.push(arg.slice(7))
@@ -131,6 +134,7 @@ async function readDebugPort(profile) {
  * @param {string} debugUrl
  * @returns {Promise<{
  *   send: (method: string, params?: Record<string, unknown>) => Promise<any>,
+ *   onEvent: (handler: (method: string, params: any) => void) => void,
  *   close: () => void,
  * }>}
  */
@@ -141,6 +145,8 @@ async function connect(debugUrl) {
     ws.onerror = reject
   })
   let lastId = 0
+  /** @type {(method: string, params: any) => void} */
+  let eventHandler = () => {}
   /** @type {Map<number, (message: any) => void>} */
   const pending = new Map()
   ws.onmessage = (event) => {
@@ -149,6 +155,8 @@ async function connect(debugUrl) {
     if (resolve) {
       pending.delete(message.id)
       resolve(message)
+    } else if (message.method) {
+      eventHandler(message.method, message.params)
     }
   }
   return {
@@ -158,6 +166,9 @@ async function connect(debugUrl) {
         pending.set(id, resolve)
         ws.send(JSON.stringify({ id, method, params }))
       })
+    },
+    onEvent(handler) {
+      eventHandler = handler
     },
     close: () => ws.close(),
   }
@@ -178,7 +189,20 @@ async function run(args) {
     const target = /** @type {{ webSocketDebuggerUrl: string }} */ (await res.json())
     page = await connect(target.webSocketDebuggerUrl)
 
+    /** @type {string[]} */
+    const pageErrors = []
+    page.onEvent((method, params) => {
+      if (method === "Runtime.exceptionThrown") {
+        const detail = params.exceptionDetails
+        pageErrors.push(detail.exception?.description ?? detail.text)
+      } else if (method === "Runtime.consoleAPICalled" && params.type === "error") {
+        pageErrors.push(params.args.map((/** @type {any} */ a) => a.value ?? a.description).join(" "))
+      } else if (method === "Log.entryAdded" && params.entry.level === "error") {
+        pageErrors.push(`${params.entry.text} ${params.entry.url ?? ""}`.trim())
+      }
+    })
     await page.send("Page.enable")
+    await page.send("Log.enable")
     await page.send("Runtime.enable")
     await page.send("Emulation.setDeviceMetricsOverride", {
       width: args.width,
@@ -210,6 +234,12 @@ async function run(args) {
         console.log(`${file}: ${JSON.stringify(outcome.result.value)}`)
       }
       await sleep(args.waitMs)
+    }
+
+    if (args.errors) {
+      console.log(`console errors: ${pageErrors.length}`)
+      for (const text of new Set(pageErrors)) console.log(`  ${text}`)
+      if (pageErrors.length > 0) process.exitCode = 1
     }
 
     if (args.shot) {

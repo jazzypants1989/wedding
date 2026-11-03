@@ -4,6 +4,7 @@
  */
 import type { Server } from "node:http"
 import type { DatabaseSync } from "node:sqlite"
+import type { GateSignals } from "../../public/vision/types.js"
 
 // --- placeholder-proxy.js ---
 
@@ -32,6 +33,30 @@ export function parseUpstream(upstream: string): { host: string; port: number }
 export function isPhotographicType(contentType: string): boolean
 
 export function createPlaceholderProxy(options: PlaceholderProxyOptions): Server
+
+export interface DrawnFace {
+  x: number
+  y: number
+  w: number
+  h: number
+  /** Flat [x0,y0,...]: eyes, nose, mouth corners. */
+  landmarks: number[] | null
+}
+
+export interface FaceEntry {
+  /** Original width and height the boxes are measured in. 0 means no scaling. */
+  ow: number
+  oh: number
+  faces: DrawnFace[]
+}
+
+/** A fictional image: a soft backdrop with a cartoon face at each box. */
+export function drawPlaceholder(
+  seedText: string,
+  width: number,
+  height: number,
+  entry: FaceEntry,
+): Buffer
 
 // --- leak-check.js ---
 
@@ -84,6 +109,7 @@ export interface CdpArgs {
   evals: string[]
   waitMs: number
   settleMs: number
+  errors: boolean
   printMedia: boolean
   reducedMotion: boolean
   /** A profile to keep between runs. Null means a fresh one, deleted afterward. */
@@ -95,3 +121,52 @@ export function parseCdpArgs(argv: readonly string[]): CdpArgs
 
 /** Binaries to try, in order. An explicit choice is the only candidate. */
 export function chromeCandidates(explicit: string | null, env: string | undefined): string[]
+
+// --- preview-fixtures.js ---
+
+export type PreviewOrientation = "landscape" | "portrait" | "square"
+
+export interface PreviewStateInfo {
+  title: string
+  description: string
+}
+
+/** Every state a capture session can switch to, keyed by its URL name. */
+export const PREVIEW_STATES: Readonly<Record<string, PreviewStateInfo>>
+
+/** A deep link the switcher should offer, such as a guest's card. */
+export interface PreviewLink {
+  label: string
+  url: string
+}
+
+/** A face slot in one fictional image, in original pixels. */
+export function previewFaceBox(orientation: PreviewOrientation, slot: number): DrawnFace
+
+/** Signal shapes that route to each state under the current profile. */
+export const PREVIEW_SIGNALS: Readonly<Record<"accept" | "ask" | "set_aside", GateSignals>>
+
+/** True only for a database path strictly inside this repo's tmp/states/. */
+export function isPreviewDatabasePath(databasePath: string): boolean
+
+// --- preview-states.js ---
+
+export interface PreviewServerOptions {
+  /** Directory holding one folder per state. */
+  root: string
+  backendPort: number
+  publicUrl: string
+}
+
+/** The switcher page. Escapes everything it interpolates. */
+export function renderSwitcher(
+  current: string | null,
+  linksFor: (state: string) => readonly PreviewLink[],
+): string
+
+/** Which control route this path is, or null to forward it to the backend. */
+export function parseControlPath(
+  urlPath: string,
+): { action: "list" } | { action: "go" | "reset"; state: string; to: string } | null
+
+export function createPreviewServer(options: PreviewServerOptions): Server
