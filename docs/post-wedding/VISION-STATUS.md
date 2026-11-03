@@ -150,9 +150,9 @@ casts on one line; long types go in a `@typedef`.
 
 1. **Finish the tuning pass** — the calibration check above.
 2. **The owner reviews the Faces tab** and files UI issues. Do this through
-   `placeholder-proxy.mjs`, which swaps every photograph for a dimension-matched
-   cartoon so chip crops stay pixel-identical and no photograph reaches the
-   browser.
+   `scripts/dev/placeholder-proxy.js`, which swaps every photograph for a
+   dimension-matched cartoon so chip crops stay pixel-identical and no photograph
+   reaches the browser. Check it first with `scripts/dev/leak-check.js`.
 3. **Fix what that review finds**, plus three small carried items: the T18 CSP
    style-attribute cleanup in three admin tabs; duplicate content-hash fan-out
    in `loadMediaShaMap` (one row per sha, last wins); and `--expect-engine` on

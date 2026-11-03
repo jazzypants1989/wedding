@@ -65,8 +65,8 @@ trust arc on a real app, and produce the issue list that session 3 works from.
 `/capture-issues` skill.
 
 **Preconditions — yours, not an agent's.** The three-hop chain has to be up:
-smoke server on :3000, `placeholder-proxy.mjs` on :3002, capture overlay on
-:4600. **Browse only the outermost port** — :3000 and :3002 still serve real
+smoke server on :3000, `scripts/dev/placeholder-proxy.js` on :3002, capture
+overlay on :4600. **Browse only the outermost port** — :3000 and :3002 still serve real
 photographs, and a stray tab on either defeats the whole exercise. Rebuild
 `tmp/smoke.db` first if it is gone.
 

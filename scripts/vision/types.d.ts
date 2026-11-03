@@ -2267,3 +2267,46 @@ export function regradeFaces(
   faceIds: number[],
   options: { apply: boolean },
 ): RegradeReport
+
+// --- tune.js ---
+
+export interface TuneRun {
+  labels: Session1LabelFile
+  faces: Session1FaceRecord[]
+  skipped: Set<string>
+}
+
+export interface TuneGroupScore {
+  groups: number
+  /** Groups holding more than one named person. */
+  mixed: number
+  /** Named faces outside their group's majority person. */
+  wrongFaces: number
+  namedInGroups: number
+  junkOrDeclinedIn: number
+  /** Faces the labeller never judged. */
+  unseenIn: number
+}
+
+export interface SuggestionSample {
+  margin: number
+  distance: number
+  right: boolean
+}
+
+export function loadTuneRun(dir: string): TuneRun
+
+/** An opaque person key, "x" for not-a-face, "declined", or null if never judged. */
+export function tuneVerdict(run: TuneRun, faceId: number): string | null
+
+/** Groups smaller than two are ignored: a lone face can't be mixed. */
+export function scoreTuneGroups(
+  run: TuneRun,
+  groups: ReadonlyArray<ReadonlyArray<Session1FaceRecord>>,
+): TuneGroupScore
+
+/**
+ * Half of each round's named faces build prototypes; the other half are grouped as
+ * if unnamed, and a suggestion is right when it names the group's majority person.
+ */
+export function simulateSuggestions(run: TuneRun, rounds?: number): SuggestionSample[]
