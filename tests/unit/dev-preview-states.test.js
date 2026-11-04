@@ -23,7 +23,10 @@ import {
 } from "../../scripts/dev/preview-fixtures.js"
 import {
   createPreviewServer,
+  isSwappedPhoto,
+  lanAddress,
   parseControlPath,
+  previewCookies,
   renderSwitcher,
 } from "../../scripts/dev/preview-states.js"
 
@@ -177,6 +180,27 @@ describe("seeded states", () => {
     assert.equal(links.length, 3)
   })
 
+  it("hides most of Official in culled, faces and a video included", () => {
+    build("culled")
+    assert.equal(PREVIEW_STATES.culled.title, "Culled import")
+    const count = (/** @type {string} */ where) =>
+      Number(queryState("culled", `SELECT count(*) n FROM media WHERE ${where}`)[0].n)
+    const hidden = count("section = 'official' AND status = 'hidden'")
+    const visible = count("section = 'official' AND status = 'approved'")
+    assert.equal(visible > 0, true)
+    assert.equal(hidden > visible * 2, true, "most of the section is hidden")
+    assert.equal(count("section = 'official' AND status = 'hidden' AND kind = 'video'"), 1)
+    const onHidden = queryState(
+      "culled",
+      `SELECT count(*) n, sum(f.face_identity_id IS NOT NULL) named FROM media_faces f
+        JOIN media m ON m.id = f.media_id
+        WHERE m.status = 'hidden' AND f.deleted_at IS NULL`,
+    )[0]
+    assert.equal(Number(onHidden.n) > 10, true, "hidden photos have faces")
+    assert.equal(Number(onHidden.named) > 0, true, "some of them already named")
+    assert.equal(count("section = 'guest' AND status = 'approved'") > 0, true)
+  })
+
   it("reaches the limits in long-text without tripping a database constraint", () => {
     build("long-text")
     const [{ longest }] = queryState(
@@ -200,12 +224,23 @@ describe("the control routes", () => {
       action: "go",
       state: "lots",
       to: "/gallery",
+      view: "admin",
     })
     assert.deepEqual(parseControlPath("/__states/reset/cards"), {
       action: "reset",
       state: "cards",
       to: "/",
+      view: "admin",
     })
+  })
+
+  it("accepts only known views, falling back to admin", () => {
+    for (const view of ["visitor", "guest", "admin"]) {
+      const control = parseControlPath(`/__states/go/fresh?view=${view}`)
+      assert.equal(control && "view" in control ? control.view : "", view)
+    }
+    const crafted = parseControlPath("/__states/go/fresh?view=root")
+    assert.equal(crafted && "view" in crafted ? crafted.view : "", "admin")
   })
 
   it("never turns a crafted name into a path", () => {
@@ -233,15 +268,84 @@ describe("the control routes", () => {
   })
 })
 
+describe("the address for --lan", () => {
+  it("skips loopback and IPv6", () => {
+    const address = lanAddress({
+      lo0: [{ family: "IPv4", internal: true, address: "127.0.0.1" }],
+      en0: [
+        { family: "IPv6", internal: false, address: "fe80::1" },
+        { family: "IPv4", internal: false, address: "192.0.2.7" },
+      ],
+    })
+    assert.equal(address, "192.0.2.7")
+  })
+
+  it("reports having no network rather than guessing", () => {
+    assert.equal(lanAddress({ lo0: [{ family: "IPv4", internal: true, address: "127.0.0.1" }] }), null)
+  })
+})
+
+describe("the real photograph", () => {
+  it("covers every variant of it in public/images", () => {
+    const variants = fs
+      .readdirSync(path.join(REPO_ROOT, "public", "images"))
+      .filter((name) => name === "us.webp" || name.startsWith("us-"))
+    assert.equal(variants.length > 0, true)
+    for (const name of variants) assert.equal(isSwappedPhoto(`/images/${name}`), true, name)
+    assert.equal(isSwappedPhoto("/images/us.webp?v=2"), true)
+  })
+
+  it("leaves other images and pages alone", () => {
+    for (const urlPath of ["/images/top-mobile.webp", "/", "/media/us.webp"]) {
+      assert.equal(isSwappedPhoto(urlPath), false, urlPath)
+    }
+  })
+})
+
+describe("the cookies for a view", () => {
+  const live = (/** @type {string[]} */ cookies) =>
+    cookies.filter((cookie) => !cookie.includes("Max-Age=0")).map((cookie) => cookie.split("=")[0])
+  const expired = (/** @type {string[]} */ cookies) =>
+    cookies.filter((cookie) => cookie.includes("Max-Age=0")).map((cookie) => cookie.split("=")[0])
+
+  it("signs a visitor out of everything", () => {
+    const cookies = previewCookies("typical", "visitor", [])
+    assert.deepEqual(live(cookies), ["preview__typical__visitor"])
+    for (const name of ["session", "csrf", "guest_session", "guest_csrf"]) {
+      assert.equal(expired(cookies).includes(name), true, name)
+    }
+  })
+
+  it("keeps the session it was given and drops the other kind", () => {
+    const cookies = previewCookies("cards", "guest", ["guest_session=a; Path=/", "guest_csrf=b; Path=/"])
+    assert.deepEqual(live(cookies), ["guest_session", "guest_csrf", "preview__cards__guest"])
+    assert.equal(expired(cookies).includes("session"), true)
+    assert.equal(expired(cookies).includes("csrf"), true)
+    assert.equal(expired(cookies).includes("guest_session"), false)
+  })
+
+  it("expires every other state's marker, so an issue names exactly one", () => {
+    const cookies = previewCookies("cards", "admin", [])
+    const markers = live(cookies).filter((name) => name.startsWith("preview__"))
+    assert.deepEqual(markers, ["preview__cards__admin"])
+    assert.equal(expired(cookies).includes("preview__fresh__guest"), true)
+    assert.equal(expired(cookies).includes("preview__cards__admin"), false)
+  })
+})
+
 describe("the switcher end to end", () => {
   /**
    * @param {number} port
    * @param {string} urlPath
-   * @returns {Promise<{ status: number, location: string, cookies: string[], body: string }>}
+   * @param {string} [cookie]
+   * @returns {Promise<{
+   *   status: number, location: string, cookies: string[], body: string, contentType: string,
+   * }>}
    */
-  const get = (port, urlPath) =>
+  const get = (port, urlPath, cookie) =>
     new Promise((resolve, reject) => {
-      const req = http.get({ host: "127.0.0.1", port, path: urlPath }, (res) => {
+      const headers = cookie ? { cookie } : {}
+      const req = http.get({ host: "127.0.0.1", port, path: urlPath, headers }, (res) => {
         let body = ""
         res.on("data", (chunk) => {
           body += chunk
@@ -252,6 +356,7 @@ describe("the switcher end to end", () => {
             location: String(res.headers.location ?? ""),
             cookies: res.headers["set-cookie"] ?? [],
             body,
+            contentType: String(res.headers["content-type"] ?? ""),
           })
         })
       })
@@ -279,6 +384,23 @@ describe("the switcher end to end", () => {
       const health = await get(port, "/api/health")
       assert.equal(health.status, 200)
       assert.equal((await get(port, "/__states")).body.includes("(current)"), true)
+
+      const photo = await get(port, "/images/us.webp")
+      assert.equal(photo.status, 200)
+      assert.equal(photo.contentType, "image/png")
+
+      const guest = await get(port, "/__states/go/fresh?view=guest&to=%2Fgallery")
+      assert.equal(guest.status, 302, guest.body)
+      const guestCookie = guest.cookies.find((cookie) => cookie.startsWith("guest_session=") )
+      const token = String(guestCookie).split(";")[0]
+      const me = await get(port, "/api/account/me", token)
+      assert.equal(JSON.parse(me.body).account?.name, "Preview Guest")
+
+      const visitor = await get(port, "/__states/go/fresh?view=visitor&to=%2F")
+      assert.equal(
+        visitor.cookies.some((cookie) => cookie.startsWith("session=") && !cookie.includes("Max-Age=0")),
+        false,
+      )
     } finally {
       server.close()
       server.closeAllConnections()

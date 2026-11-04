@@ -158,6 +158,28 @@ export interface PreviewServerOptions {
   publicUrl: string
 }
 
+/** Who the reviewer is browsing as. */
+export type PreviewView = "visitor" | "guest" | "admin"
+
+/** This machine's first non-loopback IPv4 address, or null if it isn't on a network. */
+export function lanAddress(
+  interfaces: Record<string, readonly { family: string; internal: boolean; address: string }[] | undefined>,
+): string | null
+
+/** Real site images that show people, swapped for drawings so screenshots can't carry them. */
+export function isSwappedPhoto(urlPath: string): boolean
+
+/**
+ * Cookies that sign the browser in as `view` and sign it out of the others. A marker
+ * cookie names the state and view, because an issue records cookie names and `/gallery`
+ * is the same URL in every state.
+ */
+export function previewCookies(
+  state: string,
+  view: PreviewView,
+  sessionCookies: readonly string[],
+): string[]
+
 /** The switcher page. Escapes everything it interpolates. */
 export function renderSwitcher(
   current: string | null,
@@ -167,6 +189,6 @@ export function renderSwitcher(
 /** Which control route this path is, or null to forward it to the backend. */
 export function parseControlPath(
   urlPath: string,
-): { action: "list" } | { action: "go" | "reset"; state: string; to: string } | null
+): { action: "list" } | { action: "go" | "reset"; state: string; to: string; view: PreviewView } | null
 
 export function createPreviewServer(options: PreviewServerOptions): Server

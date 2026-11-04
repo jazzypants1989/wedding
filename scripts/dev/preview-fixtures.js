@@ -99,6 +99,10 @@ export const PREVIEW_STATES = {
     title: "Thank-you cards",
     description: "Gifts logged, and cards in every state: draft, sent, opened, replied.",
   },
+  culled: {
+    title: "Culled import",
+    description: "Official holds every photo, and most are hidden. Some hidden photos have faces.",
+  },
   "long-text": {
     title: "Long text",
     description: "Names, captions and notes at their limits, plus emoji and right-to-left text.",
@@ -878,6 +882,67 @@ function seedBacklog(seed) {
 }
 
 /**
+ * The owner's import: every photo uploaded, the rejects hidden. Nearly everything
+ * in Official is hidden, a video among them, and the hidden photos with faces are
+ * what make the Faces tab different from a public-only view.
+ * @param {Seeder} seed
+ */
+function seedCulled(seed) {
+  seed.guests(12)
+  const accounts = seed.accounts(6)
+  const guestPhotos = seed.gallery(0, 8, accounts)
+  seed.notes(6, accounts)
+  seed.engagement(4, 12, accounts, guestPhotos, [])
+
+  const OFFICIAL_COUNT = 90
+  /** @type {PreviewMedia[]} */
+  const hidden = []
+  /** @type {PreviewMedia[]} */
+  const visible = []
+  for (let i = 0; i < OFFICIAL_COUNT; i++) {
+    const keep = i % 6 === 0
+    const media = seed.media({
+      section: "official",
+      status: keep ? "approved" : "hidden",
+      kind: i === 7 ? "video" : "image",
+      sortOrder: i,
+      caption: keep && i % 12 === 0 ? seed.cycle(CAPTIONS, i) : null,
+    })
+    if (keep) visible.push(media)
+    else hidden.push(media)
+  }
+  const images = hidden.filter((_, i) => i !== 6)
+
+  // One named person, whose faces sit mostly on photos guests can't see.
+  const person = createPerson({ displayName: CAST[0], guestId: null, createdBy: ACTOR })
+  const identity = createIdentity({
+    personId: person.id,
+    confirmedBy: ACTOR,
+    confirmedAt: new Date().toISOString(),
+  })
+  const named = seed.randomVector()
+  const batchId = crypto.randomUUID()
+  createBatch({ batchId, kind: "manual", actor: ACTOR, note: "named on culled photos" })
+  for (const media of [visible[0], ...images.slice(0, 6)]) {
+    const faceId = seed.face(media, 0, seed.near(named))
+    recordAssignment({ faceId, op: "assign", identityId: identity.id, actor: ACTOR, batchId })
+  }
+
+  // Two unnamed groups, entirely on hidden photos, plus a lone face and a leftover.
+  for (const [start, size] of [
+    [6, 7],
+    [13, 5],
+  ]) {
+    const centre = seed.randomVector()
+    for (const media of images.slice(start, start + size)) {
+      seed.face(media, 0, seed.near(centre))
+    }
+  }
+  seed.face(images[18], 0, seed.randomVector(), "ask")
+  seed.face(images[19], 0, seed.randomVector(), "set_aside")
+}
+
+/**
  * @param {string} state
  * @param {string} publicUrl
  * @returns {Types.PreviewLink[]}
@@ -924,6 +989,8 @@ function seedState(state, publicUrl) {
     seedFaces(seed, true)
   } else if (state === "cards") {
     return seedCards(seed, publicUrl)
+  } else if (state === "culled") {
+    seedCulled(seed)
   } else if (state === "long-text") {
     seedLongText(seed)
   } else {

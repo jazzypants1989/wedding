@@ -129,7 +129,7 @@ setInterval(
 server.requestTimeout = 600_000
 server.headersTimeout = 35_000
 
-server.listen(SERVER.port, () => {
+server.listen(Number(SERVER.port), SERVER.bindHost, () => {
   console.log(`Wedding website running at http://localhost:${SERVER.port}/`)
   console.log(`Health check: http://localhost:${SERVER.port}/api/health`)
 })

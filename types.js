@@ -411,6 +411,8 @@ export const SERVER = Object.freeze({
   projectRoot: import.meta.dirname,
   /** HTTP listen port. */
   port: SERVER_PORT,
+  /** Address to listen on. Unset means every interface, which a container needs. */
+  bindHost: process.env.BIND_HOST || undefined,
   /** Scrypt hash of the admin password (set by `npm run setup`). */
   adminPasswordHash: process.env.ADMIN_PASSWORD_HASH,
   /** Public base URL used in invite links and cookie Secure detection

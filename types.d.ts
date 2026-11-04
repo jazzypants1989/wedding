@@ -1109,6 +1109,7 @@ export interface UpdateGuestInput {
 export const SERVER: {
   readonly projectRoot: string
   readonly port: string | number
+  readonly bindHost: string | undefined
   readonly adminPasswordHash: string | undefined
   readonly baseUrl: string
   readonly contactEmail: string
