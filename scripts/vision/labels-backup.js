@@ -1,4 +1,4 @@
-/** @file Copy the one derived artifact that does not regenerate.
+/** @file Copy the derived artifacts that do not regenerate.
  *
  *  Everything else under a run directory is recomputable in minutes — crops,
  *  descriptors, reports. `labels.json` is not: it records human judgement, made
@@ -14,6 +14,10 @@
  *  its own where a list of names ends up. Every copy is verified byte-for-byte
  *  after writing, because a backup that was never re-read is a hope.
  *
+ *  `--selection` adds the culling page's selection file, which also records human
+ *  judgement. It holds content hashes only, and its path is an argument because it
+ *  doesn't live in a run directory.
+ *
  *  Prints file names, byte counts and the datasetId. Never a label, never a
  *  name, never a count of anything about the people in the photographs.
  *
@@ -24,13 +28,14 @@ import fs from "node:fs"
 import path from "node:path"
 
 const USAGE = `
-Usage: node scripts/vision/labels-backup.js <run-dir> --to <destination>
+Usage: node scripts/vision/labels-backup.js <run-dir> --to <destination> [--selection <file>]
 
   Copy <run-dir>/labels.json (plus identities.json and timing.json when
   present) into a timestamped directory under <destination>, then verify each
   copy byte-for-byte. <destination> is required and is never guessed.
 
   --to PATH     Where the backup directory is created. Required.
+  --selection PATH  Also copy the culling selection file, as selection.json.
   --help
 `
 
@@ -43,13 +48,15 @@ const OPTIONAL = ["identities.json", "timing.json"]
 
 /**
  * @param {readonly string[]} argv
- * @returns {{ valid: true, dir: string, to: string } | { valid: false, error: string }}
+ * @returns {{ valid: true, dir: string, to: string, selection: string | null } | { valid: false, error: string }}
  */
 export function parseArgs(argv) {
   /** @type {string[]} */
   const positional = []
   /** @type {string | null} */
   let to = null
+  /** @type {string | null} */
+  let selection = null
 
   for (let i = 0; i < argv.length; i++) {
     const raw = argv[i]
@@ -67,6 +74,13 @@ export function parseArgs(argv) {
       to = value
       continue
     }
+    if (raw === "--selection" || raw.startsWith("--selection=")) {
+      const eq = raw.indexOf("=")
+      const value = eq === -1 ? argv[++i] : raw.slice(eq + 1)
+      if (!value || value.startsWith("--")) return { valid: false, error: "--selection needs a value" }
+      selection = path.resolve(value)
+      continue
+    }
     if (raw.startsWith("--")) return { valid: false, error: `Unknown option ${raw}` }
     positional.push(raw)
   }
@@ -80,7 +94,7 @@ export function parseArgs(argv) {
       error: "--to is required: the destination for a file of names is always the owner's explicit choice.\n" + USAGE,
     }
   }
-  return { valid: true, dir: path.resolve(positional[0]), to: path.resolve(to) }
+  return { valid: true, dir: path.resolve(positional[0]), to: path.resolve(to), selection }
 }
 
 /**
@@ -98,21 +112,29 @@ export function stamp(now) {
  * @param {string} to destination root
  * @param {Date} now
  * @param {(line: string) => void} log
+ * @param {string | null} [selection] the culling selection file, when one was named
  * @returns {number} exit code
  */
-export function backup(dir, to, now, log) {
+export function backup(dir, to, now, log, selection = null) {
   const source = path.join(dir, REQUIRED)
   if (!fs.existsSync(source)) {
     log(`No ${REQUIRED} under ${dir} — nothing to back up.`)
+    return EXIT.ABORTED
+  }
+  if (selection !== null && !fs.existsSync(selection)) {
+    log(`No selection file at ${selection}. Nothing was backed up.`)
     return EXIT.ABORTED
   }
 
   const dest = path.join(to, `labels-backup-${stamp(now)}`)
   fs.mkdirSync(dest, { recursive: true })
 
-  const files = [REQUIRED, ...OPTIONAL.filter((name) => fs.existsSync(path.join(dir, name)))]
-  for (const name of files) {
-    const from = path.join(dir, name)
+  /** @type {[name: string, from: string][]} */
+  const files = [REQUIRED, ...OPTIONAL.filter((name) => fs.existsSync(path.join(dir, name)))].map(
+    (name) => [name, path.join(dir, name)],
+  )
+  if (selection !== null) files.push(["selection.json", selection])
+  for (const [name, from] of files) {
     const target = path.join(dest, name)
     fs.copyFileSync(from, target)
     // Re-read both sides. A backup verified only by its existence is a hope,
@@ -147,5 +169,5 @@ if (invokedDirectly) {
     console.error(parsed.error)
     process.exit(EXIT.ABORTED)
   }
-  process.exit(backup(parsed.dir, parsed.to, new Date(), console.log))
+  process.exit(backup(parsed.dir, parsed.to, new Date(), console.log, parsed.selection))
 }

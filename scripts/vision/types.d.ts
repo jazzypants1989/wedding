@@ -2310,3 +2310,350 @@ export function scoreTuneGroups(
  * if unnamed, and a suggestion is right when it names the group's majority person.
  */
 export function simulateSuggestions(run: TuneRun, rounds?: number): SuggestionSample[]
+
+// --- Culling: cull-logic.js, cull-data.js ---
+
+/** One face from cull-scores-macos.swift. Box normalised 0-1, top-left origin,
+ *  oriented frame. Every reading is optional: Vision may simply not provide it. */
+export interface CullFaceScore {
+  x: number
+  y: number
+  w: number
+  h: number
+  /** Width of the face in the pixels Vision was handed. */
+  px?: number
+  yaw?: number
+  /** VNDetectFaceCaptureQualityRequest, 0-1. */
+  quality?: number
+  /** Eye height over eye width, from the landmark contour. */
+  leftEye?: number
+  rightEye?: number
+}
+
+/** One row of `tmp/cull/scores.jsonl`, keyed by path relative to the photo dir. */
+export interface CullScoreRow {
+  kind: "image" | "video"
+  rel: string
+  size: number
+  mtimeMs: number
+  w?: number
+  h?: number
+  /** EXIF text, verbatim: "YYYY:MM:DD HH:MM:SS". */
+  captured?: string
+  subsec?: string
+  /** VNImageAestheticsScoresObservation.overallScore, -1 to 1. */
+  aesthetics?: number | null
+  utility?: boolean
+  featurePrint?: { type: "float32" | "float64"; count: number; b64: string }
+  /** Absent when the landmark API is unavailable; empty when it found no face. */
+  faces?: CullFaceScore[]
+  /** Relative to the output directory. */
+  thumb?: string
+  preview?: string
+  /** The photograph did not decode. It is still listed: a tool failure is not a rejection. */
+  error?: string
+  /** Requests that failed on this photograph while the others carried on. */
+  errors?: string[]
+  ms?: number
+}
+
+/** The header row a run writes, with what this OS could actually do. */
+export interface CullMetaRow {
+  kind: "meta"
+  version: number
+  root: string
+  os: string
+  apis: Record<string, { available: boolean; note?: string }>
+}
+
+/** Every tunable in the culling tool. See CULL_DEFAULTS for what each one means. */
+export interface CullDefaults {
+  burstGapMs: number
+  burstDistance: number
+  similarWindowMs: number
+  similarDistance: number
+  compareLast: number
+  eyeClosedBelow: number
+  minEyeFacePx: number
+  maxEyeYaw: number
+  lowFaceQuality: number
+  weightAesthetics: number
+  weightFaceQuality: number
+  weightEyes: number
+  utilityPenalty: number
+  faceMatchIou: number
+  goodFaceQuality: number
+  minGoodPhotos: number
+}
+
+/** What grouping and scoring need to know about a photograph. */
+export interface CullPhotoInput {
+  id: number
+  rel: string
+  /** Relative directory, "" for the top level. */
+  folder: string
+  t: number | null
+  aesthetics: number | null
+  utility: boolean
+  faces: readonly CullFaceScore[] | null
+  print: ArrayLike<number> | null
+}
+
+export type CullFlag = "eyes-closed" | "low-face-quality" | "utility" | "no-scores"
+
+export interface CullAssessment {
+  /** Combined pick score. Null when there was nothing at all to score. */
+  score: number | null
+  faces: number
+  /** Width-weighted mean capture quality. */
+  quality: number | null
+  /** Faces reading as closed-eyed. */
+  eyesClosed: number
+  flags: CullFlag[]
+}
+
+export interface CullGroup {
+  folder: string
+  /** In capture order. */
+  items: number[]
+  /** A member of `items`. A suggestion, never a decision. */
+  pick: number
+  kind: "single" | "burst"
+  reason: string
+}
+
+export interface CullHashedFile {
+  absolute: string
+  relative: string
+  sha256: string
+  kind: "image" | "video"
+  size: number
+}
+
+/** The owner's explicit choice. Absent means undecided. */
+export type CullDecision = "keep" | "hide"
+export type CullDecisions = Record<string, CullDecision>
+
+/** The part of a page item the decision logic reads. */
+export interface CullDecidable {
+  sha: string
+  kind: "image" | "video"
+  /** A video named like a photo beside it, so probably a Live Photo's motion half. */
+  liveClip?: boolean
+}
+
+export interface CullChange {
+  sha: string
+  to: CullDecision
+}
+
+/** The selection file. Agreed with the importer: do not add to this. */
+export interface CullSelection {
+  version: 1
+  visible: string[]
+}
+
+export interface CullSummary {
+  visiblePhotos: number
+  visibleVideos: number
+  hidden: number
+  undecided: number
+}
+
+export interface CullPerson {
+  /** Opaque key from labels.json. */
+  key: string
+  /** Only from an explicit identities file. Only ever written to the page's data. */
+  name: string | null
+  /** [item index, 1 if this is a good photo of them]. */
+  photos: Array<[number, 0 | 1]>
+}
+
+export interface CullCoverageCounts {
+  key: string
+  name: string | null
+  visible: number
+  good: number
+  total: number
+}
+
+export interface CullCoverageWarning extends CullCoverageCounts {
+  /** Nothing visible; visible but none good; or some good, but fewer than wanted. */
+  level: "none" | "no-good" | "few"
+}
+
+export interface BuildPeopleInput {
+  labels: Record<string, string>
+  /** label.html's not-a-face value, from NOT_A_FACE in convert-labels-to-face-work.js. */
+  notAFace: string
+  names: ReadonlyMap<string, string> | null
+  faces: ReadonlyArray<Pick<Session1FaceRecord, "id" | "photoId" | "box">>
+  photos: ReadonlyArray<Pick<Session1PhotoRecord, "id" | "sha256" | "width" | "height">>
+  /** Page item index for a content hash, or null when it is not in this directory. */
+  itemForSha: (sha256: string) => number | null
+  scoredFaces: (item: number) => readonly CullFaceScore[] | null
+}
+
+export function parseCaptureTime(
+  captured: string | null | undefined,
+  subsec?: string | null,
+): number | null
+export function featureDistance(
+  a: ArrayLike<number> | null | undefined,
+  b: ArrayLike<number> | null | undefined,
+): number | null
+export function groupFolder(photos: readonly CullPhotoInput[], defaults?: CullDefaults): number[][]
+export function faceEyesClosed(face: CullFaceScore, defaults?: CullDefaults): boolean | null
+export function assessPhoto(photo: CullPhotoInput, defaults?: CullDefaults): CullAssessment
+export function suggestPick(
+  members: readonly number[],
+  assess: (id: number) => CullAssessment,
+): { pick: number; reason: string }
+export function buildGroups(
+  photos: readonly CullPhotoInput[],
+  defaults?: CullDefaults,
+): { groups: CullGroup[]; assess: (id: number) => CullAssessment }
+export function dedupeByHash(
+  entries: readonly CullHashedFile[],
+): Array<CullHashedFile & { alsoAt: string[] }>
+export function liveClipPaths(
+  entries: ReadonlyArray<Pick<CullHashedFile, "relative" | "kind">>,
+): Set<string>
+export function isSha256Hex(value: unknown): value is string
+export function isFinallyVisible(item: CullDecidable, decision: CullDecision | undefined): boolean
+export function isStillPossible(decision: CullDecision | undefined): boolean
+export function groupReviewed(members: readonly CullDecidable[], decisions: CullDecisions): boolean
+export function acceptGroup(
+  members: readonly CullDecidable[],
+  pickSha: string,
+  decisions: CullDecisions,
+): CullChange[]
+export function pickOnly(
+  members: readonly CullDecidable[],
+  sha: string,
+  decisions: CullDecisions,
+): CullChange[]
+export function buildSelection(
+  items: readonly CullDecidable[],
+  decisions: CullDecisions,
+): CullSelection
+export function parseSelection(
+  text: string,
+): { valid: true; value: CullSelection } | { valid: false; error: string }
+export function restoreSelection(
+  items: readonly CullDecidable[],
+  selection: CullSelection,
+): { changes: CullChange[]; unknown: number }
+export function summarize(items: readonly CullDecidable[], decisions: CullDecisions): CullSummary
+export function faceIsGood(
+  box: { x: number; y: number; w: number; h: number },
+  scoredFaces: readonly CullFaceScore[] | null,
+  defaults?: CullDefaults,
+): boolean
+export function buildPeople(input: BuildPeopleInput, defaults?: CullDefaults): CullPerson[]
+export function coverageCounts(
+  people: readonly CullPerson[],
+  isVisible: (item: number) => boolean,
+): CullCoverageCounts[]
+export function coverageWarnings(
+  people: readonly CullPerson[],
+  before: (item: number) => boolean,
+  after: (item: number) => boolean,
+  minGood: number,
+): CullCoverageWarning[]
+export function coverageShortfalls(
+  people: readonly CullPerson[],
+  isVisible: (item: number) => boolean,
+  minGood: number,
+): CullCoverageWarning[]
+
+/** One entry of the page's `items`: what the page shows and decides on. */
+export interface CullPageItem extends CullDecidable {
+  rel: string
+  folder: string
+  /** A file:// URL, for the fall-back and for looking at the original. */
+  url: string
+  thumb: string | null
+  preview: string | null
+  w: number | null
+  h: number | null
+  /** Naive capture time. For display and ordering only, and not a real instant. */
+  t: number | null
+  size: number
+  aesthetics: number | null
+  score: number | null
+  faces: number
+  quality: number | null
+  eyesClosed: number
+  flags: CullFlag[]
+  /** Other paths holding exactly these bytes. */
+  alsoAt: string[]
+  /** A video that looks like the motion half of a Live Photo. A label, not a decision. */
+  liveClip: boolean
+}
+
+/** `tmp/cull/cull-page-data.js`, assigned to `window.CULL_DATA`. */
+export interface CullPageData {
+  version: 1
+  /** Digest of the photo directory's path. localStorage's key, so decisions survive
+   *  a re-run that adds photographs: they are keyed by content, not by position. */
+  rootId: string
+  apis: Record<string, { available: boolean; note?: string }>
+  minGood: number
+  items: CullPageItem[]
+  groups: CullGroup[]
+  /** Item indexes. */
+  videos: number[]
+  /** Null when no labels file was given. The page then shows no people panel. */
+  people: CullPerson[] | null
+}
+
+export interface CullDataArgs {
+  dir: string
+  outDir: string
+  labels: string | null
+  identities: string | null
+  run: string | null
+  defaults: CullDefaults
+}
+
+export interface CullDataDeps {
+  log?: (line: string) => void
+  hashFile?: (filePath: string) => Promise<string>
+}
+
+export interface CullDataResult {
+  data: CullPageData
+  /** Files that were neither a supported image nor a supported video. */
+  skipped: number
+  target: string
+}
+
+export function parseCullArgs(
+  argv: readonly string[],
+): { valid: true; value: CullDataArgs } | { valid: false; error: string }
+export function decodeFeaturePrint(print: CullScoreRow["featurePrint"]): number[] | null
+export function readScores(file: string): {
+  rows: Map<string, CullScoreRow>
+  meta: CullMetaRow | null
+  skipped: number
+  present: boolean
+}
+export interface BuildPageDataInput {
+  files: ReadonlyArray<CullHashedFile & { alsoAt: string[] }>
+  rows: ReadonlyMap<string, CullScoreRow>
+  meta: CullMetaRow | null
+  rootId: string
+  defaults: CullDefaults
+  toUrl: (absolute: string) => string
+  people: (context: {
+    itemForSha: (sha256: string) => number | null
+    scoredFaces: (item: number) => readonly CullFaceScore[] | null
+  }) => CullPerson[] | null
+}
+export function buildPageData(input: BuildPageDataInput): CullPageData
+export function loadPeopleInput(
+  args: Pick<CullDataArgs, "labels" | "identities" | "run">,
+): Omit<BuildPeopleInput, "itemForSha" | "scoredFaces"> | null
+export function classicScript(source: string, names: readonly string[]): string
+export function runCullData(args: CullDataArgs, deps?: CullDataDeps): Promise<CullDataResult>

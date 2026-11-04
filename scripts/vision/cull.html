@@ -1,0 +1,1966 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!--
+      No network, and the browser enforces it rather than this comment promising it:
+      nothing here can reach anything but a local file. A photograph of a guest and
+      a list of their names are both on this page, and neither may leave the machine.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src file: 'unsafe-inline'; style-src 'unsafe-inline'; img-src file:; media-src file:; connect-src 'none'; form-action 'none'; base-uri 'none'"
+    />
+    <meta name="referrer" content="no-referrer" />
+    <title>Cull</title>
+    <!--
+      TEMPLATE. scripts/vision/cull-data.js copies this next to its data, the
+      thumbnails and the classic-script copy of cull-logic.js. It is opened over
+      file://, with no server. Neither requests nor ES modules work there, which is
+      why everything arrives by script tag.
+
+      The grouping, suggestion, coverage and selection logic is NOT here: it is
+      window.CullLogic, the same source the unit tests run. This file is the
+      presentation of those decisions and the keyboard over them.
+
+      Three things this page holds to:
+
+      1. NOTHING IS AUTO-REJECTED. A photo the owner has not touched is undecided,
+         and suggestions are badges. A `hide` only comes from a keypress here.
+      2. ONE GROUP AT A TIME. The stage holds one burst, plus lazy thumbnails, and
+         the grid is windowed. The DOM does not grow with the size of the library.
+      3. DECISIONS ARE KEYED BY CONTENT. localStorage holds sha256 to decision, so
+         re-running the scorer over a larger directory keeps every judgement made.
+    -->
+    <style>
+      :root {
+        --bg: #101215;
+        --panel: #171a1f;
+        --panel-2: #20242b;
+        --line: #2e343d;
+        --ink: #e8eaee;
+        --dim: #949cab;
+        --accent: #7cc4ff;
+        --keep: #5ddc8f;
+        --hide: #ff8a7a;
+        --pick: #ffcc66;
+        --warn: #ffb454;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        background: var(--bg);
+        color: var(--ink);
+        font:
+          13px/1.45 ui-sans-serif,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+        display: grid;
+        grid-template-rows: auto 1fr;
+        overflow: hidden;
+      }
+      button,
+      select {
+        font: inherit;
+        color: var(--ink);
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        padding: 4px 10px;
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: var(--accent);
+      }
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+      kbd {
+        display: inline-block;
+        min-width: 1.5em;
+        text-align: center;
+        padding: 0 4px;
+        border: 1px solid var(--line);
+        border-bottom-width: 2px;
+        border-radius: 3px;
+        background: #0c0e11;
+        color: var(--accent);
+        font: 12px/1.5 ui-monospace, Menlo, monospace;
+      }
+
+      /* ---- header ---- */
+      header {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        flex-wrap: wrap;
+        padding: 7px 12px;
+        background: var(--panel);
+        border-bottom: 1px solid var(--line);
+      }
+      .brand {
+        font-weight: 700;
+      }
+      .progress {
+        width: 140px;
+        height: 6px;
+        background: var(--panel-2);
+        border-radius: 3px;
+        overflow: hidden;
+      }
+      .progress i {
+        display: block;
+        height: 100%;
+        width: 0;
+        background: var(--keep);
+      }
+      .count b {
+        font-size: 15px;
+        margin-right: 3px;
+      }
+      .count.keep b {
+        color: var(--keep);
+      }
+      .count.hide b {
+        color: var(--hide);
+      }
+      .count span {
+        color: var(--dim);
+      }
+      .spacer {
+        flex: 1;
+      }
+      #short {
+        border-color: var(--warn);
+        color: var(--warn);
+      }
+      #saved {
+        color: var(--dim);
+        min-width: 7ch;
+      }
+      #saved.bad {
+        color: var(--hide);
+        font-weight: 700;
+      }
+
+      /* ---- stage ---- */
+      main {
+        min-height: 0;
+        position: relative;
+      }
+      .view {
+        position: absolute;
+        inset: 0;
+        display: none;
+      }
+      .view.on {
+        display: grid;
+      }
+      #stage {
+        grid-template-columns: 1fr 280px;
+        grid-template-rows: 1fr auto;
+      }
+      #viewer {
+        min-height: 0;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        overflow: hidden;
+        background: #0b0c0e;
+      }
+      #viewer img {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        width: 100%;
+        height: 100%;
+      }
+      #viewer.zoom {
+        overflow: auto;
+        display: block;
+      }
+      #viewer.zoom img {
+        max-width: none;
+        max-height: none;
+        width: auto;
+        height: auto;
+      }
+      #verdict {
+        position: absolute;
+        left: 12px;
+        top: 12px;
+        display: flex;
+        gap: 6px;
+      }
+      .chip {
+        padding: 2px 8px;
+        border-radius: 10px;
+        background: #000a;
+        font-size: 12px;
+        border: 1px solid var(--line);
+        white-space: nowrap;
+      }
+      .chip.keep {
+        color: var(--keep);
+        border-color: var(--keep);
+      }
+      .chip.hide {
+        color: var(--hide);
+        border-color: var(--hide);
+      }
+      .chip.pick {
+        color: var(--pick);
+        border-color: var(--pick);
+      }
+      .chip.flag {
+        color: var(--warn);
+        border-color: var(--warn);
+      }
+      #side {
+        grid-row: 1 / span 2;
+        grid-column: 2;
+        background: var(--panel);
+        border-left: 1px solid var(--line);
+        padding: 12px;
+        overflow-y: auto;
+      }
+      #side h2 {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--dim);
+        margin: 14px 0 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      #side h2:first-child {
+        margin-top: 0;
+      }
+      #side p {
+        margin: 2px 0;
+        overflow-wrap: anywhere;
+      }
+      #side dl {
+        margin: 0;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 2px 10px;
+      }
+      #side dt {
+        color: var(--dim);
+      }
+      #side dd {
+        margin: 0;
+      }
+      .person.short {
+        color: var(--warn);
+      }
+      #film {
+        display: flex;
+        gap: 6px;
+        padding: 8px;
+        overflow-x: auto;
+        background: var(--panel);
+        border-top: 1px solid var(--line);
+        min-height: 106px;
+      }
+      .frame {
+        flex: 0 0 auto;
+        padding: 0;
+        width: 120px;
+        height: 90px;
+        position: relative;
+        border: 2px solid var(--line);
+        border-radius: 5px;
+        overflow: hidden;
+        background: #0b0c0e;
+      }
+      .frame img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      .frame.on {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px var(--accent);
+      }
+      .frame.keep {
+        border-color: var(--keep);
+      }
+      .frame.hide img {
+        opacity: 0.3;
+      }
+      .frame small {
+        position: absolute;
+        left: 3px;
+        top: 2px;
+        padding: 0 4px;
+        border-radius: 3px;
+        background: #000b;
+        font-size: 11px;
+      }
+      .frame .mark {
+        position: absolute;
+        right: 3px;
+        bottom: 2px;
+        padding: 0 4px;
+        border-radius: 3px;
+        background: #000b;
+        font-size: 12px;
+      }
+      .frame.keep .mark {
+        color: var(--keep);
+      }
+      .frame.hide .mark {
+        color: var(--hide);
+      }
+      .frame.pick small {
+        color: var(--pick);
+      }
+
+      /* ---- grid (windowed) and the card lists ---- */
+      #grid {
+        overflow-y: auto;
+        display: none;
+      }
+      #grid.on {
+        display: block;
+      }
+      #gridInner {
+        position: relative;
+      }
+      .cell {
+        position: absolute;
+        padding: 0;
+        overflow: hidden;
+        border: 2px solid var(--line);
+        border-radius: 5px;
+        background: #0b0c0e;
+      }
+      .cell img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      .cell.on {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px var(--accent);
+      }
+      .cell.reviewed img {
+        opacity: 0.55;
+      }
+      .cell.reviewed.kept img {
+        opacity: 1;
+      }
+      .cell small {
+        position: absolute;
+        left: 3px;
+        top: 2px;
+        padding: 0 4px;
+        border-radius: 3px;
+        background: #000b;
+        font-size: 11px;
+      }
+      .cell .mark {
+        position: absolute;
+        right: 3px;
+        bottom: 2px;
+        padding: 0 4px;
+        border-radius: 3px;
+        background: #000b;
+        font-size: 11px;
+      }
+      .scroller {
+        overflow-y: auto;
+        padding: 14px;
+        align-content: start;
+      }
+      .scroller h1 {
+        font-size: 15px;
+        margin: 0 0 4px;
+      }
+      .scroller > p {
+        margin: 0 0 12px;
+        color: var(--dim);
+        max-width: 80ch;
+      }
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 10px;
+      }
+      .card {
+        padding: 0;
+        text-align: left;
+        border: 2px solid var(--line);
+        border-radius: 6px;
+        background: var(--panel);
+        overflow: hidden;
+      }
+      .card.on {
+        border-color: var(--accent);
+      }
+      .card .poster {
+        width: 100%;
+        aspect-ratio: 16 / 10;
+        object-fit: cover;
+        display: block;
+        background: #0b0c0e;
+      }
+      .card video {
+        width: 100%;
+        aspect-ratio: 16 / 10;
+        display: block;
+        background: #000;
+      }
+      .card .meta {
+        padding: 6px 8px;
+        overflow-wrap: anywhere;
+      }
+      .card.hide .poster {
+        opacity: 0.3;
+      }
+      .card .state {
+        color: var(--keep);
+      }
+      .card.hide .state {
+        color: var(--hide);
+      }
+
+      /* ---- people ---- */
+      table {
+        border-collapse: collapse;
+        width: min(100%, 720px);
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 4px 10px;
+        border-bottom: 1px solid var(--line);
+      }
+      th {
+        color: var(--dim);
+        font-weight: 600;
+      }
+      tr.short td:first-child {
+        color: var(--warn);
+      }
+      tr.person-row {
+        cursor: pointer;
+      }
+      tr.person-row:hover td,
+      tr.on td {
+        background: var(--panel-2);
+      }
+      .strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 10px 0 16px;
+      }
+
+      /* ---- overlays ---- */
+      #toast {
+        position: fixed;
+        left: 50%;
+        bottom: 128px;
+        transform: translateX(-50%);
+        max-width: min(720px, 80vw);
+        padding: 8px 14px;
+        background: #2b2213;
+        border: 1px solid var(--warn);
+        border-radius: 6px;
+        color: var(--warn);
+        display: none;
+        z-index: 5;
+      }
+      #toast.info {
+        background: var(--panel-2);
+        border-color: var(--line);
+        color: var(--ink);
+      }
+      #toast.on {
+        display: block;
+      }
+      .dialog {
+        position: fixed;
+        inset: 0;
+        background: #000a;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 10;
+      }
+      .dialog.on {
+        display: flex;
+      }
+      .box {
+        width: min(620px, 92vw);
+        max-height: 88vh;
+        overflow-y: auto;
+        padding: 18px 20px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+      .box h1 {
+        font-size: 16px;
+        margin: 0 0 10px;
+      }
+      .box ul {
+        margin: 6px 0;
+        padding-left: 18px;
+      }
+      .box .row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 14px;
+      }
+      .box .warnline {
+        color: var(--warn);
+      }
+      .keys {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 4px 12px;
+      }
+      .primary {
+        background: #1f3a52;
+        border-color: var(--accent);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="brand">Cull</span>
+      <div class="progress" title="Groups reviewed"><i id="bar"></i></div>
+      <span id="reviewed"></span>
+      <span class="count keep"><b id="nVisible">0</b><span>visible</span></span>
+      <span class="count hide"><b id="nHidden">0</b><span>hidden</span></span>
+      <span class="count"><b id="nUndecided">0</b><span>undecided</span></span>
+      <select id="folder" aria-label="Folder"></select>
+      <button id="short" hidden></button>
+      <span class="spacer"></span>
+      <span id="saved" aria-live="polite"></span>
+      <button id="btnGrid"><kbd>g</kbd> Grid</button>
+      <button id="btnVideos"><kbd>v</kbd> Videos</button>
+      <button id="btnPeople" hidden><kbd>c</kbd> People</button>
+      <button id="btnHelp"><kbd>?</kbd> Keys</button>
+      <button id="btnExport" class="primary"><kbd>e</kbd> Export</button>
+    </header>
+    <main>
+      <section id="stage" class="view">
+        <div id="viewer">
+          <img id="preview" alt="" />
+          <div id="verdict"></div>
+        </div>
+        <div id="film"></div>
+        <aside id="side"></aside>
+      </section>
+      <section id="grid" class="view"><div id="gridInner"></div></section>
+      <section id="videos" class="view scroller"></section>
+      <section id="people" class="view scroller"></section>
+    </main>
+    <div id="toast" role="status" aria-live="polite"></div>
+
+    <div id="exportDialog" class="dialog" role="dialog" aria-modal="true">
+      <div class="box">
+        <h1>Export the selection</h1>
+        <div id="exportBody"></div>
+        <div class="row">
+          <button id="btnDownload" class="primary">Download selection.json</button>
+          <button id="btnCopy">Copy</button>
+          <button id="btnLoad">Load a selection…</button>
+          <button id="btnCloseExport">Close <kbd>Esc</kbd></button>
+          <input id="loadFile" type="file" accept="application/json,.json" hidden />
+        </div>
+        <p id="exportNote" style="color: var(--dim)"></p>
+      </div>
+    </div>
+
+    <div id="helpDialog" class="dialog" role="dialog" aria-modal="true">
+      <div class="box">
+        <h1>Keys</h1>
+        <div class="keys">
+          <span><kbd>←</kbd> <kbd>→</kbd> or <kbd>h</kbd> <kbd>l</kbd></span>
+          <span>Previous, next frame</span>
+          <span><kbd>↑</kbd> <kbd>↓</kbd> or <kbd>k</kbd> <kbd>j</kbd></span>
+          <span>Previous, next group</span>
+          <span><kbd>1</kbd>–<kbd>9</kbd></span><span>Jump to that frame</span>
+          <span><kbd>Enter</kbd></span
+          ><span>Accept: keep the suggestion (or what you kept), pass over the rest, go on</span>
+          <span><kbd>p</kbd></span>
+          <span>Pick this frame instead of the suggestion, pass over the rest, go on</span>
+          <span><kbd>Space</kbd></span><span>Keep this frame, or undo that</span>
+          <span><kbd>x</kbd></span><span>Hide this frame, or undo that</span>
+          <span><kbd>u</kbd></span><span>Undo the last decision</span>
+          <span><kbd>n</kbd></span><span>Next group not yet reviewed</span>
+          <span><kbd>z</kbd></span><span>Original at full size, to check focus</span>
+          <span><kbd>f</kbd> / <kbd>F</kbd></span><span>Next folder / all folders</span>
+          <span><kbd>A</kbd></span><span>Accept every unreviewed group in view (asks first)</span>
+          <span><kbd>g</kbd> <kbd>v</kbd> <kbd>c</kbd></span>
+          <span>Grid, videos, people. Same key or <kbd>Esc</kbd> returns</span>
+          <span><kbd>t</kbd></span><span>In the grid: only groups not yet reviewed</span>
+          <span><kbd>L</kbd></span>
+          <span>In videos: show every clip named like a photo beside it</span>
+          <span><kbd>e</kbd></span><span>Export</span>
+        </div>
+        <p style="color: var(--dim)">
+          Nothing is hidden until you say so. A photo you never reach stays undecided, and the
+          selection file leaves it out, so it imports hidden and can be shown later from the admin
+          page. Videos are visible unless you deselect them, except probable Live Photo clips, which start hidden.
+        </p>
+      </div>
+    </div>
+
+    <script src="cull-logic.classic.js"></script>
+    <script src="cull-page-data.js"></script>
+    <script>
+      ;(function () {
+        "use strict"
+
+        const DATA = window.CULL_DATA
+        const L = window.CullLogic
+        if (!DATA || !L) {
+          document.body.textContent =
+            "cull-page-data.js or cull-logic.classic.js did not load. Run " +
+            "scripts/vision/cull-data.js, then open the cull.html it writes rather than the template."
+          return
+        }
+
+        const items = DATA.items
+        const groups = DATA.groups
+        const people = DATA.people
+        const STORE_KEY = "cull:v1:" + DATA.rootId
+        const CELL = 168
+        const CELL_H = 126
+        const CELL_GAP = 8
+
+        /** @param {string} id */
+        const $ = (id) => document.getElementById(id)
+
+        /**
+         * Everything from the data goes in through textContent. A filename is
+         * arbitrary text, and this page is the one place that holds real names.
+         */
+        function h(tag, props, children) {
+          const node = document.createElement(tag)
+          for (const key in props || {}) {
+            if (key === "text") node.textContent = props[key]
+            else if (key === "class") node.className = props[key]
+            else if (key === "dataset") Object.assign(node.dataset, props[key])
+            else node.setAttribute(key, props[key])
+          }
+          for (const child of children || []) if (child) node.appendChild(child)
+          return node
+        }
+
+        // --- State ---------------------------------------------------------------
+
+        const state = {
+          decisions: {},
+          group: 0,
+          frame: 0,
+          view: "stage",
+          folder: null,
+          zoom: false,
+          gridCursor: 0,
+          gridUnreviewedOnly: false,
+          videoCursor: 0,
+          personOpen: null,
+          undo: [],
+        }
+
+        function load() {
+          let raw = null
+          try {
+            raw = localStorage.getItem(STORE_KEY)
+          } catch {
+            markSave(false)
+          }
+          if (!raw) return
+          try {
+            const saved = JSON.parse(raw)
+            if (saved && typeof saved.decisions === "object") state.decisions = saved.decisions
+            if (typeof saved.cursor === "string") {
+              const index = groups.findIndex((g) => items[g.items[0]].sha === saved.cursor)
+              if (index !== -1) state.group = index
+            }
+            if (Number.isInteger(saved.frame)) state.frame = saved.frame
+          } catch {
+            flash("Saved progress could not be read, so this session starts empty.", true)
+          }
+        }
+
+        let saveTimer = 0
+        function save() {
+          clearTimeout(saveTimer)
+          saveTimer = 0
+          try {
+            const group = groups[state.group]
+            localStorage.setItem(
+              STORE_KEY,
+              JSON.stringify({
+                decisions: state.decisions,
+                cursor: group ? items[group.items[0]].sha : null,
+                frame: state.frame,
+              }),
+            )
+            markSave(true)
+          } catch {
+            markSave(false)
+          }
+        }
+        function scheduleSave() {
+          $("saved").textContent = "saving…"
+          if (!saveTimer) saveTimer = setTimeout(save, 250)
+        }
+        function markSave(ok) {
+          const node = $("saved")
+          node.textContent = ok ? "saved" : "NOT SAVED: export now"
+          node.classList.toggle("bad", !ok)
+        }
+        addEventListener("pagehide", save)
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState === "hidden") save()
+        })
+
+        // --- Reading the decisions -----------------------------------------------
+
+        const decisionOf = (index) => state.decisions[items[index].sha]
+        const membersOf = (group) => group.items.map((index) => items[index])
+        const stillPossible = (index) => L.isStillPossible(decisionOf(index))
+        const finallyVisible = (index) => L.isFinallyVisible(items[index], decisionOf(index))
+
+        /** Group indexes the folder filter currently lets through. */
+        function scope() {
+          /** @type {number[]} */
+          const list = []
+          for (let i = 0; i < groups.length; i++) {
+            if (state.folder === null || groups[i].folder === state.folder) list.push(i)
+          }
+          return list
+        }
+
+        // --- Changing decisions ---------------------------------------------------
+
+        /**
+         * The one way a decision changes. `to` may be null: back to undecided. The
+         * coverage warning is computed around the change here so that no keypress can
+         * get past it. It never blocks; the owner decides, and `u` undoes.
+         */
+        function apply(changes, verb) {
+          if (changes.length === 0) return
+          const before = people ? new Set() : null
+          if (before) for (let i = 0; i < items.length; i++) if (stillPossible(i)) before.add(i)
+
+          const undo = []
+          for (const change of changes) {
+            const previous = state.decisions[change.sha]
+            undo.push({ sha: change.sha, to: previous === undefined ? null : previous })
+            if (change.to === null) delete state.decisions[change.sha]
+            else state.decisions[change.sha] = change.to
+          }
+          // With where the owner was standing: accepting moves on, and undoing it has
+          // to bring them back to the group they are now reconsidering.
+          state.undo.push({ changes: undo, group: state.group, frame: state.frame })
+          if (state.undo.length > 500) state.undo.shift()
+
+          scheduleSave()
+          if (people) {
+            const warnings = L.coverageWarnings(
+              people,
+              (index) => before.has(index),
+              stillPossible,
+              DATA.minGood,
+            )
+            if (warnings.length > 0) flash(describeWarnings(warnings, verb), true, true)
+            else clearWarningToast()
+          }
+        }
+
+        function displayName(person) {
+          return person.name || person.key
+        }
+
+        function describeWarnings(warnings, verb) {
+          const parts = warnings.slice(0, 6).map((w) => {
+            if (w.level === "none") return displayName(w) + " with no photos at all"
+            if (w.level === "no-good") return displayName(w) + " with no good photos"
+            return displayName(w) + " with " + w.good + " good photo" + (w.good === 1 ? "" : "s")
+          })
+          const more = warnings.length > 6 ? " and " + (warnings.length - 6) + " more" : ""
+          return (verb || "That") + " leaves " + parts.join(", ") + more + ". Press u to undo."
+        }
+
+        function undo() {
+          const last = state.undo.pop()
+          if (!last) {
+            flash("Nothing to undo.")
+            return
+          }
+          for (const change of last.changes) {
+            if (change.to === null) delete state.decisions[change.sha]
+            else state.decisions[change.sha] = change.to
+          }
+          if (state.view === "stage") {
+            state.group = last.group
+            state.frame = last.frame
+          }
+          scheduleSave()
+          flash("Undone.")
+          render()
+        }
+
+        // --- Toast ---------------------------------------------------------------
+
+        let toastTimer = 0
+        let toastIsWarning = false
+        function flash(text, warning, sticky) {
+          const node = $("toast")
+          clearTimeout(toastTimer)
+          node.textContent = text
+          node.classList.add("on")
+          node.classList.toggle("info", !warning)
+          toastIsWarning = Boolean(warning)
+          // A warning stays until the next decision. It is the whole point of the
+          // labels file, and it must not vanish while the owner reads the next frame.
+          if (!sticky) toastTimer = setTimeout(() => node.classList.remove("on"), 2200)
+        }
+        function clearWarningToast() {
+          if (toastIsWarning) $("toast").classList.remove("on")
+          toastIsWarning = false
+        }
+
+        // --- Images --------------------------------------------------------------
+
+        const previewSrc = (item) => item.preview || item.url
+        const thumbSrc = (item) => item.thumb || item.preview || item.url
+
+        /**
+         * An image with no thumbnail (never scored) falls back to its preview, then to
+         * the original, which Chrome cannot decode if it is HEIC. Then it simply stays
+         * blank, because a tool failing is no reason to hide the entry.
+         */
+        function fallbackChain(img, item) {
+          const chain = [item.thumb, item.preview, item.url].filter(Boolean)
+          let step = chain.indexOf(img.getAttribute("src"))
+          img.onerror = () => {
+            step++
+            if (step < chain.length) img.src = chain[step]
+            else img.onerror = null
+          }
+        }
+
+        function thumbImg(item, className) {
+          const img = h("img", { alt: "", loading: "lazy", decoding: "async" })
+          if (className) img.className = className
+          img.src = thumbSrc(item)
+          fallbackChain(img, item)
+          return img
+        }
+
+        let previewToken = 0
+        const held = []
+        /** Keeps a few decoded neighbours referenced so the next keypress is instant. */
+        function preload(src) {
+          const img = new Image()
+          img.decoding = "async"
+          img.src = src
+          held.push(img)
+          if (held.length > 8) held.shift()
+        }
+
+        function showPreview(item) {
+          const node = $("preview")
+          const want = state.zoom ? item.url : previewSrc(item)
+          const token = ++previewToken
+          // The thumbnail immediately, the real thing when it has decoded: holding a
+          // key down through a burst must never show a blank frame.
+          if (!state.zoom) {
+            if (item.thumb) node.src = item.thumb
+            // Never leave the previous photograph up under this one's verdict.
+            else node.removeAttribute("src")
+          }
+          const full = new Image()
+          full.onload = () => {
+            if (token === previewToken) node.src = want
+          }
+          full.onerror = () => {
+            if (token !== previewToken) return
+            if (want !== item.url) node.src = item.url
+            else if (state.zoom) flash("This browser cannot decode the original.")
+          }
+          full.src = want
+        }
+
+        // --- Stage ---------------------------------------------------------------
+
+        function currentGroup() {
+          return groups[state.group] || null
+        }
+
+        function renderFilm(group) {
+          const film = $("film")
+          if (film.dataset.group === String(state.group)) return
+          film.dataset.group = String(state.group)
+          film.replaceChildren(
+            ...group.items.map((index, position) =>
+              h(
+                "button",
+                { class: "frame", dataset: { frame: String(position) }, title: items[index].rel },
+                [
+                  thumbImg(items[index]),
+                  h("small", {
+                    text: (position < 9 ? position + 1 : "") + (index === group.pick ? " ★" : ""),
+                  }),
+                  h("span", { class: "mark" }),
+                ],
+              ),
+            ),
+          )
+          film.scrollLeft = 0
+        }
+
+        function updateFilm(group) {
+          const film = $("film")
+          group.items.forEach((index, position) => {
+            const node = film.children[position]
+            const decision = decisionOf(index)
+            node.classList.toggle("on", position === state.frame)
+            node.classList.toggle("keep", decision === "keep")
+            node.classList.toggle("hide", decision === "hide")
+            node.classList.toggle("pick", index === group.pick)
+            node.querySelector(".mark").textContent =
+              decision === "keep" ? "✓" : decision === "hide" ? "✕" : ""
+          })
+          const on = film.children[state.frame]
+          if (on) on.scrollIntoView({ block: "nearest", inline: "nearest" })
+        }
+
+        function formatTime(t) {
+          // Naive EXIF time, parsed as UTC so nothing shifts it. Printed back the same way.
+          return new Date(t).toISOString().slice(0, 19).replaceAll("T", " ")
+        }
+
+        function folderLabel(folder) {
+          return folder === "" ? "(top level)" : folder
+        }
+
+        function row(term, value) {
+          return [h("dt", { text: term }), h("dd", { text: String(value) })]
+        }
+
+        const FLAG_TEXT = {
+          "eyes-closed": "closed eyes?",
+          "low-face-quality": "soft face",
+          utility: "utility shot",
+          "no-scores": "no scores",
+        }
+
+        /** Item index → people in it. Built once: toggling a decision never changes it. */
+        const peopleByItem = new Map()
+        for (const person of people || []) {
+          for (const [item, good] of person.photos) {
+            const list = peopleByItem.get(item) || []
+            list.push({ person, good })
+            peopleByItem.set(item, list)
+          }
+        }
+
+        function renderSide(group, item, index) {
+          const list = scope()
+          const facts = []
+          if (item.t !== null) facts.push(...row("Taken", formatTime(item.t)))
+          if (item.w) facts.push(...row("Size", item.w + " × " + item.h))
+          if (item.score !== null) facts.push(...row("Score", item.score))
+          if (item.aesthetics !== null) facts.push(...row("Aesthetics", item.aesthetics))
+          facts.push(...row("Faces", item.faces))
+          if (item.quality !== null) facts.push(...row("Face quality", item.quality))
+          if (item.eyesClosed > 0) facts.push(...row("Closed eyes", item.eyesClosed))
+          if (item.alsoAt.length > 0) facts.push(...row("Also at", item.alsoAt.join(", ")))
+
+          const nodes = [
+            h("h2", { text: "Group" }),
+            h("p", { text: list.indexOf(state.group) + 1 + " of " + list.length }),
+            h("p", { text: folderLabel(group.folder) }),
+            h("p", { text: group.items.length + " frame" + (group.items.length === 1 ? "" : "s") }),
+            h("h2", { text: "Suggestion" }),
+            h("p", { text: "Frame " + (group.items.indexOf(group.pick) + 1) + " ★" }),
+            h("p", { text: group.reason }),
+            h("h2", { text: "This frame" }),
+            h("p", { text: item.rel }),
+            h("dl", {}, facts),
+          ]
+
+          const here = peopleByItem.get(index)
+          if (here) {
+            nodes.push(h("h2", { text: "In this photo" }))
+            const counts = L.coverageCounts(people, stillPossible)
+            const byKey = new Map(counts.map((c) => [c.key, c]))
+            for (const { person, good } of here) {
+              const c = byKey.get(person.key)
+              nodes.push(
+                h("p", {
+                  class: "person" + (c.good < DATA.minGood ? " short" : ""),
+                  text:
+                    displayName(person) +
+                    " · " +
+                    c.good +
+                    " good left" +
+                    (good ? "" : " · not a good one of them"),
+                }),
+              )
+            }
+          }
+          $("side").replaceChildren(...nodes)
+        }
+
+        function renderVerdict(group, index) {
+          const item = items[index]
+          const decision = decisionOf(index)
+          const chips = []
+          if (decision === "keep") chips.push(h("span", { class: "chip keep", text: "✓ kept" }))
+          if (decision === "hide") chips.push(h("span", { class: "chip hide", text: "✕ hidden" }))
+          if (index === group.pick) {
+            chips.push(h("span", { class: "chip pick", text: "★ suggested" }))
+          }
+          for (const flag of item.flags) {
+            chips.push(h("span", { class: "chip flag", text: FLAG_TEXT[flag] || flag }))
+          }
+          if (state.zoom) chips.push(h("span", { class: "chip", text: "original" }))
+          $("verdict").replaceChildren(...chips)
+        }
+
+        function renderStage() {
+          const group = currentGroup()
+          if (!group) {
+            $("side").replaceChildren(h("p", { text: "No photographs here. Press v for videos." }))
+            return
+          }
+          state.frame = Math.max(0, Math.min(state.frame, group.items.length - 1))
+          const index = group.items[state.frame]
+          renderFilm(group)
+          updateFilm(group)
+          renderVerdict(group, index)
+          renderSide(group, items[index], index)
+          $("viewer").classList.toggle("zoom", state.zoom)
+          showPreview(items[index])
+
+          const next = group.items[state.frame + 1]
+          if (next !== undefined) preload(previewSrc(items[next]))
+          const following = groups[state.group + 1]
+          if (following) preload(previewSrc(items[following.pick]))
+        }
+
+        // --- Grid: one tile per group, windowed ------------------------------------
+
+        function gridList() {
+          const list = scope()
+          if (!state.gridUnreviewedOnly) return list
+          return list.filter((g) => !L.groupReviewed(membersOf(groups[g]), state.decisions))
+        }
+
+        function gridColumns() {
+          return Math.max(1, Math.floor($("grid").clientWidth / (CELL + CELL_GAP)))
+        }
+
+        function renderGrid() {
+          const grid = $("grid")
+          const inner = $("gridInner")
+          const list = gridList()
+          const columns = gridColumns()
+          const rows = Math.ceil(list.length / columns)
+          inner.style.height = rows * (CELL_H + CELL_GAP) + "px"
+
+          const firstRow = Math.max(0, Math.floor(grid.scrollTop / (CELL_H + CELL_GAP)) - 2)
+          const rowCount = Math.ceil(grid.clientHeight / (CELL_H + CELL_GAP)) + 4
+          const start = firstRow * columns
+          const end = Math.min(list.length, (firstRow + rowCount) * columns)
+
+          const cells = []
+          for (let i = start; i < end; i++) {
+            const groupIndex = list[i]
+            const group = groups[groupIndex]
+            const kept = group.items.filter((index) => decisionOf(index) === "keep")
+            const reviewed = L.groupReviewed(membersOf(group), state.decisions)
+            const shown = items[kept.length > 0 ? kept[0] : group.pick]
+            const cell = h(
+              "button",
+              {
+                class:
+                  "cell" +
+                  (i === state.gridCursor ? " on" : "") +
+                  (reviewed ? " reviewed" : "") +
+                  (kept.length > 0 ? " kept" : ""),
+                dataset: { group: String(groupIndex) },
+                title: folderLabel(group.folder),
+              },
+              [
+                thumbImg(shown),
+                group.items.length > 1 ? h("small", { text: "× " + group.items.length }) : null,
+                reviewed
+                  ? h("span", {
+                      class: "mark",
+                      text: kept.length > 0 ? "✓ " + kept.length : "✕",
+                    })
+                  : null,
+              ],
+            )
+            const r = Math.floor(i / columns)
+            const c = i % columns
+            cell.style.cssText =
+              "left:" +
+              (CELL_GAP + c * (CELL + CELL_GAP)) +
+              "px;top:" +
+              (CELL_GAP + r * (CELL_H + CELL_GAP)) +
+              "px;width:" +
+              CELL +
+              "px;height:" +
+              CELL_H +
+              "px"
+            cells.push(cell)
+          }
+          inner.replaceChildren(...cells)
+        }
+
+        function moveGrid(delta) {
+          const list = gridList()
+          if (list.length === 0) return
+          state.gridCursor = Math.max(0, Math.min(list.length - 1, state.gridCursor + delta))
+          const grid = $("grid")
+          const r = Math.floor(state.gridCursor / gridColumns())
+          const top = r * (CELL_H + CELL_GAP)
+          if (top < grid.scrollTop) grid.scrollTop = top
+          else if (top + CELL_H + CELL_GAP * 2 > grid.scrollTop + grid.clientHeight) {
+            grid.scrollTop = top + CELL_H + CELL_GAP * 2 - grid.clientHeight
+          }
+          renderGrid()
+        }
+
+        let gridFrame = 0
+        $("grid").addEventListener("scroll", () => {
+          if (gridFrame) return
+          gridFrame = requestAnimationFrame(() => {
+            gridFrame = 0
+            renderGrid()
+          })
+        })
+
+        // --- Videos ---------------------------------------------------------------
+
+        function renderVideos() {
+          const section = $("videos")
+          const cards = DATA.videos.map((index, position) => {
+            const item = items[index]
+            const hidden = !finallyVisible(index)
+            return h(
+              "div",
+              {
+                class:
+                  "card" +
+                  (position === state.videoCursor ? " on" : "") +
+                  (hidden ? " hide" : ""),
+                dataset: { video: String(position) },
+              },
+              [
+                item.thumb
+                  ? h("img", {
+                      class: "poster",
+                      alt: "",
+                      loading: "lazy",
+                      decoding: "async",
+                      src: item.thumb,
+                    })
+                  : h("div", { class: "poster" }),
+                h("div", { class: "meta" }, [
+                  h("div", { text: item.rel }),
+                  h("div", {
+                    class: "state",
+                    text:
+                      (hidden ? "✕ hidden" : "✓ visible") +
+                      (item.liveClip ? " · Live Photo clip?" : ""),
+                  }),
+                ]),
+              ],
+            )
+          })
+          const liveHidden = liveClipsStillHidden()
+          section.replaceChildren(
+            h("h1", { text: "Videos · " + DATA.videos.length }),
+            h("p", {
+              text:
+                "Videos have no scores and no suggestions. They are visible unless you deselect " +
+                "them here, except probable Live Photo clips, which start hidden. Space toggles, " +
+                "Enter plays.",
+            }),
+            liveHidden.length > 0
+              ? h("p", {}, [
+                  h("button", {
+                    id: "btnLiveClips",
+                    text: "L: Show " + liveHidden.length + " Live Photo clip(s)",
+                  }),
+                ])
+              : null,
+            h("div", { class: "cards", id: "videoCards" }, cards),
+          )
+        }
+
+        /** Same name as a photo beside it. A guess, so showing them is one key away. */
+        function liveClipsStillHidden() {
+          return DATA.videos.filter((index) => items[index].liveClip && !finallyVisible(index))
+        }
+
+        function showLiveClips() {
+          const changes = liveClipsStillHidden().map((index) => ({
+            sha: items[index].sha,
+            to: "keep",
+          }))
+          if (changes.length === 0) return
+          apply(changes)
+          flash("Now visible. Press u to undo.")
+          render()
+        }
+
+        function playVideo(position) {
+          const card = document.querySelector('[data-video="' + position + '"]')
+          if (!card || card.querySelector("video")) return
+          const video = h("video", {
+            controls: "",
+            preload: "metadata",
+            src: items[DATA.videos[position]].url,
+          })
+          card.querySelector(".poster").replaceWith(video)
+          video.play().catch(() => flash("This browser could not play that file."))
+        }
+
+        function toggleVideo(position) {
+          const index = DATA.videos[position]
+          const item = items[index]
+          // Back to undecided when that's the state being asked for, so an undo reads true.
+          const hiddenChoice = item.liveClip ? null : "hide"
+          const visibleChoice = item.liveClip ? "keep" : null
+          apply([{ sha: item.sha, to: finallyVisible(index) ? hiddenChoice : visibleChoice }])
+          renderVideos()
+          updateCounts()
+        }
+
+        function moveVideo(delta) {
+          if (DATA.videos.length === 0) return
+          const last = DATA.videos.length - 1
+          state.videoCursor = Math.max(0, Math.min(last, state.videoCursor + delta))
+          renderVideos()
+          const on = document.querySelector(".card.on")
+          if (on) on.scrollIntoView({ block: "nearest" })
+        }
+
+        // --- People ---------------------------------------------------------------
+
+        function renderPeople() {
+          const section = $("people")
+          if (!people) return
+          const counts = L.coverageCounts(people, stillPossible)
+          const finals = L.coverageCounts(people, finallyVisible)
+          const order = people
+            .map((person, position) => position)
+            .sort((a, b) => counts[a].good - counts[b].good || counts[a].total - counts[b].total)
+
+          const rows = order.map((position) => {
+            const person = people[position]
+            const c = counts[position]
+            return h(
+              "tr",
+              {
+                class:
+                  "person-row" +
+                  (c.good < DATA.minGood ? " short" : "") +
+                  (state.personOpen === position ? " on" : ""),
+                dataset: { person: String(position) },
+              },
+              [
+                h("td", { text: displayName(person) }),
+                h("td", { text: String(c.good) }),
+                h("td", { text: String(finals[position].good) }),
+                h("td", { text: String(c.total) }),
+              ],
+            )
+          })
+
+          const nodes = [
+            h("h1", { text: "People" }),
+            h("p", {
+              text:
+                "Good photos still available are those you have not hidden; good photos visible " +
+                "now are those you have kept. Fewest available first. A face Vision did not rate " +
+                "counts as good, because that is no evidence against the photo. Click a row to " +
+                "see that person's photos.",
+            }),
+            h("table", {}, [
+              h("thead", {}, [
+                h("tr", {}, [
+                  h("th", { text: "Person" }),
+                  h("th", { text: "Good available" }),
+                  h("th", { text: "Good visible now" }),
+                  h("th", { text: "All photos" }),
+                ]),
+              ]),
+              h("tbody", {}, rows),
+            ]),
+          ]
+
+          if (state.personOpen !== null) {
+            const person = people[state.personOpen]
+            nodes.splice(
+              2,
+              0,
+              h("h1", { text: displayName(person) }),
+              h(
+                "div",
+                { class: "strip" },
+                person.photos.map(([index]) => {
+                  const decision = decisionOf(index)
+                  return h(
+                    "button",
+                    {
+                      class:
+                        "frame" +
+                        (decision === "keep" ? " keep" : "") +
+                        (decision === "hide" ? " hide" : ""),
+                      dataset: { goto: String(index) },
+                      title: items[index].rel,
+                    },
+                    [
+                      thumbImg(items[index]),
+                      h("span", {
+                        class: "mark",
+                        text: decision === "keep" ? "✓" : decision === "hide" ? "✕" : "",
+                      }),
+                    ],
+                  )
+                }),
+              ),
+            )
+          }
+          section.replaceChildren(...nodes)
+        }
+
+        function goToItem(index) {
+          const position = groups.findIndex((g) => g.items.includes(index))
+          if (position === -1) return
+          if (state.folder !== null && groups[position].folder !== state.folder) setFolder(null)
+          state.group = position
+          state.frame = groups[position].items.indexOf(index)
+          setView("stage")
+        }
+
+        // --- Header ---------------------------------------------------------------
+
+        function updateCounts() {
+          const summary = L.summarize(items, state.decisions)
+          $("nVisible").textContent = summary.visiblePhotos + summary.visibleVideos
+          $("nHidden").textContent = summary.hidden
+          $("nUndecided").textContent = summary.undecided
+
+          let reviewed = 0
+          for (const group of groups) {
+            if (L.groupReviewed(membersOf(group), state.decisions)) reviewed++
+          }
+          $("reviewed").textContent = reviewed + " of " + groups.length + " groups"
+          $("bar").style.width = groups.length ? (100 * reviewed) / groups.length + "%" : "0"
+
+          if (people) {
+            const short = L.coverageShortfalls(people, stillPossible, DATA.minGood)
+            const node = $("short")
+            node.hidden = short.length === 0
+            node.textContent = short.length + " short of photos"
+          }
+        }
+
+        function renderFolders() {
+          const select = $("folder")
+          /** @type {Map<string, number>} */
+          const counts = new Map()
+          for (const group of groups) counts.set(group.folder, (counts.get(group.folder) || 0) + 1)
+          const options = [h("option", { value: "", text: "All folders · " + groups.length })]
+          for (const [folder, count] of counts) {
+            const text = folderLabel(folder) + " · " + count
+            options.push(h("option", { value: "f:" + folder, text }))
+          }
+          select.replaceChildren(...options)
+          select.hidden = counts.size < 2
+        }
+
+        function setFolder(folder) {
+          state.folder = folder
+          $("folder").value = folder === null ? "" : "f:" + folder
+          state.gridCursor = 0
+          $("grid").scrollTop = 0
+          const list = scope()
+          if (!list.includes(state.group) && list.length > 0) enterGroup(list[0])
+          render()
+        }
+
+        function cycleFolder() {
+          const folders = Array.from(new Set(groups.map((g) => g.folder)))
+          if (folders.length < 2) return
+          const at = state.folder === null ? -1 : folders.indexOf(state.folder)
+          setFolder(folders[(at + 1) % folders.length])
+        }
+
+        // --- Moving ---------------------------------------------------------------
+
+        function moveGroup(delta) {
+          const list = scope()
+          if (list.length === 0) return
+          const at = Math.max(0, list.indexOf(state.group))
+          const next = Math.max(0, Math.min(list.length - 1, at + delta))
+          enterGroup(list[next])
+          scheduleSave()
+          renderStage()
+        }
+
+        /** Arriving at a group shows the suggestion, so what Enter would keep is on screen. */
+        function enterGroup(index) {
+          state.group = index
+          state.frame = groups[index].items.indexOf(groups[index].pick)
+          state.zoom = false
+        }
+
+        function moveFrame(delta) {
+          const group = currentGroup()
+          if (!group) return
+          const next = state.frame + delta
+          if (next >= 0 && next < group.items.length) {
+            state.frame = next
+            state.zoom = false
+            scheduleSave()
+            renderStage()
+            return
+          }
+          // Off either end of a burst simply carries on into the neighbouring group.
+          const list = scope()
+          const at = list.indexOf(state.group) + (delta > 0 ? 1 : -1)
+          if (at < 0 || at >= list.length) return
+          state.group = list[at]
+          state.frame = delta > 0 ? 0 : groups[list[at]].items.length - 1
+          state.zoom = false
+          scheduleSave()
+          renderStage()
+        }
+
+        function nextUnreviewed() {
+          const list = scope()
+          const at = Math.max(0, list.indexOf(state.group))
+          for (let step = 1; step <= list.length; step++) {
+            const candidate = list[(at + step) % list.length]
+            if (!L.groupReviewed(membersOf(groups[candidate]), state.decisions)) {
+              enterGroup(candidate)
+              return true
+            }
+          }
+          return false
+        }
+
+        function advance() {
+          if (!nextUnreviewed()) flash("Every group here is reviewed. Press e to export.")
+          scheduleSave()
+          render()
+        }
+
+        // --- Decisions from the keyboard --------------------------------------------
+
+        function acceptCurrent() {
+          const group = currentGroup()
+          if (!group) return
+          const pickSha = items[group.pick].sha
+          apply(L.acceptGroup(membersOf(group), pickSha, state.decisions), "Accepting this")
+          advance()
+        }
+
+        function pickCurrent() {
+          const group = currentGroup()
+          if (!group) return
+          const sha = items[group.items[state.frame]].sha
+          apply(L.pickOnly(membersOf(group), sha, state.decisions), "Picking this")
+          advance()
+        }
+
+        function toggleCurrent(target, verb) {
+          const group = currentGroup()
+          if (!group) return
+          const sha = items[group.items[state.frame]].sha
+          apply([{ sha, to: state.decisions[sha] === target ? null : target }], verb)
+          updateCounts()
+          renderStage()
+        }
+
+        function acceptAll() {
+          const list = scope().filter(
+            (g) => !L.groupReviewed(membersOf(groups[g]), state.decisions),
+          )
+          if (list.length === 0) {
+            flash("Every group here is already reviewed.")
+            return
+          }
+          /** @type {Array<{ sha: string, to: "keep" | "hide" }>} */
+          const changes = []
+          for (const g of list) {
+            const group = groups[g]
+            changes.push(...L.acceptGroup(membersOf(group), items[group.pick].sha, state.decisions))
+          }
+          const keeps = changes.filter((c) => c.to === "keep").length
+          const ok = window.confirm(
+            "Accept the suggestion in " +
+              list.length +
+              " unreviewed group(s)? That keeps " +
+              keeps +
+              " photo(s) and passes over " +
+              (changes.length - keeps) +
+              ". Press u afterwards to undo it in one step.",
+          )
+          if (!ok) return
+          apply(changes, "Accepting all of that")
+          render()
+        }
+
+        // --- Export ---------------------------------------------------------------
+
+        function selectionText() {
+          return JSON.stringify(L.buildSelection(items, state.decisions), null, 2) + "\n"
+        }
+
+        function renderExport() {
+          const summary = L.summarize(items, state.decisions)
+          const nodes = [
+            h("p", {
+              text:
+                summary.visiblePhotos +
+                " photo(s) and " +
+                summary.visibleVideos +
+                " video(s) will be listed as visible. " +
+                summary.hidden +
+                " hidden by you.",
+            }),
+          ]
+          if (summary.undecided > 0) {
+            nodes.push(
+              h("p", {
+                class: "warnline",
+                text:
+                  summary.undecided +
+                  " photo(s) are still undecided. The file does not list them, so they import " +
+                  "hidden. You can show them later from the admin page, or keep reviewing first.",
+              }),
+            )
+          }
+          if (people) {
+            const short = L.coverageShortfalls(people, finallyVisible, DATA.minGood)
+            if (short.length > 0) {
+              nodes.push(
+                h("p", {
+                  class: "warnline",
+                  text:
+                    "If you export now, these people have fewer than " +
+                    DATA.minGood +
+                    " good visible photos:",
+                }),
+              )
+              nodes.push(
+                h(
+                  "ul",
+                  {},
+                  short.slice(0, 30).map((w) => {
+                    const person = people.find((p) => p.key === w.key)
+                    return h("li", {
+                      text:
+                        displayName(person) +
+                        ": " +
+                        w.good +
+                        " good, " +
+                        w.visible +
+                        " visible, of " +
+                        w.total,
+                    })
+                  }),
+                ),
+              )
+              if (short.length > 30) {
+                nodes.push(h("p", { text: "…and " + (short.length - 30) + " more." }))
+              }
+            }
+          }
+          nodes.push(
+            h("p", {
+              text:
+                "The file holds content hashes and nothing else: no filename, no person, no name.",
+              style: "color: var(--dim)",
+            }),
+          )
+          $("exportBody").replaceChildren(...nodes)
+        }
+
+        $("btnDownload").addEventListener("click", () => {
+          const url = URL.createObjectURL(new Blob([selectionText()], { type: "application/json" }))
+          const link = h("a", { href: url, download: "selection.json" })
+          document.body.appendChild(link)
+          link.click()
+          link.remove()
+          setTimeout(() => URL.revokeObjectURL(url), 2000)
+          $("exportNote").textContent =
+            "Downloaded selection.json. Keep it: it is your judgement, and a browser's storage " +
+            "is not a backup."
+        })
+        $("btnCopy").addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(selectionText())
+            $("exportNote").textContent = "Copied."
+          } catch {
+            $("exportNote").textContent = "This browser refused the clipboard. Use Download."
+          }
+        })
+        $("btnLoad").addEventListener("click", () => $("loadFile").click())
+        $("loadFile").addEventListener("change", async (event) => {
+          const file = event.target.files[0]
+          event.target.value = ""
+          if (!file) return
+          const parsed = L.parseSelection(await file.text())
+          if (!parsed.valid) {
+            $("exportNote").textContent = "That file was not loaded: " + parsed.error
+            return
+          }
+          const restored = L.restoreSelection(items, parsed.value)
+          apply(restored.changes, "Loading that")
+          $("exportNote").textContent =
+            "Loaded. " +
+            (restored.unknown > 0 ? restored.unknown + " hash(es) in it match nothing. " : "") +
+            "Photos it does not list stay undecided."
+          render()
+          renderExport()
+        })
+
+        // --- Views and overlays ------------------------------------------------------
+
+        function setView(view) {
+          state.view = view
+          for (const name of ["stage", "grid", "videos", "people"]) {
+            $(name).classList.toggle("on", name === view)
+          }
+          render()
+        }
+
+        function toggleView(view) {
+          setView(state.view === view ? "stage" : view)
+        }
+
+        const openDialog = () => document.querySelector(".dialog.on")
+        function showDialog(id, show) {
+          $(id).classList.toggle("on", show)
+          if (id === "exportDialog" && show) {
+            $("exportNote").textContent = ""
+            renderExport()
+            // So that e then Enter is a whole export, without reaching for the mouse.
+            $("btnDownload").focus()
+          }
+        }
+
+        function render() {
+          updateCounts()
+          if (state.view === "stage") renderStage()
+          else if (state.view === "grid") renderGrid()
+          else if (state.view === "videos") renderVideos()
+          else if (state.view === "people") renderPeople()
+        }
+
+        // --- Keyboard ---------------------------------------------------------------
+
+        const DECIDING_KEYS = new Set(["Enter", " ", "x", "p", "u", "A", "L"])
+
+        function onKeydown(event) {
+          if (event.metaKey || event.ctrlKey || event.altKey) return
+          const target = event.target
+          if (target && (target.tagName === "INPUT" || target.tagName === "SELECT")) {
+            if (event.key === "Escape") target.blur()
+            return
+          }
+          // A button reached with Tab, or the one Export focuses, presses as a button.
+          const pressesButton = event.key === "Enter" || event.key === " "
+          if (target && target.tagName === "BUTTON" && pressesButton) return
+          // A key held down may move through frames, but must not decide anything: one
+          // long press of Enter would otherwise pass over a dozen groups unseen.
+          if (event.repeat && DECIDING_KEYS.has(event.key)) {
+            event.preventDefault()
+            return
+          }
+          const handled = handleKey(event.key)
+          if (handled) event.preventDefault()
+        }
+
+        function handleKey(key) {
+          if (openDialog()) {
+            if (key !== "Escape" && key !== "e" && key !== "?") return false
+            showDialog("exportDialog", false)
+            showDialog("helpDialog", false)
+            return true
+          }
+
+          // Keys that mean the same everywhere.
+          switch (key) {
+            case "?":
+              showDialog("helpDialog", true)
+              return true
+            case "e":
+              showDialog("exportDialog", true)
+              return true
+            case "g":
+              toggleView("grid")
+              return true
+            case "v":
+              toggleView("videos")
+              return true
+            case "c":
+              if (people) toggleView("people")
+              return true
+            case "Escape":
+              if (state.view !== "stage") setView("stage")
+              return true
+            case "u":
+              undo()
+              return true
+            case "f":
+              cycleFolder()
+              return true
+            case "F":
+              setFolder(null)
+              return true
+          }
+
+          if (state.view === "grid") return handleGridKey(key)
+          if (state.view === "videos") return handleVideoKey(key)
+          if (state.view === "people") return false
+          return handleStageKey(key)
+        }
+
+        function handleStageKey(key) {
+          switch (key) {
+            case "ArrowLeft":
+            case "h":
+              moveFrame(-1)
+              return true
+            case "ArrowRight":
+            case "l":
+              moveFrame(1)
+              return true
+            case "ArrowUp":
+            case "k":
+              moveGroup(-1)
+              return true
+            case "ArrowDown":
+            case "j":
+              moveGroup(1)
+              return true
+            case "Enter":
+              acceptCurrent()
+              return true
+            case "p":
+              pickCurrent()
+              return true
+            case " ":
+              toggleCurrent("keep", "That")
+              return true
+            case "x":
+              toggleCurrent("hide", "Hiding this")
+              return true
+            case "n":
+              advance()
+              return true
+            case "A":
+              acceptAll()
+              return true
+            case "z":
+              state.zoom = !state.zoom
+              renderStage()
+              return true
+          }
+          if (key >= "1" && key <= "9" && key.length === 1) {
+            const group = currentGroup()
+            const position = key.charCodeAt(0) - 49
+            if (group && position < group.items.length) {
+              state.frame = position
+              state.zoom = false
+              scheduleSave()
+              renderStage()
+            }
+            return true
+          }
+          return false
+        }
+
+        function handleGridKey(key) {
+          const columns = gridColumns()
+          switch (key) {
+            case "ArrowLeft":
+            case "h":
+              moveGrid(-1)
+              return true
+            case "ArrowRight":
+            case "l":
+              moveGrid(1)
+              return true
+            case "ArrowUp":
+            case "k":
+              moveGrid(-columns)
+              return true
+            case "ArrowDown":
+            case "j":
+              moveGrid(columns)
+              return true
+            case "PageUp":
+              moveGrid(-columns * 4)
+              return true
+            case "PageDown":
+              moveGrid(columns * 4)
+              return true
+            case "t":
+              state.gridUnreviewedOnly = !state.gridUnreviewedOnly
+              state.gridCursor = 0
+              $("grid").scrollTop = 0
+              renderGrid()
+              return true
+            case "Enter": {
+              const list = gridList()
+              const target = list[state.gridCursor]
+              if (target !== undefined) {
+                enterGroup(target)
+                setView("stage")
+              }
+              return true
+            }
+          }
+          return false
+        }
+
+        function handleVideoKey(key) {
+          switch (key) {
+            case "ArrowLeft":
+            case "h":
+            case "ArrowUp":
+            case "k":
+              moveVideo(-1)
+              return true
+            case "ArrowRight":
+            case "l":
+            case "ArrowDown":
+            case "j":
+              moveVideo(1)
+              return true
+            case " ":
+              if (DATA.videos.length > 0) toggleVideo(state.videoCursor)
+              return true
+            case "L":
+              showLiveClips()
+              return true
+            case "Enter":
+              playVideo(state.videoCursor)
+              return true
+          }
+          return false
+        }
+
+        document.addEventListener("keydown", onKeydown)
+
+        // --- Mouse: everything above, for when a hand is already on it ---------------
+
+        $("film").addEventListener("click", (event) => {
+          const frame = event.target.closest(".frame")
+          if (!frame) return
+          state.frame = Number(frame.dataset.frame)
+          state.zoom = false
+          scheduleSave()
+          renderStage()
+        })
+        $("gridInner").addEventListener("click", (event) => {
+          const cell = event.target.closest(".cell")
+          if (!cell) return
+          enterGroup(Number(cell.dataset.group))
+          setView("stage")
+        })
+        $("videos").addEventListener("click", (event) => {
+          if (event.target.id === "btnLiveClips") {
+            showLiveClips()
+            return
+          }
+          const card = event.target.closest(".card")
+          if (!card || event.target.tagName === "VIDEO") return
+          state.videoCursor = Number(card.dataset.video)
+          toggleVideo(state.videoCursor)
+        })
+        $("people").addEventListener("click", (event) => {
+          const jump = event.target.closest("[data-goto]")
+          if (jump) {
+            goToItem(Number(jump.dataset.goto))
+            return
+          }
+          const row = event.target.closest("[data-person]")
+          if (!row) return
+          const position = Number(row.dataset.person)
+          state.personOpen = state.personOpen === position ? null : position
+          renderPeople()
+        })
+        $("folder").addEventListener("change", (event) => {
+          const value = event.target.value
+          setFolder(value === "" ? null : value.slice(2))
+          event.target.blur()
+        })
+        $("btnGrid").addEventListener("click", () => toggleView("grid"))
+        $("btnVideos").addEventListener("click", () => toggleView("videos"))
+        $("btnPeople").addEventListener("click", () => toggleView("people"))
+        $("short").addEventListener("click", () => setView("people"))
+        $("btnHelp").addEventListener("click", () => showDialog("helpDialog", true))
+        $("btnExport").addEventListener("click", () => showDialog("exportDialog", true))
+        $("btnCloseExport").addEventListener("click", () => showDialog("exportDialog", false))
+        document.querySelectorAll(".dialog").forEach((dialog) => {
+          dialog.addEventListener("click", (event) => {
+            if (event.target === dialog) dialog.classList.remove("on")
+          })
+        })
+        // Buttons keep focus after a click, and Space would then press them again
+        // rather than toggling the frame on screen. So a click hands focus back.
+        document.addEventListener("click", (event) => {
+          const button = event.target.closest && event.target.closest("button")
+          if (button && !button.closest(".dialog")) button.blur()
+        })
+        addEventListener("resize", () => {
+          if (state.view === "grid") renderGrid()
+        })
+
+        // --- Start ---------------------------------------------------------------
+
+        $("btnPeople").hidden = !people
+        const missing = Object.keys(DATA.apis).filter((name) => !DATA.apis[name].available)
+        renderFolders()
+        if (groups.length > 0) enterGroup(0)
+        load()
+        setView(groups.length > 0 ? "stage" : "videos")
+        if (missing.length > 0) {
+          flash(
+            "Vision could not provide: " + missing.join(", ") + ". Suggestions use what remains.",
+            true,
+          )
+        }
+      })()
+    </script>
+  </body>
+</html>
