@@ -7,12 +7,14 @@
  *  integration test, which is the only place a fake would hide a bug. */
 
 import assert from "node:assert/strict"
+import crypto from "node:crypto"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { after, before, describe, it } from "node:test"
 
 import {
+  assessCapacity,
   buildPlan,
   formatPlanReport,
   parseArgs,
@@ -392,7 +394,7 @@ describe("buildPlan", () => {
 
 /** Records every call, so a test can assert on the whole conversation. */
 function stubSink(overrides = {}) {
-  /** @type {{ created: number[], put: [number, string][], finalized: number[], finalizeInputs: Array<{ sourceSha256: string | null }>, discarded: number[], ordered: number[][] }} */
+  /** @type {{ created: number[], put: [number, string][], finalized: number[], finalizeInputs: Array<{ sourceSha256: string | null, hidden?: boolean }>, discarded: number[], ordered: number[][] }} */
   const calls = { created: [], put: [], finalized: [], finalizeInputs: [], discarded: [], ordered: [] }
   let nextId = 100
   const sink = {
@@ -400,6 +402,18 @@ function stubSink(overrides = {}) {
     calls,
     async preflight() {
       return { ok: true, freeBytes: 1e12, storedBytes: 0 }
+    },
+    /** @returns {Promise<any>} */
+    async capacity() {
+      return {
+        ok: true,
+        storedBytes: 0,
+        maxTotalBytes: 1e12,
+        freeBytes: 1e12,
+        minFreeBytes: 0,
+        remainingBytes: 1e12,
+        limitedBy: "cap",
+      }
     },
     async createSession() {
       const id = nextId++
@@ -411,11 +425,11 @@ function stubSink(overrides = {}) {
       calls.put.push([id, variant])
       return { bytes: 1 }
     },
-    /** @param {number} id @param {{ sourceSha256: string | null }} input */
+    /** @param {number} id @param {{ sourceSha256: string | null, hidden?: boolean }} input */
     async finalize(id, input) {
       calls.finalized.push(id)
       calls.finalizeInputs.push(input)
-      return { id, status: "approved" }
+      return { id, status: input.hidden ? "hidden" : "approved" }
     },
     /** @param {number} id */
     async discard(id) {
@@ -901,5 +915,381 @@ describe("formatPlanReport", () => {
       plan,
     ).join("\n")
     assert.ok(!lines.includes("GPS"))
+  })
+})
+
+// --- --selection ---------------------------------------------------------------
+
+describe("--selection", () => {
+  /** @param {Buffer} bytes */
+  const sha = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex")
+
+  /** @param {string} dir @param {string[]} visible @param {object} [overrides] */
+  function selectionArgs(dir, visible, overrides = {}) {
+    const selectionPath = path.join(dir, "selection.json")
+    fs.writeFileSync(selectionPath, JSON.stringify({ version: 1, visible }))
+    return {
+      ...args([dir]),
+      manifestPath: path.join(dir, "manifest.json"),
+      concurrency: 1,
+      selectionPath,
+      ...overrides,
+    }
+  }
+
+  /** @param {object} deps */
+  function selectionDeps(deps = {}) {
+    return {
+      probeBackends: async () => FAKE_BACKENDS,
+      buildMediaVariants: stubBuilder(),
+      stdout: sink1(),
+      stderr: sink1(),
+      ...deps,
+    }
+  }
+
+  it("parses as an explicit path with no default", () => {
+    assert.equal(args(["/photos"]).selectionPath, null)
+    assert.equal(
+      args(["/photos", "--selection=/cull/keep.json"]).selectionPath,
+      path.resolve("/cull/keep.json"),
+    )
+    assert.equal(parseArgs(["/photos", "--selection"]).valid, false)
+    assert.equal(parseArgs(["/photos", "--selection="]).valid, false)
+  })
+
+  it("hides whatever isn't listed, and asks nothing else of the sink", async () => {
+    const dir = scratch("sel-mixed")
+    const kept = makeJpegWithMetadata({ width: 1200, height: 800 })
+    const cut = makeJpegWithMetadata({ width: 800, height: 1200 })
+    write(dir, "a-kept.jpg", kept)
+    write(dir, "b-cut.jpg", cut)
+    const sink = stubSink()
+
+    const report = await runImport(
+      selectionArgs(dir, [sha(kept)]),
+      selectionDeps({ createSink: () => sink }),
+    )
+
+    assert.equal(report.exitCode, 0)
+    assert.deepEqual(
+      report.imported.map((row) => [row.file, row.status]),
+      [
+        ["a-kept.jpg", "approved"],
+        ["b-cut.jpg", "hidden"],
+      ],
+    )
+    assert.deepEqual(
+      sink.calls.finalizeInputs.map((input) => input.hidden),
+      [false, true],
+    )
+    assert.equal(report.skipped.length, 0, "the selection file itself isn't reported as a skip")
+  })
+
+  it("treats a video like any other file: hidden unless its hash is listed", async () => {
+    const dir = scratch("sel-video")
+    const listed = makeMp4(4096)
+    const unlisted = makeMp4(8192)
+    write(dir, "listed.mp4", listed)
+    write(dir, "unlisted.mp4", unlisted)
+    const sink = stubSink()
+
+    const report = await runImport(
+      selectionArgs(dir, [sha(listed)]),
+      selectionDeps({
+        createSink: () => sink,
+        // No ffmpeg in a unit test, so the plan is stated rather than probed.
+        /** @param {string} sourcePath */
+        planMediaFile: async (sourcePath) => ({
+          ok: true,
+          kind: "video",
+          sourcePath,
+          width: 1280,
+          height: 720,
+          durationSeconds: 5,
+          originalBytes: fs.statSync(sourcePath).size,
+          mtimeMs: 0,
+          hasGps: false,
+        }),
+      }),
+    )
+
+    assert.equal(report.exitCode, 0, JSON.stringify(report.failed))
+    assert.deepEqual(
+      report.imported.map((row) => [row.file, row.status]),
+      [
+        ["listed.mp4", "approved"],
+        ["unlisted.mp4", "hidden"],
+      ],
+    )
+  })
+
+  it("changes nothing when the flag is absent", async () => {
+    const dir = scratch("sel-absent")
+    write(dir, "one.jpg", makeJpegWithMetadata({}))
+    const sink = stubSink()
+    const report = await runImport(
+      { ...args([dir]), manifestPath: path.join(dir, "manifest.json"), concurrency: 1 },
+      selectionDeps({ createSink: () => sink }),
+    )
+    assert.equal(report.imported[0].status, "approved")
+    assert.equal(sink.calls.finalizeInputs[0].hidden, false)
+  })
+
+  it("fails before any sink exists when the file is malformed", async () => {
+    for (const bad of ['{"version":2,"visible":[]}', "nope", '{"version":1,"visible":["ABC"]}']) {
+      const dir = scratch(`sel-bad-${sha(Buffer.from(bad)).slice(0, 8)}`)
+      write(dir, "one.jpg", makeJpegWithMetadata({}))
+      const selectionPath = path.join(dir, "selection.json")
+      fs.writeFileSync(selectionPath, bad)
+      const stderr = sink1()
+      let sinkMade = false
+      const report = await runImport(
+        { ...args([dir]), manifestPath: path.join(dir, "m.json"), selectionPath },
+        selectionDeps({
+          stderr,
+          createSink: () => {
+            sinkMade = true
+            return stubSink()
+          },
+        }),
+      )
+      assert.equal(report.exitCode, 2, bad)
+      assert.equal(sinkMade, false, bad)
+      assert.ok(stderr.lines.join("").includes("--selection"), bad)
+    }
+  })
+
+  it("fails the same way when the file is missing", async () => {
+    const dir = scratch("sel-missing")
+    write(dir, "one.jpg", makeJpegWithMetadata({}))
+    let sinkMade = false
+    const report = await runImport(
+      {
+        ...args([dir]),
+        manifestPath: path.join(dir, "m.json"),
+        selectionPath: path.join(dir, "absent.json"),
+      },
+      selectionDeps({
+        createSink: () => {
+          sinkMade = true
+          return stubSink()
+        },
+      }),
+    )
+    assert.equal(report.exitCode, 2)
+    assert.equal(sinkMade, false)
+  })
+
+  it("discards the row and stops when a server publishes what it was told to hide", async () => {
+    const dir = scratch("sel-not-honoured")
+    write(dir, "a.jpg", makeJpegWithMetadata({ width: 100, height: 100 }))
+    write(dir, "b.jpg", makeJpegWithMetadata({ width: 200, height: 200 }))
+    const sink = stubSink({
+      /** @param {number} id */
+      async finalize(id) {
+        return { id, status: "approved" }
+      },
+    })
+
+    const report = await runImport(selectionArgs(dir, []), selectionDeps({ createSink: () => sink }))
+
+    assert.equal(report.exitCode, 2)
+    assert.deepEqual(report.imported, [])
+    assert.deepEqual(
+      report.failed.map((failure) => failure.code),
+      ["HIDDEN_NOT_HONOURED"],
+    )
+    assert.deepEqual(sink.calls.discarded, sink.calls.created, "the published row is taken back")
+    assert.equal(sink.calls.created.length, 1, "the run stops at the first one")
+    assert.deepEqual(report.unattempted, ["b.jpg"])
+  })
+
+  it("warns, with counts only, about what a selection can't reach", async () => {
+    const dir = scratch("sel-warnings")
+    const first = makeJpegWithMetadata({ width: 300, height: 200 })
+    write(dir, "first.jpg", first)
+    const manifestPath = path.join(dir, "manifest.json")
+    await runImport(
+      { ...args([dir]), manifestPath, concurrency: 1 },
+      selectionDeps({ createSink: () => stubSink() }),
+    )
+
+    write(dir, "second.jpg", makeJpegWithMetadata({ width: 200, height: 300 }))
+    const stranger = sha(Buffer.from("a photo that isn't in this directory"))
+    const stdout = sink1()
+    const report = await runImport(
+      selectionArgs(dir, [stranger], { manifestPath }),
+      selectionDeps({ stdout, createSink: () => stubSink() }),
+    )
+    const printed = stdout.lines.join("")
+    assert.ok(printed.includes("0 file(s) finish visible, 1 finish hidden"))
+    assert.ok(printed.includes("1 selected hash(es) match no file here"))
+    assert.ok(printed.includes("1 already-imported file(s) aren't in the selection"))
+    assert.equal(report.imported[0].status, "hidden")
+  })
+})
+
+// --- Storage preflight -----------------------------------------------------------
+
+describe("the storage check", () => {
+  const GB = 1024 * 1024 * 1024
+  /** @param {object} [overrides] @returns {any} */
+  const capacity = (overrides = {}) => ({
+    ok: true,
+    storedBytes: 40 * GB,
+    maxTotalBytes: 45 * GB,
+    freeBytes: 500 * GB,
+    minFreeBytes: 5 * GB,
+    remainingBytes: 5 * GB,
+    limitedBy: "cap",
+    ...overrides,
+  })
+
+  describe("assessCapacity", () => {
+    it("passes a plan with room to spare", () => {
+      const result = assessCapacity(GB, capacity())
+      assert.equal(result.level, "ok")
+      assert.ok(result.lines[0].includes("5.00 GB remaining"))
+    })
+
+    it("refuses a plan that doesn't fit, and says hiding saves no room", () => {
+      const result = assessCapacity(6 * GB, capacity())
+      assert.equal(result.level, "over")
+      const text = result.lines.join(" ")
+      assert.ok(text.includes("MEDIA_MAX_TOTAL_BYTES"))
+      assert.ok(text.includes("507"))
+      assert.ok(text.includes("Hidden photos count"))
+    })
+
+    it("names the disk when the disk is the closer wall", () => {
+      const result = assessCapacity(6 * GB, capacity({ limitedBy: "disk" }))
+      assert.ok(result.lines.join(" ").includes("MEDIA_MIN_FREE_BYTES"))
+    })
+
+    it("flags a plan that only just fits", () => {
+      assert.equal(assessCapacity(4.8 * GB, capacity()).level, "tight")
+    })
+
+    it("reports a check it couldn't do, rather than passing it", () => {
+      const result = assessCapacity(GB, { ok: false, reason: "unavailable", message: "No password." })
+      assert.equal(result.level, "unknown")
+      assert.ok(result.lines[0].includes("No password."))
+    })
+  })
+
+  /** @param {string} dir @param {object} sink @param {object} [overrides] */
+  async function run(dir, sink, overrides = {}) {
+    const stdout = sink1()
+    const reportPath = path.join(dir, "report.json")
+    const report = await runImport(
+      {
+        ...args([dir]),
+        manifestPath: path.join(dir, "manifest.json"),
+        concurrency: 1,
+        reportPath,
+        ...overrides,
+      },
+      {
+        probeBackends: async () => FAKE_BACKENDS,
+        buildMediaVariants: stubBuilder(),
+        stdout,
+        stderr: sink1(),
+        createSink: () => /** @type {any} */ (sink),
+      },
+    )
+    return { report, printed: stdout.lines.join(""), written: fs.readFileSync(reportPath, "utf8") }
+  }
+
+  /** @param {string} name */
+  function photoDir(name) {
+    const dir = scratch(name)
+    write(dir, "one.jpg", makeJpegWithMetadata({}))
+    return dir
+  }
+
+  const full = () =>
+    stubSink({
+      async capacity() {
+        return capacity({ remainingBytes: 1 })
+      },
+    })
+
+  it("--dry-run refuses an import that wouldn't fit, on stdout and never in a file", async () => {
+    const sink = full()
+    const { report, printed, written } = await run(photoDir("cap-dry-over"), sink, { dryRun: true })
+    assert.equal(report.exitCode, 2)
+    assert.ok(printed.includes("✗ Storage"))
+    assert.equal(sink.calls.created.length, 0)
+    assert.ok(!written.includes("remaining"), "nothing about capacity reaches --report")
+    assert.ok(!written.includes("Storage"), "nothing about capacity reaches --report")
+  })
+
+  it("--dry-run stays clean when it fits, and when the check can't be done", async () => {
+    const fits = await run(photoDir("cap-dry-ok"), stubSink(), { dryRun: true })
+    assert.equal(fits.report.exitCode, 0)
+    assert.ok(fits.printed.includes("✓ Storage"))
+
+    const unknown = await run(
+      photoDir("cap-dry-unknown"),
+      stubSink({
+        async capacity() {
+          return { ok: false, reason: "unavailable", message: "No admin password available." }
+        },
+      }),
+      { dryRun: true },
+    )
+    assert.equal(unknown.report.exitCode, 0)
+    assert.ok(unknown.printed.includes("! Storage not checked: No admin password available."))
+  })
+
+  it("a run with a selection doesn't start what it can't finish", async () => {
+    const dir = photoDir("cap-sel-over")
+    const selectionPath = path.join(dir, "selection.json")
+    fs.writeFileSync(selectionPath, JSON.stringify({ version: 1, visible: [] }))
+    const sink = full()
+    const { report } = await run(dir, sink, { selectionPath })
+    assert.equal(report.exitCode, 2)
+    assert.equal(sink.calls.created.length, 0)
+  })
+
+  it("a server without the endpoint is refused before any upload, dry run or not", async () => {
+    const unsupported = () =>
+      stubSink({
+        async capacity() {
+          return { ok: false, reason: "unsupported", message: "It predates hidden imports." }
+        },
+      })
+    for (const dryRun of [true, false]) {
+      const dir = photoDir(`cap-sel-old-${dryRun}`)
+      const selectionPath = path.join(dir, "selection.json")
+      fs.writeFileSync(selectionPath, JSON.stringify({ version: 1, visible: [] }))
+      const sink = unsupported()
+      const { report } = await run(dir, sink, { selectionPath, dryRun })
+      assert.equal(report.exitCode, 2, `dryRun=${dryRun}`)
+      assert.equal(sink.calls.created.length, 0, `dryRun=${dryRun}`)
+    }
+  })
+
+  it("without a selection, a real run still goes as far as it can, as it always did", async () => {
+    const sink = full()
+    const { report, printed } = await run(photoDir("cap-plain-over"), sink)
+    assert.equal(report.exitCode, 0)
+    assert.equal(report.imported.length, 1)
+    assert.ok(printed.includes("✗ Storage"), "but it says so first")
+  })
+
+  it("doesn't ask for capacity when there is nothing to import", async () => {
+    let asked = false
+    const dir = scratch("cap-nothing")
+    write(dir, "notes.txt", Buffer.from("not media"))
+    const sink = stubSink({
+      async capacity() {
+        asked = true
+        return capacity()
+      },
+    })
+    await run(dir, sink, { dryRun: true })
+    assert.equal(asked, false, "a dry run with nothing to do never asks for a password")
   })
 })

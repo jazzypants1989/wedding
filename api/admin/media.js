@@ -1,26 +1,32 @@
-/** @file Admin curated-gallery management (Phase 6): reorder a curated section
- *  (official or honeymoon), move an item between those two, MOVE an approved
- *  guest item into official, edit captions, and soft-delete any media. Admin
+/** @file Admin curated-gallery management (Phase 6): list a curated section
+ *  (official or honeymoon) with its hidden rows, reorder it, move an item between
+ *  those two, MOVE an approved guest item into official, edit captions, and
+ *  soft-delete any media. Also what still fits, for the bulk importer. Admin
  *  *uploads* are NOT here — they reuse the Phase 3 /api/media/*
  *  withAccountOrAdmin routes via adminFetch (reconciliation 7).
  *  All routes are {admin:true}. */
 /** @import * as Types from './types.js' */
 
+import fs from "node:fs"
 import { sendJson, parseBody } from "../../core/http.js"
 import { log, AUDIT_ACTIONS } from "../../core/utils.js"
 import { getClientIp } from "../../core/rate-limit.js"
 import { validateId, ValidationError, NotFoundError, ConflictError } from "../../core/validation.js"
 import { LIMITS, MEDIA_SECTION, isCuratedMediaSection } from "../../types.js"
 import { withTransaction } from "../../db/utils.js"
-import { quarantineItemDir } from "../../core/media-storage.js"
+import { TMP_DIR, computeMediaCapacity, quarantineItemDir } from "../../core/media-storage.js"
+import { getReservedBytes } from "../../core/upload.js"
+import { toListItem } from "../media.js"
 import {
   getMediaById,
+  getCuratedMediaForAdmin,
   getCuratedMediaIds,
   setMediaSortOrders,
   moveCuratedMedia,
   promoteMediaToOfficial,
   updateMediaCaption,
   softDeleteMedia,
+  sumOriginalBytes,
   listGuestMediaByReactions,
 } from "../../db/media.js"
 import { countCardsReferencingFileKey } from "../../db/thank-you-cards.js"
@@ -48,6 +54,41 @@ export async function guestLoved(req, res) {
     reaction_count: m.reaction_count,
   }))
   return sendJson(res, 200, { items })
+}
+
+/** @type {Types.adminCuratedListHandler} */
+export async function curated(req, res) {
+  // A curated section as the couple manages it. The public feed can't serve this
+  // job: it shows approved rows only, and reorder demands the full set.
+  const url = new URL(req.url ?? "/", `http://${req.headers.host}`)
+  const section = url.searchParams.get("section") ?? MEDIA_SECTION.OFFICIAL
+  if (!isCuratedMediaSection(section)) {
+    throw new ValidationError("section must be 'official' or 'honeymoon'")
+  }
+  return sendJson(res, 200, { items: getCuratedMediaForAdmin(section).map(toListItem) })
+}
+
+/** @type {Types.adminMediaCapacityHandler} */
+export async function capacity(req, res) {
+  // Where the upload guard would stop a big import, so the importer's --dry-run
+  // can say so before the first 507. statfs on TMP_DIR, as passesDiskGuard does.
+  /** @type {number | null} */
+  let freeBytes = null
+  try {
+    const s = fs.statfsSync(TMP_DIR)
+    freeBytes = s.bavail * s.bsize
+  } catch {
+    // Unknown free space: only the total cap can be reported.
+  }
+  return sendJson(
+    res,
+    200,
+    computeMediaCapacity({
+      storedBytes: sumOriginalBytes(),
+      freeBytes,
+      reservedBytes: getReservedBytes(),
+    }),
+  )
 }
 
 /** @type {Types.mediaReorderHandler} */

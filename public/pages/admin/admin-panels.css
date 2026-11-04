@@ -245,6 +245,32 @@
   display: none;
 }
 
+/* On the site / Hidden, the same pill as the section switch above it. */
+#gallery-showing {
+  margin-block-end: 12px;
+}
+
+#gallery-showing button {
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ws-ink);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+#gallery-showing button[aria-pressed="true"] {
+  background: var(--ws-panel);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+  font-weight: 500;
+}
+
+#gallery-showing-note {
+  margin-block: 0 12px;
+}
+
 /* The li was the old curated card; the .photo-card inside it is the card now. */
 #tab-gallery .curated-item,
 #tab-gallery .loved-item {

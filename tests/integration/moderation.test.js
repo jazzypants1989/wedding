@@ -232,6 +232,23 @@ describe("combined moderation queue + filters + counts", () => {
 })
 
 describe("approve/reject/hide state machine", () => {
+  it("keeps culled curated photos out of Review's Hidden list, but a deep link still works", async (t) => {
+    if (!process.env.TEST_ADMIN_PASSWORD) return t.skip("no admin password")
+    const { accountId } = signIn({ name: "Hidden Guest" })
+    const guestPhoto = seedMedia(accountId, "hidden", "guest").id
+    const official = seedMedia(null, "hidden", "official").id
+    const honeymoon = seedMedia(null, "hidden", "honeymoon").id
+
+    const hidden = await json(await asAdmin("/api/admin/moderation/queue?status=hidden&type=media"))
+    const ids = hidden.items.map((/** @type {any} */ item) => item.id)
+    assert.ok(ids.includes(guestPhoto))
+    assert.ok(!ids.includes(official))
+    assert.ok(!ids.includes(honeymoon))
+
+    const item = await asAdmin(`/api/admin/moderation/media/${official}`)
+    assert.strictEqual(item.status, 200)
+  })
+
   it("walks pending → approved → hidden → approved and rejects illegal transitions", async (t) => {
     if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
     const owner = signIn({ trusted: 1, name: "SM" })

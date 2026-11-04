@@ -171,6 +171,20 @@ export function getCuratedMediaIds(section) {
   return rows.map((r) => r.id)
 }
 
+/** @type {Types.getCuratedMediaForAdmin} */
+export function getCuratedMediaForAdmin(section) {
+  // The row set getCuratedMediaIds names, as whole rows: every status (hidden,
+  // rejected, even in-flight 'uploading'), no author gate, no page cap. That is
+  // what makes it a set reorder will accept, which the public feed is not.
+  return sql`SELECT m.id, m.file_key, m.account_id, m.kind, m.section, m.status,
+      m.caption, m.width, m.height, m.duration_seconds, m.needs_display,
+      m.created_at, a.name AS author_name, 0 AS is_own
+    FROM media m
+    LEFT JOIN accounts a ON a.id = m.account_id
+    WHERE m.section = ${section} AND m.deleted_at IS NULL
+    ORDER BY m.sort_order, m.id`.all()
+}
+
 /** @type {Types.setMediaSortOrders} */
 export function setMediaSortOrders(ids, section) {
   // Caller wraps this in withTransaction. sort_order = array index; only rows of

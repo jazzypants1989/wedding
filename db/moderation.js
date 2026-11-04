@@ -8,7 +8,7 @@
 import { sql } from "./sql.js"
 import { now } from "./utils.js"
 import { liveCommentParentFilter } from "./comments.js"
-import { MEDIA_SECTION } from "../types.js"
+import { MEDIA_SECTION, MEDIA_STATUS } from "../types.js"
 
 /**
  * `status = …` for one branch, or nothing when `status` is null (a single-item
@@ -76,6 +76,13 @@ function typeSelect(type, status, accountId) {
         AND ${liveCommentParentFilter()} ${acct}`
   }
   const acct = accountId !== null ? sql`AND m.account_id = ${accountId}` : sql.empty
+  // Review is about guest content. A hidden curated photo is usually a culled import,
+  // and could bury hidden guest posts, so it's managed from Gallery → Hidden. Only the
+  // Hidden list leaves it out: a deep link (status null) still resolves.
+  const culled =
+    status === MEDIA_STATUS.HIDDEN
+      ? sql`AND m.section NOT IN (${MEDIA_SECTION.OFFICIAL}, ${MEDIA_SECTION.HONEYMOON})`
+      : sql.empty
   return sql`SELECT 'media' AS content_type, m.id AS id, m.account_id AS account_id,
       a.name AS author_name, a.relation AS relation, a.trusted AS author_trusted, m.status AS status,
       m.created_at AS created_at, NULL AS message,
@@ -85,7 +92,7 @@ function typeSelect(type, status, accountId) {
     FROM media m LEFT JOIN accounts a ON a.id = m.account_id
     WHERE m.deleted_at IS NULL ${statusIs("m.status", status)}
       AND (m.account_id IS NULL OR a.deleted_at IS NULL)
-      AND m.section != ${MEDIA_SECTION.CONTENT} ${acct}`
+      AND m.section != ${MEDIA_SECTION.CONTENT} ${culled} ${acct}`
 }
 
 /** @type {Types.getModerationQueue} */

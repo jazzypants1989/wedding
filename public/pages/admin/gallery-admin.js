@@ -1,9 +1,14 @@
 /** @file Gallery (prototypes/admin-workspace views/misc.js, IA §4): Official
  *  and Honeymoon — the two curated sets, each in order, as a photo grid with
  *  arrows and a typed position to reorder (no drag — binding decision),
- *  captions that save on blur, a move between the two sets, Remove (with the
- *  thank-you-card warning) — and Most loved by guests, guest photos ranked by
- *  reactions, each one promotable into Official.
+ *  captions that save on blur, a move between the two sets, Hide and Unhide,
+ *  Remove (with the thank-you-card warning) — and Most loved by guests, guest
+ *  photos ranked by reactions, each one promotable into Official.
+ *
+ *  A section can be mostly hidden: a culled import uploads every photo and hides
+ *  the rejects. So the grid shows one side at a time, "On the site" (what guests
+ *  see, and the order that matters) or "Hidden", and the rows off screen stay in
+ *  every reorder, because the server demands the full set.
  *
  *  Routes: /admin/gallery · /admin/gallery/honeymoon · /admin/gallery/loved ·
  *  dialog routes /admin/gallery/upload and /admin/gallery/honeymoon/upload,
@@ -26,6 +31,7 @@ import {
   getErrorMessage,
 } from "../utils.js"
 import { createUploadQueue, sniffKind } from "../../components/media-uploader.js"
+import { applyShownOrder, isCuratedRowOffSite, isCuratedRowOnSite } from "./curated-order.js"
 
 /** Display names for the curated sections. */
 const SECTION_LABEL = /** @type {const} */ ({ official: "Official", honeymoon: "Honeymoon" })
@@ -34,6 +40,16 @@ const SECTION_LABEL = /** @type {const} */ ({ official: "Official", honeymoon: "
 let section = /** @type {GlobalTypes.CuratedMediaSection} */ ("official")
 /** The section `state.currentCurated` holds; null until loaded, or once stale. */
 let loadedSection = /** @type {GlobalTypes.CuratedMediaSection | null} */ (null)
+
+/** Every live row of the section in order, whatever its status: what a reorder
+ *  has to name. `state.currentCurated` is the part of it the grid is showing. */
+let allRows = /** @type {GlobalTypes.MediaListItem[]} */ ([])
+/** Which side of the section the grid is showing. */
+let showing = /** @type {"site" | "hidden"} */ ("site")
+/** The Hidden view renders in pages: there can be thousands, and nobody reorders
+ *  them. "On the site" always renders whole, since positions are typed against it. */
+const HIDDEN_PAGE = 120
+let hiddenLimit = HIDDEN_PAGE
 
 /** One upload queue per curated section. A queue fixes its section when it is
  *  created, so the tray shows the queue for the section on screen while the
@@ -63,14 +79,15 @@ export async function loadGalleryAdmin() {
     if (loadedSection !== want) {
       getElement("curated-grid").innerHTML = html`<li class="grid-empty">Loading…</li>`
     }
-    const data = /** @type {GlobalTypes.MediaListResponse} */ (
-      await api(`/api/media?section=${want}&limit=500`)
+    const data = /** @type {Types.CuratedMediaResponse} */ (
+      await api(`/api/admin/media/curated?section=${want}`)
     )
     // The couple switched sections while this was in flight: that view's own
     // load owns the grid now.
     if (want !== section) return
-    state.currentCurated = data.items
+    allRows = data.items
     loadedSection = want
+    refreshShown()
     renderGrid()
   } catch (err) {
     if (want !== section) return
@@ -84,9 +101,64 @@ export async function loadGalleryAdmin() {
   }
 }
 
+/** Point the grid at the side being shown. An emptied Hidden falls back. */
+function refreshShown() {
+  if (showing === "hidden" && !allRows.some(isCuratedRowOffSite)) showing = "site"
+  state.currentCurated = allRows.filter(showing === "hidden" ? isCuratedRowOffSite : isCuratedRowOnSite)
+  renderShowingToggle()
+}
+
+/** The On the site / Hidden switch, which only exists once something is hidden. */
+function renderShowingToggle() {
+  const offSite = allRows.filter(isCuratedRowOffSite).length
+  getElement("gallery-showing").hidden = offSite === 0
+  getElement("gallery-showing-site-n").textContent = String(
+    allRows.filter(isCuratedRowOnSite).length,
+  )
+  getElement("gallery-showing-hidden-n").textContent = String(offSite)
+  getButtonElement("gallery-showing-site").setAttribute(
+    "aria-pressed",
+    showing === "site" ? "true" : "false",
+  )
+  getButtonElement("gallery-showing-hidden").setAttribute(
+    "aria-pressed",
+    showing === "hidden" ? "true" : "false",
+  )
+  getElement("gallery-showing-note").hidden = showing !== "hidden"
+}
+
+/** @param {"site" | "hidden"} next */
+function setShowing(next) {
+  if (next === showing) return
+  // The grid's order has to be folded in before the grid stops showing it.
+  allRows = applyShownOrder(allRows, state.currentCurated)
+  showing = next
+  hiddenLimit = HIDDEN_PAGE
+  refreshShown()
+  renderGrid()
+}
+
 function renderGrid() {
   const grid = getElement("curated-grid")
   const items = state.currentCurated
+  if (showing === "hidden") {
+    const page = items.slice(0, hiddenLimit)
+    const left = items.length - page.length
+    grid.innerHTML = html`${page.map(hiddenItemMarkup)}${left > 0
+      ? html`<li class="grid-empty">
+          <button type="button" class="btn btn-sm" data-action="more">Show more (${left} left)</button>
+        </li>`
+      : ""}`
+    return
+  }
+  const hiddenCount = allRows.filter(isCuratedRowOffSite).length
+  if (items.length === 0 && hiddenCount > 0) {
+    grid.innerHTML = html`<li class="grid-empty">
+      <strong>Nothing here is on the site yet.</strong>
+      <span class="muted">${hiddenCount} hidden. Unhide the ones guests should see.</span>
+    </li>`
+    return
+  }
   if (items.length === 0) {
     grid.innerHTML =
       section === "honeymoon"
@@ -235,6 +307,39 @@ function itemMarkup(item, index) {
         <button type="button" class="btn btn-sm btn-ghost" data-action="move"
           title="Move to the end of ${SECTION_LABEL[otherSection(section)]}"
           >Move to ${SECTION_LABEL[otherSection(section)]}</button>
+        <button type="button" class="btn btn-sm btn-ghost" data-action="hide"
+          title="Take it off the site, and keep it">Hide</button>
+      </span>
+    </div>
+  </li>`
+}
+
+/** A tile in the Hidden view: no position, because nobody sees this order.
+ *  @param {GlobalTypes.MediaListItem} item @returns {string} */
+function hiddenItemMarkup(item) {
+  const failed = failedCaptions.has(item.id)
+  const captionValue = failed ? failedCaptions.get(item.id) : item.caption || ""
+  return html`<li class="curated-item" data-id="${item.id}">
+    <div class="photo-card">
+      ${frameMarkup(item)}
+      <span class="photo-line">
+        <input type="text" class="curated-caption ${failed ? "is-error" : ""}" data-id="${item.id}"
+          value="${captionValue}" placeholder="Add a caption…" maxlength="500" aria-label="Caption"
+          aria-invalid="${failed ? "true" : "false"}" />
+      </span>
+      ${failed
+        ? html`<span class="curated-caption-error" role="alert">Not saved — still here, try again</span>`
+        : ""}
+      <span class="btn-row">
+        <button type="button" class="btn btn-sm" data-action="unhide"
+          title="Put it back on the site, in its place in the order">Unhide</button>
+        <button type="button" class="btn btn-sm btn-ghost btn-danger-soft photo-remove" data-action="remove"
+          >Remove</button>
+      </span>
+      <span class="btn-row">
+        <button type="button" class="btn btn-sm btn-ghost" data-action="move"
+          title="Move to the end of ${SECTION_LABEL[otherSection(section)]}, still hidden"
+          >Move to ${SECTION_LABEL[otherSection(section)]}</button>
       </span>
     </div>
   </li>`
@@ -308,7 +413,8 @@ async function flushReorder() {
 async function saveOrder() {
   // Snapshot synchronously: the grid may switch section while this is in flight.
   const sec = loadedSection ?? section
-  const ids = state.currentCurated.map((i) => i.id)
+  allRows = applyShownOrder(allRows, state.currentCurated)
+  const ids = allRows.map((i) => i.id)
   try {
     await api("/api/admin/media/reorder", {
       method: "POST",
@@ -320,8 +426,8 @@ async function saveOrder() {
     // a move, a concurrent save). Refresh and RE-APPLY the attempted order to
     // the new set instead of discarding the couple's sequencing.
     try {
-      const data = /** @type {GlobalTypes.MediaListResponse} */ (
-        await api(`/api/media?section=${sec}&limit=500`)
+      const data = /** @type {Types.CuratedMediaResponse} */ (
+        await api(`/api/admin/media/curated?section=${sec}`)
       )
       const rank = new Map(ids.map((id, i) => [id, i]))
       // Unknown (new) items sort to the end, keeping their server order.
@@ -332,7 +438,8 @@ async function saveOrder() {
         body: JSON.stringify({ ids: fresh.map((i) => i.id), section: sec }),
       })
       if (loadedSection === sec) {
-        state.currentCurated = fresh
+        allRows = fresh
+        refreshShown()
         renderGrid()
       }
       showSuccess("Order saved ✓ (the list had changed — your order was re-applied)")
@@ -362,10 +469,73 @@ async function moveToOtherSection(id) {
     return
   }
   if (loadedSection === from) {
-    state.currentCurated = state.currentCurated.filter((i) => i.id !== id)
+    forgetRow(id)
     renderGrid()
   }
   showSuccess(`Moved to ${SECTION_LABEL[to]} — it's at the end of that order`)
+}
+
+/** Drop a row that left this section, keeping any order not yet folded in.
+ *  @param {number} id */
+function forgetRow(id) {
+  allRows = applyShownOrder(allRows, state.currentCurated).filter((i) => i.id !== id)
+  refreshShown()
+}
+
+// ---- hide + unhide --------------------------------------------------------
+
+/**
+ * Put a photo on either side, through the same moderation transitions the Review
+ * tab uses. Its sort_order doesn't move, so an unhidden photo returns to its
+ * place in the sequence.
+ * @param {number} id @param {"hide" | "approve"} action
+ */
+async function setOnSite(id, action) {
+  try {
+    await api(`/api/admin/moderation/media/${id}/${action}`, { method: "POST" })
+  } catch (err) {
+    showGalleryError(`Couldn't change that photo: ${getErrorMessage(err)}`)
+    return
+  }
+  // Fold in any order not yet saved, while the grid still holds this row.
+  allRows = applyShownOrder(allRows, state.currentCurated)
+  const row = allRows.find((i) => i.id === id)
+  if (row) row.status = action === "hide" ? "hidden" : "approved"
+  const stillHidden = showing === "hidden" && allRows.some(isCuratedRowOffSite)
+  refreshShown()
+  if (stillHidden) {
+    // Just the one tile, so captions being typed in the others survive.
+    getElement("curated-grid").querySelector(`.curated-item[data-id="${id}"]`)?.remove()
+  } else {
+    renderGrid()
+  }
+  showSuccess(action === "hide" ? "Hidden from guests" : "Back on the site, in its place")
+}
+
+/** Hide, warning first if the photo rides in a delivered thank-you card.
+ *  @param {number} id */
+async function hideItem(id) {
+  /** @type {string} */
+  let warning = ""
+  try {
+    const refs = /** @type {Types.MediaReferencesResponse} */ (
+      await api(`/api/admin/media/${id}/references`)
+    )
+    warning = cardRefWarning(refs.deliveredCardRefs)
+  } catch {
+    // Never block a hide on a failed lookup.
+  }
+  if (!warning) {
+    await setOnSite(id, "hide")
+    return
+  }
+  openConfirm({
+    title: "Hide this photo?",
+    desc: warning,
+    confirmLabel: "Hide",
+    danger: false,
+    run: () => setOnSite(id, "hide"),
+  })
 }
 
 // ---- caption + remove -----------------------------------------------------
@@ -485,7 +655,7 @@ async function confirmRemove() {
   btn.disabled = true
   try {
     await api(`/api/admin/media/${id}`, { method: "DELETE" })
-    state.currentCurated = state.currentCurated.filter((i) => i.id !== id)
+    forgetRow(id)
     pendingRemoveId = null
     closeModal(getDialogElement("gallery-remove-modal"))
     renderGrid()
@@ -507,6 +677,11 @@ function handleGridClick(e) {
   if (!(target instanceof Element)) return
   const btn = target.closest("button[data-action]")
   if (!(btn instanceof HTMLButtonElement) || btn.disabled) return
+  if (btn.getAttribute("data-action") === "more") {
+    hiddenLimit += HIDDEN_PAGE
+    renderGrid()
+    return
+  }
   const wrap = btn.closest(".curated-item")
   if (!(wrap instanceof HTMLElement)) return
   const id = parseInt(wrap.dataset.id || "", 10)
@@ -515,7 +690,13 @@ function handleGridClick(e) {
   const action = btn.getAttribute("data-action")
   if (action === "top" || action === "up" || action === "down") moveTo(id, action)
   else if (action === "remove") removeItem(id)
-  else if (action === "move") {
+  else if (action === "hide" || action === "unhide") {
+    btn.disabled = true
+    const done = action === "hide" ? hideItem(id) : setOnSite(id, "approve")
+    void done.finally(() => {
+      btn.disabled = false
+    })
+  } else if (action === "move") {
     btn.disabled = true
     void moveToOtherSection(id).finally(() => {
       btn.disabled = false
@@ -807,7 +988,12 @@ function mount(ctx) {
     // Send a debounced reorder for the section being left before its grid goes.
     void flushReorder()
     section = view
+    showing = "site"
+    hiddenLimit = HIDDEN_PAGE
   }
+  // The switch belongs to a curated grid; refreshShown re-shows it on load.
+  if (loved) getElement("gallery-showing").hidden = true
+  else renderShowingToggle()
   getElement("gallery-seg-official").setAttribute(
     "aria-current",
     view === "official" ? "page" : "false",
@@ -859,6 +1045,8 @@ export function initGalleryAdmin() {
   grid.addEventListener("focusout", handleGridBlur)
   grid.addEventListener("keydown", handleGridKeydown)
   getButtonElement("gallery-remove-btn").addEventListener("click", confirmRemove)
+  getButtonElement("gallery-showing-site").addEventListener("click", () => setShowing("site"))
+  getButtonElement("gallery-showing-hidden").addEventListener("click", () => setShowing("hidden"))
   getElement("loved-grid").addEventListener("click", handleLovedGridClick)
   // A thumb that won't load leaves an empty frame (error doesn't bubble: capture).
   for (const id of ["curated-grid", "loved-grid"]) {

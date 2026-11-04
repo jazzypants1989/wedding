@@ -255,9 +255,10 @@ function clampLimit(value, max) {
  * Map a raw feed row (SQLite 0|1 flags, nullable author) to the public item
  * shape (booleans; author_name coalesced to the couple's name for official
  * uploads, which have account_id NULL and thus no joined account row).
+ * Exported for the admin curated listing, which is the same shape over every status.
  * @param {GlobalTypes.MediaFeedRow} row @returns {GlobalTypes.MediaListItem}
  */
-function toListItem(row) {
+export function toListItem(row) {
   return {
     id: row.id,
     file_key: row.file_key,
@@ -509,6 +510,15 @@ export async function finalize(req, res, { params, principal }) {
   const durationS = row.kind === MEDIA_KIND.VIDEO ? toFloatOrNull(body.durationS) : null
   // Optional guest-supplied caption (validated before any disk work).
   const caption = sanitizeCaption(body.caption)
+  // An admin may finish a row hidden, so a photo the couple culled is never
+  // publicly listed, not even between finalize and a later hide. A guest naming
+  // it is ignored, like a guest naming a section at create: normal moderation
+  // applies. An admin's malformed value is refused, because reading it as "not
+  // hidden" would publish the photo.
+  if (principal.isAdmin && body.hidden !== undefined && typeof body.hidden !== "boolean") {
+    throw new ValidationError("hidden must be true or false")
+  }
+  const finishHidden = principal.isAdmin && body.hidden === true
 
   // Verify every required variant landed on disk. Content-section images require
   // the full responsive ladder; a displayMissing (undecodable) content upload
@@ -552,9 +562,11 @@ export async function finalize(req, res, { params, principal }) {
     })
   }
 
-  // Hybrid moderation: admin/trusted → live; untrusted → held pending.
-  const status =
-    principal.isAdmin || principal.trusted
+  // Hybrid moderation: admin/trusted → live; untrusted → held pending. One UPDATE
+  // sets this, so a row asked to finish hidden is never approved on the way.
+  const status = finishHidden
+    ? MEDIA_STATUS.HIDDEN
+    : principal.isAdmin || principal.trusted
       ? MEDIA_STATUS.APPROVED
       : MEDIA_STATUS.PENDING
 

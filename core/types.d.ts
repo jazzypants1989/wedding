@@ -794,6 +794,30 @@ export function quarantineDirAs(src: string, name: string): void
  * are in place afterwards; false when the sweep already purged them. */
 export function restoreQuarantinedItemDir(fileKey: string): boolean
 
+/** How much more the server will accept, in the terms its upload guard uses. */
+export interface MediaCapacity {
+  /** Originals on the volume, hidden and rejected rows included. */
+  storedBytes: number
+  /** MEDIA_MAX_TOTAL_BYTES. */
+  maxTotalBytes: number
+  /** Free bytes on the upload volume; null when statfs can't say. */
+  freeBytes: number | null
+  /** MEDIA_MIN_FREE_BYTES. */
+  minFreeBytes: number
+  /** Bytes of originals that fit before a 507, never negative. */
+  remainingBytes: number
+  /** Which wall is closer: the total cap, or the free-disk headroom. */
+  limitedBy: "cap" | "disk"
+}
+
+/** Work out the remaining capacity. Pure, so the admin endpoint and the local
+ * import sink (which must not open the database on --dry-run) agree. */
+export function computeMediaCapacity(input: {
+  storedBytes: number
+  freeBytes: number | null
+  reservedBytes?: number
+}): MediaCapacity
+
 /** Content-Type for a storage extension (jpg -> image/jpeg, etc.). */
 export function contentTypeForExt(ext: string): string
 

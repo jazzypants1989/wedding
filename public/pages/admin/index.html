@@ -212,6 +212,15 @@
             <p class="muted" id="gallery-lede"></p>
             <a class="btn btn-sm" id="gallery-add-btn" href="/admin/gallery/upload">+ Add official photos</a>
           </header>
+          <div class="seg" id="gallery-showing" role="group" aria-label="Which photos to show" hidden>
+            <button type="button" id="gallery-showing-site" aria-pressed="true">On the site <span
+                class="seg-n" id="gallery-showing-site-n"></span></button>
+            <button type="button" id="gallery-showing-hidden" aria-pressed="false">Hidden <span
+                class="seg-n" id="gallery-showing-hidden-n"></span></button>
+          </div>
+          <p class="muted" id="gallery-showing-note" hidden>
+            Kept, and off the site. Unhide one and it goes back to its place in the order.
+          </p>
           <p id="gallery-error" class="status-note is-error" role="alert" hidden></p>
           <ul id="curated-grid" class="photo-grid"></ul>
           <ul id="loved-grid" class="photo-grid" hidden></ul>

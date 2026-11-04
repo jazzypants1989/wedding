@@ -1062,6 +1062,21 @@ export interface LovedMediaItem {
   reaction_count: number
 }
 
+/** Response of GET /api/admin/media/curated: every live row of a section. */
+export interface CuratedMediaResponse {
+  items: MediaListItem[]
+}
+
+/** Approved: what guests see. */
+export function isCuratedRowOnSite(row: { status: string }): boolean
+
+/** Hidden or pending: kept, off the site, and restorable from the Hidden view. */
+export function isCuratedRowOffSite(row: { status: string }): boolean
+
+/** The whole section with the grid's order applied: `shown` rows take their new
+ *  order inside the slots they already occupy, and every other row stays put. */
+export function applyShownOrder<T extends { id: number }>(all: T[], shown: T[]): T[]
+
 /** Response of GET /api/admin/media/guest-loved. */
 export interface LovedMediaResponse {
   items: LovedMediaItem[]

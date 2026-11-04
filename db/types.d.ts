@@ -658,6 +658,10 @@ export function setMediaStatus(
  *  display order (reorder validation). */
 export function getCuratedMediaIds(section: CuratedMediaSection): number[]
 
+/** Every non-deleted row of one curated section, any status, in display order:
+ *  exactly the set getCuratedMediaIds names. Admin-only; never serve this publicly. */
+export function getCuratedMediaForAdmin(section: CuratedMediaSection): MediaFeedRow[]
+
 /** Rewrite one curated section's sort_order to the given id order (array index).
  *  Caller wraps in withTransaction; only that section's non-deleted rows are touched. */
 export function setMediaSortOrders(ids: number[], section: CuratedMediaSection): void

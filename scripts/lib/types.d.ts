@@ -43,6 +43,12 @@ export type MediaImportErrorCode =
   | "DESTINATION_FULL"
   /** The admin session died mid-run (401, repeated CSRF rejection). Run-fatal. */
   | "AUTH_LOST"
+  /**
+   * A row asked to finish hidden came back with another status, so the server
+   * does not honour the request. The row is discarded and the run stops: every
+   * further reject would be published the same way.
+   */
+  | "HIDDEN_NOT_HONOURED"
 
 /**
  * The shape MediaImportError implements. Declared for consumers that catch and
@@ -279,6 +285,7 @@ export function describeBackends(backends: MediaBackends): BackendNote[]
 // --- Variant generation (scripts/lib/media-variants.js) ---
 
 import type { MediaKind, MediaSection, CuratedMediaSection } from "../../types.js"
+import type { MediaCapacity } from "../../core/types.js"
 
 /** Container types core/sniff.js recognizes. */
 export type SourceSniff = "jpeg" | "png" | "webp" | "heic" | "mp4" | "mov"
@@ -420,6 +427,23 @@ export interface SinkPreflight {
   message?: string
 }
 
+/** What the destination can still take. Read-only; never written to any file. */
+export type SinkCapacity =
+  | (MediaCapacity & { ok: true })
+  | {
+      ok: false
+      /** `unsupported`: the server predates the endpoint, and with it `hidden`
+       *  at finalize. `unavailable`: no password, or the request failed. */
+      reason: "unsupported" | "unavailable"
+      message: string
+    }
+
+/** A capacity check's verdict, with the lines to print. */
+export interface CapacityAssessment {
+  level: "ok" | "tight" | "over" | "unknown"
+  lines: string[]
+}
+
 export interface SinkSession {
   id: number
   fileKey: string
@@ -434,6 +458,10 @@ export interface ImportSink {
   name: "local" | "http"
   /** Capacity check. Never writes, so --dry-run can call it. */
   preflight(): Promise<SinkPreflight>
+  /** Remaining storage in the server's own terms. Never writes. Never throws:
+   *  a check that can't be done says so, and the CLI decides what that means.
+   *  The http sink logs in for this, because the endpoint is admin-only. */
+  capacity(): Promise<SinkCapacity>
   createSession(input: {
     kind: MediaKind
     originalBytes: number
@@ -455,6 +483,8 @@ export interface ImportSink {
        *  The local sink stamps it on the row; the http sink has no API field
        *  for it and ignores it (--backfill-manifest covers those rows). */
       sourceSha256: string | null
+      /** Finish `hidden` rather than approved: never publicly listed. */
+      hidden?: boolean
     },
   ): Promise<{ id: number; status: string }>
   /** Throw away a created-but-unfinalized session (SIGINT, mid-file failure). */
@@ -475,8 +505,9 @@ export function createLocalSink(options?: {
 }): ImportSink
 
 /**
- * Build the API-driven sink. Logs in lazily on the first mutation, so
- * `preflight()` — and therefore --dry-run — never asks for a password.
+ * Build the API-driven sink. Logs in lazily on the first mutation or capacity
+ * read. `preflight()` is unauthenticated and never asks for a password;
+ * --dry-run does ask, once, to read the admin-only capacity endpoint.
  */
 export function createHttpSink(options: {
   /** Origin, no trailing slash. */
@@ -547,6 +578,21 @@ export function hashFile(filePath: string): Promise<string>
 /** Canonical origin key — trailing slashes must not create a second bucket. */
 export function normalizeOrigin(origin: string): string
 
+// --- The selection file (scripts/lib/import-selection.js) ---
+
+/** Exactly 64 lowercase hex characters. */
+export function isSha256Hex(value: unknown): value is string
+
+/** Parse a selection file's text into the set of hashes that stay visible. */
+export function parseSelection(
+  raw: string,
+): { valid: true; value: Set<string> } | { valid: false; error: string }
+
+/** Read and parse a selection file. An unreadable file is an invalid one. */
+export function loadSelection(
+  selectionPath: string,
+): { valid: true; value: Set<string> } | { valid: false; error: string }
+
 // --- The CLI (scripts/import-media.js) ---
 
 /** Everything the run needs, after parsing and defaulting. */
@@ -563,6 +609,8 @@ export interface ImportArgs {
   concurrency: number
   manifestPath: string
   reportPath: string | null
+  /** --selection: files not listed there finish hidden. Null: all finish visible. */
+  selectionPath: string | null
   force: boolean
   skipReorder: boolean
   stripOriginal: boolean
@@ -586,6 +634,8 @@ export interface PlannedItem {
   plan: MediaPlanOk
   sha256: string
   caption: string | null
+  /** Not in the --selection file, so it finishes hidden. */
+  hidden: boolean
 }
 
 /** Why the CLI passed over a file. Adds the one reason the media layer can't know. */
@@ -596,6 +646,8 @@ export interface SkippedItem {
   file: ScannedFile
   code: ImportSkipCode
   message: string
+  /** Known when the file was hashed before being skipped (ALREADY_IMPORTED). */
+  sha256?: string
 }
 
 /** The machine-readable run summary, also written by --report. */
@@ -614,6 +666,8 @@ export interface ImportReport {
     bytes: number
     width: number
     height: number
+    /** What the row finished as: approved, or hidden under --selection. */
+    status: string
   }[]
   skipped: { file: string; code: string; message: string }[]
   failed: { file: string; code: string; message: string; detail: string | null }[]
@@ -663,6 +717,8 @@ export function buildImportPlan(
     captions: "none" | "sidecar"
     order: "name" | "mtime"
     concurrency: number
+    /** The hashes that stay visible; null means every file does. */
+    selection?: Set<string> | null
   },
   deps?: ImportDeps,
 ): Promise<{ items: PlannedItem[]; skipped: SkippedItem[] }>
@@ -674,6 +730,16 @@ export function formatPlanReport(
   preflight: SinkPreflight,
   plan: { items: PlannedItem[]; skipped: SkippedItem[] },
 ): string[]
+
+/** What --selection will do, as lines. Counts only; goes to stdout, never to a file. */
+export function formatSelectionReport(
+  args: ImportArgs,
+  selection: Set<string>,
+  plan: { items: PlannedItem[]; skipped: SkippedItem[] },
+): string[]
+
+/** Compare the bytes a run plans to send with what the destination has left. */
+export function assessCapacity(plannedBytes: number, capacity: SinkCapacity): CapacityAssessment
 
 /** Do the import. Never throws for a per-file problem; the report says what happened. */
 export function runImport(args: ImportArgs, deps?: ImportDeps): Promise<ImportReport>

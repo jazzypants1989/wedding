@@ -7,6 +7,7 @@
 
 import fs from "node:fs"
 import path from "node:path"
+import { MEDIA_STORAGE } from "../types.js"
 
 const DB_PATH =
   process.env.DATABASE_PATH ||
@@ -140,4 +141,22 @@ export function variantExistsOnDisk(fileKey, variant, originalExt) {
     return !!originalExt && fs.existsSync(variantDiskPath(fileKey, "original", originalExt))
   }
   return resolveVariantFile(fileKey, variant) !== null
+}
+
+/** @type {Types.computeMediaCapacity} */
+export function computeMediaCapacity({ storedBytes, freeBytes, reservedBytes = 0 }) {
+  // The same two walls passesDiskGuard (api/media.js) stops an upload at: the
+  // site-wide total of stored originals, which counts hidden rows too, and the
+  // free-disk headroom. Whichever is closer is what an import actually has.
+  const toCap = MEDIA_STORAGE.MAX_TOTAL_BYTES - storedBytes
+  const toDisk =
+    freeBytes === null ? Infinity : freeBytes - reservedBytes - MEDIA_STORAGE.MIN_FREE_BYTES
+  return {
+    storedBytes,
+    maxTotalBytes: MEDIA_STORAGE.MAX_TOTAL_BYTES,
+    freeBytes,
+    minFreeBytes: MEDIA_STORAGE.MIN_FREE_BYTES,
+    remainingBytes: Math.max(0, Math.min(toCap, toDisk)),
+    limitedBy: toDisk < toCap ? "disk" : "cap",
+  }
 }

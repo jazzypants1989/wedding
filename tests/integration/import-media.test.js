@@ -18,6 +18,7 @@ import { LOCAL_DATA_DIR } from "./_import-media-port.js"
 /** @import * as ImportTypes from '../../scripts/lib/types.js' */
 
 import assert from "node:assert"
+import crypto from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
 import { DatabaseSync } from "node:sqlite"
@@ -143,9 +144,31 @@ function stubBuilder(onFile) {
   }
 }
 
+/** @param {Buffer} bytes */
+function sha256(bytes) {
+  return crypto.createHash("sha256").update(bytes).digest("hex")
+}
+
+/** Write a selection file beside the photos. @param {string} dir @param {string[]} visible */
+function selectionFile(dir, visible) {
+  const file = path.join(dir, "selection.json")
+  fs.writeFileSync(file, JSON.stringify({ version: 1, visible }))
+  return file
+}
+
 /** Silence the CLI's output; tests assert on the report, not the prose. */
 function quiet() {
   return { write: () => true }
+}
+
+/** Keep the CLI's stdout, for the tests that are about the prose. */
+function captured() {
+  /** @type {string[]} */
+  const lines = []
+  return {
+    write: (/** @type {string} */ chunk) => lines.push(chunk),
+    text: () => lines.join(""),
+  }
 }
 
 /** @param {string} dir @param {Partial<ImportTypes.ImportArgs>} [overrides] */
@@ -374,6 +397,63 @@ describe("import-media — local sink", () => {
     assert.strictEqual(fs.existsSync(args.manifestPath), false)
   })
 
+  it("--selection finishes unlisted files hidden, in order among the rest", async () => {
+    const dir = scratch("local-selection")
+    const kept = photo(1000, 700)
+    const cutA = photo(1100, 700)
+    const cutB = photo(1200, 700)
+    write(dir, "A_cut.jpg", cutA)
+    write(dir, "B_kept.jpg", kept)
+    write(dir, "C_cut.jpg", cutB)
+
+    const report = await run(argsFor(dir, { selectionPath: selectionFile(dir, [sha256(kept)]) }))
+
+    assert.strictEqual(report.exitCode, 0, JSON.stringify(report.failed))
+    assert.deepStrictEqual(report.warnings, [])
+    const nameById = new Map(report.imported.map((i) => [i.id, i.file]))
+    const rows = localRows().filter((r) => nameById.has(r.id))
+    assert.deepStrictEqual(
+      rows.slice().sort((a, b) => a.sort_order - b.sort_order).map((r) => [nameById.get(r.id), r.status]),
+      [
+        ["A_cut.jpg", "hidden"],
+        ["B_kept.jpg", "approved"],
+        ["C_cut.jpg", "hidden"],
+      ],
+    )
+    // The same join key as an unselected import, stamped on hidden rows too.
+    const hashes = new Map(report.imported.map((i) => [i.id, i.sha256]))
+    for (const row of rows) assert.strictEqual(row.source_sha256, hashes.get(row.id))
+  })
+
+  it("--dry-run --selection reports, and creates nothing", async () => {
+    const dir = scratch("local-selection-dry")
+    write(dir, "one.jpg", photo())
+    const stdout = captured()
+    const before = localRows().length
+    const report = await runImport(argsFor(dir, { dryRun: true, selectionPath: selectionFile(dir, []) }), {
+      ...depsFor({ sink: () => createLocalSink({ readOnly: true }) }),
+      stdout,
+    })
+    assert.strictEqual(report.exitCode, 0)
+    assert.strictEqual(localRows().length, before)
+    const printed = stdout.text()
+    assert.ok(printed.includes("0 file(s) finish visible, 1 finish hidden"), printed)
+    assert.ok(printed.includes("✓ Storage"), printed)
+  })
+
+  it("--dry-run refuses an import over the real cap, before anything fails midway", async () => {
+    const dir = scratch("local-dry-over")
+    // MEDIA_MAX_TOTAL_BYTES is 5MB for this file (see _import-media-port.js).
+    write(dir, "huge.jpg", Buffer.concat([photo(10, 10), Buffer.alloc(6 * 1024 * 1024)]))
+    const stdout = captured()
+    const report = await runImport(argsFor(dir, { dryRun: true }), {
+      ...depsFor({ sink: () => createLocalSink({ readOnly: true }) }),
+      stdout,
+    })
+    assert.strictEqual(report.exitCode, 2)
+    assert.ok(stdout.text().includes("MEDIA_MAX_TOTAL_BYTES"))
+  })
+
   it("stops the run when the site-wide byte cap is reached", async () => {
     const dir = scratch("local-full")
     // MEDIA_MAX_TOTAL_BYTES is 5MB for this file (see _import-media-port.js).
@@ -497,6 +577,109 @@ describe("import-media — http sink", { skip: !hasAdmin && "TEST_ADMIN_PASSWORD
       rows.slice().sort((a, b) => a.sort_order - b.sort_order).map((r) => nameById.get(r.id)),
       ["SUNSET_1.jpg", "SUNSET_2.jpg"],
     )
+  })
+
+  /** Everything public about the server's media, as one comparable value. */
+  async function publicSnapshot() {
+    /** @type {Record<string, any>} */
+    const feeds = {}
+    for (const section of ["official", "honeymoon", "guest"]) {
+      const res = await fetch(`${BASE_URL}/api/media?section=${section}`)
+      feeds[section] = await res.json()
+    }
+    const config = /** @type {any} */ (await (await fetch(`${BASE_URL}/api/config`)).json())
+    return { feeds, counts: config.counts }
+  }
+
+  it("--selection over the API: hidden everywhere public, and reorder still lands", async () => {
+    const dir = scratch("http-selection")
+    const kept = photo(1000, 700)
+    const cutA = photo(1100, 700)
+    const cutB = photo(1200, 700)
+    write(dir, "A_cut.jpg", cutA)
+    write(dir, "B_kept.jpg", kept)
+    write(dir, "C_cut.jpg", cutB)
+
+    const before = await publicSnapshot()
+    const report = await run(
+      argsFor(dir, { url: BASE_URL, selectionPath: selectionFile(dir, [sha256(kept)]) }),
+    )
+
+    assert.strictEqual(report.exitCode, 0, JSON.stringify(report.failed))
+    assert.deepStrictEqual(report.warnings, [], "the reorder call was accepted, hidden rows and all")
+    const nameById = new Map(report.imported.map((i) => [i.id, i.file]))
+    const rows = serverRows().filter((r) => nameById.has(r.id))
+    assert.deepStrictEqual(
+      rows.slice().sort((a, b) => a.sort_order - b.sort_order).map((r) => [nameById.get(r.id), r.status]),
+      [
+        ["A_cut.jpg", "hidden"],
+        ["B_kept.jpg", "approved"],
+        ["C_cut.jpg", "hidden"],
+      ],
+    )
+
+    const after = await publicSnapshot()
+    const officialIds = after.feeds.official.items.map((/** @type {any} */ row) => row.id)
+    const keptRow = rows.find((r) => nameById.get(r.id) === "B_kept.jpg")
+    assert.ok(officialIds.includes(keptRow.id), "the selected photo is public")
+    for (const row of rows.filter((r) => r.status === "hidden")) {
+      for (const section of ["official", "honeymoon", "guest"]) {
+        assert.ok(!after.feeds[section].items.some((/** @type {any} */ i) => i.id === row.id))
+      }
+      assert.strictEqual((await fetch(`${BASE_URL}/api/media/${row.id}`)).status, 404)
+      const bytes = await fetch(`${BASE_URL}/media/${row.file_key}/thumb`)
+      assert.strictEqual(bytes.status, 404)
+      await bytes.arrayBuffer()
+    }
+    assert.deepStrictEqual(after.feeds.guest.contributors, before.feeds.guest.contributors)
+    assert.deepStrictEqual(after.counts, before.counts)
+  })
+
+  it("a second import into a section holding hidden rows still orders itself", async () => {
+    const first = scratch("http-selection-first")
+    write(first, "X.jpg", photo(640, 640))
+    const one = await run(
+      argsFor(first, { url: BASE_URL, section: "honeymoon", selectionPath: selectionFile(first, []) }),
+    )
+    assert.strictEqual(one.imported[0].status, "hidden")
+
+    const second = scratch("http-selection-second")
+    write(second, "Z.jpg", photo(320, 320))
+    write(second, "Y.jpg", photo(480, 480))
+    const two = await run(argsFor(second, { url: BASE_URL, section: "honeymoon" }))
+    assert.deepStrictEqual(two.warnings, [], "the old sink warned here")
+    const nameById = new Map(two.imported.map((i) => [i.id, i.file]))
+    const rows = serverRows().filter((r) => nameById.has(r.id))
+    assert.deepStrictEqual(
+      rows.slice().sort((a, b) => a.sort_order - b.sort_order).map((r) => nameById.get(r.id)),
+      ["Y.jpg", "Z.jpg"],
+    )
+  })
+
+  it("--dry-run reads the server's capacity, logged in, and writes nothing", async () => {
+    const dir = scratch("http-dry-ok")
+    write(dir, "one.jpg", photo())
+    const before = serverRows().length
+    const stdout = captured()
+    const report = await runImport(argsFor(dir, { url: BASE_URL, dryRun: true }), {
+      ...depsFor({ sink: () => createHttpSink({ url: BASE_URL, stderr: quiet() }) }),
+      stdout,
+    })
+    assert.strictEqual(report.exitCode, 0)
+    assert.strictEqual(serverRows().length, before)
+    assert.ok(stdout.text().includes("✓ Storage"), stdout.text())
+  })
+
+  it("--dry-run refuses over the API when the import wouldn't fit", async () => {
+    const dir = scratch("http-dry-over")
+    write(dir, "huge.jpg", Buffer.concat([photo(10, 10), Buffer.alloc(6 * 1024 * 1024)]))
+    const stdout = captured()
+    const report = await runImport(argsFor(dir, { url: BASE_URL, dryRun: true }), {
+      ...depsFor({ sink: () => createHttpSink({ url: BASE_URL, stderr: quiet() }) }),
+      stdout,
+    })
+    assert.strictEqual(report.exitCode, 2)
+    assert.ok(stdout.text().includes("✗ Storage"))
   })
 
   it("keys the manifest by the URL, so a local run does not suppress a remote one", async () => {

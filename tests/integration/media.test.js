@@ -1006,3 +1006,338 @@ describe("gallery contributors + moments-count aggregates (wow pack)", () => {
     assert.strictEqual(cfg.counts.notes, 1, "only approved guestbook notes counted")
   })
 })
+
+describe("finishing an upload hidden: a culled import", () => {
+  /** @returns {Promise<any>} */
+  async function adminAuthFor() {
+    const a = await adminLogin(process.env.TEST_ADMIN_PASSWORD)
+    return { cookieHeader: a.cookieHeader, csrfToken: a.csrfToken }
+  }
+
+  /** Full image upload → { id, fileKey, finalizeRes }.
+   * @param {any} auth @param {any} fetcher @param {Record<string, unknown>} finalizeBody
+   * @param {string} [section] @param {string} [kind] */
+  async function upload(auth, fetcher, finalizeBody, section = "official", kind = "image") {
+    const { res, data } = await createSession({ kind, originalBytes: 256, section }, auth, fetcher)
+    assert.strictEqual(res.status, 201)
+    if (kind === "video") {
+      await putVariant(data.id, "original", makeMp4(256), "video/mp4", auth, fetcher)
+      await putVariant(data.id, "poster", makeJpeg(120), "image/jpeg", auth, fetcher)
+    } else {
+      await putVariant(data.id, "original", makeJpeg(256), "image/jpeg", auth, fetcher)
+      await putVariant(data.id, "display", makeJpeg(200), "image/jpeg", auth, fetcher)
+      await putVariant(data.id, "thumb", makeJpeg(120), "image/jpeg", auth, fetcher)
+    }
+    const finalizeRes = await finalize(
+      data.id,
+      { width: 1200, height: 800, ...finalizeBody },
+      auth,
+      fetcher,
+    )
+    return { id: Number(data.id), fileKey: String(data.fileKey), finalizeRes }
+  }
+
+  /** Every public read of a media row, and that the row is in none of them.
+   * @param {{ id: number, fileKey: string }} item @param {any} [guestAuth] */
+  async function assertNowherePublic(item, guestAuth) {
+    const reads = [
+      (/** @type {string} */ path) => fetch(`${BASE_URL}${path}`),
+      ...(guestAuth
+        ? [(/** @type {string} */ path) => accountFetch(path, { method: "GET" }, guestAuth)]
+        : []),
+    ]
+    for (const read of reads) {
+      for (const section of ["official", "honeymoon", "guest"]) {
+        const page = await json(await read(`/api/media?section=${section}`))
+        assert.ok(
+          !page.items.some((/** @type {any} */ row) => row.id === item.id),
+          `listed in ${section}`,
+        )
+      }
+      assert.strictEqual((await read(`/api/media/${item.id}`)).status, 404, "by id")
+      assert.strictEqual((await read(`/api/media/${item.id}/comments`)).status, 404, "comments")
+      for (const variant of ["thumb", "display", "original", "poster", "video"]) {
+        const res = await read(`/media/${item.fileKey}/${variant}`)
+        assert.strictEqual(res.status, 404, `bytes: ${variant}`)
+        await res.arrayBuffer()
+      }
+    }
+    // HEAD and Range go through the same gate.
+    const head = await fetch(`${BASE_URL}/media/${item.fileKey}/thumb`, { method: "HEAD" })
+    assert.strictEqual(head.status, 404, "HEAD")
+    const ranged = await fetch(`${BASE_URL}/media/${item.fileKey}/thumb`, {
+      headers: { Range: "bytes=0-1" },
+    })
+    assert.strictEqual(ranged.status, 404, "Range")
+    const conditional = await fetch(`${BASE_URL}/media/${item.fileKey}/thumb`, {
+      headers: { "If-None-Match": `"${item.fileKey}-thumb"` },
+    })
+    assert.strictEqual(conditional.status, 404, "a conditional request confirms nothing")
+  }
+
+  /** @param {any} auth @param {string} [section] @returns {Promise<any[]>} */
+  async function adminList(auth, section = "official") {
+    const res = await adminFetch(`/api/admin/media/curated?section=${section}`, {}, auth)
+    assert.strictEqual(res.status, 200)
+    return (await json(res)).items
+  }
+
+  /** @param {any} auth @param {Record<string, unknown>} body */
+  function reorder(auth, body) {
+    return adminFetch(
+      "/api/admin/media/reorder",
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
+      auth,
+    )
+  }
+
+  it("an admin finishes a photo and a video hidden, and they are public nowhere", async () => {
+    const auth = await adminAuthFor()
+    const { auth: guest } = signIn({ trusted: 1, name: "Curious" })
+    for (const kind of ["image", "video"]) {
+      const item = await upload(auth, adminFetch, { hidden: true }, "official", kind)
+      assert.strictEqual(item.finalizeRes.status, 200)
+      assert.strictEqual((await json(item.finalizeRes)).status, "hidden")
+      await assertNowherePublic(item, guest)
+    }
+  })
+
+  it("never reaches first-page aggregates or public counts", async () => {
+    const auth = await adminAuthFor()
+    const before = {
+      feed: await json(await fetch(`${BASE_URL}/api/media?section=guest`)),
+      config: await json(await fetch(`${BASE_URL}/api/config`)),
+    }
+    const item = await upload(auth, adminFetch, { hidden: true }, "guest")
+    assert.strictEqual((await json(item.finalizeRes)).status, "hidden")
+    await upload(auth, adminFetch, { hidden: true }, "official")
+
+    const after = {
+      feed: await json(await fetch(`${BASE_URL}/api/media?section=guest`)),
+      config: await json(await fetch(`${BASE_URL}/api/config`)),
+    }
+    assert.deepStrictEqual(after.feed.contributors, before.feed.contributors, "contributors")
+    assert.deepStrictEqual(after.config.counts, before.config.counts, "landing-page counts")
+    await assertNowherePublic(item)
+  })
+
+  it("can't be reacted to or commented on by a guest who guesses the id", async () => {
+    const auth = await adminAuthFor()
+    const item = await upload(auth, adminFetch, { hidden: true })
+    const { auth: guest } = signIn({ trusted: 1, name: "Guesser" })
+    const headers = { "Content-Type": "application/json" }
+    const comment = await accountFetch(
+      `/api/media/${item.id}/comments`,
+      { method: "POST", headers, body: JSON.stringify({ message: "hello" }) },
+      guest,
+    )
+    assert.strictEqual(comment.status, 404)
+    const reaction = await accountFetch(
+      "/api/reactions/toggle",
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ target_type: "media", target_id: item.id, emoji: "heart" }),
+      },
+      guest,
+    )
+    assert.strictEqual(reaction.status, 404)
+  })
+
+  it("a guest asking for hidden gets normal moderation, trusted or not", async () => {
+    for (const hidden of [true, "true", 1]) {
+      const trusted = signIn({ trusted: 1, name: "Trusted Guest" })
+      const asTrusted = await upload(trusted.auth, accountFetch, { hidden }, "guest")
+      assert.strictEqual(asTrusted.finalizeRes.status, 200)
+      assert.strictEqual((await json(asTrusted.finalizeRes)).status, "approved")
+
+      const untrusted = signIn({ trusted: 0, name: "Untrusted Guest" })
+      const asUntrusted = await upload(untrusted.auth, accountFetch, { hidden }, "guest")
+      assert.strictEqual(asUntrusted.finalizeRes.status, 200)
+      assert.strictEqual((await json(asUntrusted.finalizeRes)).status, "pending")
+    }
+    // Naming the status directly does nothing, for anyone.
+    const { auth } = signIn({ trusted: 1, name: "Status Namer" })
+    const named = await upload(auth, accountFetch, { status: "hidden" }, "guest")
+    assert.strictEqual((await json(named.finalizeRes)).status, "approved")
+  })
+
+  it("refuses an admin's malformed value rather than publishing the photo", async () => {
+    const auth = await adminAuthFor()
+    for (const hidden of ["true", 1, null]) {
+      const { res, data } = await createSession(
+        { kind: "image", originalBytes: 256, section: "official" },
+        auth,
+        adminFetch,
+      )
+      assert.strictEqual(res.status, 201)
+      await putVariant(data.id, "original", makeJpeg(256), "image/jpeg", auth, adminFetch)
+      await putVariant(data.id, "display", makeJpeg(200), "image/jpeg", auth, adminFetch)
+      await putVariant(data.id, "thumb", makeJpeg(120), "image/jpeg", auth, adminFetch)
+      const refused = await finalize(data.id, { width: 10, height: 10, hidden }, auth, adminFetch)
+      assert.strictEqual(refused.status, 400, String(hidden))
+      const row = /** @type {any} */ (db.prepare("SELECT status FROM media WHERE id = ?").get(data.id))
+      assert.strictEqual(row.status, "uploading", "still unfinished, so it can be retried")
+      const retried = await finalize(data.id, { width: 10, height: 10, hidden: false }, auth, adminFetch)
+      assert.strictEqual((await json(retried)).status, "approved")
+    }
+  })
+
+  it("re-finalizing a hidden row stays hidden, so a retried request can't publish it", async () => {
+    const auth = await adminAuthFor()
+    const item = await upload(auth, adminFetch, { hidden: true })
+    const again = await finalize(item.id, { width: 1, height: 1 }, auth, adminFetch)
+    assert.strictEqual((await json(again)).status, "hidden")
+  })
+
+  it("serves hidden bytes to an admin, marked so no shared cache keeps them", async () => {
+    const auth = await adminAuthFor()
+    const item = await upload(auth, adminFetch, { hidden: true })
+    const res = await adminFetch(`/media/${item.fileKey}/thumb`, {}, auth)
+    assert.strictEqual(res.status, 200)
+    assert.strictEqual(res.headers.get("cache-control"), "private, no-cache")
+    await res.arrayBuffer()
+
+    // Unhidden, it's an ordinary curated photo again, and public.
+    const unhide = await adminFetch(
+      `/api/admin/moderation/media/${item.id}/approve`,
+      { method: "POST" },
+      auth,
+    )
+    assert.strictEqual(unhide.status, 200)
+    const open = await fetch(`${BASE_URL}/media/${item.fileKey}/thumb`)
+    assert.strictEqual(open.status, 200)
+    assert.strictEqual(open.headers.get("cache-control"), "public, max-age=31536000, immutable")
+    await open.arrayBuffer()
+  })
+
+  it("the admin listing is admin-only, and names exactly the set reorder accepts", async () => {
+    const auth = await adminAuthFor()
+    const anon = await fetch(`${BASE_URL}/api/admin/media/curated?section=official`)
+    assert.strictEqual(anon.status, 401)
+    const { auth: guest } = signIn({ trusted: 1, name: "Prober" })
+    const asGuest = await accountFetch("/api/admin/media/curated?section=official", {}, guest)
+    assert.strictEqual(asGuest.status, 401)
+    const bad = await adminFetch("/api/admin/media/curated?section=content", {}, auth)
+    assert.strictEqual(bad.status, 400)
+
+    const shown = await upload(auth, adminFetch, {})
+    const hidden = await upload(auth, adminFetch, { hidden: true })
+    // A session left open: no public view has it, and reorder still demands it.
+    const { data: inFlight } = await createSession(
+      { kind: "image", originalBytes: 16, section: "official" },
+      auth,
+      adminFetch,
+    )
+    const items = await adminList(auth)
+    const byId = new Map(items.map((row) => [row.id, row.status]))
+    assert.strictEqual(byId.get(shown.id), "approved")
+    assert.strictEqual(byId.get(hidden.id), "hidden")
+    assert.strictEqual(byId.get(Number(inFlight.id)), "uploading")
+
+    const ok = await reorder(auth, { ids: items.map((row) => row.id).reverse() })
+    assert.strictEqual(ok.status, 200, "the listing is a set reorder accepts")
+
+    // The public feed is not: that's the bug this listing fixes.
+    const feed = await json(await fetch(`${BASE_URL}/api/media?section=official`))
+    const refused = await reorder(auth, { ids: feed.items.map((/** @type {any} */ r) => r.id) })
+    assert.strictEqual(refused.status, 400)
+  })
+
+  it("reorders a mostly hidden section, and guests see the new order", async () => {
+    const auth = await adminAuthFor()
+    const items = []
+    for (let i = 0; i < 9; i++) {
+      items.push(await upload(auth, adminFetch, { hidden: i % 3 !== 0 }, "honeymoon"))
+    }
+    const listed = await adminList(auth, "honeymoon")
+    const reversed = listed.map((row) => row.id).reverse()
+    const res = await reorder(auth, { ids: reversed, section: "honeymoon" })
+    assert.strictEqual(res.status, 200)
+
+    assert.deepStrictEqual(
+      (await adminList(auth, "honeymoon")).map((row) => row.id),
+      reversed,
+      "every row moved, hidden ones included",
+    )
+    const visibleIds = new Set(items.filter((_, i) => i % 3 === 0).map((item) => item.id))
+    const feed = await json(await fetch(`${BASE_URL}/api/media?section=honeymoon`))
+    assert.deepStrictEqual(
+      feed.items.map((/** @type {any} */ row) => row.id),
+      reversed.filter((id) => visibleIds.has(id)),
+      "guests see the visible ones, in the new order",
+    )
+    for (const row of listed) {
+      if (row.status === "hidden") {
+        assert.ok(!feed.items.some((/** @type {any} */ item) => item.id === row.id))
+      }
+    }
+  })
+
+  it("moves a hidden photo between sections, still hidden, and unhides it there", async () => {
+    const auth = await adminAuthFor()
+    const item = await upload(auth, adminFetch, { hidden: true })
+    const moved = await adminFetch(
+      `/api/admin/media/${item.id}/section`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ section: "honeymoon" }),
+      },
+      auth,
+    )
+    assert.strictEqual(moved.status, 200)
+    const there = (await adminList(auth, "honeymoon")).find((row) => row.id === item.id)
+    assert.strictEqual(there?.status, "hidden", "moving doesn't publish it")
+    assert.ok(!(await adminList(auth, "official")).some((row) => row.id === item.id))
+    await assertNowherePublic(item)
+
+    const unhide = await adminFetch(
+      `/api/admin/moderation/media/${item.id}/approve`,
+      { method: "POST" },
+      auth,
+    )
+    assert.strictEqual(unhide.status, 200)
+    const feed = await json(await fetch(`${BASE_URL}/api/media?section=honeymoon`))
+    assert.ok(feed.items.some((/** @type {any} */ row) => row.id === item.id), "public once unhidden")
+  })
+
+  it("an unhidden photo returns to its place in the order", async () => {
+    const auth = await adminAuthFor()
+    const first = await upload(auth, adminFetch, {}, "honeymoon")
+    const second = await upload(auth, adminFetch, { hidden: true }, "honeymoon")
+    const third = await upload(auth, adminFetch, {}, "honeymoon")
+    const others = (await adminList(auth, "honeymoon"))
+      .map((row) => row.id)
+      .filter((id) => ![first.id, second.id, third.id].includes(id))
+    const order = [first.id, second.id, third.id, ...others]
+    assert.strictEqual((await reorder(auth, { ids: order, section: "honeymoon" })).status, 200)
+
+    await adminFetch(`/api/admin/moderation/media/${second.id}/approve`, { method: "POST" }, auth)
+    const feed = await json(await fetch(`${BASE_URL}/api/media?section=honeymoon`))
+    assert.deepStrictEqual(
+      feed.items.slice(0, 3).map((/** @type {any} */ row) => row.id),
+      [first.id, second.id, third.id],
+    )
+  })
+
+  it("the capacity endpoint is admin-only, and counts hidden rows", async () => {
+    const anon = await fetch(`${BASE_URL}/api/admin/media/capacity`)
+    assert.strictEqual(anon.status, 401)
+    const { auth: guest } = signIn({ trusted: 1, name: "Sizer" })
+    assert.strictEqual((await accountFetch("/api/admin/media/capacity", {}, guest)).status, 401)
+
+    const auth = await adminAuthFor()
+    const read = async () => json(await adminFetch("/api/admin/media/capacity", {}, auth))
+    const before = await read()
+    assert.strictEqual(typeof before.maxTotalBytes, "number")
+    assert.strictEqual(typeof before.remainingBytes, "number")
+    assert.ok(before.limitedBy === "cap" || before.limitedBy === "disk")
+
+    const item = await upload(auth, adminFetch, { hidden: true })
+    assert.strictEqual((await json(item.finalizeRes)).status, "hidden")
+    const after = await read()
+    assert.ok(after.storedBytes > before.storedBytes, "a hidden row's bytes count")
+    assert.ok(after.remainingBytes < before.remainingBytes || after.limitedBy === "disk")
+  })
+})

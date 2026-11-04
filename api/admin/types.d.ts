@@ -342,6 +342,19 @@ export function adminGuestLovedHandler(
   res: ServerResponse,
 ): Promise<void>
 
+/** GET /api/admin/media/curated?section= — every live row of a curated section,
+ *  any status, in order: the set reorder accepts, which the public feed is not. */
+export function adminCuratedListHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void>
+
+/** GET /api/admin/media/capacity — stored bytes, the caps, and what still fits. */
+export function adminMediaCapacityHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void>
+
 /** POST /api/admin/media/reorder — { ids:number[], section?: "official" |
  *  "honeymoon" } → sort_order = index within that curated section (default
  *  official, so older callers keep working). */

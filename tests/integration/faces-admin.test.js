@@ -815,6 +815,63 @@ describe("GET /api/admin/media/:id/faces", () => {
 // exemption had been built. This route is the only list here whose rows are
 // PHOTOGRAPHS, and that is exactly what closes it.
 // ---------------------------------------------------------------------------
+describe("faces on a hidden photo: a culled import", () => {
+  /** @param {number} media */
+  const hide = (media) =>
+    db.prepare(`UPDATE media SET section = 'official', status = 'hidden' WHERE id = ?`).run(media)
+
+  it("appear in the groups, the queue, the photo view and set-aside", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const a = seedMedia({ width: 1000, height: 800 })
+    const b = seedMedia({ width: 1000, height: 800 })
+    const asked = seedMedia({ width: 1000, height: 800 })
+    const aside = seedMedia({ width: 1000, height: 800 })
+    for (const media of [a, b, asked, aside]) hide(media)
+    const faceA = seedFace(a, CLUSTER_A1)
+    const faceB = seedFace(b, CLUSTER_A2)
+    const faceAsked = seedFace(asked, CLUSTER_B1, { route: "ask" })
+    seedFace(aside, CLUSTER_B2, { route: "set_aside" })
+
+    const overview = await json(await asAdmin("/api/admin/faces/overview"))
+    assert.strictEqual(overview.counts.faces, 4, "every hidden photo's faces count")
+    const group = overview.groups.find((/** @type {any} */ g) => g.faceIds.includes(faceA))
+    assert.ok(group?.faceIds.includes(faceB), "two hidden photos group together")
+    const fileKey = /** @type {any} */ (
+      db.prepare(`SELECT file_key FROM media WHERE id = ?`).get(a)
+    ).file_key
+    assert.ok(
+      group.media.some((/** @type {any} */ m) => m.fileKey === fileKey),
+      "with the key the admin thumbnail loads from",
+    )
+
+    // The Ask queue only opens once somebody is named, which can happen on a hidden photo.
+    await assignFace(faceA, seedPerson())
+    const queue = await json(await asAdmin("/api/admin/faces/queue"))
+    assert.ok(queue.items.some((/** @type {any} */ i) => i.faceId === faceAsked))
+
+    const single = await json(await asAdmin(`/api/admin/media/${a}/faces`))
+    assert.strictEqual(single.faces.length, 1)
+
+    const setAside = await json(await asAdmin("/api/admin/faces/set-aside"))
+    assert.ok(setAside.photos.some((/** @type {any} */ p) => p.mediaId === aside))
+  })
+
+  it("can be named, and naming doesn't publish the photo", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const media = seedMedia({ width: 1000, height: 800 })
+    hide(media)
+    const faceId = seedFace(media, CLUSTER_A1)
+    await assignFace(faceId, seedPerson())
+
+    const named = /** @type {any} */ (
+      db.prepare(`SELECT face_identity_id FROM media_faces WHERE id = ?`).get(faceId)
+    )
+    assert.ok(named.face_identity_id !== null, "the assignment landed")
+    const row = /** @type {any} */ (db.prepare(`SELECT status FROM media WHERE id = ?`).get(media))
+    assert.strictEqual(row.status, "hidden")
+  })
+})
+
 describe("GET /api/admin/faces/set-aside", () => {
   it("lists a photograph whose faces are all set aside — no other list will", async (t) => {
     if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")

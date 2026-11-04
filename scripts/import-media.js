@@ -25,7 +25,7 @@ import os from "node:os"
 import path from "node:path"
 
 import { sanitize } from "../core/http.js"
-import { LIMITS, MEDIA_KIND, MEDIA_SECTION, isCuratedMediaSection } from "../types.js"
+import { LIMITS, MEDIA_KIND, MEDIA_SECTION, MEDIA_STATUS, isCuratedMediaSection } from "../types.js"
 import { describeBackends, imageBackendInstallHint, videoBackendInstallHint } from "./lib/image-backend.js"
 import {
   hashFile,
@@ -35,7 +35,8 @@ import {
   normalizeOrigin,
   saveManifest,
 } from "./lib/import-manifest.js"
-import { isMediaImportError } from "./lib/media-errors.js"
+import { loadSelection } from "./lib/import-selection.js"
+import { MediaImportError, isMediaImportError } from "./lib/media-errors.js"
 import { buildMediaVariants, planMediaFile, probeBackends } from "./lib/media-variants.js"
 import { createHttpSink } from "./lib/sink-http.js"
 import { createLocalSink } from "./lib/sink-local.js"
@@ -46,8 +47,11 @@ const USAGE = `Usage: npm run import:media -- <dir> [options]
 
   --section=official|honeymoon|guest
                             Which gallery section. Default: official.
-  --dry-run                 Report what would happen. Touches no write path.
+  --dry-run                 Report what would happen. Touches no write path. With
+                            --url it logs in, to read the remaining storage.
   --url=URL                 Import over the API instead of writing locally.
+  --selection=PATH          Culling file: {"version":1,"visible":[sha256,…]}. Files
+                            not listed, videos included, finish hidden.
 
   --recursive               Descend into subdirectories.
   --order=name|mtime        Import order. Default: name (ascending, code-unit).
@@ -85,7 +89,18 @@ const BOOLEAN_FLAGS = [
   "help",
 ]
 
-const VALUE_FLAGS = ["url", "concurrency", "manifest", "report", ...Object.keys(ENUM_FLAGS)]
+const VALUE_FLAGS = [
+  "url",
+  "concurrency",
+  "manifest",
+  "report",
+  "selection",
+  ...Object.keys(ENUM_FLAGS),
+]
+
+/** Below this share of spare room, say so: display and thumb variants take disk
+ *  too, and the guard only counts originals. A margin, not a measurement. */
+const TIGHT_CAPACITY_FRACTION = 0.1
 
 /** Exit codes, as documented in docs/post-wedding/08-bulk-import.md.
  *
@@ -232,6 +247,7 @@ export function parseArgs(argv) {
         ? path.resolve(values.manifest)
         : path.join(defaultDataDir(), "import-manifest.json"),
       reportPath: values.report ? path.resolve(values.report) : null,
+      selectionPath: values.selection ? path.resolve(values.selection) : null,
       force: flags.has("force"),
       skipReorder: flags.has("skip-reorder"),
       stripOriginal: flags.has("strip-original"),
@@ -337,6 +353,7 @@ export async function buildPlan(input, deps = {}) {
             code: "ALREADY_IMPORTED",
             message: `${file.relative} — already imported (pass --force to import it again).`,
             skipped: true,
+            sha256,
           }
         } else {
           result = {
@@ -344,6 +361,7 @@ export async function buildPlan(input, deps = {}) {
             plan,
             sha256,
             caption: input.captions === "sidecar" ? readSidecarCaption(file.absolute) : null,
+            hidden: input.selection ? !input.selection.has(sha256) : false,
             skipped: false,
           }
         }
@@ -459,7 +477,8 @@ export function formatPlanReport(args, backends, preflight, plan) {
       const item = preview[i]
       push(
         `  ${String(i + 1).padStart(4)}. ${item.file.relative} ` +
-          `(${item.plan.width}×${item.plan.height}, ${formatBytes(item.plan.originalBytes)})`,
+          `(${item.plan.width}×${item.plan.height}, ${formatBytes(item.plan.originalBytes)})` +
+          (item.hidden ? " hidden" : ""),
       )
     }
     if (preview.length < plan.items.length) {
@@ -467,6 +486,70 @@ export function formatPlanReport(args, backends, preflight, plan) {
     }
   }
   return lines
+}
+
+/** @type {Types.formatSelectionReport} */
+export function formatSelectionReport(args, selection, plan) {
+  const hidden = plan.items.filter((item) => item.hidden)
+  const hiddenVideos = hidden.filter((item) => item.plan.kind === MEDIA_KIND.VIDEO).length
+  /** @type {string[]} */
+  const lines = [
+    `Selection     ${args.selectionPath}`,
+    `  ${plan.items.length - hidden.length} file(s) finish visible, ${hidden.length} finish hidden` +
+      (hiddenVideos > 0 ? ` (${hiddenVideos} of them video).` : "."),
+  ]
+
+  const already = plan.skipped.filter((skip) => skip.code === "ALREADY_IMPORTED")
+  const found = new Set([...plan.items, ...already].map((entry) => entry.sha256))
+  const unmatched = [...selection].filter((sha256) => !found.has(sha256)).length
+  if (unmatched > 0) {
+    lines.push(
+      `! ${unmatched} selected hash(es) match no file here. Is this the directory the selection ` +
+        `was made from? A file edited since culling has a new hash, and would finish hidden.`,
+    )
+  }
+  const unlisted = already.filter((skip) => !selection.has(skip.sha256 ?? "")).length
+  if (unlisted > 0) {
+    lines.push(
+      `! ${unlisted} already-imported file(s) aren't in the selection, and this run leaves them ` +
+        `exactly as they are. A selection only applies to what a run uploads: if any of them ` +
+        `are live, hide them in the admin Gallery tab.`,
+    )
+  }
+  return lines
+}
+
+/** @type {Types.assessCapacity} */
+export function assessCapacity(plannedBytes, capacity) {
+  if (!capacity.ok) {
+    return { level: "unknown", lines: [`! Storage not checked: ${capacity.message}`] }
+  }
+  const remaining = capacity.remainingBytes
+  const planned = `${formatBytes(plannedBytes)} of originals planned, ${formatBytes(remaining)} remaining`
+  const wall =
+    capacity.limitedBy === "disk"
+      ? `the ${formatBytes(capacity.minFreeBytes)} of free disk the server keeps (MEDIA_MIN_FREE_BYTES)`
+      : `the ${formatBytes(capacity.maxTotalBytes)} cap on stored originals (MEDIA_MAX_TOTAL_BYTES)`
+  if (plannedBytes > remaining) {
+    return {
+      level: "over",
+      lines: [
+        `✗ Storage: ${planned} before ${wall}.`,
+        "  This import would stop partway with a 507. Hidden photos count toward the total, " +
+          "so hiding them saves no room. Make room, raise the limit, or import fewer files.",
+      ],
+    }
+  }
+  if (remaining - plannedBytes < remaining * TIGHT_CAPACITY_FRACTION) {
+    return {
+      level: "tight",
+      lines: [
+        `! Storage: ${planned} before ${wall}.`,
+        "  That's close: display and thumb variants need disk space on top of the originals.",
+      ],
+    }
+  }
+  return { level: "ok", lines: [`✓ Storage: ${planned} before ${wall}.`] }
 }
 
 /** Human labels for the skip taxonomy.
@@ -529,6 +612,19 @@ export async function runImport(args, deps = {}) {
 
   // ---- Run-fatal checks, before anything is read ------------------------
 
+  // First, before any network or disk work: a selection that can't be trusted
+  // must never get as far as an upload.
+  /** @type {Set<string> | null} */
+  let selection = null
+  if (args.selectionPath) {
+    const loaded = loadSelection(args.selectionPath)
+    if (!loaded.valid) {
+      note(`✗ --selection ${args.selectionPath}: ${loaded.error}`)
+      return finish(EXIT.ABORTED)
+    }
+    selection = loaded.value
+  }
+
   let stat
   try {
     stat = fs.statSync(args.dir)
@@ -563,6 +659,7 @@ export async function runImport(args, deps = {}) {
     args.manifestPath,
     args.manifestPath + ".tmp",
     ...(args.reportPath ? [args.reportPath] : []),
+    ...(args.selectionPath ? [args.selectionPath] : []),
   ])
   const files = scanDirectory(args.dir, { recursive: args.recursive }).filter(
     (file) => !ownFiles.has(file.absolute),
@@ -590,6 +687,7 @@ export async function runImport(args, deps = {}) {
         captions: args.captions,
         order: args.order,
         concurrency: args.concurrency,
+        selection,
       },
       deps,
     )
@@ -600,11 +698,30 @@ export async function runImport(args, deps = {}) {
     }))
 
     for (const line of formatPlanReport(args, backends, preflight, plan)) write(line)
+    if (selection) {
+      write("")
+      for (const line of formatSelectionReport(args, selection, plan)) write(line)
+    }
+
+    // What the destination has left. Stdout only: these are facts about a real
+    // import, so they go nowhere near --report or any other file.
+    const capacity = preflight.ok && plan.items.length > 0 ? await sink.capacity() : null
+    const plannedBytes = plan.items.reduce((sum, item) => sum + item.plan.originalBytes, 0)
+    const assessed = capacity ? assessCapacity(plannedBytes, capacity) : null
+    if (assessed) {
+      write("")
+      for (const line of assessed.lines) write(line)
+    }
+    const overCapacity = assessed?.level === "over"
+    // A server without the endpoint also ignores `hidden` at finalize, and would
+    // publish every reject.
+    const unsupported = capacity !== null && !capacity.ok && capacity.reason === "unsupported"
 
     if (args.dryRun) {
       write("")
       write("Dry run — nothing was written. Re-run without --dry-run to import.")
-      return finish(preflight.ok ? EXIT.CLEAN : EXIT.ABORTED)
+      const refused = overCapacity || (selection !== null && unsupported)
+      return finish(preflight.ok && !refused ? EXIT.CLEAN : EXIT.ABORTED)
     }
     if (!preflight.ok) {
       note("")
@@ -615,6 +732,18 @@ export async function runImport(args, deps = {}) {
       write("")
       write("Nothing to import.")
       return finish(EXIT.CLEAN)
+    }
+    // A selection run doesn't start what it can't finish safely. Without one, a
+    // full destination still stops the run where it always did, at the first 507.
+    if (selection && (overCapacity || (capacity !== null && !capacity.ok))) {
+      note("")
+      note(
+        "✗ Refusing to start: " +
+          (overCapacity
+            ? "this import doesn't fit, and it would stop partway."
+            : "the destination couldn't confirm it can take a hidden import (see above)."),
+      )
+      return finish(EXIT.ABORTED)
     }
 
     // ---- The run ---------------------------------------------------------
@@ -634,7 +763,7 @@ export async function runImport(args, deps = {}) {
      * errors and bury the one line that matters.
      * @type {Set<string>}
      */
-    const FATAL_CODES = new Set(["DESTINATION_FULL", "AUTH_LOST"])
+    const FATAL_CODES = new Set(["DESTINATION_FULL", "AUTH_LOST", "HIDDEN_NOT_HONOURED"])
 
     const onSignal = () => {
       // A fatal sink failure may already have set `aborted`; the signal still
@@ -691,9 +820,19 @@ export async function runImport(args, deps = {}) {
           durationS: built.durationSeconds,
           caption: item.caption,
           sourceSha256: item.sha256,
+          hidden: item.hidden,
         })
+        // Believe the status that came back, not the one asked for. Thrown while
+        // sessionId is still set, so the catch below discards the row.
+        if (item.hidden && finalized.status !== MEDIA_STATUS.HIDDEN) {
+          throw new MediaImportError(
+            "HIDDEN_NOT_HONOURED",
+            `${item.file.relative} was asked to finish hidden but came back "${finalized.status}". ` +
+              "It has been removed. Does the server support hidden imports?",
+          )
+        }
         openSessions.delete(session.id)
-        // Past this line the row exists and is approved, so the catch below must
+        // Past this line the row exists and is finished, so the catch below must
         // not discard it. Everything that follows can still throw —
         // saveManifest() writes to whatever --manifest= names, which the docs
         // encourage putting beside the photos on an external drive — and
@@ -709,6 +848,7 @@ export async function runImport(args, deps = {}) {
           bytes: original.bytes,
           width: built.width,
           height: built.height,
+          status: finalized.status,
         })
         for (const warning of built.warnings) {
           report.warnings.push(`${item.file.relative}: ${warning}`)
@@ -800,6 +940,10 @@ export async function runImport(args, deps = {}) {
 
     write("")
     write(`Imported ${report.imported.length} of ${plan.items.length} file(s).`)
+    const hiddenCount = report.imported.filter((row) => row.status === MEDIA_STATUS.HIDDEN).length
+    if (selection) {
+      write(`  ${report.imported.length - hiddenCount} visible, ${hiddenCount} hidden.`)
+    }
     if (report.skipped.length > 0) write(`Skipped ${report.skipped.length}.`)
     if (report.failed.length > 0) {
       write(`Failed ${report.failed.length}:`)
@@ -818,6 +962,13 @@ export async function runImport(args, deps = {}) {
           ? "Check them in the admin Gallery tab; captions are editable inline there."
           : "They are live in the guest gallery at /gallery.",
       )
+      if (hiddenCount > 0) {
+        write(
+          curated !== null
+            ? "Hidden photos are under Hidden in the admin Gallery tab, and can be unhidden there."
+            : "Hidden photos are under Hidden in the admin Review tab, and can be unhidden there.",
+        )
+      }
     }
 
     if (aborted) return finish(interrupted ? EXIT.INTERRUPTED : EXIT.ABORTED)

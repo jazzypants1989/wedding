@@ -209,6 +209,12 @@ export function serveMedia(req, res) {
   if (variant === "original") {
     headers["Cache-Control"] = "private, no-store"
     headers["Content-Disposition"] = "attachment"
+  } else if (row.status !== MEDIA_STATUS.APPROVED) {
+    // Only an admin reaches this line for a row that isn't public, and a shared
+    // cache must not keep what it was shown: the long-lived public header below
+    // would let a reverse proxy answer everyone else without asking the gate
+    // above. no-cache plus the ETag keeps an admin grid cheap, as a 304.
+    headers["Cache-Control"] = "private, no-cache"
   } else if (
     row.section === MEDIA_SECTION.OFFICIAL ||
     row.section === MEDIA_SECTION.HONEYMOON ||

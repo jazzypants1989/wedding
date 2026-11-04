@@ -24,6 +24,7 @@ import { VARIANT_SPEC } from "../../api/media.js"
 import { blankVideoGps } from "../../core/mp4-meta.js"
 import {
   TMP_DIR,
+  computeMediaCapacity,
   ensureUploadDirs,
   itemDir,
   variantDiskPath,
@@ -175,6 +176,21 @@ export function createLocalSink(options = {}) {
       return { ok: true, freeBytes, storedBytes, message }
     },
 
+    async capacity() {
+      const { storedBytes, message } = readStoredBytes(databasePath)
+      // No database yet is a real answer (nothing stored). An unreadable one isn't.
+      if (storedBytes === null && fs.existsSync(databasePath)) {
+        return { ok: false, reason: "unavailable", message: message ?? "Stored total unknown." }
+      }
+      return {
+        ok: true,
+        ...computeMediaCapacity({
+          storedBytes: storedBytes ?? 0,
+          freeBytes: freeBytesOnDataVolume(),
+        }),
+      }
+    },
+
     async createSession({ kind, originalBytes, section }) {
       db()
       // Re-run the server's guard against live totals, not the preflight
@@ -288,7 +304,9 @@ export function createLocalSink(options = {}) {
           height: input.height,
           durationS: input.durationS,
           needsDisplay: false,
-          status: MEDIA_STATUS.APPROVED,
+          // Set by the one UPDATE that leaves 'uploading', exactly as the API's
+          // finalize does, so a hidden row is never approved on the way.
+          status: input.hidden === true ? MEDIA_STATUS.HIDDEN : MEDIA_STATUS.APPROVED,
         })
         if (input.caption !== null) updateMediaCaption(row.id, input.caption)
         // The join key the face pipeline matches detection runs against,

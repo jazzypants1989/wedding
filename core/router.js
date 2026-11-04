@@ -320,6 +320,8 @@ route("DELETE", "/api/admin/accounts/:id", adminAccounts.remove, { admin: true }
 // `:id/promote` shape disambiguate from the bare `/:id` PATCH/DELETE.
 // Literal segment — must precede the `/:id/*` media routes so it isn't captured.
 route("GET", "/api/admin/media/guest-loved", adminMedia.guestLoved, { admin: true })
+route("GET", "/api/admin/media/curated", adminMedia.curated, { admin: true })
+route("GET", "/api/admin/media/capacity", adminMedia.capacity, { admin: true })
 route("POST", "/api/admin/media/reorder", adminMedia.reorder, { admin: true })
 route("POST", "/api/admin/media/:id/promote", adminMedia.promote, { admin: true })
 // Move a curated photo between Official and Honeymoon (appended to the end).

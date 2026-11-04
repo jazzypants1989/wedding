@@ -104,6 +104,7 @@ describe("sink-http preflight", () => {
       [["GET", "/api/health"]],
     )
     // The caveats are surfaced up front, not discovered after 200 uploads.
+    assert.ok(!result.message?.includes("hidden or rejected"), "reorder can name those now")
     assert.ok(result.message?.includes("sort_order"))
     assert.ok(result.message?.includes("attributed to the couple"))
   })
@@ -311,6 +312,88 @@ describe("sink-http session and upload", () => {
   })
 })
 
+describe("sink-http finalize", () => {
+  const FILE = { width: 10, height: 10, durationS: null, caption: null, sourceSha256: null }
+
+  /** @param {any} input @returns {Promise<any>} the JSON body the server received */
+  async function finalizeBody(input) {
+    reset([
+      { status: 200, json: { success: true }, setCookie: LOGIN_COOKIES },
+      { status: 201, json: { id: 7, fileKey: "k" } },
+      { status: 200, json: { id: 7, status: "hidden" } },
+    ])
+    const s = sink()
+    await s.createSession({ kind: "image", originalBytes: 1, section: "official" })
+    await s.finalize(7, input)
+    return JSON.parse(seen[seen.length - 1].body)
+  }
+
+  it("asks for hidden only when told to, so a plain import sends what it always sent", async () => {
+    assert.equal((await finalizeBody({ ...FILE, hidden: true })).hidden, true)
+    assert.equal("hidden" in (await finalizeBody({ ...FILE, hidden: false })), false)
+    assert.equal("hidden" in (await finalizeBody(FILE)), false)
+  })
+})
+
+describe("sink-http capacity", () => {
+  const ANSWER = {
+    storedBytes: 100,
+    maxTotalBytes: 1000,
+    freeBytes: 5000,
+    minFreeBytes: 10,
+    remainingBytes: 900,
+    limitedBy: "cap",
+  }
+
+  it("reads the admin endpoint, logging in first", async () => {
+    reset([
+      { status: 200, json: { success: true }, setCookie: LOGIN_COOKIES },
+      { status: 200, json: ANSWER },
+    ])
+    const result = await sink().capacity()
+    assert.deepEqual(result, { ok: true, ...ANSWER })
+    assert.deepEqual(
+      seen.map((r) => [r.method, r.url]),
+      [
+        ["POST", "/api/admin/login"],
+        ["GET", "/api/admin/media/capacity"],
+      ],
+    )
+    assert.ok(String(seen[1].headers.cookie).includes("session=sess-1"))
+  })
+
+  it("says the server predates it on a 404", async () => {
+    reset([
+      { status: 200, json: { success: true }, setCookie: LOGIN_COOKIES },
+      { status: 404, json: {} },
+    ])
+    const result = await sink().capacity()
+    assert.equal(result.ok, false)
+    if (!result.ok) assert.equal(result.reason, "unsupported")
+  })
+
+  it("reports no password as unavailable, instead of throwing or prompting", async () => {
+    reset([{ status: 200, json: {} }])
+    delete process.env.WEDDING_ADMIN_PASSWORD
+    const result = await createHttpSink({ url: origin }).capacity()
+    assert.equal(result.ok, false)
+    if (!result.ok) {
+      assert.equal(result.reason, "unavailable")
+      assert.ok(result.message.includes("WEDDING_ADMIN_PASSWORD"))
+    }
+    assert.equal(seen.length, 0)
+  })
+
+  it("reports a malformed answer as unavailable, instead of trusting it", async () => {
+    reset([
+      { status: 200, json: { success: true }, setCookie: LOGIN_COOKIES },
+      { status: 200, json: { remainingBytes: "lots" } },
+    ])
+    const result = await sink().capacity()
+    assert.equal(result.ok, false)
+  })
+})
+
 describe("sink-http applyOrder", () => {
   it("submits the existing official ids plus the imported ones, in plan order", async () => {
     reset([
@@ -329,7 +412,19 @@ describe("sink-http applyOrder", () => {
     assert.deepEqual(JSON.parse(reorder.body).ids, [1, 2, 40, 41])
   })
 
-  it("warns rather than failing when the gallery holds photos it cannot enumerate", async () => {
+  it("reads the set from the admin listing, because the public feed leaves out hidden rows", async () => {
+    reset([
+      { status: 200, json: { success: true }, setCookie: LOGIN_COOKIES },
+      { status: 200, json: { items: [{ id: 1 }] } },
+      { status: 200, json: { success: true } },
+    ])
+    await sink().applyOrder([2], "honeymoon")
+    assert.equal(seen[1].url, "/api/admin/media/curated?section=honeymoon")
+    assert.ok(!seen.some((r) => r.url.startsWith("/api/media")))
+    assert.equal(JSON.parse(seen[2].body).section, "honeymoon")
+  })
+
+  it("warns rather than failing when the section changes under it", async () => {
     reset([
       { status: 200, json: { success: true }, setCookie: LOGIN_COOKIES },
       { status: 200, json: { items: [{ id: 1 }], nextCursor: null } },
@@ -340,9 +435,9 @@ describe("sink-http applyOrder", () => {
     const result = await s.applyOrder([2])
 
     // The photos imported fine; only their order is unset. Failing the whole run
-    // over this would be wrong, and the admin drag-and-drop UI has the same gap.
+    // over this would be wrong.
     assert.equal(result.ok, false)
-    assert.ok(result.message?.includes("hidden or rejected"))
+    assert.ok(result.message?.includes("changed while it was being set"))
     assert.ok(result.message?.includes("import locally for exact ordering"))
   })
 

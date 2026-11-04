@@ -8,18 +8,14 @@
  *  request with an explicit Content-Length gives constant memory and exactly the
  *  length the server verifies byte-for-byte.
  *
- *  Two things this sink cannot do, both documented in
- *  docs/post-wedding/08-bulk-import.md:
+ *  Ordering reads GET /api/admin/media/curated, the admin listing, because POST
+ *  /api/admin/media/reorder demands the section's EXACT set: hidden and rejected
+ *  rows included, which the public feed leaves out.
  *
- *  1. It cannot set sort_order exactly. POST /api/admin/media/reorder validates
- *     the submitted ids against getCuratedMediaIds(), which includes hidden and
- *     rejected rows, while a client can only enumerate the approved-only public
- *     feed. When that mismatch happens the reorder 400s and this sink warns
- *     rather than failing the run — the admin drag-and-drop UI has the identical
- *     limitation, so it is not a regression.
- *  2. It cannot attribute a --section=guest item to a named guest.
- *     withAccountOrAdmin gives an admin principal accountId: null
- *     unconditionally, so guest-section imports show as the couple's. */
+ *  One thing this sink cannot do, documented in
+ *  docs/post-wedding/08-bulk-import.md: it cannot attribute a --section=guest
+ *  item to a named guest. withAccountOrAdmin gives an admin principal accountId:
+ *  null unconditionally, so guest-section imports show as the couple's. */
 /** @import * as Types from './types.js' */
 
 import fs from "node:fs"
@@ -315,9 +311,44 @@ export function createHttpSink(options) {
         freeBytes,
         storedBytes: null,
         message:
-          `Reached ${options.url}. Over the API, sort_order is set by a reorder call that can be ` +
-          `refused if the gallery holds hidden or rejected photos, and guest-section items are ` +
+          `Reached ${options.url}. Over the API, sort_order is set by a reorder call that is ` +
+          `refused if the section changes while it runs, and guest-section items are ` +
           `attributed to the couple. Import locally for exact control.`,
+      }
+    },
+
+    async capacity() {
+      /** @param {string} message @returns {Types.SinkCapacity} */
+      const unavailable = (message) => ({ ok: false, reason: "unavailable", message })
+      try {
+        await login()
+        const response = await retryRequest("GET", "/api/admin/media/capacity")
+        if (response.status === 404) {
+          return {
+            ok: false,
+            reason: "unsupported",
+            message: `${options.url} has no capacity endpoint, so it predates finishing an import hidden. Deploy this version of the server first.`,
+          }
+        }
+        if (response.status !== 200) {
+          return unavailable(`${options.url} answered ${response.status} on the capacity endpoint.`)
+        }
+        const body = response.json ?? {}
+        const numbers = [body.storedBytes, body.maxTotalBytes, body.minFreeBytes, body.remainingBytes]
+        if (!numbers.every((n) => typeof n === "number")) {
+          return unavailable("The capacity endpoint's answer didn't have the expected shape.")
+        }
+        return {
+          ok: true,
+          storedBytes: body.storedBytes,
+          maxTotalBytes: body.maxTotalBytes,
+          freeBytes: typeof body.freeBytes === "number" ? body.freeBytes : null,
+          minFreeBytes: body.minFreeBytes,
+          remainingBytes: body.remainingBytes,
+          limitedBy: body.limitedBy === "disk" ? "disk" : "cap",
+        }
+      } catch (err) {
+        return unavailable(err instanceof Error ? err.message : String(err))
       }
     },
 
@@ -361,6 +392,8 @@ export function createHttpSink(options) {
           height: input.height,
           durationS: input.durationS,
           caption: input.caption,
+          // Only when asked, so a plain import sends what it always sent.
+          ...(input.hidden === true ? { hidden: true } : {}),
         },
       })
       if (response.status !== 200) throw fail("Finalizing", response)
@@ -380,7 +413,8 @@ export function createHttpSink(options) {
 
       // reorder demands the EXACT current set of the section, so the existing
       // photos have to be enumerated and the imported ones appended in plan order.
-      const listed = await retryRequest("GET", `/api/media?section=${section}&limit=500`)
+      // The admin listing, not the public feed: a hidden row is in the set.
+      const listed = await retryRequest("GET", `/api/admin/media/curated?section=${section}`)
       if (listed.status !== 200) {
         return {
           ok: false,
@@ -399,15 +433,14 @@ export function createHttpSink(options) {
       })
       if (response.status === 200) return { ok: true }
       if (response.status === 400) {
-        // The set didn't match: the section holds rows the public feed cannot
-        // see (hidden or rejected). Warn — the photos imported fine, only their
+        // The set moved between the listing and the reorder: someone uploaded or
+        // removed a photo meanwhile. Warn — the photos imported fine, only their
         // order is whatever sort_order they were created with.
         return {
           ok: false,
           message:
-            `The gallery order wasn't applied: the site has ${section} photos that aren't ` +
-            "publicly listed (hidden or rejected), so the reorder call can't name the full set. " +
-            "Drag them into place in the admin Gallery tab, or import locally for exact ordering.",
+            `The gallery order wasn't applied: the ${section} section changed while it was being ` +
+            "set. Put them in place in the admin Gallery tab, or import locally for exact ordering.",
         }
       }
       return { ok: false, message: `Reorder failed (${response.status}).` }
