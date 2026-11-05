@@ -397,6 +397,9 @@ export function createHttpSink(options) {
           height: input.height,
           durationS: input.durationS,
           caption: input.caption,
+          // The original going up has had its EXIF stripped, so the server can't
+          // read the capture time itself; an older server ignores the field.
+          ...(input.capturedAt ? { capturedAt: input.capturedAt } : {}),
           // Only when asked, so a plain import sends what it always sent.
           ...(input.hidden === true ? { hidden: true } : {}),
         },

@@ -47,6 +47,8 @@ import {
   updateMediaCaption,
 } from "../../db/media.js"
 import { withTransaction } from "../../db/utils.js"
+import { fillMediaCapturedAt } from "../../db/media-twins.js"
+import { parseCapturedAt } from "../../core/capture-time.js"
 import {
   MEDIA_KIND,
   MEDIA_SECTION,
@@ -341,6 +343,10 @@ export function createLocalSink(options = {}) {
         // stamped from the same hash the manifest records — at import time,
         // where the row and the file are still provably the same thing.
         if (input.sourceSha256 !== null) setMediaSourceSha256(row.id, input.sourceSha256)
+        // The capture time the black-and-white twin scan matches on, checked
+        // the way the API's finalize checks a declared one.
+        const capturedAt = parseCapturedAt(input.capturedAt)
+        if (capturedAt !== null) fillMediaCapturedAt(row.id, capturedAt)
         return result
       })
       return { id: finalized.id, status: finalized.status }

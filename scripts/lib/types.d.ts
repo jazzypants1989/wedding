@@ -308,7 +308,8 @@ export interface MediaPlanOk {
   orientation: number
   /** Whether the original carries GPS — reported to the user, not acted on. */
   hasGps: boolean
-  /** EXIF DateTimeOriginal as "YYYY-MM-DD HH:MM:SS". Read, reported, not yet ordered on. */
+  /** EXIF DateTimeOriginal as "YYYY-MM-DD HH:MM:SS". Recorded on the row at
+   *  finalize (media.captured_at), where the black-and-white twin scan reads it. */
   capturedAt: string | null
   mtimeMs: number
 }
@@ -516,6 +517,10 @@ export interface ImportSink {
        *  The local sink stamps it on the row; the http sink has no API field
        *  for it and ignores it (--backfill-manifest covers those rows). */
       sourceSha256: string | null
+      /** EXIF capture time read before the original was stripped, as
+       *  "YYYY-MM-DD HH:MM:SS". What the black-and-white twin scan matches on;
+       *  both sinks record it, since the stripped original can't say. */
+      capturedAt?: string | null
       /** Finish `hidden` rather than approved: never publicly listed. */
       hidden?: boolean
     },

@@ -1295,6 +1295,7 @@ export async function runImport(args, deps = {}) {
           durationS: built.durationSeconds,
           caption: item.caption,
           sourceSha256: item.sha256,
+          capturedAt: item.plan.capturedAt,
           hidden: item.hidden,
         })
         // Believe the status that came back, not the one asked for. Thrown while
