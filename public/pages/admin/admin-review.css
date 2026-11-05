@@ -26,6 +26,25 @@
   position: static;
 }
 
+/* The bulk tick's label is 21px wide, too small for a finger. On a touch
+   screen or a phone-width layout an invisible extension widens it to 44px, out
+   over the list's edge padding and the row's leading padding, so the checkbox
+   and the row stay exactly where they are. A tap there ticks, as tapping the
+   label always did. z-index 1 lifts it over the row's thumbnail (which is
+   positioned) and keeps it under the sticky header (3). */
+@media (pointer: coarse), (max-width: 899.98px) {
+  #tab-moderation .tick {
+    position: relative;
+    z-index: 1;
+  }
+
+  #tab-moderation .tick::before {
+    content: "";
+    position: absolute;
+    inset: 0 -17px 0 -6px;
+  }
+}
+
 #tab-moderation .rv-title {
   display: flex;
   align-items: center;
