@@ -894,6 +894,41 @@ function seedBacklog(seed) {
 }
 
 /**
+ * Capture times for Gallery → Sort to group by: bursts and retakes a second or
+ * two apart, a few minutes between moments, and every eleventh photo with no
+ * time at all (a phone screenshot, an edited export). The first dozen are
+ * already decided, so Sort opens part way through. Fictional, like the rest.
+ * @param {Seeder} seed
+ * @param {PreviewMedia[]} official in the section's order
+ */
+function stampCaptureTimes(seed, official) {
+  const BURSTS = [3, 1, 2, 5, 1, 1, 4, 2, 1, 3]
+  const setTime = seed.db.prepare("UPDATE media SET captured_at = ? WHERE id = ?")
+  const decide = seed.db.prepare(
+    "UPDATE media SET decided_at = ? WHERE id = ? AND status IN ('approved', 'hidden')",
+  )
+  let t = Date.UTC(2026, 5, 20, 15, 0, 0)
+  let burst = 0
+  let left = BURSTS[0]
+  official.forEach((media, i) => {
+    if (i % 11 === 10) {
+      setTime.run(null, media.id)
+    } else {
+      setTime.run(new Date(t).toISOString(), media.id)
+      left--
+      if (left > 0) {
+        t += 800 + (i % 3) * 700
+      } else {
+        burst++
+        left = BURSTS[burst % BURSTS.length]
+        t += 120000 + (i % 4) * 60000
+      }
+    }
+    if (i < 12) decide.run(new Date(Date.UTC(2026, 6, 1, 20, i)).toISOString(), media.id)
+  })
+}
+
+/**
  * The owner's import: every photo uploaded, the rejects hidden. Nearly everything
  * in Official is hidden, a video among them, and the hidden photos with faces are
  * what make the Faces tab different from a public-only view.
@@ -923,6 +958,7 @@ function seedCulled(seed) {
     if (keep) visible.push(media)
     else hidden.push(media)
   }
+  stampCaptureTimes(seed, [...visible, ...hidden].sort((a, b) => a.id - b.id))
   const images = hidden.filter((_, i) => i !== 6)
 
   // One named person, whose faces sit mostly on photos guests can't see.
