@@ -7,6 +7,31 @@ Severity tags: 🔴 high · 🟡 medium · 🟢 low.
 
 ---
 
+## Design fixes that missed (owner, 2026-11-05)
+
+> **Read this before starting either item.** An agent's guess at "clearer" already failed once for
+> each of these. Before writing any code, the owner has to spell out what good design looks like
+> here, in their own words, and the agent has to restate it and get a yes. Without that, the next
+> attempt will make a very similar mistake. Don't start from the earlier fix's reasoning.
+
+### Faces stepper: the numbers are still confusing 🟡
+
+Faces issue iss_0019 ("Unclear numbers", `.claude/issues`): the stepper's current-step circle and
+its "N to do" counts looked identical. Commit `8f925db` kept the circles and turned the counts into
+small muted square tags. The owner's verdict: the fix "kind of sucked, and the numbers are still
+pretty confusing". The issue is reopened. Get the owner's description of what the stepper should
+communicate, and how, before touching `admin-faces.css` or `face-assignment.js` again.
+
+### Devloop: the acceptance step gives no useful information 🔴
+
+This is a devloop problem, in `~/repos/make-a`, not this app. It's tracked here so it isn't lost;
+details in `docs/post-wedding/SESSION-1-devloop-notes.md` D-9 and D-12. In the capture panel, a
+resolved issue shows only a screenshot. There's no title, no note, no "what you asked for" and no
+"what was changed", so the owner can't judge a fix from it. They were too annoyed to leave a note.
+Same rule as above: get the owner to describe the acceptance view they want before designing one.
+
+---
+
 ## Deploy & operations
 
 ### Media pipeline go-live checklist 🔴

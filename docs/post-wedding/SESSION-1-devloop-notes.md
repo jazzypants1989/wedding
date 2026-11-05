@@ -205,3 +205,38 @@ Noted while starting session 3; none of these is worked yet.
   session-3 design agent, not yet confirmed here: the per-guest hue is set
   with an inline `style=` attribute, and the strict CSP blocks it. Same family
   as the T18 inline-style issue.
+
+## Launch-day tours — 2026-11-05
+
+Logged as it happened. Fixing devloop itself (`~/repos/make-a`) is out of scope today.
+
+- **D-6 — "approved" and "accepted" don't explain themselves.** Two months in,
+  the owner still could not say what separates them, even after a written
+  explanation. Approval is the go-ahead before any work (and it unlocks the
+  captured page data for the agent). Acceptance is the sign-off after the fix.
+  The two words are near-synonyms, so the vocabulary carries none of that
+  difference. Something like "OK to fix" and "Fix looks right" would.
+- **D-7 — issues from before the approval gate read as never approved.** Site
+  #1–7 were fixed on 2026-07-31, before the gate existed, and a later session
+  presented them as something the owner had missed. `accept` works on them
+  without approval, so this is cosmetic, but it cost a confused round.
+- **D-8 — there's no way to file an issue an agent finds.** The CLI has no
+  `issues create`, so the automated sweep's findings and the logout report
+  went straight to commits rather than through the ledger.
+- **D-9 — the panel's issue view (owner, on the tour).** In their words: all
+  the screenshots are broken; you should be able to click on each issue and
+  see more about it; and reproducing an issue should just work from there,
+  without going back through a CLI. "That's such awful UX."
+- **D-10 — the switching preview proxy works under capture.** `capture` against
+  `scripts/dev/preview-states.js` passed state switches, redirects and the
+  visitor, guest and admin cookies through to the app, and the marker cookie
+  arrived. Checked with HTTP requests, then used for the tour.
+- **D-12 — the acceptance step is unusable (owner, later in the day).** Accepting
+  a fix in the panel shows only a screenshot: not the title, not the owner's
+  note, not what was changed. "I get no useful information out of the current
+  design whatsoever." It soured a fix review badly enough that the owner skipped
+  leaving a note. Tracked in `DEFERRED.md` with a rule for whoever redesigns it:
+  the owner spells out the good design first.
+- **D-11 — an orphaned capture session.** A capture from 2026-10-30 was still
+  holding :4600 six days later. Stopping it with SIGINT wrote a clean
+  `session.ended`.
