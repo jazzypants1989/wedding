@@ -1922,7 +1922,7 @@ describe("Digital thank-you cards (Phase 3 public API)", () => {
       assert.ok(res.headers.get("content-security-policy"), "has a CSP header")
       assert.strictEqual(res.headers.get("x-content-type-options"), "nosniff")
       const body = await res.text()
-      assert.ok(body.includes("Memory Book"), "renders the memory book title")
+      assert.ok(body.includes("Our Guestbook, Printable"), "renders the printable guestbook title")
     })
   })
 })

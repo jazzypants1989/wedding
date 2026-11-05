@@ -94,6 +94,15 @@
   text-decoration-color: currentColor;
 }
 
+.gb-memory-book-note {
+  margin: calc(var(--spacing-xs) * -1) auto 0;
+  max-width: 32rem;
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  text-wrap: balance;
+}
+
 /* ---- The meadow: every recent note's flower in one still bed, standing on
    the composer where the next one grows. Its soil fades into the page. ---- */
 .gb-meadow {

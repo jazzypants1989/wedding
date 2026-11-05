@@ -62,7 +62,7 @@ const SITE_LINKS = [
   ["Home", "/"],
   ["Gallery", "/gallery"],
   ["Guestbook", "/guestbook"],
-  ["Memory book", "/memory-book"],
+  ["Printable guestbook", "/memory-book"],
 ]
 const ADMIN_LINKS = [
   ["Admin", "/admin"],
