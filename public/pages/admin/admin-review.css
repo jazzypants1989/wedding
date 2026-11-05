@@ -1,16 +1,10 @@
-/* Review posts + Accounts — the split views (moderation.js).
+/* Review posts — the split view (moderation.js).
    Loaded after admin.css. Builds on its primitives (.split, .rows, .row,
    .detail, .actionbar, .bulkbar, .chips, .seg — see WORKSPACE.md); the
    review-only pieces (.media-big, .msg-big, .parent-ctx, .parent-card,
    .author) are ported value for value from prototypes/admin-workspace/app.css.
    Every rule is scoped under #tab-moderation so nothing leaks into another
    panel. */
-
-/* The panel holds two splits (Review, Accounts); .split's display:grid would
-   otherwise beat the [hidden] attribute. */
-#tab-moderation > .split[hidden] {
-  display: none;
-}
 
 /* ------------------------------------------------------------- list pane */
 /* The header and the bulk bar stick together, so a long scroll keeps both
@@ -369,15 +363,6 @@
     position: sticky;
     top: 24px;
   }
-}
-
-/* ------------------------------------------------------------- accounts */
-#tab-moderation .ac-detail .facts dd {
-  overflow-wrap: anywhere;
-}
-
-#tab-moderation .ac-note {
-  max-width: 560px;
 }
 
 /* ---------------------------------------------------------------- phones */

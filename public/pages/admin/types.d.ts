@@ -143,7 +143,6 @@ export interface AdminState {
   currentPetitions: Petition[]
   currentBlocklist: BlocklistEntry[]
   currentModeration: ModerationItem[]
-  currentAccounts: AccountRow[]
   currentCurated: MediaListItem[]
   currentGifts: GiftWithGuest[]
   currentCards: ThankYouCardListRow[]
@@ -151,7 +150,6 @@ export interface AdminState {
   getGuestById: (id: number) => Guest | null
   getBlockedEntryById: (id: number) => BlocklistEntry | null
   getPetitionById: (id: number) => Petition | null
-  getAccountById: (id: number) => AccountRow | null
   getCuratedById: (id: number) => MediaListItem | null
   getGiftById: (id: number) => GiftWithGuest | null
   getCardById: (id: number) => ThankYouCardListRow | null
@@ -252,11 +250,6 @@ export interface ReviewFilter {
   /** The URL's names (photo covers video); "" = everything. */
   type: "" | "photo" | "message" | "comment"
   author: number | null
-}
-
-/** The Accounts query string: ?trusted=1|0. */
-export interface AccountsFilter {
-  trusted: "" | "1" | "0"
 }
 
 /** How many of one author's posts sit in each status. */

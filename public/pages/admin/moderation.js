@@ -1,17 +1,16 @@
-/** @file Review posts + Accounts — the Workspace split views (prototypes/
+/** @file Review posts — the Workspace split view (prototypes/
  *  admin-workspace/views/review.js, IA §4, §5 A, §13.7).
  *
  *  Review is a mail client: the queue on the left, the selected post on the
  *  right with its author and every action. Acting advances to the next post
  *  with a replace, so a whole session of a/a/h/a/r is one history entry and
  *  Back leaves Review. Every decision is undoable from the toast (`z`), so
- *  nothing asks first except approving the entire backlog and deleting an
- *  account. The URL holds the place: `/admin/review/photo-411?status=hidden&
- *  type=photo&author=a5`.
+ *  nothing asks first except approving the entire backlog. The URL holds the
+ *  place: `/admin/review/photo-411?status=hidden&type=photo&author=a5`.
  *
- *  Accounts lives in the same panel (it shared the old Moderation tab): the
- *  guests who signed in to post, with trust, "Approve their N waiting", "See
- *  their posts" (→ /admin/review?author=a5) and delete. No regex (CLAUDE.md). */
+ *  The author card trusts, approves what's waiting, and links to the author's
+ *  entry in Guests (/admin/guests/a5), where the people who signed in to post
+ *  now live. No regex (CLAUDE.md). */
 /** @import * as Types from './types.js' */
 
 import {
@@ -26,7 +25,6 @@ import {
 import { shouldSuggestTrust } from "./trust-suggest.js"
 import {
   html,
-  formatDate,
   getElement,
   getTextAreaElement,
   getButtonElement,
@@ -76,9 +74,6 @@ const nudgeDismissed = /** @type {Set<number>} */ (new Set())
 const WIDE = "(min-width: 900px)"
 const isWide = () => window.matchMedia(WIDE).matches
 
-/** Which of the panel's two views is showing. */
-let view = /** @type {"review" | "accounts"} */ ("review")
-
 /** Review's list and selection. */
 const rv = {
   /** The filter the list was loaded for ("" = must reload). */
@@ -103,20 +98,7 @@ const rv = {
   seq: 0,
 }
 
-/** Accounts' list and selection. */
-const ac = {
-  key: "",
-  filter: /** @type {Types.AccountsFilter} */ ({ trusted: "" }),
-  accounts: /** @type {Types.AccountRow[]} */ ([]),
-  total: 0,
-  sel: 0,
-  missing: false,
-  loadFailed: false,
-  busy: false,
-  seq: 0,
-}
-
-/** Account details (counts) by id — the author card and the Accounts detail. */
+/** Account details (counts) by id, for the author card. */
 const accountCache = /** @type {Map<number, Types.AccountDetail>} */ (new Map())
 /** How many sent thank-you cards each photo rides in, by media id. */
 const cardRefs = /** @type {Map<number, number>} */ (new Map())
@@ -306,7 +288,7 @@ function facesWaiting() {
 /** Is the Review view what's on screen right now? */
 function reviewShowing() {
   const place = currentPlace()
-  return !!place && place.route.tab === "moderation" && view === "review"
+  return !!place && place.route.tab === "moderation"
 }
 
 /** @param {number} id @returns {Promise<Types.AccountDetail | null>} */
@@ -323,11 +305,10 @@ async function fetchAccount(id) {
   }
 }
 
-/** Anything about this author changed: forget the cached counts, and the
- *  lists that show them reload on their next showing. @param {number | null} id */
+/** Anything about this author changed: forget the cached counts; the author
+ *  card refetches them on its next showing. @param {number | null} id */
 function forgetAccount(id) {
   if (id !== null) accountCache.delete(id)
-  ac.key = ""
 }
 
 // ================================================================== REVIEW
@@ -390,11 +371,8 @@ function selected() {
 /** @type {Types.AdminPanel["mount"]} */
 async function mountReview(params, query, ctx) {
   const seq = ++rv.seq
-  const switching = view !== "review"
-  view = "review"
-  showView()
   const f = readFilter(query)
-  const fresh = !ctx.samePanel || switching || rv.key !== queryFor(f)
+  const fresh = !ctx.samePanel || rv.key !== queryFor(f)
   if (rv.key !== queryFor(f)) rv.ticked.clear()
   rv.sel = params.id ?? ""
   rv.missing = false
@@ -435,7 +413,7 @@ async function mountReview(params, query, ctx) {
     if (seq !== rv.seq) return
     rv.missing = !rv.single
   }
-  const moved = !ctx.samePanel || ctx.replace || switching
+  const moved = !ctx.samePanel || ctx.replace
   renderReview()
   if (moved) getElement("rv-detail").scrollTop = 0
   revealSelected()
@@ -470,13 +448,6 @@ async function enrich(item) {
   if (!now || keyOf(now) !== key || !reviewShowing()) return
   renderAuthor(now)
   renderRefs(now)
-}
-
-function showView() {
-  const panel = getElement("tab-moderation")
-  getElement("rv-split").hidden = view !== "review"
-  getElement("ac-split").hidden = view !== "accounts"
-  panel.setAttribute("aria-label", view === "review" ? "Review posts" : "Accounts")
 }
 
 function renderLoading() {
@@ -807,7 +778,7 @@ function authorMarkup(item) {
     rv.filter.author === id
       ? ""
       : html`<a href="/admin/review?author=a${id}">See all their posts</a>`,
-    html`<a href="/admin/accounts/a${id}">Account</a>`,
+    html`<a href="/admin/guests/a${id}">Guest</a>`,
   ].filter((l) => l !== "")
   return html`<section class="author ${nudge ? "has-nudge" : ""}" id="rv-author">
     <span class="avatar">${authorAvatar(item)}</span>
@@ -1010,8 +981,6 @@ function setTrustedLocally(ids, trusted) {
   for (const id of ids) {
     const a = accountCache.get(id)
     if (a) a.trusted = trusted
-    const row = ac.accounts.find((x) => x.id === id)
-    if (row) row.trusted = trusted
   }
 }
 
@@ -1051,13 +1020,7 @@ async function putBack(items, untrust) {
   setTrustedLocally(untrust, false)
   // Counts moved for every author involved; the cache refills on demand.
   accountCache.clear()
-  ac.key = ""
   void loadModerationCount()
-  if (view === "accounts" && currentPlace()?.route.tab === "moderation") {
-    rv.key = ""
-    void refreshAccounts()
-    return
-  }
   try {
     await loadQueue(rv.filter, { keep: true })
   } catch {
@@ -1296,25 +1259,17 @@ async function approveWaiting(id, name) {
   if (single && res.items.some((c) => c.type === single.content_type && c.id === single.id)) {
     single.status = "approved"
   }
-  if (view === "accounts") {
-    rv.key = ""
-    rerenderAfterAccount(id)
-    return
-  }
   if (rv.filter.status === "pending") leaveList(gone)
   else if (reviewShowing()) renderReview()
 }
 
-/** An account changed: redraw whichever view shows it. @param {number} id */
+/** An account changed: redraw Review, and refetch the author card's counts if
+ *  it shows them. @param {number} id */
 function rerenderAfterAccount(id) {
-  if (currentPlace()?.route.tab !== "moderation") return
-  if (view === "review") {
-    renderReview()
-    const item = selected()
-    if (item && item.account_id === id) void enrich(item)
-  } else {
-    void showAccount(id, false)
-  }
+  if (!reviewShowing()) return
+  renderReview()
+  const item = selected()
+  if (item && item.account_id === id) void enrich(item)
 }
 
 /** The bulk bar. @param {"approve" | "hide" | "reject"} action */
@@ -1425,7 +1380,6 @@ function approveAll() {
       if (remaining > 0) parts.push(`${remaining} still waiting`)
       showSuccess(parts.join(" · "))
       accountCache.clear()
-      ac.key = ""
       rv.ticked.clear()
       await loadQueue(rv.filter)
       void loadModerationCount()
@@ -1606,341 +1560,12 @@ function reviewKeys(e) {
   return false
 }
 
-// ================================================================ ACCOUNTS
-
-/** @param {URLSearchParams} q @returns {Types.AccountsFilter} */
-function readAccountsFilter(q) {
-  const t = q.get("trusted") ?? ""
-  return { trusted: t === "1" || t === "0" ? t : "" }
-}
-
-/** @param {Types.AccountsFilter} f */
-const accountsQuery = (f) => (f.trusted ? "?trusted=" + f.trusted : "")
-
-/** @param {number} id @param {Types.AccountsFilter} f */
-const accountHref = (id, f) => `/admin/accounts/a${id}` + accountsQuery(f)
-
-/** @param {Types.AccountsFilter} f @param {number} [count] */
-async function loadAccounts(f, count = PAGE) {
-  const params = new URLSearchParams()
-  if (f.trusted) params.set("trusted", f.trusted)
-  params.set("limit", String(Math.min(PAGE_MAX, Math.max(PAGE, count))))
-  params.set("offset", "0")
-  const data = /** @type {Types.AccountsResponse} */ (await api(`/api/admin/accounts?${params}`))
-  ac.accounts = data.accounts
-  ac.total = data.total
-  ac.filter = f
-  ac.key = accountsQuery(f) || "all"
-  ac.loadFailed = false
-  state.currentAccounts = ac.accounts
-}
-
-async function loadMoreAccounts() {
-  const params = new URLSearchParams()
-  if (ac.filter.trusted) params.set("trusted", ac.filter.trusted)
-  params.set("limit", String(PAGE))
-  params.set("offset", String(ac.accounts.length))
-  try {
-    const data = /** @type {Types.AccountsResponse} */ (await api(`/api/admin/accounts?${params}`))
-    const seen = new Set(ac.accounts.map((a) => a.id))
-    ac.accounts = ac.accounts.concat(data.accounts.filter((a) => !seen.has(a.id)))
-    ac.total = data.total
-    state.currentAccounts = ac.accounts
-    renderAccounts()
-  } catch (err) {
-    showError(getErrorMessage(err))
-  }
-}
-
-/** Reload the list in place (after a change) and redraw. */
-async function refreshAccounts() {
-  try {
-    await loadAccounts(ac.filter, ac.accounts.length)
-  } catch {
-    ac.key = ""
-  }
-  if (ac.sel) await showAccount(ac.sel, false)
-  else renderAccounts()
-}
-
-/** @type {Types.AdminPanel["mount"]} */
-async function mountAccounts(params, query, ctx) {
-  const seq = ++ac.seq
-  const switching = view !== "accounts"
-  view = "accounts"
-  showView()
-  const f = readAccountsFilter(query)
-  const key = accountsQuery(f) || "all"
-  const fresh = !ctx.samePanel || switching || ac.key !== key
-  ac.sel = accountRef(params.id ?? "") ?? 0
-  ac.missing = false
-  if (fresh) {
-    ac.filter = f
-    getElement("ac-head").innerHTML = accountsHeadMarkup()
-    getElement("ac-rows").innerHTML = html`<li class="list-empty">
-      <span class="spinner" aria-hidden="true"></span>Loading…
-    </li>`
-    getElement("ac-detail").innerHTML = ""
-    try {
-      await loadAccounts(f)
-    } catch (err) {
-      if (seq !== ac.seq) return
-      ac.accounts = []
-      ac.loadFailed = true
-      ac.key = ""
-      console.error("Couldn't load the accounts:", err)
-    }
-    if (seq !== ac.seq) return
-  }
-  if (!ac.sel && isWide() && ac.accounts.length > 0) {
-    void navigate(accountHref(ac.accounts[0].id, f), { replace: true })
-    return
-  }
-  if (!ctx.samePanel || ctx.replace || switching) getElement("ac-detail").scrollTop = 0
-  if (ac.sel) await showAccount(ac.sel, true, seq)
-  else {
-    renderAccounts()
-    setCrumbs([])
-  }
-}
-
-/** Draw the account `id`, from the cache at once and fresh from the server.
- *  @param {number} id @param {boolean} reveal @param {number} [seq] */
-async function showAccount(id, reveal, seq) {
-  renderAccounts()
-  if (reveal) revealAccount()
-  const a = await fetchAccount(id)
-  if (seq !== undefined && seq !== ac.seq) return
-  if (view !== "accounts" || ac.sel !== id) return
-  ac.missing = !a
-  if (a) {
-    const row = ac.accounts.find((x) => x.id === id)
-    if (row) {
-      row.trusted = a.trusted
-      row.post_count = a.post_count
-      row.pending_count = a.pending_count
-    }
-  }
-  renderAccounts()
-  setCrumbs(a ? [{ label: a.name }] : [])
-}
-
-const revealAccount = () => reveal("ac-list", "ac-rows")
-
-function renderAccounts() {
-  getElement("ac-split").classList.toggle("has-sel", !!ac.sel)
-  getElement("ac-head").innerHTML = accountsHeadMarkup()
-  getElement("ac-rows").innerHTML = accountRowsMarkup()
-  getElement("ac-detail").innerHTML = accountDetailMarkup()
-}
-
-function accountsHeadMarkup() {
-  const f = ac.filter
-  const chips = /** @type {Array<[Types.AccountsFilter["trusted"], string]>} */ ([
-    ["", "Everyone"],
-    ["1", "Trusted"],
-    ["0", "Not trusted yet"],
-  ]).map(
-    ([t, label]) =>
-      html`<a class="chip" href="/admin/accounts${accountsQuery({ trusted: t })}" data-replace
-        aria-current="${f.trusted === t ? "true" : "false"}">${label}</a>`,
-  )
-  return html`<h1>Accounts</h1>
-    <p class="muted small">
-      Guests who signed in to post. Trusted accounts skip review. Once you've approved
-      everything someone has posted, Review offers to trust them.
-    </p>
-    <div class="chips" role="group" aria-label="Trust">${chips}</div>`
-}
-
-/** @param {Types.AccountRow} a */
-function accountRowMarkup(a) {
-  const on = a.id === ac.sel
-  const sub = [
-    plural(a.post_count, "post", "posts"),
-    a.pending_count ? `${a.pending_count} waiting` : "",
-    a.relation ?? "",
-  ].filter((p) => p !== "")
-  return html`<li>
-    <a class="row" href="${accountHref(a.id, ac.filter)}" data-select aria-current="${on ? "true" : "false"}">
-      <span class="avatar">${avatarArt(a.name)}</span>
-      <span class="row-main">
-        <span class="row-top"
-          ><strong>${a.name}</strong>${a.trusted ? html`<span class="pill st-opened">Trusted</span>` : ""}</span
-        >
-        <span class="row-sub">${sub.join(" · ")}</span>
-      </span>
-    </a>
-  </li>`
-}
-
-function accountRowsMarkup() {
-  if (ac.loadFailed) {
-    return html`<li class="list-empty">
-      <p>Couldn't load the accounts.</p>
-      <button type="button" class="btn btn-sm" data-ac="retry">Try again</button>
-    </li>`
-  }
-  if (ac.accounts.length === 0) {
-    return html`<li class="list-empty">
-      ${ac.filter.trusted === "0"
-        ? "Everyone who has posted is trusted."
-        : ac.filter.trusted === "1"
-          ? "Nobody is trusted yet."
-          : "No one has signed in to post yet."}
-    </li>`
-  }
-  return html`${ac.accounts.map(accountRowMarkup)}${ac.accounts.length < ac.total
-    ? html`<li class="rows-more">
-        <button type="button" class="btn btn-sm btn-block" data-ac="more">
-          Load more (${ac.total - ac.accounts.length} left)
-        </button>
-      </li>`
-    : ""}`
-}
-
-function accountDetailMarkup() {
-  const back = html`<a class="m-back" href="/admin/accounts${accountsQuery(ac.filter)}" data-up
-    >${icon("back")}Accounts</a
-  >`
-  if (!ac.sel) {
-    return html`<div class="detail-empty">
-      <p>${ac.accounts.length ? "Pick an account." : "Accounts appear once guests sign in to post."}</p>
-    </div>`
-  }
-  const a = accountCache.get(ac.sel)
-  if (!a) {
-    return ac.missing
-      ? html`${back}<div class="detail-empty"><p>That account no longer exists.</p></div>`
-      : back
-  }
-  const c = a.counts
-  const posts = [
-    plural(a.post_count, "post", "posts"),
-    c.pending ? `${c.pending} waiting` : "",
-    c.hidden ? `${c.hidden} hidden` : "",
-    c.rejected ? `${c.rejected} rejected` : "",
-  ].filter((p) => p !== "")
-  const seePosts = `/admin/review?author=a${a.id}${c.pending ? "" : "&status=approved"}`
-  return html`${back}
-    <article class="detail ac-detail">
-      <header class="person-head">
-        <span class="avatar avatar-xl">${avatarArt(a.name)}</span>
-        <div>
-          <h1>${a.name}</h1>
-          <p class="muted">${a.relation ? `${a.relation} · ` : ""}Joined ${formatDate(a.created_at)}</p>
-        </div>
-      </header>
-      <dl class="facts">
-        <div>
-          <dt>Trust</dt>
-          <dd>${a.trusted ? "Trusted — skips review" : "Not yet"}</dd>
-        </div>
-        <div><dt>Posts</dt><dd>${posts.join(" · ")}</dd></div>
-        <div>
-          <dt>Signed in as</dt>
-          <dd>${a.guest_id !== null ? `${a.source}'s party` : "Open sign-up"}</dd>
-        </div>
-        <div><dt>Recovery email</dt><dd class="fact-break">${a.contact_email || "—"}</dd></div>
-      </dl>
-      <div class="btn-row">
-        ${a.trusted
-          ? html`<button type="button" class="btn btn-sm" data-ac="untrust">Stop trusting <kbd>t</kbd></button>`
-          : html`<button type="button" class="btn btn-sm" data-ac="trust">Trust <kbd>t</kbd></button>`}
-        <a class="btn btn-sm" href="${seePosts}">See their posts</a>
-        ${c.pending
-          ? html`<button type="button" class="btn btn-sm" data-ac="approve-waiting">
-              Approve their ${c.pending} waiting
-            </button>`
-          : ""}
-        <button type="button" class="btn btn-sm btn-danger-soft" data-ac="delete">Delete account…</button>
-      </div>
-      <p class="muted small ac-note">
-        ${a.trusted
-          ? "Trust applies to new posts. Stopping it leaves what's already live alone."
-          : "Trust applies to new posts. What's already waiting stays in Review until you decide it."}
-      </p>
-    </article>`
-}
-
-/** @param {Types.AccountDetail} a */
-function deleteAccount(a) {
-  openConfirm({
-    title: `Delete ${a.name}'s account?`,
-    desc:
-      "Their approved posts come off the site and they're signed out everywhere. " +
-      "Their files are kept, but there's no one-tap undo for this.",
-    confirmLabel: "Delete account",
-    danger: true,
-    run: async () => {
-      await api(`/api/admin/accounts/${a.id}`, { method: "DELETE" })
-      accountCache.delete(a.id)
-      rv.key = ""
-      void loadModerationCount()
-      const at = ac.accounts.findIndex((x) => x.id === a.id)
-      ac.accounts = ac.accounts.filter((x) => x.id !== a.id)
-      ac.total = Math.max(0, ac.total - 1)
-      showSuccess(`Deleted ${a.name}'s account`)
-      const next = ac.accounts[at] ?? ac.accounts[at - 1] ?? null
-      if (currentPlace()?.route.tab !== "moderation" || view !== "accounts") return
-      void navigate(
-        next && isWide()
-          ? accountHref(next.id, ac.filter)
-          : "/admin/accounts" + accountsQuery(ac.filter),
-        { replace: true },
-      )
-    },
-  })
-}
-
-/** @param {MouseEvent} e */
-function onAccountsClick(e) {
-  const t = e.target
-  if (!(t instanceof Element)) return
-  const btn = t.closest("[data-ac]")
-  if (!(btn instanceof HTMLElement)) return
-  const what = btn.dataset.ac ?? ""
-  const a = ac.sel ? accountCache.get(ac.sel) : undefined
-  if (what === "more") void loadMoreAccounts()
-  else if (what === "retry") {
-    ac.key = ""
-    const place = currentPlace()
-    if (place) void mountAccounts(place.params, place.query, { ...place, samePanel: false })
-  } else if (!a) return
-  else if (what === "trust") void trustAccount(a.id, a.name)
-  else if (what === "untrust") void untrustAccount(a.id, a.name)
-  else if (what === "approve-waiting") void approveWaiting(a.id, a.name)
-  else if (what === "delete") deleteAccount(a)
-}
-
-/** @param {KeyboardEvent} e */
-function accountKeys(e) {
-  if (e.shiftKey && e.key !== "?") return false
-  const k = e.key
-  if (k === "j" || k === "ArrowDown" || k === "k" || k === "ArrowUp") {
-    const delta = k === "j" || k === "ArrowDown" ? 1 : -1
-    const at = ac.accounts.findIndex((a) => a.id === ac.sel)
-    const to = at === -1 ? (delta > 0 ? 0 : -1) : at + delta
-    const next = ac.accounts[to]
-    if (next) void navigate(accountHref(next.id, ac.filter), { replace: !!ac.sel })
-    return true
-  }
-  const a = ac.sel ? accountCache.get(ac.sel) : undefined
-  if (k === "t" && a) {
-    if (a.trusted) void untrustAccount(a.id, a.name)
-    else void trustAccount(a.id, a.name)
-    return true
-  }
-  return false
-}
-
 // -------------------------------------------------------------------- init
 
 /** @type {Types.loadModeration} */
 export async function loadModeration() {
   // The router mounts this panel; a direct call just forces a fresh list.
   rv.key = ""
-  ac.key = ""
   const place = currentPlace()
   if (place && place.route.tab === "moderation") {
     await panel.mount(place.params, place.query, { ...place, samePanel: false })
@@ -1959,27 +1584,11 @@ const REVIEW_HELP = {
   ]),
 }
 
-const ACCOUNTS_HELP = {
-  title: "Accounts",
-  keys: /** @type {Array<[string, string]>} */ ([
-    ["j k", "Next / previous account"],
-    ["t", "Trust / stop trusting"],
-  ]),
-}
-
 /** @type {Types.AdminPanel} */
 const panel = {
-  mount(params, query, ctx) {
-    return ctx.route.sub === "accounts"
-      ? mountAccounts(params, query, ctx)
-      : mountReview(params, query, ctx)
-  },
-  keys(e) {
-    return view === "accounts" ? accountKeys(e) : reviewKeys(e)
-  },
-  get help() {
-    return view === "accounts" ? ACCOUNTS_HELP : REVIEW_HELP
-  },
+  mount: mountReview,
+  keys: reviewKeys,
+  help: REVIEW_HELP,
 }
 
 /** @type {Types.initModeration} */
@@ -1987,7 +1596,6 @@ export function initModeration() {
   registerPanel("moderation", panel)
   getElement("rv-split").addEventListener("click", onReviewClick)
   getElement("rv-rows").addEventListener("change", onTick)
-  getElement("ac-split").addEventListener("click", onAccountsClick)
   getButtonElement("mod-confirm-btn").addEventListener("click", () => {
     void confirmRejectWithReason()
   })

@@ -170,8 +170,8 @@
         </div>
       </div>
 
-      <!-- Review posts + Accounts (moderation.js): two list → detail splits in
-           one panel. Drawn by JS; see public/pages/admin/WORKSPACE.md. -->
+      <!-- Review posts (moderation.js): a list → detail split. Drawn by JS;
+           see public/pages/admin/WORKSPACE.md. -->
       <div id="tab-moderation" class="tab-content panel-fill" role="region" aria-label="Review posts" hidden>
         <div id="rv-split" class="split">
           <section class="pane pane-list" id="rv-list" aria-label="Posts">
@@ -187,18 +187,6 @@
           <section class="pane pane-detail" id="rv-detail" aria-label="Selected post"></section>
           <div class="split-handle" role="separator" aria-orientation="vertical" tabindex="0"
             aria-controls="rv-list" aria-label="List width" title="Drag to resize · double-click to reset"></div>
-        </div>
-        <div id="ac-split" class="split" hidden>
-          <section class="pane pane-list" id="ac-list" aria-label="Accounts">
-            <header class="pane-head" id="ac-head"></header>
-            <ul class="rows" id="ac-rows"></ul>
-            <footer class="pane-foot muted">
-              <kbd>j</kbd> <kbd>k</kbd> move · <kbd>t</kbd> trust · <kbd>?</kbd> all keys
-            </footer>
-          </section>
-          <section class="pane pane-detail" id="ac-detail" aria-label="Selected account"></section>
-          <div class="split-handle" role="separator" aria-orientation="vertical" tabindex="0"
-            aria-controls="ac-list" aria-label="List width" title="Drag to resize · double-click to reset"></div>
         </div>
       </div>
 
