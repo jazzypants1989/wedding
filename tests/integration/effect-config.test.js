@@ -41,10 +41,11 @@ async function overrideJson(res) {
   return /** @type {OverrideResp} */ (await res.json())
 }
 
-/** Pull the value of `data-effect-config="…"` off the served home page HTML. The
- *  attribute is HTML-escaped (quotes → &quot;), so decode before JSON.parse. */
-async function homeEffectConfig() {
-  const html = await (await fetch(`${BASE_URL}/`)).text()
+/** Pull the value of `data-effect-config="…"` off a served page's HTML (the home
+ *  page by default). The attribute is HTML-escaped (quotes → &quot;), so decode
+ *  before JSON.parse. @param {string} [pathname] */
+async function homeEffectConfig(pathname = "/") {
+  const html = await (await fetch(`${BASE_URL}${pathname}`)).text()
   const marker = 'data-effect-config="'
   const start = html.indexOf(marker)
   if (start === -1) return null
@@ -110,6 +111,63 @@ describe("admin effect-config editor", () => {
 
     // Home page carries the inlined attribute (cache evicted on save).
     assert.deepStrictEqual(await homeEffectConfig(), { snow: { flakeCount: 99 }, dividers: { color: 0.9 } })
+  })
+
+  it("serves the autostart tag on guestbook, gallery and RSVP only", async () => {
+    const TAG = 'src="/effects/autostart.js'
+    for (const pathname of ["/guestbook", "/gallery", "/rsvp"]) {
+      const res = await fetch(`${BASE_URL}${pathname}`)
+      assert.strictEqual(res.status, 200, pathname)
+      const html = await res.text()
+      assert.ok(html.includes(TAG), `${pathname} starts the effects`)
+      assert.ok(html.includes('data-effect-config="'), `${pathname} carries the site override`)
+    }
+    // Home starts the manager from its own module; the rest never run it at all.
+    const omitted = ["/", "/memory-book", "/admin", "/setup", "/studio", "/thanks"]
+    for (const pathname of [...omitted, "/thanks-preview"]) {
+      const res = await fetch(`${BASE_URL}${pathname}`, { redirect: "manual" })
+      const html = await res.text()
+      assert.ok(!html.includes(TAG), `${pathname} has no autostart`)
+    }
+  })
+
+  it("PUT accepts pages and inlines it on every effect page", { skip: !hasAdmin }, async () => {
+    await fetch(`${BASE_URL}/guestbook`)
+    const auth = await adminLogin()
+    const override = {
+      cursor: { size: 2, pages: ["home", "guestbook", "guestbook"] },
+      shimmer: { pages: "all" },
+      disco: { pages: [] },
+    }
+    const put = await adminFetch(
+      "/api/admin/effect-config",
+      { method: "PUT", body: JSON.stringify({ override }) },
+      auth,
+    )
+    assert.strictEqual(put.status, 200)
+    const expected = {
+      cursor: { size: 2, pages: ["home", "guestbook"] },
+      shimmer: { pages: "all" },
+      disco: { pages: [] },
+    }
+    assert.deepStrictEqual((await overrideJson(put)).override, expected)
+    assert.deepStrictEqual(readStoredOverride(), expected)
+    for (const pathname of ["/", "/guestbook", "/gallery", "/rsvp"]) {
+      assert.deepStrictEqual(await homeEffectConfig(pathname), expected, pathname)
+    }
+  })
+
+  it("rejects pages that aren't all or a list of known pages", { skip: !hasAdmin }, async () => {
+    const auth = await adminLogin()
+    const bad = [["memory-book"], ["home", "nowhere"], "everywhere", "ALL", 3, { home: true }, [1]]
+    for (const pages of bad) {
+      const res = await adminFetch(
+        "/api/admin/effect-config",
+        { method: "PUT", body: JSON.stringify({ override: { cursor: { pages } } }) },
+        auth,
+      )
+      assert.strictEqual(res.status, 400, JSON.stringify(pages))
+    }
   })
 
   it("rejects an unknown effect id", { skip: !hasAdmin }, async () => {

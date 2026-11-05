@@ -115,7 +115,10 @@ export function createCursorTrail(config) {
     document.body.appendChild(container)
 
     document.addEventListener("mousemove", onMouseMove, { signal: controller.signal })
-    document.addEventListener("touchmove", onTouchMove, { signal: controller.signal })
+    document.addEventListener("touchmove", onTouchMove, {
+      passive: true,
+      signal: controller.signal,
+    })
   }
 
   function stop() {

@@ -71,6 +71,7 @@ import {
   nextToWrite,
   channelOptions,
   defaultChannel,
+  themeSeedConfig,
 } from "./thank-you-util.js"
 import { fireConfetti } from "../../components/celebrate.js"
 import { monogramData } from "../../components/monogram.js"
@@ -1386,7 +1387,7 @@ function seedEffectsFromTheme(themeId) {
   const theme = resolveTheme(themeId)
   return theme.effectIds.map((id) => ({
     id,
-    config: theme.configs && theme.configs[id] ? structuredClone(theme.configs[id]) : {},
+    config: themeSeedConfig(theme, id),
   }))
 }
 

@@ -96,6 +96,18 @@ function validateValue(v, spec, field) {
         return el
       })
     }
+    case "pages": {
+      if (v === "all") return v
+      if (!Array.isArray(v)) {
+        throw new ValidationError(field + ' must be "all" or a list of pages')
+      }
+      for (const el of v) {
+        if (typeof el !== "string" || !spec.allowed.includes(el)) {
+          throw new ValidationError(field + " must only name: " + spec.allowed.join(", "))
+        }
+      }
+      return [...new Set(/** @type {string[]} */ (v))]
+    }
     default:
       throw new ValidationError(field + " has an unrecognized spec")
   }

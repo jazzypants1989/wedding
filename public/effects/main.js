@@ -5,7 +5,7 @@
  */
 /** @import * as Types from './types.js' */
 
-import { EFFECT_DEFINITIONS, effectRunsOn } from "./registry.js"
+import { EFFECT_DEFINITIONS, effectStartsOn } from "./registry.js"
 import { getEffectiveConfig } from "./config.js"
 import { getActiveTheme } from "./themes.js"
 import { prefersReducedMotion } from "./effect-utils.js"
@@ -20,8 +20,8 @@ const activeEffects = new Map()
 
 let managerActive = false
 
-/** The page that started the manager; filters out entries whose `pages` list
- *  excludes it (landing-page set pieces, off the landing page).
+/** The page that started the manager. An effect starts only where the registry
+ *  allows it and its effective `pages` config places it (effectStartsOn).
  *  @type {Types.EffectPage} */
 let managerPage = "home"
 
@@ -49,7 +49,9 @@ function startEffects() {
   // preserving registry order and silently skipping ids the theme names but
   // that aren't registered (e.g. a theme referencing a not-yet-built effect).
   const allowed = new Set(getActiveTheme().effectIds)
-  const defs = EFFECT_DEFINITIONS.filter((d) => allowed.has(d.id) && effectRunsOn(d, managerPage))
+  const defs = EFFECT_DEFINITIONS.filter(
+    (d) => allowed.has(d.id) && effectStartsOn(d, getEffectiveConfig(d.id)?.pages, managerPage),
+  )
 
   const gen = ++startGeneration
 

@@ -6,6 +6,8 @@
 
 import { test } from "node:test"
 import assert from "node:assert"
+import fs from "node:fs"
+import path from "node:path"
 import {
   resolveTheme,
   DEFAULT_THEME_ID,
@@ -15,7 +17,10 @@ import { getEffectiveConfig, getDefaultConfig, EFFECT_CONFIGS } from "../../publ
 import {
   EFFECT_DEFINITIONS,
   EFFECT_PAGES,
+  PLACEABLE_EFFECT_PAGES,
   effectRunsOn,
+  effectPlacedOn,
+  effectStartsOn,
   effectPageFromPath,
 } from "../../public/effects/registry.js"
 import { LABELS } from "../../public/effects/control-meta.js"
@@ -42,8 +47,13 @@ test("every theme references only registered effect ids", () => {
 })
 
 test("getEffectiveConfig equals defaults with no DOM/localStorage (default theme)", () => {
-  // No globalThis.document → default theme (mermaid-disco, no config overrides).
-  assert.deepEqual(getEffectiveConfig("parallaxsparkles"), getDefaultConfig("parallaxsparkles"))
+  // No globalThis.document → default theme (mermaid-disco), whose only override
+  // for these two is where they run.
+  assert.deepEqual(getEffectiveConfig("parallaxsparkles"), {
+    ...getDefaultConfig("parallaxsparkles"),
+    pages: "all",
+  })
+  assert.deepEqual(getEffectiveConfig("shimmer"), getDefaultConfig("shimmer"))
 })
 
 test("getEffectiveConfig merges the active theme's per-effect override", () => {
@@ -247,4 +257,113 @@ test("effectPageFromPath maps guest pages and rejects everything else", () => {
   assert.equal(effectPageFromPath("/home"), null)
   assert.equal(effectPageFromPath("/admin"), null)
   assert.equal(effectPageFromPath("/studio"), null)
+})
+
+// --- Where effects run: the registry limit and the `pages` config key -----------
+
+/** @param {string} id */
+function def(id) {
+  const found = EFFECT_DEFINITIONS.find((d) => d.id === id)
+  assert.ok(found, `registered: ${id}`)
+  return found
+}
+
+test("a missing pages key means the landing page only", () => {
+  const shimmer = def("shimmer")
+  assert.equal(effectStartsOn(shimmer, undefined, "home"), true)
+  for (const page of /** @type {const} */ (["guestbook", "gallery", "rsvp", "memory-book"])) {
+    assert.equal(effectStartsOn(shimmer, undefined, page), false, page)
+  }
+  // Garbage counts as missing, not as everywhere.
+  assert.equal(effectPlacedOn("everywhere", "guestbook"), false)
+  assert.equal(effectPlacedOn(7, "home"), true)
+})
+
+test('"all" means every placeable page and never the memory book', () => {
+  assert.deepEqual([...PLACEABLE_EFFECT_PAGES], ["home", "guestbook", "gallery", "rsvp"])
+  const cursor = def("cursor")
+  for (const page of PLACEABLE_EFFECT_PAGES) assert.equal(effectStartsOn(cursor, "all", page), true)
+  assert.equal(effectStartsOn(cursor, "all", "memory-book"), false)
+  // Not even by name: the memory book prints.
+  assert.equal(effectStartsOn(cursor, ["memory-book"], "memory-book"), false)
+})
+
+test("an explicit list places an effect on exactly those pages", () => {
+  const cursor = def("cursor")
+  assert.equal(effectStartsOn(cursor, ["guestbook"], "guestbook"), true)
+  assert.equal(effectStartsOn(cursor, ["guestbook"], "home"), false)
+  assert.equal(effectStartsOn(cursor, ["guestbook"], "gallery"), false)
+  assert.equal(effectStartsOn(cursor, [], "home"), false)
+})
+
+test("the registry limit wins over any pages config", () => {
+  for (const id of ["disco", "textglow", "entrance", "spotlight", "reflections", "tiltdepth"]) {
+    const landing = def(id)
+    assert.equal(effectStartsOn(landing, "all", "home"), true, id)
+    assert.equal(effectStartsOn(landing, "all", "guestbook"), false, id)
+    assert.equal(effectStartsOn(landing, ["gallery", "rsvp"], "gallery"), false, id)
+  }
+})
+
+test("Mermaid Disco sends the cursor trail and parallax sparkles everywhere, nothing else", () => {
+  const theme = resolveTheme("mermaid-disco")
+  /** @param {string} id @param {import("../../public/effects/types.js").EffectPage} page */
+  const startsOn = (id, page) => effectStartsOn(def(id), getEffectiveConfig(id)?.pages, page)
+  for (const page of /** @type {const} */ (["guestbook", "gallery", "rsvp"])) {
+    const running = theme.effectIds.filter((id) => startsOn(id, page))
+    assert.deepEqual(running, ["cursor", "parallaxsparkles"], page)
+  }
+  assert.deepEqual(theme.effectIds.filter((id) => startsOn(id, "home")), theme.effectIds)
+  assert.deepEqual(theme.effectIds.filter((id) => startsOn(id, "memory-book")), [])
+})
+
+test("every other theme keeps every effect on the landing page", () => {
+  for (const theme of EFFECT_THEMES) {
+    if (theme.id === "mermaid-disco") continue
+    for (const [id, cfg] of Object.entries(theme.configs || {})) {
+      assert.equal(cfg.pages, undefined, `${theme.id}.${id}`)
+    }
+  }
+})
+
+test("the site override's pages layers over the theme's, and the studio's over that", () => {
+  globalThis.document = {
+    documentElement: {
+      dataset: {
+        effectTheme: "mermaid-disco",
+        effectConfig: JSON.stringify({ cursor: { pages: ["home"] }, shimmer: { pages: "all" } }),
+      },
+    },
+  }
+  try {
+    assert.deepEqual(getEffectiveConfig("cursor")?.pages, ["home"])
+    assert.equal(getEffectiveConfig("shimmer")?.pages, "all")
+    globalThis.localStorage = { getItem: () => JSON.stringify({ cursor: { pages: "all" } }) }
+    assert.equal(getEffectiveConfig("cursor")?.pages, "all")
+  } finally {
+    delete globalThis.localStorage
+    delete globalThis.document
+  }
+})
+
+test("autostart is wired into guestbook, gallery and RSVP, and no other page", () => {
+  const pagesDir = path.join(import.meta.dirname, "..", "..", "public", "pages")
+  const TAG = '<script type="module" src="/effects/autostart.js"></script>'
+  /** @type {string[]} */
+  const wired = []
+  for (const entry of fs.readdirSync(pagesDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    const file = path.join(pagesDir, entry.name, "index.html")
+    if (!fs.existsSync(file)) continue
+    const page = fs.readFileSync(file, "utf8")
+    if (!page.includes(TAG)) continue
+    wired.push(entry.name)
+    // What the manager needs on a page it starts on.
+    assert.ok(page.includes('data-effect-config="{{effectConfig}}"'), `${entry.name}: config`)
+    assert.ok(page.includes('href="/styles/effects.css"'), `${entry.name}: effects.css`)
+    assert.equal(page.split(TAG).length, 2, `${entry.name}: one tag`)
+  }
+  assert.deepEqual(wired.sort(), ["gallery", "guestbook", "rsvp"])
+  // The landing page starts the manager itself and must not start it twice.
+  assert.ok(!fs.readFileSync(path.join(pagesDir, "index.html"), "utf8").includes(TAG))
 })

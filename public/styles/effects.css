@@ -466,6 +466,7 @@
 .parallax-sparkle-layer {
   position: absolute;
   inset: 0;
+  height: 100lvh; /* the tile parallax-sparkles.js wraps by; steady under a phone's URL bar */
   will-change: transform;
 }
 

@@ -469,6 +469,15 @@
               apply on the next page load.</p>
           </header>
           <form id="effect-config-form" class="form">
+            <section id="effect-pages-section" class="fx-pages"
+              aria-labelledby="effect-pages-heading" hidden>
+              <h2 id="effect-pages-heading">Where each effect runs</h2>
+              <p class="muted small">The <strong id="effect-pages-theme"></strong> theme's effects.
+                A tick edits the override below; Save publishes it.</p>
+              <p id="effect-pages-note" class="form-error" hidden>Fix the JSON below to use this
+                table.</p>
+              <div id="effect-pages" class="fx-pages-scroll"></div>
+            </section>
             <label for="effect-config-json">Site-wide override
               <span class="muted small fx-hint">Only the keys you changed, as
                 <code>{ effectId: { key: value } }</code>. Save an empty <code>{}</code> to clear it.</span>

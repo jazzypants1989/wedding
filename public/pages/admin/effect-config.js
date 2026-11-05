@@ -8,25 +8,160 @@
  *  (DELETE), and an "Import from this browser" that pulls the effect studio's
  *  per-browser override (localStorage) into the textarea so the admin can save
  *  it for every visitor. The textarea is the source of truth on save.
+ *
+ *  Above it, a table of which pages each of the active theme's effects runs on.
+ *  The table holds no state of its own: a tick rewrites the `pages` key in the
+ *  textarea's JSON and leaves everything else there alone, and the textarea's
+ *  contents decide what the table shows. So the two can't disagree, and Save is
+ *  the same Save.
  */
 /** @import * as Types from './types.js' */
+/** @import * as EffectTypes from '../../effects/types.js' */
 
 import { api, showError, showSuccess } from "./utils.js"
 import { registerPanel, addGuard, setCrumbs } from "./router.js"
 import { openConfirm } from "./confirm.js"
 import {
+  html,
   getElement,
   getTextAreaElement,
   getButtonElement,
   getFormElement,
   getErrorMessage,
 } from "../utils.js"
+import { EFFECT_DEFINITIONS, effectRunsOn } from "../../effects/registry.js"
+import { PLACEABLE_EFFECT_PAGES, effectPlacedOn } from "../../effects/pages.js"
+import { resolveTheme } from "../../effects/themes.js"
+import { LABELS } from "../../effects/control-meta.js"
+import {
+  parseOverrideText,
+  placementOf,
+  toggledPlacement,
+  withPlacement,
+} from "./effect-placement.js"
 
 /** Shared contract with the effects read side + studio write side. */
 const STUDIO_STORAGE_KEY = "effect-config-override"
 
+/** The column heading for each placeable page.
+ *  @type {Partial<Record<EffectTypes.EffectPage, string>>} */
+const PAGE_LABELS = { home: "Home", guestbook: "Guestbook", gallery: "Gallery", rsvp: "RSVP" }
+
 /** The textarea as last loaded or saved — the dirty baseline. */
 let saved = /** @type {string | null} */ (null)
+
+/** The theme the site is running, as the server has it: this page carries no
+ *  data-effect-theme, and the theme can be changed in this same session.
+ *  @type {EffectTypes.EffectTheme | null} */
+let activeTheme = null
+
+/** @param {EffectTypes.EffectPage} page @returns {string} */
+function pageLabel(page) {
+  return PAGE_LABELS[page] ?? page
+}
+
+/** Draw one row per effect in the active theme. Ticks are filled by syncPlacement,
+ *  so typing in the JSON never rebuilds the table and a tick keeps its focus. */
+function renderPlacementTable() {
+  const theme = activeTheme
+  if (!theme) return
+  getElement("effect-pages-theme").textContent = theme.label
+  const defs = theme.effectIds.flatMap((id) => EFFECT_DEFINITIONS.find((d) => d.id === id) ?? [])
+
+  const rows = defs.map((def) => {
+    const name = /** @type {Record<string, string>} */ (LABELS)[def.id] ?? def.id
+    const usable = PLACEABLE_EFFECT_PAGES.filter((page) => effectRunsOn(def, page))
+    const limited = usable.length < PLACEABLE_EFFECT_PAGES.length
+    const flag = limited ? "1" : ""
+    return html`<tr>
+      <th scope="row">${name}${
+        limited
+          ? html`<span class="fx-pages-why muted small"
+              >Only on ${usable.map(pageLabel).join(", ")}: built for that page's layout</span
+            >`
+          : ""
+      }</th>
+      ${PLACEABLE_EFFECT_PAGES.map(
+        (page) => html`<td>
+          <input type="checkbox" data-effect="${def.id}" data-page="${page}" data-limited="${flag}"
+            aria-label="${name} on ${pageLabel(page)}">
+        </td>`,
+      )}
+      <td>
+        <input type="checkbox" data-effect="${def.id}" data-page="all" data-limited="${flag}"
+          aria-label="${name} on all pages">
+      </td>
+    </tr>`
+  })
+
+  getElement("effect-pages").innerHTML = html`<table class="fx-pages-table">
+    <thead>
+      <tr>
+        <th scope="col">Effect</th>
+        ${PLACEABLE_EFFECT_PAGES.map((page) => html`<th scope="col">${pageLabel(page)}</th>`)}
+        <th scope="col">All pages</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>`
+  getElement("effect-pages-section").hidden = false
+  syncPlacement()
+}
+
+/** Make the ticks say what the textarea says. JSON the table can't read leaves them
+ *  where they were, disabled, with a note. */
+function syncPlacement() {
+  const theme = activeTheme
+  if (!theme) return
+  const override = parseOverrideText(getTextAreaElement("effect-config-json").value)
+  getElement("effect-pages-note").hidden = override !== null
+  for (const box of getElement("effect-pages").querySelectorAll("input")) {
+    box.disabled = override === null || box.dataset.limited === "1"
+    if (override === null) continue
+    const current = placementOf(override, theme, box.dataset.effect ?? "")
+    const onCount = PLACEABLE_EFFECT_PAGES.filter((p) => effectPlacedOn(current, p)).length
+    if (box.dataset.page === "all") {
+      box.checked = onCount === PLACEABLE_EFFECT_PAGES.length
+      box.indeterminate = onCount > 0 && !box.checked
+    } else {
+      const page = /** @type {EffectTypes.EffectPage} */ (box.dataset.page)
+      box.checked = effectPlacedOn(current, page)
+    }
+  }
+}
+
+/** A tick: rewrite that effect's `pages` in the textarea. Save publishes it.
+ *  @param {Event} e */
+function handlePlacementChange(e) {
+  const box = e.target
+  if (!(box instanceof HTMLInputElement) || !activeTheme) return
+  const override = parseOverrideText(getTextAreaElement("effect-config-json").value)
+  if (!override) return
+  const id = box.dataset.effect ?? ""
+  const page = box.dataset.page
+  /** @type {EffectTypes.EffectPlacement} */
+  let next
+  if (page === "all") {
+    next = box.checked ? "all" : []
+  } else {
+    const current = placementOf(override, activeTheme, id)
+    next = toggledPlacement(current, /** @type {EffectTypes.EffectPage} */ (page), box.checked)
+  }
+  fillTextarea(withPlacement(override, activeTheme, id, next), false)
+}
+
+function handleTextareaInput() {
+  updateDirtyNote()
+  syncPlacement()
+}
+
+async function loadActiveTheme() {
+  const data = /** @type {Types.SiteContentResponse} */ (await api("/api/admin/site-content"))
+  const theme = resolveTheme(data.content.theme)
+  if (theme === activeTheme) return
+  activeTheme = theme
+  renderPlacementTable()
+}
 
 /** @param {Record<string, unknown>} override @param {boolean} [isSaved] */
 function fillTextarea(override, isSaved = true) {
@@ -34,6 +169,7 @@ function fillTextarea(override, isSaved = true) {
   getTextAreaElement("effect-config-json").value = text
   if (isSaved) saved = text
   updateDirtyNote()
+  syncPlacement()
 }
 
 /** @returns {boolean} edits since the last load / save */
@@ -46,9 +182,11 @@ function updateDirtyNote() {
 }
 
 export async function loadEffectConfig() {
-  // Never clobber edits still sitting in the textarea (a re-login, a re-visit).
-  if (isEffectConfigDirty()) return
+  // Without the theme there's no table, but the JSON still works.
+  await loadActiveTheme().catch((err) => console.error("Failed to load the active theme:", err))
   try {
+    // Never clobber edits still sitting in the textarea (a re-login, a re-visit).
+    if (isEffectConfigDirty()) return
     const data = /** @type {Types.EffectConfigResponse} */ (await api("/api/admin/effect-config"))
     fillTextarea(data.override || {})
   } catch (err) {
@@ -168,7 +306,8 @@ export function initEffectConfig() {
     e.preventDefault()
     e.returnValue = ""
   })
-  getTextAreaElement("effect-config-json").addEventListener("input", updateDirtyNote)
+  getTextAreaElement("effect-config-json").addEventListener("input", handleTextareaInput)
+  getElement("effect-pages").addEventListener("change", handlePlacementChange)
   getFormElement("effect-config-form").addEventListener("submit", handleSubmit)
   getButtonElement("effect-config-reset-btn").addEventListener("click", handleReset)
   getButtonElement("effect-config-import-btn").addEventListener("click", handleImport)

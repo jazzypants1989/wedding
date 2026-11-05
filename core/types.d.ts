@@ -915,6 +915,7 @@ export type EffectKeySpec =
   | { kind: "string" }
   | { kind: "numberArray"; min: number; max: number; minItems: number; maxItems: number }
   | { kind: "stringArray"; maxItems: number }
+  | { kind: "pages"; allowed: readonly string[] }
 
 // --- Effect config store (core/effect-config.js) ---
 

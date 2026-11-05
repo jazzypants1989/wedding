@@ -11,8 +11,14 @@
 
 import { test } from "node:test"
 import assert from "node:assert"
-import { EFFECT_CONFIG_KEYS, EFFECT_CONFIG_SPECS } from "../../core/effect-config-schema.js"
+import {
+  EFFECT_CONFIG_KEYS,
+  EFFECT_CONFIG_PAGES,
+  EFFECT_CONFIG_SPECS,
+} from "../../core/effect-config-schema.js"
 import { EFFECT_CONFIGS } from "../../public/effects/config.js"
+import { PLACEABLE_EFFECT_PAGES } from "../../public/effects/pages.js"
+import { EFFECT_THEMES } from "../../public/effects/themes.js"
 
 test("schema ids match EFFECT_CONFIGS ids exactly", () => {
   const schemaIds = Object.keys(EFFECT_CONFIG_KEYS).sort()
@@ -20,12 +26,37 @@ test("schema ids match EFFECT_CONFIGS ids exactly", () => {
   assert.deepStrictEqual(schemaIds, configIds)
 })
 
-test("each effect's schema keys match its EFFECT_CONFIGS default keys", () => {
+test("each effect's schema keys match its EFFECT_CONFIG_KEYS default keys, plus pages", () => {
   for (const id of Object.keys(EFFECT_CONFIGS)) {
     const entry = EFFECT_CONFIGS[/** @type {keyof typeof EFFECT_CONFIGS} */ (id)]
     const defaultKeys = Object.keys(entry.defaults).sort()
-    const schemaKeys = Array.from(EFFECT_CONFIG_KEYS[id]).sort()
+    assert.ok(!defaultKeys.includes("pages"), `${id}: pages is placement, not a default`)
+    const schemaKeys = Array.from(EFFECT_CONFIG_KEYS[id]).filter((k) => k !== "pages").sort()
     assert.deepStrictEqual(schemaKeys, defaultKeys, `effect "${id}" keys drifted`)
+    assert.ok(EFFECT_CONFIG_KEYS[id].has("pages"), `${id}: has a pages key`)
+  }
+})
+
+test("the server's page list mirrors PLACEABLE_EFFECT_PAGES", () => {
+  // The server can't import public/effects/pages.js, so it keeps a copy.
+  assert.deepStrictEqual([...EFFECT_CONFIG_PAGES], [...PLACEABLE_EFFECT_PAGES])
+  assert.ok(!EFFECT_CONFIG_PAGES.includes("memory-book"), "the memory book prints")
+  for (const id of Object.keys(EFFECT_CONFIG_SPECS)) {
+    const spec = EFFECT_CONFIG_SPECS[id].pages
+    assert.deepStrictEqual(spec, { kind: "pages", allowed: EFFECT_CONFIG_PAGES })
+  }
+})
+
+test("every theme's pages value is one the server would accept", () => {
+  for (const theme of EFFECT_THEMES) {
+    for (const [id, cfg] of Object.entries(theme.configs || {})) {
+      if (!("pages" in cfg)) continue
+      const v = cfg.pages
+      const known = (/** @type {unknown} */ p) =>
+        typeof p === "string" && EFFECT_CONFIG_PAGES.includes(p)
+      const ok = v === "all" || (Array.isArray(v) && v.every(known))
+      assert.ok(ok, `${theme.id}.${id}.pages = ${JSON.stringify(v)}`)
+    }
   }
 })
 

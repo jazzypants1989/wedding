@@ -43,6 +43,7 @@
     "tests/unit/thank-you-compose.test.js",
     "tests/unit/effect-config-merge.test.js",
     "tests/unit/frame-glint.test.js",
-    "tests/unit/thank-you-presets.test.js"
+    "tests/unit/thank-you-presets.test.js",
+    "tests/unit/effect-placement.test.js"
   ]
 }

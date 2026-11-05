@@ -13,7 +13,7 @@ editing source. This is Track 2 of the reusable-platform roadmap.
 | Available effects | `public/effects/main.js` `EFFECT_DEFINITIONS` | Full registry `[{ id, create }]` of every factory. |
 | Themes | `public/effects/themes.js` `EFFECT_THEMES` | `{ id, label, effectIds[], configs? }`. A theme selects a subset by id. |
 | Effective config | `public/effects/config.js` `getEffectiveConfig(id)` | `defaults ⊕ activeTheme.configs[id] ⊕ localStorage["effect-config-override"][id]` (localStorage wins). No-regex deep-merge; corrupt JSON ignored. |
-| Which effects run | `public/effects/main.js` `startEffects` | Resolves `getActiveTheme().effectIds` against the registry (order preserved, unknown ids skipped). |
+| Which effects run | `public/effects/main.js` `startEffects` | Resolves `getActiveTheme().effectIds` against the registry (order preserved, unknown ids skipped), then keeps those whose registry limit and effective `pages` key both allow this page. A missing `pages` means the landing page; see `DESIGN-SLOTS.md`. |
 | Brand color | `public/styles/tokens.css` `:root[data-effect-theme="…"]` | Per-theme `--effect-brand[-dark]`. Flat `rgb()` form (so `brandAlpha` string-swap works; no `light-dark()` so effect colors don't shift in dark mode). Default `mermaid-disco` keeps the `:root` values. |
 | Active theme selection | `SiteContent.theme` → server → `<html data-effect-theme>` | `content.js` default; `core/static.js` renders the `effectTheme` token; read on the client by `getActiveThemeId()`. |
 | Admin picker | `public/pages/admin/site-content.js` + `api/admin/site-content.js` | `<select>` populated from `EFFECT_THEMES`; server validates against a `THEME_IDS` allowlist. |

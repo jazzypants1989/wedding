@@ -18,6 +18,7 @@ import type {
   ThankYouCardReply,
 } from "../../../types.js"
 import type { CardEffectEntry, ThankYouMediaItem } from "../thanks/types.js"
+import type { EffectPage, EffectPlacement, EffectTheme } from "../../effects/types.js"
 
 export type { SiteContent, SiteContentNavLink, SiteContentScheduleItem, SiteContentImage }
 
@@ -29,8 +30,34 @@ export interface SiteContentResponse {
 /** Response of GET/PUT/DELETE /api/admin/effect-config. The sparse override map
  *  `{ [effectId]: Partial<config> }`. */
 export interface EffectConfigResponse {
-  override: Record<string, Record<string, unknown>>
+  override: EffectOverride
 }
+
+/** The site-wide override blob: effect id → the keys it overrides. */
+export type EffectOverride = Record<string, Record<string, unknown>>
+
+/** @file effect-placement.js - the Effects tab's page table, without the DOM */
+
+/** The textarea's text as an override, or null if the table can't work from it:
+ *  not JSON, not an object, or an effect entry that isn't an object. Blank is {}. */
+export function parseOverrideText(text: string): EffectOverride | null
+
+/** An effect's `pages` as the override and theme say. Deliberately not
+ *  getEffectiveConfig: that reads this browser's studio values and the stale
+ *  attribute of whichever page it runs on. */
+export function placementOf(override: EffectOverride, theme: EffectTheme, id: string): unknown
+
+/** The placement after one page's tick. Every page ticked collapses to "all". */
+export function toggledPlacement(current: unknown, page: EffectPage, on: boolean): EffectPlacement
+
+/** A new override with this effect's `pages` set and every other key untouched. A
+ *  placement equal to the theme's removes the key, and an entry left empty goes too. */
+export function withPlacement(
+  override: EffectOverride,
+  theme: EffectTheme,
+  id: string,
+  next: EffectPlacement,
+): EffectOverride
 
 /** @file utils.js - Types for admin utilities */
 

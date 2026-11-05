@@ -14,6 +14,11 @@
  *  When you add or rename an effect key in config.js, update the matching entry
  *  here. Zero deps, no regex.
  *
+ *  One key is not in the defaults: `pages`, where the effect runs. Every effect
+ *  has it, and a missing one means the landing page, so it is added to every entry
+ *  below rather than listed in each. EFFECT_CONFIG_PAGES mirrors
+ *  PLACEABLE_EFFECT_PAGES in public/effects/pages.js, guarded by the same test.
+ *
  *  Why per-key specs (not just a name allowlist): key names collide across
  *  effects with *different* types — `dividers.color` is a number (0.5) while
  *  `frost.color` / `namespark.shimmerColor` are strings. And an unbounded number
@@ -43,9 +48,13 @@ const range = () => ({ kind: "numberArray", min: MIN_NUM, max: MAX_NUM, minItems
 /** An array of color/token strings. @returns {Types.EffectKeySpec} */
 const colors = () => ({ kind: "stringArray", maxItems: 64 })
 
-/** Each effect id → { config key → the value shape an override may set }.
+/** The page ids a `pages` override may name. No memory-book: it prints.
+ *  @type {readonly string[]} */
+export const EFFECT_CONFIG_PAGES = ["home", "guestbook", "gallery", "rsvp"]
+
+/** Each effect id → { tunable key → the value shape an override may set }.
  *  @type {Record<string, Record<string, Types.EffectKeySpec>>} */
-export const EFFECT_CONFIG_SPECS = {
+const TUNABLE_SPECS = {
   disco: {
     spinSpeed: num(), ballSize: num(1, 600), rayCount: count(), rayBrightness: num(),
     rayColors: colors(), tileSize: num(1, 200), tileGap: num(0, 200),
@@ -143,6 +152,15 @@ export const EFFECT_CONFIG_SPECS = {
     selector: str(), maxTilt: num(0, 90), depth: num(0, 1000),
   },
 }
+
+/** The tunable keys plus `pages`, for every effect.
+ *  @type {Record<string, Record<string, Types.EffectKeySpec>>} */
+export const EFFECT_CONFIG_SPECS = Object.fromEntries(
+  Object.keys(TUNABLE_SPECS).map((id) => [
+    id,
+    { ...TUNABLE_SPECS[id], pages: { kind: "pages", allowed: EFFECT_CONFIG_PAGES } },
+  ]),
+)
 
 /** Derived id → set of valid keys (back-compat + the drift key-parity check).
  *  @type {Record<string, ReadonlySet<string>>} */

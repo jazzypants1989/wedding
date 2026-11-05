@@ -8,7 +8,14 @@
  */
 /** @import * as Types from './types.js' */
 
-export { EFFECT_PAGES, effectPageFromPath } from "./pages.js"
+import { effectPlacedOn } from "./pages.js"
+
+export {
+  EFFECT_PAGES,
+  PLACEABLE_EFFECT_PAGES,
+  effectPlacedOn,
+  effectPageFromPath,
+} from "./pages.js"
 
 import { createDiscoBall } from "./disco-ball.js"
 import { createCursorTrail } from "./cursor-trail.js"
@@ -46,8 +53,9 @@ import { createTiltDepth } from "./tilt-depth.js"
 const HOME_ONLY = ["home"]
 
 /** Registry of every effect, mapping its ID to its factory. A theme selects a
- *  subset by id; unlisted ids never run. `pages` limits where an effect may run
- *  (absent = everywhere the manager starts); see docs/post-wedding/DESIGN-SLOTS.md.
+ *  subset by id; unlisted ids never run. `pages` here is a capability limit: where
+ *  an effect *can* work (absent = anywhere). Where it *does* run is the `pages`
+ *  config key, which can never widen this. See docs/post-wedding/DESIGN-SLOTS.md.
  *  @type {Types.EffectDefinition[]} */
 export const EFFECT_DEFINITIONS = [
   { id: "disco", create: createDiscoBall, pages: HOME_ONLY },
@@ -84,4 +92,9 @@ export const EFFECT_DEFINITIONS = [
 /** @type {Types.effectRunsOn} */
 export function effectRunsOn(def, page) {
   return !def.pages || def.pages.includes(page)
+}
+
+/** @type {Types.effectStartsOn} */
+export function effectStartsOn(def, configuredPages, page) {
+  return effectRunsOn(def, page) && effectPlacedOn(configuredPages, page)
 }

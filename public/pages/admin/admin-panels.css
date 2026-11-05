@@ -590,6 +590,86 @@
   font-weight: 400;
 }
 
+#tab-effects .fx-pages {
+  margin-bottom: 16px;
+}
+
+#tab-effects .fx-pages h2 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+#tab-effects .fx-pages p {
+  margin: 0 0 8px;
+}
+
+#tab-effects .fx-pages .form-error[hidden] {
+  display: none;
+}
+
+/* Wider than a phone: the table scrolls inside its own box, not the page. */
+#tab-effects .fx-pages-scroll {
+  overflow-x: auto;
+}
+
+#tab-effects .fx-pages-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+#tab-effects .fx-pages-table :is(th, td) {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--ws-line);
+  text-align: center;
+}
+
+#tab-effects .fx-pages-table thead th {
+  color: var(--ws-muted);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+#tab-effects .fx-pages-table thead th:first-child {
+  text-align: left;
+}
+
+/* Row heads are names, not column labels: undo the admin's uppercase th. */
+#tab-effects .fx-pages-table tbody th {
+  min-width: 7em;
+  color: var(--ws-ink);
+  font-size: 0.875rem;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-align: left;
+  text-transform: none;
+  white-space: normal;
+}
+
+@media (max-width: 599.98px) {
+  #tab-effects .fx-pages-table :is(th, td) {
+    padding: 8px 4px;
+  }
+
+  #tab-effects .fx-pages-table thead th {
+    font-size: 0.625rem;
+    letter-spacing: 0.02em;
+  }
+}
+
+#tab-effects .fx-pages-table input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  vertical-align: middle;
+}
+
+#tab-effects .fx-pages-why {
+  display: block;
+  font-weight: 400;
+}
+
 #tab-effects .code-input {
   width: 100%;
   min-height: 320px;

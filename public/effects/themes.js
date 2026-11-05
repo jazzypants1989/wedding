@@ -2,7 +2,9 @@
  *
  * A theme selects a *subset* of the shared effect registry (EFFECT_DEFINITIONS in
  * main.js) by id, and may carry per-effect config overrides that are deep-merged
- * over the defaults (see getEffectiveConfig in config.js). The active theme is
+ * over the defaults (see getEffectiveConfig in config.js). One of those keys,
+ * `pages` ("all" or a list of page ids), says where the effect runs; without it
+ * the effect stays on the landing page. The active theme is
  * chosen by SiteContent.theme, rendered by the server into the <html
  * data-effect-theme> attribute, and read back here on the client.
  *
@@ -35,6 +37,12 @@ export const EFFECT_THEMES = [
       "spotlight",
       "reflections",
     ],
+    // The two that follow a guest around the site. Everything else stays on the
+    // landing page, which is what a missing `pages` means.
+    configs: {
+      cursor: { pages: "all" },
+      parallaxsparkles: { pages: "all" },
+    },
   },
   {
     id: "romantic",

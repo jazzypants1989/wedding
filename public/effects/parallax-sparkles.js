@@ -82,17 +82,19 @@ export function createParallaxSparkles(config) {
       layer.className = "parallax-sparkle-layer"
       layer.style.zIndex = String(baseZ + i)
 
-      const sparklesPerLayer = Math.round(sparkleCount * (0.6 + depth * 0.4))
+      // `density` counts sparkles across 1.4 screens, so on-screen density is /1.4.
+      const sparklesPerLayer = Math.round((sparkleCount * (0.6 + depth * 0.4)) / 1.4)
 
       for (let s = 0; s < sparklesPerLayer; s++) {
         const sparkle = document.createElement("div")
         sparkle.className = "parallax-sparkle"
 
         const size = randomBetween(sizeRange[0], sizeRange[1]) * depth
+        const top = randomBetween(0, 100)
         sparkle.style.width = size + "px"
         sparkle.style.height = size + "px"
         sparkle.style.left = randomBetween(0, 100) + "%"
-        sparkle.style.top = randomBetween(-20, 120) + "%"
+        sparkle.style.top = top + "%"
         const color = randomFrom(colors)
         sparkle.style.backgroundColor = color
         sparkle.style.color = color // for currentColor in box-shadow
@@ -104,7 +106,11 @@ export function createParallaxSparkles(config) {
           sparkle.classList.add("parallax-sparkle-glow")
         }
 
-        layer.appendChild(sparkle)
+        // A twin one screen down makes the layer a repeating tile, so updateParallax
+        // can wrap its shift and the sparkles never run out on a long page.
+        const twin = /** @type {HTMLElement} */ (sparkle.cloneNode())
+        twin.style.top = top + 100 + "%"
+        layer.append(sparkle, twin)
       }
 
       container?.appendChild(layer)
@@ -119,8 +125,13 @@ export function createParallaxSparkles(config) {
     lastScrollY = scrollY
     const factor = getParallaxFactor()
 
+    // One tile's height. Every layer is the same size; effects.css pins it to 100lvh
+    // so a phone's collapsing URL bar can't change the period mid-scroll.
+    const tile = layers.length > 0 ? layers[0].element.offsetHeight : 0
+
     for (let i = 0; i < layers.length; i++) {
-      const shift = -scrollY * factor * layers[i].depth
+      const travel = scrollY * factor * layers[i].depth
+      const shift = tile > 0 ? -(travel % tile) : -travel
       layers[i].element.style.transform = "translateY(" + shift + "px)"
     }
     rafId = 0

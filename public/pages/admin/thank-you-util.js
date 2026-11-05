@@ -57,6 +57,18 @@ export const THANK_YOU_TEMPLATES = [
  * testable against the schema. Theme ids are real EFFECT_THEMES ids.
  * @type {{ id: string, label: string, theme: string, effects: { id: string, config: Record<string, unknown> }[] }[]}
  */
+/** A theme's config for one effect, as a card's starting point. Without `pages`:
+ *  that says where the effect runs on the site, and a card isn't one of those
+ *  places. Left in, it would be stored on the card and drawn as a control.
+ *  @param {{ configs?: Record<string, Record<string, unknown>> }} theme
+ *  @param {string} id
+ *  @returns {Record<string, unknown>} */
+export function themeSeedConfig(theme, id) {
+  const config = structuredClone(theme.configs?.[id] ?? {})
+  delete config.pages
+  return config
+}
+
 export const OCCASION_PRESETS = [
   {
     id: "toast",

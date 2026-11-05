@@ -8,14 +8,19 @@
 export interface EffectDefinition {
   id: string
   create: (config?: Record<string, unknown>) => EffectInstance
-  /** Guest pages this effect may run on. Absent = every page that starts the
-   *  manager. `["home"]` marks a landing-page set piece (it targets landing DOM
-   *  such as the couple photo or the welcome copy). See DESIGN-SLOTS.md. */
+  /** The pages this effect can work on, a limit config cannot widen. Absent =
+   *  anywhere. `["home"]` marks a landing-page set piece (it targets landing DOM
+   *  such as the couple photo or the welcome copy). Where it actually runs is the
+   *  `pages` config key (EffectPlacement). See DESIGN-SLOTS.md. */
   pages?: readonly EffectPage[]
 }
 
 /** A guest page the effect manager can run on. `home` is the landing page. */
 export type EffectPage = "home" | "guestbook" | "gallery" | "rsvp" | "memory-book"
+
+/** The `pages` config key: "all" (every PLACEABLE_EFFECT_PAGES entry) or a list.
+ *  Absent means the landing page only. */
+export type EffectPlacement = "all" | readonly EffectPage[]
 
 /** Options for initEffectManager. */
 export interface EffectManagerOptions {
@@ -34,6 +39,18 @@ export function initEffectManager(options?: EffectManagerOptions): void
 
 /** Whether a registry entry may run on a page (its `pages` list, else anywhere). */
 export function effectRunsOn(def: EffectDefinition, page: EffectPage): boolean
+
+/** Whether a `pages` config value places an effect on a page. Takes unknown because
+ *  the value comes out of a merged config; anything that isn't "all" or an array
+ *  counts as absent. Never true for a page outside PLACEABLE_EFFECT_PAGES. */
+export function effectPlacedOn(pages: unknown, page: EffectPage): boolean
+
+/** The manager's filter: the registry limit and the configured placement both agree. */
+export function effectStartsOn(
+  def: EffectDefinition,
+  configuredPages: unknown,
+  page: EffectPage,
+): boolean
 
 /** The effect page for a URL path (`/` → home, `/guestbook` → guestbook), or
  *  null for a path that is not an effect page. */

@@ -56,19 +56,37 @@ Rules that hold for every slot:
 
 ## Where effects run: `pages`
 
-A registry entry can be limited to certain pages:
+Two things decide it, and an effect starts only where both agree.
+
+**The registry says where an effect can work.** It is a hard limit:
 
 ```js
 { id: "disco", create: createDiscoBall, pages: HOME_ONLY }
 ```
 
-- With no `pages`, an entry runs on every page that starts the manager.
+- With no `pages`, an entry can work anywhere.
 - The landing-page set pieces (`disco`, `textglow`, `entrance`, `spotlight`,
   `reflections`, `tiltdepth`) are `["home"]`, because they target landing DOM.
-- A page starts the manager with `<script type="module" src="/effects/autostart.js">`,
-  which reads its page id from the URL (`public/effects/pages.js`).
-- `autostart.js` is **not wired into any page yet**. Deciding which pages get
-  ambience is part of the design round.
+  No config can move them.
+
+**The `pages` config key says where it does run.** `"all"`, or a list of page ids:
+
+```js
+configs: { cursor: { pages: "all" } } // in a theme, public/effects/themes.js
+```
+
+- A missing `pages` means the landing page only.
+- It layers like any other key in `getEffectiveConfig`: theme, then the site
+  override (the table at `/admin/site/effects`), then the studio's localStorage.
+- `"all"` means `PLACEABLE_EFFECT_PAGES`: home, guestbook, gallery and RSVP. It
+  never means the memory book, which is a print page.
+- It isn't a tunable: it lives outside `EFFECT_CONFIGS`, and the card composer
+  strips it, because a card has no pages.
+
+**A page starts the manager** with `<script type="module" src="/effects/autostart.js">`,
+which reads its page id from the URL (`public/effects/pages.js`). Guestbook, gallery
+and RSVP carry it, with `effects.css` and `data-effect-config`. The landing page
+starts the manager from its own entry module.
 
 ## Registering a piece (once it is picked, not while sketching)
 
