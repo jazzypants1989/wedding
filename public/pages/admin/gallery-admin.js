@@ -14,7 +14,9 @@
  *  A section can be mostly hidden: a culled import uploads every photo and hides
  *  the rejects. So the grid shows one side at a time, "On the site" (what guests
  *  see, and the order that matters) or "Hidden", and the rows off screen stay in
- *  every reorder, because the server demands the full set.
+ *  every reorder, because the server demands the full set. Going through the
+ *  hidden ones to decide which guests see is Sort (gallery-sort.js), linked from
+ *  beside the switch.
  *
  *  Routes: /admin/gallery · /admin/gallery/honeymoon · /admin/gallery/loved ·
  *  dialog routes /admin/gallery/upload and /admin/gallery/honeymoon/upload,
@@ -44,6 +46,7 @@ import {
   isCuratedRowOnSite,
 } from "./curated-order.js"
 import { icon } from "./icons.js"
+import { sortProgress } from "./sort-moments.js"
 
 /** Display names for the curated sections. */
 const SECTION_LABEL = /** @type {const} */ ({ official: "Official", honeymoon: "Honeymoon" })
@@ -55,7 +58,7 @@ let loadedSection = /** @type {GlobalTypes.CuratedMediaSection | null} */ (null)
 
 /** Every live row of the section in order, whatever its status: what a reorder
  *  has to name. `state.currentCurated` is the part of it the grid is showing. */
-let allRows = /** @type {GlobalTypes.MediaListItem[]} */ ([])
+let allRows = /** @type {GlobalTypes.CuratedAdminItem[]} */ ([])
 /** Which side of the section the grid is showing. */
 let showing = /** @type {"site" | "hidden"} */ ("site")
 /** The Hidden view renders in pages: there can be thousands, and nobody reorders
@@ -137,6 +140,21 @@ function renderShowingToggle() {
     showing === "hidden" ? "true" : "false",
   )
   getElement("gallery-showing-note").hidden = showing !== "hidden"
+  renderSortLink(offSite)
+}
+
+/** "Sort hidden photos", into Gallery → Sort for this section, saying how many
+ *  nobody has looked at yet. Only once something is hidden.
+ *  @param {number} offSite */
+function renderSortLink(offSite) {
+  const link = getElement("gallery-sort-btn")
+  link.hidden = offSite === 0 || lastView === "loved"
+  const left = sortProgress(allRows).left
+  link.textContent = left > 0 ? `Sort hidden photos · ${left} to look at` : "Sort hidden photos"
+  link.setAttribute(
+    "href",
+    section === "honeymoon" ? "/admin/gallery/honeymoon/sort" : "/admin/gallery/sort",
+  )
 }
 
 /** @param {"site" | "hidden"} next */
@@ -1184,8 +1202,12 @@ function mount(ctx) {
     hiddenLimit = HIDDEN_PAGE
   }
   // The switch belongs to a curated grid; refreshShown re-shows it on load.
-  if (loved) getElement("gallery-showing").hidden = true
-  else renderShowingToggle()
+  if (loved) {
+    getElement("gallery-showing").hidden = true
+    getElement("gallery-sort-btn").hidden = true
+  } else {
+    renderShowingToggle()
+  }
   getElement("gallery-seg-official").setAttribute(
     "aria-current",
     view === "official" ? "page" : "false",

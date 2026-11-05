@@ -380,10 +380,26 @@
   display: none;
 }
 
-/* On the site / Hidden, the same pill as the section switch above it. */
-#gallery-showing {
+/* The switch and the way into Sort share a row; with neither showing, no gap. */
+#tab-gallery .gallery-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
   margin-block-end: 12px;
 }
+
+#tab-gallery .gallery-bar:not(:has(> :not([hidden]))) {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  #gallery-sort-btn {
+    min-height: 44px;
+  }
+}
+
+/* On the site / Hidden, the same pill as the section switch above it. */
 
 #gallery-showing button {
   padding: 5px 10px;
