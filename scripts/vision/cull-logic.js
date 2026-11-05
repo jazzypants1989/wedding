@@ -410,29 +410,56 @@ export function dedupeByHash(entries) {
 }
 
 /**
+ * What a Live Photo's two halves have in common: the folder and the stem, ignoring
+ * case, with Photos' edited-export prefix taken off. `IMG_E1234.JPG` is the edit of
+ * `IMG_1234`, and its motion half keeps the original name.
+ * @param {string} relative
+ * @returns {string}
+ */
+function livePairKey(relative) {
+  const lower = relative.toLowerCase()
+  const slash = lower.lastIndexOf("/")
+  const dot = lower.lastIndexOf(".")
+  const stem = dot > slash ? lower.slice(0, dot) : lower
+  const folder = stem.slice(0, slash + 1)
+  const name = stem.slice(slash + 1)
+  const digit = name.charCodeAt(5)
+  if (name.startsWith("img_e") && digit >= 48 && digit <= 57) {
+    return folder + "img_" + name.slice(5)
+  }
+  return stem
+}
+
+/**
  * Relative paths of videos that look like the motion half of an iPhone Live Photo:
- * the same stem as an image in the same folder, ignoring case.
+ * the same stem as an image in the same folder (see `livePairKey`).
  *
- * These start hidden, unlike other videos, because a library of Live Photos would
- * otherwise put one short clip per photograph on the public site without anybody having
- * chosen that. The match is a guess, so the page offers to show them together.
+ * Every path an entry's bytes live at counts, `alsoAt` included. Dedupe keeps one
+ * path per content, and a photo copied into a second folder would otherwise lose
+ * the clip that sits beside the copy.
+ *
+ * A hint and nothing more. Every undecided video is hidden whether or not it pairs;
+ * the page uses this to label clips and to offer hiding them all in one keypress.
  * @type {Types.liveClipPaths}
  */
 export function liveClipPaths(entries) {
-  /** @param {string} relative @returns {string} */
-  const stem = (relative) => {
-    const lower = relative.toLowerCase()
-    const dot = lower.lastIndexOf(".")
-    return dot > lower.lastIndexOf("/") ? lower.slice(0, dot) : lower
+  /** @param {Pick<Types.CullHashedFile, "relative"> & { alsoAt?: readonly string[] }} entry */
+  const pathsOf = (entry) => [entry.relative, ...(entry.alsoAt ?? [])]
+  /** @type {Set<string>} */
+  const imageKeys = new Set()
+  for (const entry of entries) {
+    if (entry.kind !== "image") continue
+    for (const relative of pathsOf(entry)) imageKeys.add(livePairKey(relative))
   }
-  const imageStems = new Set(
-    entries.filter((entry) => entry.kind === "image").map((entry) => stem(entry.relative)),
-  )
-  return new Set(
-    entries
-      .filter((entry) => entry.kind === "video" && imageStems.has(stem(entry.relative)))
-      .map((entry) => entry.relative),
-  )
+  /** @type {Set<string>} */
+  const clips = new Set()
+  for (const entry of entries) {
+    if (entry.kind !== "video") continue
+    if (pathsOf(entry).some((relative) => imageKeys.has(livePairKey(relative)))) {
+      clips.add(entry.relative)
+    }
+  }
+  return clips
 }
 
 // --- Decisions and the selection file ----------------------------------------
@@ -452,16 +479,15 @@ export function isSha256Hex(value) {
 /**
  * What the selection file will say for this item, if exported now.
  *
- * A photo is public only because the owner said so. A video is kept unless the
- * owner said otherwise: it has no scores and no suggestion to accept, so it would
- * otherwise wait on a decision nothing on the page is prompting for. The exception is
- * a probable Live Photo clip, which also needs the owner's say-so.
+ * Public only because the owner said so, photo or video alike. Nothing reaches the
+ * site without a keypress: an undecided item, of either kind, imports hidden. The
+ * page counts undecided videos in its header so that none is left by oversight.
+ * `item` is unused, and stays in the signature so that a rule which does depend on
+ * the item has one place to go.
  * @type {Types.isFinallyVisible}
  */
 export function isFinallyVisible(item, decision) {
-  if (decision === "hide") return false
-  if (decision === "keep") return true
-  return item.kind === "video" && item.liveClip !== true
+  return decision === "keep"
 }
 
 /**
@@ -564,11 +590,14 @@ export function parseSelection(text) {
 
 /**
  * Decisions recovered from a selection file, for a different browser or a cleared
- * localStorage.
+ * localStorage. The page's state afterwards is exactly what the file means to the
+ * importer: every listed item kept, every other item here hidden.
  *
- * A listed item is a keep. An unlisted video was deselected or is a hidden Live Photo
- * clip, and restoring it as hidden says the same thing the file said. An unlisted photo stays undecided: the file cannot distinguish
- * "rejected" from "never reached", and only one of those is a judgement.
+ * That replaces whatever was decided before, which the page asks about first. It
+ * also turns "not listed" into an explicit hide, so a group the owner had rejected
+ * comes back reviewed rather than undecided, and Enter cannot quietly keep its
+ * suggested frame. An item the owner never reached comes back hidden too, which is
+ * how the file would have imported it anyway.
  * @type {Types.restoreSelection}
  */
 export function restoreSelection(items, selection) {
@@ -578,25 +607,37 @@ export function restoreSelection(items, selection) {
   /** @type {Set<string>} */
   const known = new Set()
   for (const item of items) {
+    if (known.has(item.sha)) continue
     known.add(item.sha)
-    if (listed.has(item.sha)) changes.push({ sha: item.sha, to: "keep" })
-    else if (item.kind === "video") changes.push({ sha: item.sha, to: "hide" })
+    changes.push({ sha: item.sha, to: listed.has(item.sha) ? "keep" : "hide" })
   }
   let unknown = 0
   for (const sha of listed) if (!known.has(sha)) unknown++
   return { changes, unknown }
 }
 
-/** @type {Types.summarize} */
+/**
+ * `undecided` counts photos and `undecidedVideos` counts videos, so the page can
+ * prompt for each where it is decided. Both finish hidden.
+ * @type {Types.summarize}
+ */
 export function summarize(items, decisions) {
-  const summary = { visiblePhotos: 0, visibleVideos: 0, hidden: 0, undecided: 0 }
+  const summary = {
+    visiblePhotos: 0,
+    visibleVideos: 0,
+    hidden: 0,
+    undecided: 0,
+    undecidedVideos: 0,
+  }
   for (const item of items) {
     const decision = decisions[item.sha]
     if (isFinallyVisible(item, decision)) {
       if (item.kind === "video") summary.visibleVideos++
       else summary.visiblePhotos++
-    } else if (decision === "hide" || item.kind === "video") {
+    } else if (decision === "hide") {
       summary.hidden++
+    } else if (item.kind === "video") {
+      summary.undecidedVideos++
     } else {
       summary.undecided++
     }

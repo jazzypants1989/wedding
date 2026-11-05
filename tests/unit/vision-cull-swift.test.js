@@ -273,12 +273,10 @@ describe("cull-scores-macos, end to end", { skip: reason ?? false }, () => {
     const corrupt = data.items.find((item) => item.rel === "reception/corrupt.jpg")
     assert.ok(corrupt?.flags.includes("no-scores"), "listed, and marked rather than rejected")
 
-    // Nothing decided: only the video is listed, and the stub still counts as one.
-    const selection = buildSelection(data.items, {})
-    assert.equal(selection.visible.length, 1)
-    assert.equal(
-      selection.visible[0],
-      crypto.createHash("sha256").update(makeMp4(64)).digest("hex"),
-    )
+    // Nothing decided: nothing is listed, the video included. Kept, the stub counts as one.
+    assert.deepEqual(buildSelection(data.items, {}).visible, [])
+    const video = crypto.createHash("sha256").update(makeMp4(64)).digest("hex")
+    assert.ok(data.items.some((item) => item.kind === "video" && item.sha === video))
+    assert.deepEqual(buildSelection(data.items, { [video]: "keep" }).visible, [video])
   })
 })

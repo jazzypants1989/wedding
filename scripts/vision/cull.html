@@ -26,8 +26,10 @@
 
       Three things this page holds to:
 
-      1. NOTHING IS AUTO-REJECTED. A photo the owner has not touched is undecided,
-         and suggestions are badges. A `hide` only comes from a keypress here.
+      1. NOTHING IS AUTO-REJECTED, AND NOTHING IS AUTO-PUBLISHED. An item the owner
+         has not touched is undecided, and imports hidden, photo or video. Suggestions
+         are badges. A decision only comes from the owner: a keypress here, or a
+         selection file they choose to load.
       2. ONE GROUP AT A TIME. The stage holds one burst, plus lazy thumbnails, and
          the grid is windowed. The DOM does not grow with the size of the library.
       3. DECISIONS ARE KEYED BY CONTENT. localStorage holds sha256 to decision, so
@@ -139,7 +141,8 @@
       .spacer {
         flex: 1;
       }
-      #short {
+      #short,
+      #undecidedVideos {
         border-color: var(--warn);
         color: var(--warn);
       }
@@ -438,6 +441,20 @@
       .card.hide .state {
         color: var(--hide);
       }
+      .card.undecided {
+        border-style: dashed;
+      }
+      .card.undecided .state {
+        color: var(--warn);
+      }
+      .card.on.undecided {
+        border-color: var(--accent);
+      }
+      .card .decide {
+        display: flex;
+        gap: 6px;
+        margin-top: 4px;
+      }
 
       /* ---- people ---- */
       table {
@@ -553,6 +570,7 @@
       <span class="count"><b id="nUndecided">0</b><span>undecided</span></span>
       <select id="folder" aria-label="Folder"></select>
       <button id="short" hidden></button>
+      <button id="undecidedVideos" hidden></button>
       <span class="spacer"></span>
       <span id="saved" aria-live="polite"></span>
       <button id="btnGrid"><kbd>g</kbd> Grid</button>
@@ -613,15 +631,20 @@
           <span><kbd>A</kbd></span><span>Accept every unreviewed group in view (asks first)</span>
           <span><kbd>g</kbd> <kbd>v</kbd> <kbd>c</kbd></span>
           <span>Grid, videos, people. Same key or <kbd>Esc</kbd> returns</span>
-          <span><kbd>t</kbd></span><span>In the grid: only groups not yet reviewed</span>
+          <span><kbd>t</kbd></span>
+          <span>In the grid: only groups not yet reviewed. In videos: only undecided videos</span>
+          <span><kbd>Space</kbd> <kbd>x</kbd></span>
+          <span>In videos: keep, hide (press again to undo either)</span>
+          <span><kbd>n</kbd></span><span>In videos: next undecided video</span>
           <span><kbd>L</kbd></span>
-          <span>In videos: show every clip named like a photo beside it</span>
+          <span>In videos: hide every undecided clip named like a photo beside it</span>
           <span><kbd>e</kbd></span><span>Export</span>
         </div>
         <p style="color: var(--dim)">
-          Nothing is hidden until you say so. A photo you never reach stays undecided, and the
-          selection file leaves it out, so it imports hidden and can be shown later from the admin
-          page. Videos are visible unless you deselect them, except probable Live Photo clips, which start hidden.
+          Nothing is public until you keep it, and nothing is hidden by you until you say so. A
+          photo or video you never reach stays undecided, and the selection file leaves it out, so
+          it imports hidden and can be shown later from the admin page. Videos have no
+          suggestions: the header counts the undecided ones, and <kbd>v</kbd> takes you to them.
         </p>
       </div>
     </div>
@@ -680,6 +703,7 @@
           gridCursor: 0,
           gridUnreviewedOnly: false,
           videoCursor: 0,
+          videoUndecidedOnly: false,
           personOpen: null,
           undo: [],
         }
@@ -1162,18 +1186,30 @@
 
         // --- Videos ---------------------------------------------------------------
 
+        const undecided = (index) => decisionOf(index) === undefined
+
+        /** Item indexes of the videos on show: all of them, or only the undecided. */
+        function videoList() {
+          return state.videoUndecidedOnly ? DATA.videos.filter(undecided) : DATA.videos
+        }
+
+        const VIDEO_STATE = {
+          keep: "✓ kept: will be public",
+          hide: "✕ hidden",
+          undecided: "? undecided: imports hidden unless you keep it",
+        }
+
         function renderVideos() {
           const section = $("videos")
-          const cards = DATA.videos.map((index, position) => {
+          const list = videoList()
+          state.videoCursor = Math.max(0, Math.min(state.videoCursor, list.length - 1))
+          const cards = list.map((index, position) => {
             const item = items[index]
-            const hidden = !finallyVisible(index)
+            const decision = decisionOf(index) || "undecided"
             return h(
               "div",
               {
-                class:
-                  "card" +
-                  (position === state.videoCursor ? " on" : "") +
-                  (hidden ? " hide" : ""),
+                class: "card " + decision + (position === state.videoCursor ? " on" : ""),
                 dataset: { video: String(position) },
               },
               [
@@ -1190,81 +1226,133 @@
                   h("div", { text: item.rel }),
                   h("div", {
                     class: "state",
-                    text:
-                      (hidden ? "✕ hidden" : "✓ visible") +
-                      (item.liveClip ? " · Live Photo clip?" : ""),
+                    text: VIDEO_STATE[decision] + (item.liveClip ? " · Live Photo clip?" : ""),
                   }),
+                  h("div", { class: "decide" }, [
+                    h("button", { dataset: { decide: "keep" }, text: "Keep" }),
+                    h("button", { dataset: { decide: "hide" }, text: "Hide" }),
+                  ]),
                 ]),
               ],
             )
           })
-          const liveHidden = liveClipsStillHidden()
-          section.replaceChildren(
-            h("h1", { text: "Videos · " + DATA.videos.length }),
+          const waiting = DATA.videos.filter(undecided).length
+          const clips = undecidedLiveClips()
+          const nodes = [
+            h("h1", {
+              text: "Videos · " + DATA.videos.length + " · " + waiting + " undecided",
+            }),
             h("p", {
               text:
-                "Videos have no scores and no suggestions. They are visible unless you deselect " +
-                "them here, except probable Live Photo clips, which start hidden. Space toggles, " +
-                "Enter plays.",
+                "Nothing here is public until you keep it: an undecided video imports hidden, " +
+                "like an undecided photo. Videos have no scores and no suggestions, so each one " +
+                "waits for you. Space keeps, x hides, the same key again undoes it; Enter plays; " +
+                "n goes to the next undecided video; t shows only the undecided.",
             }),
-            liveHidden.length > 0
-              ? h("p", {}, [
-                  h("button", {
+            h("p", {}, [
+              h("button", {
+                id: "btnVideoFilter",
+                text: state.videoUndecidedOnly
+                  ? "t: Show every video"
+                  : "t: Only the " + waiting + " undecided",
+              }),
+              clips.length > 0
+                ? h("button", {
                     id: "btnLiveClips",
-                    text: "L: Show " + liveHidden.length + " Live Photo clip(s)",
-                  }),
-                ])
+                    text:
+                      "L: Hide the " +
+                      clips.length +
+                      " undecided probable Live Photo clip" +
+                      (clips.length === 1 ? "" : "s"),
+                  })
+                : null,
+            ]),
+            list.length === 0
+              ? h("p", {
+                  text: state.videoUndecidedOnly
+                    ? "Every video is decided."
+                    : "No videos in this directory.",
+                })
               : null,
             h("div", { class: "cards", id: "videoCards" }, cards),
-          )
+          ]
+          section.replaceChildren(...nodes.filter(Boolean))
         }
 
-        /** Same name as a photo beside it. A guess, so showing them is one key away. */
-        function liveClipsStillHidden() {
-          return DATA.videos.filter((index) => items[index].liveClip && !finallyVisible(index))
+        /**
+         * Named like a photo beside it, so probably a Live Photo's motion half. A guess,
+         * so it only labels clips and offers to hide them together; one by one is as easy.
+         */
+        function undecidedLiveClips() {
+          return DATA.videos.filter((index) => items[index].liveClip && undecided(index))
         }
 
-        function showLiveClips() {
-          const changes = liveClipsStillHidden().map((index) => ({
+        function hideLiveClips() {
+          const changes = undecidedLiveClips().map((index) => ({
             sha: items[index].sha,
-            to: "keep",
+            to: "hide",
           }))
           if (changes.length === 0) return
-          apply(changes)
-          flash("Now visible. Press u to undo.")
+          apply(changes, "Hiding those")
+          flash("Hidden " + changes.length + " clip(s). Press u to undo.")
           render()
         }
 
         function playVideo(position) {
           const card = document.querySelector('[data-video="' + position + '"]')
-          if (!card || card.querySelector("video")) return
-          const video = h("video", {
-            controls: "",
-            preload: "metadata",
-            src: items[DATA.videos[position]].url,
-          })
+          const index = videoList()[position]
+          if (!card || index === undefined || card.querySelector("video")) return
+          const video = h("video", { controls: "", preload: "metadata", src: items[index].url })
           card.querySelector(".poster").replaceWith(video)
           video.play().catch(() => flash("This browser could not play that file."))
         }
 
-        function toggleVideo(position) {
-          const index = DATA.videos[position]
-          const item = items[index]
-          // Back to undecided when that's the state being asked for, so an undo reads true.
-          const hiddenChoice = item.liveClip ? null : "hide"
-          const visibleChoice = item.liveClip ? "keep" : null
-          apply([{ sha: item.sha, to: finallyVisible(index) ? hiddenChoice : visibleChoice }])
-          renderVideos()
-          updateCounts()
+        /** Keep or hide the video under the cursor; the same choice again is undecided. */
+        function decideVideo(target) {
+          const index = videoList()[state.videoCursor]
+          if (index === undefined) return
+          const sha = items[index].sha
+          apply(
+            [{ sha, to: state.decisions[sha] === target ? null : target }],
+            target === "hide" ? "Hiding this" : "That",
+          )
+          render()
         }
 
         function moveVideo(delta) {
-          if (DATA.videos.length === 0) return
-          const last = DATA.videos.length - 1
-          state.videoCursor = Math.max(0, Math.min(last, state.videoCursor + delta))
+          const list = videoList()
+          if (list.length === 0) return
+          state.videoCursor = Math.max(0, Math.min(list.length - 1, state.videoCursor + delta))
           renderVideos()
           const on = document.querySelector(".card.on")
           if (on) on.scrollIntoView({ block: "nearest" })
+        }
+
+        function nextUndecidedVideo() {
+          const list = videoList()
+          for (let step = 1; step <= list.length; step++) {
+            const position = (state.videoCursor + step) % list.length
+            if (undecided(list[position])) {
+              moveVideo(position - state.videoCursor)
+              return
+            }
+          }
+          flash("Every video is decided.")
+        }
+
+        function toggleVideoFilter() {
+          const list = videoList()
+          const current = list[state.videoCursor]
+          state.videoUndecidedOnly = !state.videoUndecidedOnly
+          const position = videoList().indexOf(current)
+          state.videoCursor = position === -1 ? 0 : position
+          renderVideos()
+        }
+
+        function showUndecidedVideos() {
+          state.videoUndecidedOnly = true
+          state.videoCursor = 0
+          setView("videos")
         }
 
         // --- People ---------------------------------------------------------------
@@ -1372,7 +1460,12 @@
           const summary = L.summarize(items, state.decisions)
           $("nVisible").textContent = summary.visiblePhotos + summary.visibleVideos
           $("nHidden").textContent = summary.hidden
-          $("nUndecided").textContent = summary.undecided
+          $("nUndecided").textContent = summary.undecided + summary.undecidedVideos
+          // Videos have no groups to walk through, so they are counted where they can't be missed.
+          const videosNode = $("undecidedVideos")
+          const waiting = summary.undecidedVideos
+          videosNode.hidden = waiting === 0
+          videosNode.textContent = waiting + " video" + (waiting === 1 ? "" : "s") + " undecided"
 
           let reviewed = 0
           for (const group of groups) {
@@ -1475,7 +1568,16 @@
         }
 
         function advance() {
-          if (!nextUnreviewed()) flash("Every group here is reviewed. Press e to export.")
+          if (!nextUnreviewed()) {
+            const videos = DATA.videos.filter(undecided).length
+            flash(
+              "Every group here is reviewed." +
+                (videos > 0
+                  ? " " + videos + " video(s) are still undecided: press v."
+                  : " Press e to export."),
+              videos > 0,
+            )
+          }
           scheduleSave()
           render()
         }
@@ -1566,6 +1668,17 @@
               }),
             )
           }
+          if (summary.undecidedVideos > 0) {
+            nodes.push(
+              h("p", {
+                class: "warnline",
+                text:
+                  summary.undecidedVideos +
+                  " video(s) are still undecided. The file does not list them either, so they " +
+                  "import hidden. Press v to decide them.",
+              }),
+            )
+          }
           if (people) {
             const short = L.coverageShortfalls(people, finallyVisible, DATA.minGood)
             if (short.length > 0) {
@@ -1641,12 +1754,37 @@
             $("exportNote").textContent = "That file was not loaded: " + parsed.error
             return
           }
+          // The file means "these are public, nothing else is", and loading it says the
+          // same here: listed kept, everything else hidden, whatever was decided before.
           const restored = L.restoreSelection(items, parsed.value)
-          apply(restored.changes, "Loading that")
+          const keeps = restored.changes.filter((c) => c.to === "keep").length
+          const hides = restored.changes.length - keeps
+          const ok = window.confirm(
+            "Loading this selection replaces every decision on this page. The " +
+              keeps +
+              " item(s) it lists become kept, and the other " +
+              hides +
+              " photo(s) and video(s) here become hidden, which is how the import treats a " +
+              "selection file. Press u afterwards to undo it in one step.",
+          )
+          if (!ok) {
+            $("exportNote").textContent = "Not loaded. Nothing changed."
+            return
+          }
+          apply(
+            restored.changes.filter((c) => state.decisions[c.sha] !== c.to),
+            "Loading that",
+          )
           $("exportNote").textContent =
-            "Loaded. " +
-            (restored.unknown > 0 ? restored.unknown + " hash(es) in it match nothing. " : "") +
-            "Photos it does not list stay undecided."
+            "Loaded: " +
+            keeps +
+            " kept and " +
+            hides +
+            " hidden, exactly as the file says. " +
+            (restored.unknown > 0
+              ? restored.unknown + " hash(es) in it match nothing here. "
+              : "") +
+            "Press u to undo."
           render()
           renderExport()
         })
@@ -1867,10 +2005,19 @@
               moveVideo(1)
               return true
             case " ":
-              if (DATA.videos.length > 0) toggleVideo(state.videoCursor)
+              decideVideo("keep")
+              return true
+            case "x":
+              decideVideo("hide")
+              return true
+            case "n":
+              nextUndecidedVideo()
+              return true
+            case "t":
+              toggleVideoFilter()
               return true
             case "L":
-              showLiveClips()
+              hideLiveClips()
               return true
             case "Enter":
               playVideo(state.videoCursor)
@@ -1899,13 +2046,19 @@
         })
         $("videos").addEventListener("click", (event) => {
           if (event.target.id === "btnLiveClips") {
-            showLiveClips()
+            hideLiveClips()
+            return
+          }
+          if (event.target.id === "btnVideoFilter") {
+            toggleVideoFilter()
             return
           }
           const card = event.target.closest(".card")
           if (!card || event.target.tagName === "VIDEO") return
           state.videoCursor = Number(card.dataset.video)
-          toggleVideo(state.videoCursor)
+          const decide = event.target.closest("[data-decide]")
+          if (decide) decideVideo(decide.dataset.decide)
+          else renderVideos()
         })
         $("people").addEventListener("click", (event) => {
           const jump = event.target.closest("[data-goto]")
@@ -1928,6 +2081,8 @@
         $("btnVideos").addEventListener("click", () => toggleView("videos"))
         $("btnPeople").addEventListener("click", () => toggleView("people"))
         $("short").addEventListener("click", () => setView("people"))
+        $("undecidedVideos").addEventListener("click", showUndecidedVideos)
+        $("toast").addEventListener("click", () => $("toast").classList.remove("on"))
         $("btnHelp").addEventListener("click", () => showDialog("helpDialog", true))
         $("btnExport").addEventListener("click", () => showDialog("exportDialog", true))
         $("btnCloseExport").addEventListener("click", () => showDialog("exportDialog", false))

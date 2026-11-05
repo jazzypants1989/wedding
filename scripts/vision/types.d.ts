@@ -2438,7 +2438,8 @@ export type CullDecisions = Record<string, CullDecision>
 export interface CullDecidable {
   sha: string
   kind: "image" | "video"
-  /** A video named like a photo beside it, so probably a Live Photo's motion half. */
+  /** A video named like a photo beside it, so probably a Live Photo's motion half.
+   *  A hint for the page. It changes no decision: undecided is hidden either way. */
   liveClip?: boolean
 }
 
@@ -2457,7 +2458,10 @@ export interface CullSummary {
   visiblePhotos: number
   visibleVideos: number
   hidden: number
+  /** Photos with no decision. They import hidden. */
   undecided: number
+  /** Videos with no decision. They import hidden too. */
+  undecidedVideos: number
 }
 
 export interface CullPerson {
@@ -2517,7 +2521,9 @@ export function dedupeByHash(
   entries: readonly CullHashedFile[],
 ): Array<CullHashedFile & { alsoAt: string[] }>
 export function liveClipPaths(
-  entries: ReadonlyArray<Pick<CullHashedFile, "relative" | "kind">>,
+  entries: ReadonlyArray<
+    Pick<CullHashedFile, "relative" | "kind"> & { alsoAt?: readonly string[] }
+  >,
 ): Set<string>
 export function isSha256Hex(value: unknown): value is string
 export function isFinallyVisible(item: CullDecidable, decision: CullDecision | undefined): boolean

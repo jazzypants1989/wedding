@@ -421,21 +421,68 @@ describe("liveClipPaths", () => {
     assert.equal(liveClipPaths([entry("a.b/one", "image"), entry("a.mov", "video")]).size, 0)
   })
 
-  test("a paired clip starts hidden, and the owner's choice wins either way", () => {
-    const clip = { ...decidable("clip", "video"), liveClip: true }
-    assert.equal(isFinallyVisible(clip, undefined), false)
-    assert.equal(isFinallyVisible(clip, "keep"), true)
-    assert.equal(isFinallyVisible(clip, "hide"), false)
-    assert.equal(isFinallyVisible(decidable("real", "video"), undefined), true)
+  test("a photo's copy in another folder still pairs with the clip beside the copy", () => {
+    // Dedupe keeps one path per content. The clip sits beside the copy it did not keep.
+    /** @param {string} relative @param {string} seed @param {"image" | "video"} kind */
+    const hashed = (relative, seed, kind) => ({
+      absolute: "/x/" + relative,
+      relative,
+      sha256: sha(seed),
+      kind,
+      size: 1,
+    })
+    const files = dedupeByHash([
+      hashed("a/IMG_1.HEIC", "1", "image"),
+      hashed("b/IMG_1.HEIC", "1", "image"),
+      hashed("b/IMG_1.MOV", "2", "video"),
+    ])
+    assert.deepEqual(files[0].alsoAt, ["b/IMG_1.HEIC"])
+    assert.deepEqual(Array.from(liveClipPaths(files)), ["b/IMG_1.MOV"])
   })
 
-  test("a paired clip counts as hidden in the summary, not as an undecided photo", () => {
+  test("a clip's own copy elsewhere pairs too", () => {
+    const clips = liveClipPaths([
+      { relative: "b/IMG_2.HEIC", kind: "image" },
+      { relative: "a/IMG_2.mov", kind: "video", alsoAt: ["b/IMG_2.mov"] },
+    ])
+    assert.deepEqual(Array.from(clips), ["a/IMG_2.mov"])
+  })
+
+  test("an edited export, IMG_E30, pairs with the clip that kept the original name", () => {
+    assert.deepEqual(
+      Array.from(liveClipPaths([entry("c/IMG_E30.jpg", "image"), entry("c/IMG_30.mp4", "video")])),
+      ["c/IMG_30.mp4"],
+    )
+    assert.deepEqual(
+      Array.from(liveClipPaths([entry("c/img_e7.heic", "image"), entry("c/IMG_E7.MOV", "video")])),
+      ["c/IMG_E7.MOV"],
+    )
+  })
+
+  test("only IMG_E followed by a digit is the edited prefix", () => {
+    const event = [entry("IMG_EVENT.jpg", "image"), entry("IMG_VENT.mov", "video")]
+    assert.equal(liveClipPaths(event).size, 0)
+    assert.equal(liveClipPaths([entry("IMG_E.jpg", "image"), entry("IMG_.mov", "video")]).size, 0)
+  })
+
+  test("pairing is a hint only: a paired clip and any other video are both hidden undecided", () => {
     const clip = { ...decidable("clip", "video"), liveClip: true }
-    assert.deepEqual(summarize([clip], {}), {
+    const other = decidable("real", "video")
+    for (const video of [clip, other]) {
+      assert.equal(isFinallyVisible(video, undefined), false)
+      assert.equal(isFinallyVisible(video, "keep"), true)
+      assert.equal(isFinallyVisible(video, "hide"), false)
+    }
+  })
+
+  test("an undecided video counts as an undecided video, not as hidden by the owner", () => {
+    const clip = { ...decidable("clip", "video"), liveClip: true }
+    assert.deepEqual(summarize([clip, decidable("real", "video")], {}), {
       visiblePhotos: 0,
       visibleVideos: 0,
-      hidden: 1,
+      hidden: 0,
       undecided: 0,
+      undecidedVideos: 2,
     })
   })
 })
@@ -462,9 +509,9 @@ describe("decisions", () => {
     assert.equal(isFinallyVisible(a, "hide"), false)
   })
 
-  test("a video is public unless the owner deselects it", () => {
+  test("a video is public only by the owner's say-so, exactly like a photo", () => {
     const video = decidable("v", "video")
-    assert.equal(isFinallyVisible(video, undefined), true)
+    assert.equal(isFinallyVisible(video, undefined), false)
     assert.equal(isFinallyVisible(video, "keep"), true)
     assert.equal(isFinallyVisible(video, "hide"), false)
   })
@@ -531,13 +578,15 @@ describe("decisions", () => {
   test("summarize counts each item once", () => {
     const video = decidable("v", "video")
     const hiddenVideo = decidable("w", "video")
+    const keptVideo = decidable("k", "video")
     assert.deepEqual(
-      summarize([a, b, c, video, hiddenVideo], {
+      summarize([a, b, c, video, hiddenVideo, keptVideo], {
         [a.sha]: "keep",
         [b.sha]: "hide",
         [hiddenVideo.sha]: "hide",
+        [keptVideo.sha]: "keep",
       }),
-      { visiblePhotos: 1, visibleVideos: 1, hidden: 2, undecided: 1 },
+      { visiblePhotos: 1, visibleVideos: 1, hidden: 2, undecided: 1, undecidedVideos: 1 },
     )
   })
 })
@@ -548,9 +597,15 @@ describe("the selection file", () => {
   const undecided = decidable("undecided")
   const video = decidable("video", "video")
   const dropped = decidable("dropped-video", "video")
-  const items = [kept, hidden, undecided, video, dropped]
+  const undecidedVideo = decidable("undecided-video", "video")
+  const items = [kept, hidden, undecided, video, dropped, undecidedVideo]
   /** @type {Types.CullDecisions} */
-  const decisions = { [kept.sha]: "keep", [hidden.sha]: "hide", [dropped.sha]: "hide" }
+  const decisions = {
+    [kept.sha]: "keep",
+    [hidden.sha]: "hide",
+    [video.sha]: "keep",
+    [dropped.sha]: "hide",
+  }
 
   test("is exactly the agreed shape", () => {
     const selection = buildSelection(items, decisions)
@@ -558,9 +613,13 @@ describe("the selection file", () => {
     assert.equal(selection.version, 1)
   })
 
-  test("lists kept photos and undeselected videos, and nothing else", () => {
+  test("lists kept photos and kept videos, and nothing else", () => {
     const { visible } = buildSelection(items, decisions)
     assert.deepEqual(visible, [kept.sha, video.sha].sort())
+  })
+
+  test("with nothing decided it lists nothing: no photo and no video goes public by default", () => {
+    assert.deepEqual(buildSelection(items, {}).visible, [])
   })
 
   test("is sorted and free of duplicates, so that equal decisions give equal bytes", () => {
@@ -601,16 +660,51 @@ describe("the selection file", () => {
     }
   })
 
-  test("restoring round-trips what the file can express, and invents no rejection", () => {
+  test("restoring sets exactly what the file means: listed kept, everything else hidden", () => {
     const restored = restoreSelection(items, buildSelection(items, decisions))
-    assert.deepEqual(restored.changes.slice().sort((a, b) => (a.sha < b.sha ? -1 : 1)), [
-      { sha: kept.sha, to: "keep" },
-      { sha: video.sha, to: "keep" },
-      { sha: dropped.sha, to: "hide" },
-    ].sort((a, b) => (a.sha < b.sha ? -1 : 1)))
+    /** @param {Types.CullChange[]} list */
+    const sorted = (list) => list.slice().sort((x, y) => (x.sha < y.sha ? -1 : 1))
+    assert.deepEqual(
+      sorted(restored.changes),
+      sorted([
+        { sha: kept.sha, to: "keep" },
+        { sha: hidden.sha, to: "hide" },
+        { sha: undecided.sha, to: "hide" },
+        { sha: video.sha, to: "keep" },
+        { sha: dropped.sha, to: "hide" },
+        { sha: undecidedVideo.sha, to: "hide" },
+      ]),
+    )
     assert.equal(restored.unknown, 0)
-    // An unlisted photo stays undecided: not listed might mean "never reached".
-    assert.ok(!restored.changes.some((c) => c.sha === undecided.sha || c.sha === hidden.sha))
+  })
+
+  test("restoring then exporting gives back the same file", () => {
+    const file = buildSelection(items, decisions)
+    /** @type {Types.CullDecisions} */
+    const after = {}
+    for (const change of restoreSelection(items, file).changes) after[change.sha] = change.to
+    assert.deepEqual(buildSelection(items, after), file)
+  })
+
+  test("restoring overrides an earlier keep the file does not list", () => {
+    // In a fresh browser a rejected group would otherwise come back undecided, and
+    // Enter would keep its suggested frame. Restored, the whole group is reviewed.
+    const burst = [decidable("f1"), decidable("f2"), decidable("f3")]
+    /** @type {Types.CullDecisions} */
+    const restored = {}
+    for (const change of restoreSelection(burst, { version: 1, visible: [] }).changes) {
+      restored[change.sha] = change.to
+    }
+    assert.equal(groupReviewed(burst, restored), true)
+    assert.deepEqual(acceptGroup(burst, burst[0].sha, restored), [])
+    assert.deepEqual(
+      restoreSelection([kept], { version: 1, visible: [] }).changes,
+      [{ sha: kept.sha, to: "hide" }],
+    )
+  })
+
+  test("restoring names each item once, however many times it appears", () => {
+    assert.equal(restoreSelection([kept, kept], { version: 1, visible: [] }).changes.length, 1)
   })
 
   test("restoring counts hashes that match nothing here", () => {
@@ -1126,10 +1220,11 @@ describe("runCullData, on synthetic files", () => {
     assert.deepEqual(one?.alsoAt, ["reception/copy of one.jpg"])
   })
 
-  test("a video lands in visible with no decision, and a selection is valid hashes", async () => {
+  test("nothing lands in visible with no decision, not even a video", async () => {
     const { data } = await runCullData(args(), deps)
-    const selection = buildSelection(data.items, {})
-    assert.deepEqual(selection.visible, [crypto.createHash("sha256").update(bytes.clip).digest("hex")])
+    assert.deepEqual(buildSelection(data.items, {}).visible, [])
+    const clip = crypto.createHash("sha256").update(bytes.clip).digest("hex")
+    assert.deepEqual(buildSelection(data.items, { [clip]: "keep" }).visible, [clip])
   })
 
   test("writes the page, the logic and the data, as file:// URLs", async () => {
