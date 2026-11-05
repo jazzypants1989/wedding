@@ -5,9 +5,11 @@ first, as always. Then read §1 before saying anything to the owner.
 
 ## 1. How to work with the owner right now
 
-- **The owner is tired of long instructions in chat.** They scroll away, and the owner has said so
-  plainly. Give **one step at a time**: a short command or action, then wait. If a step needs more
-  than a few lines, put it in a file and point at the file.
+- **Every message that waits on the owner must stand on its own.** While agents report back, many
+  messages can arrive between the owner's replies, and earlier ones scroll out of sight. So the last
+  message before you wait must repeat everything the owner needs to act: the exact commands, paths,
+  and open questions. Never write "as above" or point back to an earlier message. Length is fine;
+  having to scroll back is not. The 2026-11-05 session got this wrong repeatedly.
 - **Don't use devloop's Accept/Reopen panel to get verdicts.** The owner finds it useless: it shows
   only a screenshot, with no title, note or summary of the change (`DEFERRED.md`, "Design fixes that
   missed"). Instead, describe each fix in a sentence in chat and ask yes/no. Then record the answer
