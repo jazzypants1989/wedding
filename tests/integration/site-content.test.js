@@ -46,7 +46,10 @@ function isSoftDeleted(/** @type {string} */ fileKey) {
 }
 
 /** @typedef {{ content: { couple: { display: string }, contactEmail: string | null } }} ContentResp */
-/** @typedef {{ coupleDisplay: string, mode: string, gallery: { showBlackAndWhite: boolean } }} ConfigResp */
+/**
+ * @typedef {{ coupleDisplay: string, mode: string, gallery: { showBlackAndWhite: boolean } }}
+ *   ConfigResp
+ */
 
 /** @param {Response} res @returns {Promise<ContentResp>} */
 async function contentJson(res) {
@@ -268,9 +271,10 @@ describe("admin site-content editor", () => {
     assert.deepStrictEqual(readStoredOverride().gallery, { showBlackAndWhite: true })
     assert.deepStrictEqual((await configJson()).gallery, { showBlackAndWhite: true })
 
+    const badBody = { ...sampleBody(), gallery: { showBlackAndWhite: 1 } }
     const bad = await adminFetch(
       "/api/admin/site-content",
-      { method: "PUT", body: JSON.stringify({ ...sampleBody(), gallery: { showBlackAndWhite: 1 } }) },
+      { method: "PUT", body: JSON.stringify(badBody) },
       auth,
     )
     assert.strictEqual(bad.status, 400)

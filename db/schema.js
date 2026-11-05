@@ -2243,7 +2243,9 @@ export function runMigrations(db) {
         ).map((c) => c.name),
       )
       if (!haveMediaCols.has("twin_of")) {
-        db.exec(`ALTER TABLE media ADD COLUMN twin_of INTEGER REFERENCES media(id) ON DELETE SET NULL`)
+        db.exec(
+          `ALTER TABLE media ADD COLUMN twin_of INTEGER REFERENCES media(id) ON DELETE SET NULL`,
+        )
       }
       db.exec(`
         CREATE UNIQUE INDEX IF NOT EXISTS idx_media_twin_of

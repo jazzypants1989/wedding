@@ -659,8 +659,9 @@ export async function finalize(req, res, { params, principal }) {
   // strips EXIF from what it sends, so an admin may declare the time it read
   // before stripping; a malformed one is ignored, never guessed at.
   if (row.kind === MEDIA_KIND.IMAGE) {
-    const fromFile = row.original_ext
-      ? readCapturedAt(variantDiskPath(row.file_key, "original", row.original_ext), row.original_ext)
+    const ext = row.original_ext
+    const fromFile = ext
+      ? readCapturedAt(variantDiskPath(row.file_key, "original", ext), ext)
       : null
     const declared = principal.isAdmin ? parseCapturedAt(body.capturedAt) : null
     const capturedAt = fromFile ?? declared
