@@ -587,7 +587,7 @@ function bulkMarkup() {
       ? html`<button type="button" class="btn btn-sm" data-rv="bulk" data-to="hide">Hide</button>`
       : ""}
     ${s === "pending"
-      ? html`<button type="button" class="btn btn-sm" data-rv="bulk" data-to="reject">Reject</button>`
+      ? html`<button type="button" class="btn btn-sm btn-danger-soft" data-rv="bulk" data-to="reject">Reject</button>`
       : ""}
     <button type="button" class="btn btn-sm btn-ghost" data-rv="untick">Clear</button>
   </div>`

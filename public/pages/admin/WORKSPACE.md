@@ -25,7 +25,9 @@ your CSS file — port them from `prototypes/admin-workspace/app.css` value for 
 Tokens (all `light-dark()`; never hard-code a colour that must work in both
 themes): `--ws-bg --ws-panel --ws-side --ws-ink --ws-muted --ws-line --ws-accent
 --ws-accent-ink --ws-accent-soft --ws-sel --ws-hover --ws-ok --ws-danger
---ws-title` (display headings), `--side-w --list-w --bar-h`. The site tokens
+--ws-title` (display headings), `--ws-primary --ws-primary-ink` (`.btn-primary`
+only: the brand coral, so a primary never reads as the danger red),
+`--side-w --list-w --bar-h`. The site tokens
 (`--color-text`, `--color-card-bg`, `--color-primary`…) are remapped onto these.
 
 Type: body Jost 15px/1.45; `h1` DM Serif 1.6rem in `--ws-title`; `h2`/`h3` Jost

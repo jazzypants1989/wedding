@@ -12,6 +12,7 @@
    TOKENS    --ws-bg  --ws-panel  --ws-side  --ws-ink  --ws-muted  --ws-line
              --ws-accent  --ws-accent-ink  --ws-accent-soft  --ws-sel
              --ws-hover  --ws-ok  --ws-danger  --ws-title (display headings)
+             --ws-primary  --ws-primary-ink (.btn-primary only)
              --side-w  --list-w  --bar-h.  All light-dark(); never hard-code a
              colour that has to work in both themes. The site's own tokens
              (--color-text, --color-card-bg, --color-primary…) are remapped
@@ -68,6 +69,12 @@
   --ws-ok: var(--color-success);
   --ws-danger: var(--color-danger);
   --ws-danger-ink: light-dark(#fff, #1a1222);
+  /* The primary button wears the brand coral, never the accent: in light mode
+     the accent is a deep terracotta that reads as the danger red, so Approve
+     looked like the destructive choice. Dark ink, because white on coral is
+     under 4.5:1. */
+  --ws-primary: var(--ws-brand);
+  --ws-primary-ink: light-dark(#2b2126, #1a1222);
   --side-w: 236px;
   --list-w: 360px;
   --bar-h: 64px;
@@ -251,15 +258,15 @@ kbd {
 }
 
 .btn-primary {
-  background: var(--ws-accent);
-  border-color: var(--ws-accent);
-  color: var(--ws-accent-ink);
+  background: var(--ws-primary);
+  border-color: var(--ws-primary);
+  color: var(--ws-primary-ink);
 }
 
 .btn-primary:hover,
 .btn-primary:active {
-  background: color-mix(in srgb, var(--ws-accent) 88%, black);
-  border-color: color-mix(in srgb, var(--ws-accent) 88%, black);
+  background: color-mix(in srgb, var(--ws-primary) 90%, black);
+  border-color: color-mix(in srgb, var(--ws-primary) 90%, black);
   transform: none;
   box-shadow: none;
 }
@@ -271,8 +278,16 @@ kbd {
   color: var(--ws-danger-ink);
 }
 
+/* The destructive choice beside a primary (Reject, Deny & block): red ink on a
+   red tint, so it is the red one at a glance. A ghost one stays borderless. */
 .btn-danger-soft {
   color: var(--ws-danger);
+  background: var(--color-danger-bg);
+  border-color: color-mix(in srgb, var(--ws-danger) 45%, var(--ws-line));
+}
+
+.btn-danger-soft:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ws-danger) 18%, var(--ws-panel));
 }
 
 /* A small destructive button is an inline action among several (a table
