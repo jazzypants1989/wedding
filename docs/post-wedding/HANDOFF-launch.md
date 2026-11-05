@@ -1,5 +1,8 @@
 # Hand-off: launch (2026-10-31 → 11-01)
 
+> **For what's next, start at [`HANDOFF-next.md`](./HANDOFF-next.md) (2026-11-05).** This file still
+> holds the deploy procedure (§3) and the face-pass commands (§4.3) it points to.
+
 The single current record of getting the post-wedding site **finished, deployed and
 face-tagged**. It supersedes `HANDOFF-session-3.md` (kept for history and for its §1 rules
 and §7 "don't re-derive" notes, which still apply). Read `CLAUDE.md` first, as always.
