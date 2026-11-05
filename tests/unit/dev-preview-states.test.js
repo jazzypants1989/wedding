@@ -249,8 +249,24 @@ describe("the control routes", () => {
     }
   })
 
+  it("keeps an ordinary local path, query and all", () => {
+    const control = parseControlPath("/__states/go/fresh?to=" + encodeURIComponent("/gallery?x=1#a"))
+    assert.equal(control && "to" in control ? control.to : "", "/gallery?x=1#a")
+  })
+
   it("never redirects off-site", () => {
-    for (const to of ["//evil.example", "https://evil.example", "evil"]) {
+    const crafted = [
+      "//evil.example",
+      "/\\evil.example",
+      "/ok\\path",
+      "/a\r\nSet-Cookie: x=1",
+      "/a\nb",
+      "/a\x00b",
+      "/a\x7fb",
+      "https://evil.example",
+      "evil",
+    ]
+    for (const to of crafted) {
       const control = parseControlPath(`/__states/go/fresh?to=${encodeURIComponent(to)}`)
       assert.equal(control && "to" in control ? control.to : "", "/", to)
     }

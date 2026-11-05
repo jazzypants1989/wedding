@@ -82,6 +82,21 @@ function escapeHtml(text) {
     .replaceAll("'", "&#39;")
 }
 
+/**
+ * A single-slash path with no backslash and no control characters: a browser reads
+ * `/\evil.example` as `//evil.example`, and CR/LF in a header value makes writeHead throw.
+ * @param {string} value
+ * @returns {boolean}
+ */
+function isSafeLocalPath(value) {
+  if (!value.startsWith("/") || value.startsWith("//")) return false
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i)
+    if (code < 32 || code === 127 || code === 92) return false
+  }
+  return true
+}
+
 /** @type {Types.parseControlPath} */
 export function parseControlPath(urlPath) {
   const parsed = new URL(urlPath, "http://preview.invalid")
@@ -95,7 +110,7 @@ export function parseControlPath(urlPath) {
   if (!state || !Object.hasOwn(PREVIEW_STATES, state)) return { action: "list" }
   // Same-site paths only, so this can't redirect anywhere else.
   const requested = parsed.searchParams.get("to") ?? "/"
-  const to = requested.startsWith("/") && !requested.startsWith("//") ? requested : "/"
+  const to = isSafeLocalPath(requested) ? requested : "/"
   return { action, state, to, view }
 }
 
@@ -411,8 +426,14 @@ export function createPreviewServer({ root, backendPort, publicUrl }) {
     queue = job.catch(() => {})
     job.then(
       (cookies) => {
-        res.writeHead(302, { location: target, "set-cookie": cookies, "cache-control": "no-store" })
-        res.end()
+        try {
+          res.writeHead(302, { location: target, "set-cookie": cookies, "cache-control": "no-store" })
+          res.end()
+        } catch (/** @type {unknown} */ err) {
+          // A bad header value must not take the preview (and its backend) down.
+          if (!res.headersSent) res.writeHead(500, { "content-type": "text/plain; charset=utf-8" })
+          res.end(err instanceof Error ? err.message : "bad response")
+        }
       },
       (/** @type {Error} */ err) => {
         res.writeHead(500, { "content-type": "text/plain; charset=utf-8" })
