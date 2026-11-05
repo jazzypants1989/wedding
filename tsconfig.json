@@ -30,6 +30,7 @@
     "tests/unit/trust-suggest.test.js",
     "tests/unit/gallery-paging.test.js",
     "tests/unit/curated-order.test.js",
+    "tests/unit/sort-moments.test.js",
     "tests/unit/chip-variant.test.js",
     "tests/unit/dresscode-descriptor.test.js",
     "tests/unit/effect-themes.test.js",

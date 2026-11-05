@@ -7,6 +7,7 @@ import type {
   Stats,
   Petition,
   MediaListItem,
+  CuratedAdminItem,
   SiteContent,
   SiteContentNavLink,
   SiteContentScheduleItem,
@@ -327,6 +328,108 @@ export function loadGalleryAdmin(): Promise<void>
 
 /** Wire the grids, the upload dialog route and register the panel. */
 export function initGalleryAdmin(): void
+
+/** @file sort-moments.js - Gallery → Sort: moments, the queue, progress (pure) */
+
+/** How capture times make moments. Defaults, not measurements. */
+export interface SortDefaults {
+  /** The longest pause between two shots of one moment. */
+  gapMs: number
+  /** A moment stops growing once it spans this long. */
+  spanMs: number
+  /** The most photos one moment holds. */
+  maxPhotos: number
+}
+
+export const SORT_DEFAULTS: Readonly<SortDefaults>
+
+/** Shots taken close together, as media ids in capture order. `spanMs` is the
+ *  time from the first to the last, or null for a single photo. */
+export interface SortMoment {
+  ids: number[]
+  spanMs: number | null
+}
+
+/** What a Sort session goes through: the moments holding a photo it is for, and
+ *  those photos (`ids`), in the gallery's order. */
+export interface SortQueue {
+  moments: SortMoment[]
+  ids: number[]
+}
+
+/** The fields of a curated row Sort reads. */
+export interface SortRow {
+  id: number
+  status: string
+  captured_at: string | null
+  decided_at: string | null
+}
+
+/** Where a photo stands: hidden and never decided, decided either way in Sort,
+ *  or on the site without Sort ever having been asked. */
+export type SortRowState = "undecided" | "kept-hidden" | "shown" | "on-site"
+
+/** Counts for the progress line. `total` is everything Sort has been or is to be
+ *  asked about: `left + decided`. */
+export interface SortProgress {
+  left: number
+  shown: number
+  keptHidden: number
+  decided: number
+  total: number
+}
+
+export interface SortQueueOptions {
+  /** Also go through the photos already kept hidden. */
+  again?: boolean
+  defaults?: SortDefaults
+}
+
+/** Epoch ms from a stored capture time (ISO, "YYYY-MM-DD HH:MM:SS" or EXIF's
+ *  colon form), or null when there isn't a usable one. Zone-less reads as UTC. */
+export function captureTimeMs(text: string | null | undefined): number | null
+
+/** Group photos into moments by capture time. A null `t` stands alone. Moments
+ *  come in the order of their earliest photo in the input. */
+export function groupMoments(
+  photos: Array<{ id: number; t: number | null }>,
+  defaults?: SortDefaults,
+): SortMoment[]
+
+/** Approved, hidden or pending: a photo Sort can show and decide. */
+export function isSortable(row: { status: string }): boolean
+
+export function sortState(row: { status: string; decided_at: string | null }): SortRowState
+
+/** The moments a session goes through (see SortQueue). */
+export function buildSortQueue(rows: SortRow[], options?: SortQueueOptions): SortQueue
+
+export function sortProgress(
+  rows: Array<{ status: string; decided_at: string | null }>,
+): SortProgress
+
+/** Index of the first moment at or after `from` with an id `isOpen` accepts,
+ *  wrapping round once; -1 when there is none. */
+export function nextOpenMoment(
+  moments: SortMoment[],
+  isOpen: (id: number) => boolean,
+  from: number,
+): number
+
+/** "1 photo", "4 shots in 6 seconds". */
+export function momentLabel(count: number, spanMs: number | null): string
+
+/** @file gallery-sort.js - Gallery → Sort: decide hidden photos a moment at a time */
+
+/** One decision Undo can take back: the moment it was made in, and how the
+ *  photos it changed were before. */
+export interface SortUndoEntry {
+  moment: number
+  before: Array<{ id: number; status: "approved" | "hidden"; decided_at: string | null }>
+}
+
+/** Register the Sort panel with the router. */
+export function initGallerySort(): void
 
 /** @file blocklist.js - Requests › Blocked (drawn inside the Requests split view) */
 
@@ -1161,7 +1264,16 @@ export interface LovedMediaItem {
 
 /** Response of GET /api/admin/media/curated: every live row of a section. */
 export interface CuratedMediaResponse {
-  items: MediaListItem[]
+  items: CuratedAdminItem[]
+}
+
+/** Response of POST /api/admin/media/decide. `decided_at` is what every named
+ *  photo now carries: the decision's time, or null for an undo. */
+export interface MediaDecideResponse {
+  success: true
+  ids: number[]
+  status: "approved" | "hidden"
+  decided_at: string | null
 }
 
 /** A drag-to-reorder in the curated grid, from the press on a handle to the drop. */
