@@ -524,6 +524,137 @@ describe("gallery list + single-item API", () => {
   })
 })
 
+describe("an uploader's own pending photo", () => {
+  /** @param {number} id @param {string} status */
+  function setStatus(id, status) {
+    db.prepare("UPDATE media SET status = ? WHERE id = ?").run(status, id)
+  }
+
+  /**
+   * @param {string} fileKey @param {string} variant @param {any} [auth]
+   * @param {{ headers?: Record<string, string> }} [init]
+   */
+  function getMedia(fileKey, variant, auth, init = {}) {
+    const path = `/media/${fileKey}/${variant}`
+    return auth ? accountFetch(path, init, auth) : fetch(`${BASE_URL}${path}`, init)
+  }
+
+  it("serves its public variants to the uploader, and no shared cache may keep them", async () => {
+    const { auth } = signIn({ trusted: 0 })
+    const { fileKey, finalizeRes } = await uploadImage(auth)
+    assert.strictEqual((await json(finalizeRes)).status, "pending")
+    for (const variant of ["display", "thumb"]) {
+      const res = await getMedia(fileKey, variant, auth)
+      assert.strictEqual(res.status, 200, variant)
+      assert.strictEqual(res.headers.get("cache-control"), "private, no-cache", variant)
+      assert.ok((await res.arrayBuffer()).byteLength > 0, variant)
+    }
+  })
+
+  it("a pending video plays for its uploader, poster and Range included", async () => {
+    const { auth } = signIn({ trusted: 0 })
+    const { auth: other } = signIn({ trusted: 0, name: "Someone Else" })
+    const mp4 = makeMp4(1024)
+    const { data } = await createSession({ kind: "video", originalBytes: mp4.length }, auth)
+    await putVariant(data.id, "original", mp4, "video/mp4", auth)
+    await putVariant(data.id, "poster", makeJpeg(300), "image/jpeg", auth)
+    const fin = await finalize(data.id, { width: 1280, height: 720, durationS: 12 }, auth)
+    assert.strictEqual((await json(fin)).status, "pending")
+
+    const poster = await getMedia(data.fileKey, "poster", auth)
+    assert.strictEqual(poster.status, 200)
+    assert.strictEqual(poster.headers.get("cache-control"), "private, no-cache")
+    await poster.arrayBuffer()
+    const ranged = await getMedia(data.fileKey, "video", auth, { headers: { Range: "bytes=0-9" } })
+    assert.strictEqual(ranged.status, 206)
+    assert.strictEqual(ranged.headers.get("cache-control"), "private, no-cache")
+    await ranged.arrayBuffer()
+
+    assert.strictEqual((await getMedia(data.fileKey, "video", other)).status, 404)
+    assert.strictEqual((await getMedia(data.fileKey, "poster")).status, 404)
+    assert.strictEqual((await getMedia(data.fileKey, "original", auth)).status, 404)
+  })
+
+  it("revalidates through the gate: a conditional 304 stays private", async () => {
+    const { auth } = signIn({ trusted: 0 })
+    const { fileKey } = await uploadImage(auth)
+    const first = await getMedia(fileKey, "thumb", auth)
+    await first.arrayBuffer()
+    const etag = first.headers.get("etag")
+    assert.ok(etag)
+    const again = await getMedia(fileKey, "thumb", auth, { headers: { "If-None-Match": etag } })
+    assert.strictEqual(again.status, 304)
+    assert.strictEqual(again.headers.get("cache-control"), "private, no-cache")
+  })
+
+  it("is a 404 for another account and for a visitor, conditional or not", async () => {
+    const { auth } = signIn({ trusted: 0 })
+    const { auth: other } = signIn({ trusted: 0, name: "Someone Else" })
+    const { fileKey } = await uploadImage(auth)
+    const etag = `"${fileKey}-thumb"`
+    assert.strictEqual((await getMedia(fileKey, "thumb", other)).status, 404, "other account")
+    assert.strictEqual((await getMedia(fileKey, "thumb")).status, 404, "visitor")
+    for (const who of [other, undefined]) {
+      const res = await getMedia(fileKey, "thumb", who, { headers: { "If-None-Match": etag } })
+      assert.strictEqual(res.status, 404, "an ETag proves nothing")
+    }
+    const missing = "0".repeat(32)
+    const indistinct = await getMedia(missing, "thumb", other)
+    const pendingBody = await (await getMedia(fileKey, "thumb", other)).text()
+    assert.strictEqual(await indistinct.text(), pendingBody, "same answer as no such photo")
+  })
+
+  it("never opens the original, even to the uploader", async () => {
+    const { auth } = signIn({ trusted: 0 })
+    const { fileKey } = await uploadImage(auth)
+    assert.strictEqual((await getMedia(fileKey, "original", auth)).status, 404)
+  })
+
+  for (const status of ["hidden", "rejected", "uploading"]) {
+    it(`status ${status} stays closed to the uploader`, async () => {
+      const { auth } = signIn({ trusted: 0 })
+      const { id, fileKey } = await uploadImage(auth)
+      setStatus(id, status)
+      for (const variant of ["display", "thumb", "original"]) {
+        assert.strictEqual((await getMedia(fileKey, variant, auth)).status, 404, variant)
+      }
+    })
+  }
+
+  it("a soft-deleted row stays closed to the uploader", async () => {
+    const { auth } = signIn({ trusted: 0 })
+    const { id, fileKey } = await uploadImage(auth)
+    db.prepare("UPDATE media SET deleted_at = datetime('now') WHERE id = ?").run(id)
+    assert.strictEqual((await getMedia(fileKey, "thumb", auth)).status, 404)
+  })
+
+  it("a stale guest cookie is a visitor", async () => {
+    const { auth } = signIn({ trusted: 0 })
+    const { fileKey } = await uploadImage(auth)
+    const stale = { cookieHeader: "guest_session=" + "a".repeat(64), csrfToken: "x" }
+    assert.strictEqual((await getMedia(fileKey, "thumb", stale)).status, 404)
+  })
+
+  it("goes public once approved, and an admin's view is unchanged", async (t) => {
+    const { auth } = signIn({ trusted: 0 })
+    const { id, fileKey } = await uploadImage(auth)
+    if (hasAdmin) {
+      const admin = await adminLogin(process.env.TEST_ADMIN_PASSWORD)
+      const asAdmin = await adminFetch(`/media/${fileKey}/thumb`, {}, admin)
+      assert.strictEqual(asAdmin.status, 200)
+      assert.strictEqual(asAdmin.headers.get("cache-control"), "private, no-cache")
+      await asAdmin.arrayBuffer()
+    } else {
+      t.diagnostic("no TEST_ADMIN_PASSWORD: the admin half did not run")
+    }
+    setStatus(id, "approved")
+    const open = await getMedia(fileKey, "thumb")
+    assert.strictEqual(open.status, 200)
+    assert.strictEqual(open.headers.get("cache-control"), "public, max-age=86400")
+    await open.arrayBuffer()
+  })
+})
+
 describe("content section: dress-code images (requires TEST_ADMIN_PASSWORD)", () => {
   /** @returns {Promise<any>} */
   async function adminAuthFor() {

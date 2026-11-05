@@ -5,11 +5,12 @@
  *  DB ext. See docs/post-wedding/03-media-pipeline.md §7. */
 /** @import * as Types from './types.js' */
 /** @import * as GlobalTypes from '../types.js' */
+/** @import { IncomingMessage } from 'node:http' */
 
 import fs from "node:fs"
 import { pipeline } from "node:stream"
 import { getMediaByFileKey } from "../db/media.js"
-import { getOptionalAdmin } from "./auth.js"
+import { getOptionalAccount, getOptionalAdmin } from "./auth.js"
 import {
   variantDiskPath,
   resolveVariantFile,
@@ -140,6 +141,18 @@ function resolveServable(row, variant) {
   return resolved ? { path: resolved.path, contentType: resolved.contentType } : null
 }
 
+/**
+ * Is this the signed-in account that uploaded this still-pending row? An admin
+ * upload's account_id is NULL, which no account session can match.
+ * @param {IncomingMessage} req @param {GlobalTypes.Media} row
+ * @returns {boolean}
+ */
+function isOwnPending(req, row) {
+  if (row.status !== MEDIA_STATUS.PENDING) return false
+  const account = getOptionalAccount(req)
+  return account !== null && account.account_id === row.account_id
+}
+
 /** @type {Types.serveMedia} */
 export function serveMedia(req, res) {
   if (req.method !== "GET" && req.method !== "HEAD") {
@@ -163,7 +176,9 @@ export function serveMedia(req, res) {
 
   const row = getMediaByFileKey(fileKey)
   // 404 (never 403) on anything the caller isn't allowed to see — don't confirm
-  // existence. Admin may view any non-deleted item; the public sees approved only.
+  // existence. Admin may view any non-deleted item; the public sees approved only;
+  // an uploader also sees their own pending row, so their tile isn't blank while it
+  // waits. Only pending: their hidden or rejected row is as closed as anyone's.
   const isAdmin = getOptionalAdmin(req) !== null
   if (!row || row.deleted_at) {
     res.writeHead(404).end()
@@ -174,7 +189,8 @@ export function serveMedia(req, res) {
     return
   }
   const isPublicVariant = PUBLIC_VARIANTS.has(variant)
-  if (!isAdmin && (!isPublicVariant || row.status !== MEDIA_STATUS.APPROVED)) {
+  const isVisible = row.status === MEDIA_STATUS.APPROVED || isOwnPending(req, row)
+  if (!isAdmin && (!isPublicVariant || !isVisible)) {
     res.writeHead(404).end()
     return
   }
@@ -210,10 +226,11 @@ export function serveMedia(req, res) {
     headers["Cache-Control"] = "private, no-store"
     headers["Content-Disposition"] = "attachment"
   } else if (row.status !== MEDIA_STATUS.APPROVED) {
-    // Only an admin reaches this line for a row that isn't public, and a shared
-    // cache must not keep what it was shown: the long-lived public header below
-    // would let a reverse proxy answer everyone else without asking the gate
-    // above. no-cache plus the ETag keeps an admin grid cheap, as a 304.
+    // Only an admin or the uploader reaches this line for a row that isn't public,
+    // and a shared cache must not keep what it was shown: the long-lived public
+    // header below would let a reverse proxy answer everyone else without asking the
+    // gate above. no-cache plus the ETag keeps a grid cheap, as a 304, and asks the
+    // gate again, so a photo rejected later stops showing for its uploader too.
     headers["Cache-Control"] = "private, no-cache"
   } else if (
     row.section === MEDIA_SECTION.OFFICIAL ||
