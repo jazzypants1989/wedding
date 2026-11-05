@@ -31,6 +31,7 @@ import {
   navRoot,
   navHref,
   parentPath,
+  redirectPath,
   crumbsFor,
 } from "./routes.js"
 import { openModal, closeModal, topModal, runUndo } from "./utils.js"
@@ -125,9 +126,10 @@ function resolve(full) {
   let url = full
   let match = matchRoute(pathOnly(url))
   let redirected = false
-  if (match?.route.redirect !== undefined) {
+  const to = match ? redirectPath(match) : null
+  if (to !== null) {
     const q = url.indexOf("?")
-    url = "/admin/" + match.route.redirect + (q === -1 ? "" : url.slice(q))
+    url = to + (q === -1 ? "" : url.slice(q))
     match = matchRoute(pathOnly(url))
     redirected = true
   }

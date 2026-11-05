@@ -17,6 +17,7 @@ import {
   navRoot,
   navHref,
   parentPath,
+  redirectPath,
   crumbsFor,
 } from "../../public/pages/admin/routes.js"
 
@@ -105,6 +106,34 @@ test("an alias names where it goes", () => {
   assert.ok(matchRoute("/admin/" + routeFor("/admin/thank-yous")?.redirect))
 })
 
+test("an alias with a param carries it to where it goes", () => {
+  const old = matchRoute("/admin/accounts/a7")
+  assert.ok(old)
+  assert.strictEqual(redirectPath(old), "/admin/guests/a7")
+  assert.strictEqual(matchRoute("/admin/guests/a7")?.route.path, "guests/:guest")
+  // The bare list and a plain alias still go where they always did.
+  const list = matchRoute("/admin/accounts")
+  assert.ok(list)
+  assert.strictEqual(redirectPath(list), "/admin/guests")
+  const cards = matchRoute("/admin/thank-yous")
+  assert.ok(cards)
+  assert.strictEqual(redirectPath(cards), "/admin/thank-yous/cards")
+  // Not an alias: nothing to follow.
+  const guests = matchRoute("/admin/guests")
+  assert.ok(guests)
+  assert.strictEqual(redirectPath(guests), null)
+})
+
+test("Accounts is not a sidebar item any more; Guests is the one list", () => {
+  assert.ok(!Object.hasOwn(NAV, "accounts"))
+  const items = NAV_GROUPS.flatMap((g) => g.items)
+  assert.ok(!items.includes("accounts"))
+  assert.strictEqual(NAV.guests.label, "Guests")
+  // Its old paths light Guests.
+  assert.strictEqual(routeFor("/admin/accounts")?.nav, "guests")
+  assert.strictEqual(routeFor("/admin/accounts/a7")?.nav, "guests")
+})
+
 test("old #tab links map onto the new paths", () => {
   assert.strictEqual(legacyHashRoute("#thankyous")?.path, "thank-yous/cards")
   assert.strictEqual(legacyHashRoute("#moderation")?.path, "review")
@@ -115,7 +144,8 @@ test("old #tab links map onto the new paths", () => {
 })
 
 test("sub-view pills resolve to their plain routes, never an alias or a param route", () => {
-  assert.strictEqual(routeForSub("moderation", "accounts")?.path, "accounts")
+  // Accounts left Review: it is a part of Guests now (an alias, never a pill).
+  assert.strictEqual(routeForSub("moderation", "accounts"), null)
   assert.strictEqual(routeForSub("moderation", "queue")?.path, "review")
   assert.strictEqual(routeForSub("thankyous", "mailbox")?.path, "thank-yous/replies")
   assert.strictEqual(routeForSub("thankyous", "cards")?.path, "thank-yous/cards")

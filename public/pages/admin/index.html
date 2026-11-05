@@ -120,15 +120,17 @@
         </div>
       </div>
 
-      <!-- GUESTS & RSVPs (guests.js): one split view. An RSVP is a fact about a
+      <!-- GUESTS (guests.js): one split view. An RSVP is a fact about a
            guest — a filter (?rsvp=), a line in each row, a block in the detail
-           (IA §10). The list head is static so the search box keeps focus while
-           the rows re-render. -->
-      <div id="tab-guests" class="tab-content panel-fill" role="region" aria-label="Guests &amp; RSVPs" hidden>
+           (IA §10). The people who signed in to the website sit under their
+           invitation's row (or on their own, marked, when they have none). The
+           list head is static so the search box keeps focus while the rows
+           re-render. -->
+      <div id="tab-guests" class="tab-content panel-fill" role="region" aria-label="Guests" hidden>
         <div class="split" id="guests-split">
           <section class="pane pane-list" aria-label="Guests">
             <header class="pane-head">
-              <h1>Guests &amp; RSVPs</h1>
+              <h1>Guests</h1>
               <div class="pane-tools">
                 <span class="muted small" id="guests-summary"></span>
                 <a class="btn btn-sm" id="add-guest-btn" href="/admin/guests/new">+ Add</a>
@@ -149,7 +151,7 @@
                 <input type="search" id="guest-search" placeholder="Search names, emails, phones" autocomplete="off"
                   enterkeyhint="search">
               </label>
-              <div class="chips" role="group" aria-label="RSVP" id="guests-chips"></div>
+              <div class="chips" role="group" aria-label="Show" id="guests-chips"></div>
             </header>
             <ul class="rows" id="guests-rows"></ul>
             <footer class="pane-foot"><kbd>j</kbd> <kbd>k</kbd> move · <kbd>/</kbd> search · <kbd>e</kbd> edit</footer>

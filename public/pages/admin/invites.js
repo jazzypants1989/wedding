@@ -159,8 +159,8 @@ function renderInviteResults(result) {
 /** The invitable audience for a list filter + search.
  *  @param {Types.GuestFilter} filter @param {string} q */
 async function invitableFor(filter, q) {
-  // Coming / Can't come / Archived hold nobody who can be invited.
-  if (filter === "yes" || filter === "no" || filter === "archived") {
+  // Coming / Can't come / Archived / No invitation hold nobody who can be invited.
+  if (filter === "yes" || filter === "no" || filter === "archived" || filter === "uninvited") {
     return { guestIds: [], pending: 0, invited: 0 }
   }
   const params = new URLSearchParams()

@@ -140,6 +140,141 @@
   max-width: 640px;
 }
 
+/* Who signed in to the website. Under an invitation's row: one line each,
+   lined up with the row's text (past its 36px avatar), with Trust / Untrust
+   at the end. The seen-time gives way first on a narrow phone. */
+#tab-guests .row-people {
+  list-style: none;
+  margin: -4px 0 6px;
+  padding: 0 10px 0 58px;
+  display: grid;
+  /* minmax(0, …): a long name ellipsises instead of widening the list. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+}
+
+#tab-guests .row-person {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 0 0 8px;
+  margin-left: -8px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+}
+
+#tab-guests .row-person.is-focus {
+  background: var(--ws-sel);
+}
+
+#tab-guests .row-person-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#tab-guests .row-person-name,
+#tab-guests .row-person-seen {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#tab-guests .row-person-name {
+  flex: 0 1 auto;
+}
+
+#tab-guests .row-person-seen {
+  flex: 0 1000 auto;
+  color: var(--ws-muted);
+}
+
+#tab-guests .trust-btn {
+  flex: none;
+  min-width: 76px;
+}
+
+/* Someone with no invitation is a row of their own; the button sits beside it. */
+#tab-guests .row-wrap {
+  align-items: center;
+  gap: 8px;
+}
+
+#tab-guests .row-wrap .trust-btn {
+  margin-right: 10px;
+}
+
+#tab-guests .no-invite {
+  color: var(--ws-accent);
+}
+
+#tab-guests .person-note {
+  max-width: 640px;
+  margin: 0 0 18px;
+}
+
+/* A guest's page: one card per person who signed in. */
+#tab-guests .site-people {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+  max-width: 640px;
+}
+
+#tab-guests .site-person {
+  padding: 12px 14px;
+  border: 1px solid var(--ws-line);
+  border-radius: 10px;
+  background: var(--ws-panel);
+}
+
+#tab-guests .site-person.is-focus {
+  border-color: var(--ws-accent);
+  box-shadow: 0 0 0 2px var(--ws-accent-soft);
+}
+
+#tab-guests .site-person-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#tab-guests .site-person-top strong {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+#tab-guests .site-person p {
+  margin: 6px 0 0;
+}
+
+#tab-guests .site-person .btn-row {
+  margin: 10px 0 0;
+}
+
+/* Touch: every Trust / Untrust (and the page's other person buttons) is a
+   44px target. */
+@media (pointer: coarse) {
+  #tab-guests .trust-btn,
+  #tab-guests .site-person .btn {
+    min-height: 44px;
+  }
+
+  #tab-guests .trust-btn {
+    min-width: 88px;
+  }
+
+  #tab-guests .row-person {
+    min-height: 48px;
+  }
+}
+
 /* The ⋯ tools menu (the prototype's "Prototype" menu, as a real popover). */
 .ws-menu {
   position: relative;

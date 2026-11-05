@@ -281,7 +281,7 @@ function doneMarkup() {
     <span class="done-icon">${icon("check")}</span>
     <h2>No requests waiting</h2>
     <p class="muted">When someone asks for an invitation from the RSVP page, it shows up here.</p>
-    <a class="btn" href="/admin/guests">Go to Guests &amp; RSVPs</a>
+    <a class="btn" href="/admin/guests">Go to Guests</a>
   </div>`
 }
 

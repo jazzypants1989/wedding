@@ -9,7 +9,8 @@
  *     #tab-<id> panel), the sidebar item it lights (`nav`), optionally the
  *     panel's sub-view pill (`sub`), the param that is a selection (`sel`),
  *     a dialog it opens over its parent (`dialog` + `parent`), or an alias
- *     target (`redirect`). Paths may hold `:param` segments.
+ *     target (`redirect`, whose `:param`s are filled from the alias's own).
+ *     Paths may hold `:param` segments.
  *  No regex (CLAUDE.md). */
 /** @import * as Types from './types.js' */
 
@@ -40,13 +41,9 @@ export const NAV = {
     badge: "thankyous-reply-badge",
     heart: true,
   },
-  guests: {
-    label: "Guests & RSVPs",
-    short: "Guests",
-    path: "guests",
-    icon: "guests",
-  },
-  accounts: { label: "Accounts", path: "accounts", icon: "accounts" },
+  // One list: invitations, their RSVPs, and the people who signed in to the
+  // website (owner decision — "Accounts" was a second list of the same people).
+  guests: { label: "Guests", path: "guests", icon: "guests" },
   petitions: {
     label: "Requests",
     path: "requests",
@@ -64,7 +61,7 @@ export const NAV_GROUPS = [
   { label: "", items: ["home"] },
   { label: "Memories", items: ["moderation", "faces", "gallery"] },
   { label: "Thank-yous", items: ["gifts", "thankyous", "replies"] },
-  { label: "Guest list", items: ["guests", "accounts", "petitions"] },
+  { label: "Guest list", items: ["guests", "petitions"] },
   { label: "Site", items: ["site-content", "effects"] },
 ]
 
@@ -273,9 +270,11 @@ export const ROUTES = [
     sel: "id",
   },
   { path: "thank-yous/replies/:id", tab: "thankyous", nav: "replies", title: "Reply", sel: "id" },
-  // Guests & RSVPs (guests.js): an RSVP is a fact about a guest, so it is a
-  // filter (?rsvp=yes|no|awaiting|archived, ?q=) and a block in the detail.
-  { path: "guests", tab: "guests", nav: "guests", title: "Guests & RSVPs" },
+  // Guests (guests.js): an RSVP is a fact about a guest, so it is a filter
+  // (?rsvp=yes|no|awaiting|archived|uninvited, ?q=) and a block in the detail.
+  // `:guest` is an invitation (`g12`) or a person who signed in to the website
+  // (`a7`): one with an invitation lands on its page, one without has their own.
+  { path: "guests", tab: "guests", nav: "guests", title: "Guests" },
   { path: "guests/:guest", tab: "guests", nav: "guests", title: "Guest", sel: "guest" },
   {
     path: "guests/new",
@@ -334,8 +333,18 @@ export const ROUTES = [
     dialog: "invite-modal",
     parent: "guests/:guest",
   },
-  // The old RSVPs tab is Guests & RSVPs now.
-  { path: "rsvps", tab: "guests", nav: "guests", title: "Guests & RSVPs", redirect: "guests" },
+  // The old RSVPs tab is Guests now.
+  { path: "rsvps", tab: "guests", nav: "guests", title: "Guests", redirect: "guests" },
+  // The old Accounts list is Guests now. Its links (bookmarks, Review's author
+  // card) keep working: an account `a7` lands on the guest page that shows it.
+  { path: "accounts", tab: "guests", nav: "guests", title: "Guests", redirect: "guests" },
+  {
+    path: "accounts/:guest",
+    tab: "guests",
+    nav: "guests",
+    title: "Guest",
+    redirect: "guests/:guest",
+  },
   // Requests | Blocked (petitions.js, blocklist.js): one split view, one panel.
   { path: "requests", tab: "petitions", nav: "petitions", title: "Requests" },
   { path: "requests/:req", tab: "petitions", nav: "petitions", title: "Request", sel: "req" },
@@ -354,16 +363,6 @@ export const ROUTES = [
     title: "Block someone",
     dialog: "blocklist-modal",
     parent: "requests/blocked",
-  },
-  { path: "accounts", tab: "moderation", sub: "accounts", nav: "accounts", title: "Accounts" },
-  // An account, by `a<id>` (IA §4). Drawn by moderation.js, beside Review.
-  {
-    path: "accounts/:id",
-    tab: "moderation",
-    sub: "accounts",
-    nav: "accounts",
-    title: "Account",
-    sel: "id",
   },
   { path: "site/content", tab: "site-content", nav: "site-content", title: "Site content" },
   { path: "site/effects", tab: "effects", nav: "effects", title: "Effects" },
@@ -495,6 +494,15 @@ export function navHref(key, currentNav, memory) {
   const remembered = memory[key]
   if (remembered && key !== currentNav && key !== "home" && key !== "more") return remembered
   return navRoot(key)
+}
+
+/** @type {Types.redirectPath} */
+export function redirectPath(match) {
+  const to = match.route.redirect
+  if (to === undefined) return null
+  const route = ROUTES.find((r) => r.path === to)
+  if (route) return pathFor(route, match.params)
+  return to === "" ? "/admin" : "/admin/" + to
 }
 
 /** @type {Types.parentPath} */

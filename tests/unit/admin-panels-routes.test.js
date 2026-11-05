@@ -72,13 +72,13 @@ test("the retired RSVPs and Blocklist tabs still land in their new homes", () =>
   assert.strictEqual(legacyHashRoute("#blocklist")?.path, "requests/blocked")
 })
 
-test("every Guests route lights Guests & RSVPs; the section crumb is its root", () => {
+test("every Guests route lights Guests; the section crumb is its root", () => {
   const paths = ["/admin/guests", "/admin/guests/g1", "/admin/guests/g1/edit", "/admin/guests/new"]
   for (const path of paths) {
     assert.strictEqual(must(path).route.nav, "guests", path)
   }
   assert.deepStrictEqual(crumbsFor(must("/admin/guests")), [
     { label: "Guest list" },
-    { label: "Guests & RSVPs" },
+    { label: "Guests" },
   ])
 })

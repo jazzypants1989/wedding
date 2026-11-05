@@ -305,6 +305,8 @@ export interface AccountRow {
   /** Of those, how many wait for review. */
   pending_count: number
   created_at: string
+  /** Newest activity on a live sign-in; null once they have all lapsed. */
+  last_seen_at: string | null
 }
 
 export interface AccountsResponse {
@@ -476,7 +478,8 @@ export function showPanel(tabId: string): void
  */
 export function init(): void
 
-/** @file guests.js - Guests & RSVPs (one split view) */
+/** @file guests.js - Guests (one split view: invitations, RSVPs, and the people
+ *  who signed in to the website) */
 
 export interface StatsApiResponse {
   stats: Stats
@@ -488,9 +491,10 @@ export interface GuestsApiResponse {
   pagination: PaginationInfo
 }
 
-/** The list's RSVP filter (`?rsvp=`): everyone, coming, can't come, no reply
- *  yet, or the archived (soft-deleted) guests. */
-export type GuestFilter = "all" | "yes" | "no" | "awaiting" | "archived"
+/** The list's filter (`?rsvp=`): everyone, coming, can't come, no reply yet,
+ *  the archived (soft-deleted) guests, or the people who signed up on the
+ *  website without an invitation. */
+export type GuestFilter = "all" | "yes" | "no" | "awaiting" | "archived" | "uninvited"
 
 /** The whole roster, loaded once and filtered client-side (a wedding is small). */
 export interface GuestsData {
@@ -499,6 +503,10 @@ export interface GuestsData {
   archived: GuestWithInviteCount[] | null
   /** RSVPs by guest id. */
   rsvps: Map<number, RSVPWithGuest>
+  /** Everyone who has signed in to the website (GET /api/admin/accounts). */
+  accounts: AccountRow[]
+  /** The sign-ins couldn't be loaded; the roster still shows. */
+  accountsFailed: boolean
   stats: Stats | null
   loaded: boolean
 }
@@ -509,8 +517,74 @@ export interface GuestsView {
   q: string
   /** The selected guest (`/admin/guests/g12`). */
   id: number | null
-  items: GuestWithInviteCount[]
+  /** The selected person with no invitation on the list (`/admin/guests/a7`). */
+  person: number | null
+  /** A person to point at on their household's page (arrived by `a7`). */
+  focus: number | null
+  items: RosterEntry[]
 }
+
+/** @file guest-accounts.js - the Guests list's rows: invitations with the
+ *  people who signed in under them, and people with no invitation on the list */
+
+/** One row of the Guests list. */
+export type RosterEntry =
+  | {
+      kind: "guest"
+      /** "g12": the row's selection, as in `/admin/guests/g12`. */
+      key: string
+      guest: GuestWithInviteCount
+      /** The people who signed in with this invitation's code. */
+      accounts: AccountRow[]
+    }
+  | {
+      kind: "person"
+      /** "a7" */
+      key: string
+      account: AccountRow
+      /** Signed in with a code whose invitation is archived (not on the list). */
+      archivedInvite: boolean
+    }
+
+export interface RosterInput {
+  guests: readonly GuestWithInviteCount[]
+  /** The archived guests, when the Archived filter has loaded them. */
+  archived: readonly GuestWithInviteCount[] | null
+  accounts: readonly AccountRow[]
+  filter: GuestFilter
+  q: string
+  /** Where a guest's RSVP stands (the page owns the RSVP map). */
+  rsvpOf: (g: GuestWithInviteCount) => "yes" | "no" | "awaiting"
+}
+
+/** A `:guest` selection: an invitation (`g12`) or a person who signed in (`a7`). */
+export type RosterSel = { kind: "guest"; id: number } | { kind: "account"; id: number }
+
+/** The people who signed in, by the invitation they used. */
+export function accountsByGuest(accounts: readonly AccountRow[]): Map<number, AccountRow[]>
+
+/** Does a guest match a lowercased search (name, email, phone, code, or the
+ *  name of anyone who signed in with their code)? */
+export function guestMatches(
+  g: GuestWithInviteCount,
+  accounts: readonly AccountRow[],
+  q: string,
+): boolean
+
+/** Does a person who signed in match a lowercased search? */
+export function accountMatches(a: AccountRow, q: string): boolean
+
+/** The rows a filter + search shows, sorted by name. */
+export function rosterEntries(input: RosterInput): RosterEntry[]
+
+/** How many signed up without an invitation (the filter chip's count). */
+export function uninvitedCount(accounts: readonly AccountRow[]): number
+
+/** "g12" / "a7" → what it selects; anything else → null. */
+export function parseRosterSel(sel: string | undefined): RosterSel | null
+
+/** Where a row lives: `/admin/guests/g12` or `/admin/guests/a7`. */
+export function entryPath(entry: RosterEntry): string
 
 /** Refresh the stats (the list head's "N parties · N people coming"). */
 export function loadStats(): Promise<void>
@@ -1923,6 +1997,10 @@ export function navGroupOf(key: string): string
 /** Where a sidebar item links: the remembered place in that section, unless
  *  you are already in it (then its root). */
 export function navHref(key: string, currentNav: string, memory: Record<string, string>): string
+
+/** An alias's target path (its `:param`s filled from the alias's own), or
+ *  null when the route is not an alias. */
+export function redirectPath(match: RouteMatch): string | null
 
 /** A dialog route's parent path, or null for an ordinary route. */
 export function parentPath(match: RouteMatch): string | null
