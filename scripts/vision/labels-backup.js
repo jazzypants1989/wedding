@@ -16,7 +16,11 @@
  *
  *  `--selection` adds the culling page's selection file, which also records human
  *  judgement. It holds content hashes only, and its path is an argument because it
- *  doesn't live in a run directory.
+ *  doesn't live in a run directory. Culling needs no face run, so `--selection`
+ *  also works on its own, with no run directory at all.
+ *
+ *  The destination is never inside this repository, which is public. That is
+ *  refused before anything is created.
  *
  *  Prints file names, byte counts and the datasetId. Never a label, never a
  *  name, never a count of anything about the people in the photographs.
@@ -27,15 +31,20 @@
 import fs from "node:fs"
 import path from "node:path"
 
+import { backupDestinationRefusal } from "./scratch-dir.js"
+
 const USAGE = `
 Usage: node scripts/vision/labels-backup.js <run-dir> --to <destination> [--selection <file>]
+       node scripts/vision/labels-backup.js --selection <file> --to <destination>
 
   Copy <run-dir>/labels.json (plus identities.json and timing.json when
   present) into a timestamped directory under <destination>, then verify each
-  copy byte-for-byte. <destination> is required and is never guessed.
+  copy byte-for-byte. <destination> is required, is never guessed, and is
+  never inside this repository.
 
   --to PATH     Where the backup directory is created. Required.
   --selection PATH  Also copy the culling selection file, as selection.json.
+                With no <run-dir>, copy only that.
   --help
 `
 
@@ -48,7 +57,7 @@ const OPTIONAL = ["identities.json", "timing.json"]
 
 /**
  * @param {readonly string[]} argv
- * @returns {{ valid: true, dir: string, to: string, selection: string | null } | { valid: false, error: string }}
+ * @returns {{ valid: true, dir: string | null, to: string, selection: string | null } | { valid: false, error: string }}
  */
 export function parseArgs(argv) {
   /** @type {string[]} */
@@ -85,8 +94,11 @@ export function parseArgs(argv) {
     positional.push(raw)
   }
 
-  if (positional.length !== 1) {
-    return { valid: false, error: "Expected exactly one run directory.\n" + USAGE }
+  if (positional.length > 1 || (positional.length === 0 && selection === null)) {
+    return {
+      valid: false,
+      error: "Expected one run directory, or none with --selection.\n" + USAGE,
+    }
   }
   if (to === null) {
     return {
@@ -94,7 +106,8 @@ export function parseArgs(argv) {
       error: "--to is required: the destination for a file of names is always the owner's explicit choice.\n" + USAGE,
     }
   }
-  return { valid: true, dir: path.resolve(positional[0]), to: path.resolve(to), selection }
+  const dir = positional.length === 1 ? path.resolve(positional[0]) : null
+  return { valid: true, dir, to: path.resolve(to), selection }
 }
 
 /**
@@ -108,7 +121,7 @@ export function stamp(now) {
 }
 
 /**
- * @param {string} dir run directory
+ * @param {string | null} dir run directory, or null to back up only `selection`
  * @param {string} to destination root
  * @param {Date} now
  * @param {(line: string) => void} log
@@ -116,8 +129,16 @@ export function stamp(now) {
  * @returns {number} exit code
  */
 export function backup(dir, to, now, log, selection = null) {
-  const source = path.join(dir, REQUIRED)
-  if (!fs.existsSync(source)) {
+  const refusal = backupDestinationRefusal(to)
+  if (refusal !== null) {
+    log(`${refusal} Nothing was backed up.`)
+    return EXIT.ABORTED
+  }
+  if (dir === null && selection === null) {
+    log("Nothing named to back up: give a run directory, --selection, or both.")
+    return EXIT.ABORTED
+  }
+  if (dir !== null && !fs.existsSync(path.join(dir, REQUIRED))) {
     log(`No ${REQUIRED} under ${dir} — nothing to back up.`)
     return EXIT.ABORTED
   }
@@ -126,13 +147,16 @@ export function backup(dir, to, now, log, selection = null) {
     return EXIT.ABORTED
   }
 
-  const dest = path.join(to, `labels-backup-${stamp(now)}`)
+  const dest = path.join(to, `${dir === null ? "selection" : "labels"}-backup-${stamp(now)}`)
   fs.mkdirSync(dest, { recursive: true })
 
   /** @type {[name: string, from: string][]} */
-  const files = [REQUIRED, ...OPTIONAL.filter((name) => fs.existsSync(path.join(dir, name)))].map(
-    (name) => [name, path.join(dir, name)],
-  )
+  const files =
+    dir === null
+      ? []
+      : [REQUIRED, ...OPTIONAL.filter((name) => fs.existsSync(path.join(dir, name)))].map(
+          (name) => [name, path.join(dir, name)],
+        )
   if (selection !== null) files.push(["selection.json", selection])
   for (const [name, from] of files) {
     const target = path.join(dest, name)
@@ -146,6 +170,11 @@ export function backup(dir, to, now, log, selection = null) {
       return EXIT.ABORTED
     }
     log(`  ${name}  ${a.length} bytes  verified`)
+  }
+
+  if (dir === null) {
+    log(`Backed up to ${dest}`)
+    return EXIT.CLEAN
   }
 
   // Surface the datasetId so the owner can tell at a glance which run a backup
