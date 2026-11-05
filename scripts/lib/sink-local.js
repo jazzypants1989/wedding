@@ -41,6 +41,7 @@ import {
   setMediaOriginalExt,
   setMediaSortOrders,
   setMediaSourceSha256,
+  setMediaStatus,
   setMediaVariantBytes,
   sumOriginalBytes,
   updateMediaCaption,
@@ -113,6 +114,33 @@ function readStoredBytes(databasePath) {
     db?.close()
   }
 }
+
+/**
+ * Run one read against a read-only connection of its own. Like readStoredBytes,
+ * this never migrates or creates the database, so --dry-run can use it; and a
+ * separate connection is safe beside the sink's own under WAL.
+ * @template T
+ * @param {string} databasePath
+ * @param {(db: DatabaseSync) => T} read
+ * @returns {T | null} null when there is no database yet
+ */
+function readOnlyQuery(databasePath, read) {
+  if (!fs.existsSync(databasePath)) return null
+  const db = new DatabaseSync(databasePath, { readOnly: true })
+  try {
+    return read(db)
+  } finally {
+    db.close()
+  }
+}
+
+/** Placeholders for an IN list, built without string templates of values. */
+function placeholders(/** @type {number} */ count) {
+  return new Array(count).fill("?").join(", ")
+}
+
+/** Ask SQLite in chunks, well under its bound-parameter limit. */
+const LOOKUP_CHUNK = 500
 
 /** @type {Types.createLocalSink} */
 export function createLocalSink(options = {}) {
@@ -325,9 +353,88 @@ export function createLocalSink(options = {}) {
       if (!row) return
       // Never went public and carries no audit value, so remove it outright —
       // the same disposal the abandoned-upload sweep and the finalize quota
-      // violation path use.
+      // violation path use. Either step throwing reaches the caller, which
+      // then says the row may still be there rather than that it was removed.
       fs.rmSync(itemDir(row.file_key), { recursive: true, force: true })
       hardDeleteMedia(row.id)
+    },
+
+    async statuses(ids) {
+      /** @type {Map<number, string | null>} */
+      const statuses = new Map(ids.map((id) => [id, null]))
+      try {
+        readOnlyQuery(databasePath, (conn) => {
+          for (let i = 0; i < ids.length; i += LOOKUP_CHUNK) {
+            const chunk = ids.slice(i, i + LOOKUP_CHUNK)
+            const rows = /** @type {{ id: number, status: string }[]} */ (
+              conn
+                .prepare(
+                  `SELECT id, status FROM media
+                   WHERE deleted_at IS NULL AND id IN (${placeholders(chunk.length)})`,
+                )
+                .all(...chunk)
+            )
+            for (const row of rows) statuses.set(row.id, row.status)
+          }
+        })
+      } catch (err) {
+        return { ok: false, message: err instanceof Error ? err.message : String(err) }
+      }
+      return { ok: true, statuses }
+    },
+
+    async findByContent(hashes) {
+      /** @type {Map<string, Types.ContentMatch[]>} */
+      const found = new Map()
+      try {
+        const answered = readOnlyQuery(databasePath, (conn) => {
+          for (let i = 0; i < hashes.length; i += LOOKUP_CHUNK) {
+            const chunk = hashes.slice(i, i + LOOKUP_CHUNK)
+            /** @typedef {{ id: number, status: string, section: string, source_sha256: string }} Hit */
+            const rows = /** @type {Hit[]} */ (
+              conn
+                .prepare(
+                  `SELECT id, status, section, source_sha256 FROM media
+                   WHERE deleted_at IS NULL AND source_sha256 IN (${placeholders(chunk.length)})
+                   ORDER BY id`,
+                )
+                .all(...chunk)
+            )
+            for (const row of rows) {
+              const list = found.get(row.source_sha256) ?? []
+              list.push({ id: row.id, status: row.status, section: row.section })
+              found.set(row.source_sha256, list)
+            }
+          }
+          return true
+        })
+        // No database yet: nothing can match.
+        if (answered === null) return found
+      } catch {
+        // A database from before source_sha256 existed can't be searched.
+        return null
+      }
+      return found
+    },
+
+    async setStatus(id, status) {
+      db()
+      // The same transitions api/admin/moderation.js applies, through the same
+      // db helper, so a row in any other state (rejected, deleted) is refused
+      // rather than forced.
+      const from =
+        status === MEDIA_STATUS.HIDDEN
+          ? [MEDIA_STATUS.PENDING, MEDIA_STATUS.APPROVED]
+          : [MEDIA_STATUS.PENDING, MEDIA_STATUS.HIDDEN]
+      const changed = withTransaction(() => setMediaStatus(id, from, status))
+      if (changed) return { ok: true }
+      const row = getMediaById(id)
+      return {
+        ok: false,
+        message: row
+          ? `media ${id} is ${row.status}, so it can't become ${status}`
+          : `media ${id} no longer exists`,
+      }
     },
 
     async applyOrder(orderedIds, section = MEDIA_SECTION.OFFICIAL) {

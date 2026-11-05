@@ -470,6 +470,18 @@ export interface SinkSession {
   fileKey: string
 }
 
+/** A status lookup: every asked-for id maps to its status, or null when gone. */
+export type RowStatusLookup =
+  | { ok: true; statuses: Map<number, string | null> }
+  | { ok: false; message: string }
+
+/** A live media row found by the content hash of its source file. */
+export interface ContentMatch {
+  id: number
+  status: string
+  section: string
+}
+
 /**
  * The one interface the CLI writes against, so scanning, hashing, variant
  * generation, the manifest and reporting are all written once. `local` writes
@@ -508,8 +520,21 @@ export interface ImportSink {
       hidden?: boolean
     },
   ): Promise<{ id: number; status: string }>
-  /** Throw away a created-but-unfinalized session (SIGINT, mid-file failure). */
+  /** Throw away a created session (SIGINT, mid-file failure, a row that came
+   *  back public when it was meant to be hidden). Throws if the row may still
+   *  be there, so the caller never reports a removal that didn't happen. */
   discard(id: number): Promise<void>
+  /** Current status of each row, by id; null for a row that is gone (deleted,
+   *  or never existed). Never writes. The http sink logs in for this. */
+  statuses(ids: number[]): Promise<RowStatusLookup>
+  /** Live rows whose source_sha256 is one of these hashes, or null when the sink
+   *  can't search by content (the http sink: the API has no such lookup, and
+   *  rows it uploads carry no hash). Never writes. */
+  findByContent(hashes: string[]): Promise<Map<string, ContentMatch[]> | null>
+  /** Hide or approve one existing row, through the same transition the admin
+   *  moderation endpoints apply (pending|approved → hidden, pending|hidden →
+   *  approved). */
+  setStatus(id: number, status: "hidden" | "approved"): Promise<{ ok: boolean; message?: string }>
   /** Set sort_order across one curated section (default official): the
    *  section's other photos keep their order, the imported ones follow. */
   applyOrder(

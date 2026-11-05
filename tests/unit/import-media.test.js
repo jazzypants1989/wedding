@@ -392,11 +392,29 @@ describe("buildPlan", () => {
 
 // --- The run loop, against a stub sink -------------------------------------
 
-/** Records every call, so a test can assert on the whole conversation. */
-function stubSink(overrides = {}) {
-  /** @type {{ created: number[], put: [number, string][], finalized: number[], finalizeInputs: Array<{ sourceSha256: string | null, hidden?: boolean }>, discarded: number[], ordered: number[][] }} */
-  const calls = { created: [], put: [], finalized: [], finalizeInputs: [], discarded: [], ordered: [] }
-  let nextId = 100
+/** A fake destination: row id → status. Shared between stub sinks, so a
+ *  second run sees what the first one left, as a real server would. */
+function destination() {
+  return { rows: /** @type {Map<number, string>} */ (new Map()), nextId: 100 }
+}
+
+/**
+ * Records every call, so a test can assert on the whole conversation.
+ * @param {object} [overrides]
+ * @param {ReturnType<typeof destination>} [dest]
+ */
+function stubSink(overrides = {}, dest = destination()) {
+  /** @type {{ created: number[], put: [number, string][], finalized: number[], finalizeInputs: Array<{ sourceSha256: string | null, hidden?: boolean }>, discarded: number[], ordered: number[][], setStatus: [number, string][], looked: number[][] }} */
+  const calls = {
+    created: [],
+    put: [],
+    finalized: [],
+    finalizeInputs: [],
+    discarded: [],
+    ordered: [],
+    setStatus: [],
+    looked: [],
+  }
   const sink = {
     name: /** @type {const} */ ("local"),
     calls,
@@ -416,8 +434,9 @@ function stubSink(overrides = {}) {
       }
     },
     async createSession() {
-      const id = nextId++
+      const id = dest.nextId++
       calls.created.push(id)
+      dest.rows.set(id, "uploading")
       return { id, fileKey: "key" + id }
     },
     /** @param {number} id @param {string} variant */
@@ -429,11 +448,30 @@ function stubSink(overrides = {}) {
     async finalize(id, input) {
       calls.finalized.push(id)
       calls.finalizeInputs.push(input)
-      return { id, status: input.hidden ? "hidden" : "approved" }
+      const status = input.hidden ? "hidden" : "approved"
+      dest.rows.set(id, status)
+      return { id, status }
     },
     /** @param {number} id */
     async discard(id) {
       calls.discarded.push(id)
+      dest.rows.delete(id)
+    },
+    /** @param {number[]} ids @returns {Promise<import('../../scripts/lib/types.js').RowStatusLookup>} */
+    async statuses(ids) {
+      calls.looked.push(ids)
+      return { ok: true, statuses: new Map(ids.map((id) => [id, dest.rows.get(id) ?? null])) }
+    },
+    /** Like the http sink: no search by content. */
+    async findByContent() {
+      return null
+    },
+    /** @param {number} id @param {string} status */
+    async setStatus(id, status) {
+      calls.setStatus.push([id, status])
+      if (!dest.rows.has(id)) return { ok: false, message: "gone" }
+      dest.rows.set(id, status)
+      return { ok: true }
     },
     /** @param {number[]} ids */
     async applyOrder(ids) {

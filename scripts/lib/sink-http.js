@@ -12,6 +12,11 @@
  *  /api/admin/media/reorder demands the section's EXACT set: hidden and rejected
  *  rows included, which the public feed leaves out.
  *
+ *  Checking a --selection against rows already imported reads their current
+ *  status the same way (plus the moderation item endpoint for anything outside
+ *  the curated sections), and --apply-selection goes through the admin
+ *  moderation hide/approve endpoints: no route exists only for the importer.
+ *
  *  One thing this sink cannot do, documented in
  *  docs/post-wedding/08-bulk-import.md: it cannot attribute a --section=guest
  *  item to a named guest. withAccountOrAdmin gives an admin principal accountId:
@@ -22,7 +27,7 @@ import fs from "node:fs"
 import http from "node:http"
 import https from "node:https"
 
-import { MEDIA_SECTION } from "../../types.js"
+import { MEDIA_SECTION, MEDIA_STATUS } from "../../types.js"
 import { MediaImportError } from "./media-errors.js"
 import { canPrompt, prompt } from "./prompt.js"
 
@@ -401,10 +406,72 @@ export function createHttpSink(options) {
     },
 
     async discard(id) {
-      // Self-delete on an unfinalized row: the same DELETE the browser tray uses
-      // when a guest cancels mid-upload.
-      await retryRequest("DELETE", `/api/media/${id}`).catch(() => {})
+      // The same DELETE the browser tray uses when a guest cancels mid-upload,
+      // which also takes back a finalized row. Thrown, not swallowed: a row
+      // that came back public must not be reported as removed when it wasn't.
       fileKeys.delete(id)
+      const response = await retryRequest("DELETE", `/api/media/${id}`)
+      // 404: already gone, which is what was wanted.
+      if (response.status !== 200 && response.status !== 404) {
+        throw fail(`Deleting media ${id}`, response)
+      }
+    },
+
+    async statuses(ids) {
+      /** @type {Map<number, string | null>} */
+      const statuses = new Map(ids.map((id) => [id, null]))
+      if (ids.length === 0) return { ok: true, statuses }
+      try {
+        await login()
+        // The server's answer, not the manifest's: the couple may have hidden or
+        // approved rows in the admin grid since. The curated listings cover
+        // official and honeymoon in one request each, every status included;
+        // anything else (guest section, a moved or deleted row) is asked one by
+        // one through the moderation item endpoint, which answers any status.
+        /** @type {Set<number>} */
+        const listed = new Set()
+        for (const section of [MEDIA_SECTION.OFFICIAL, MEDIA_SECTION.HONEYMOON]) {
+          const response = await retryRequest("GET", `/api/admin/media/curated?section=${section}`)
+          if (response.status !== 200) throw fail(`Reading the ${section} gallery`, response)
+          for (const item of Array.isArray(response.json?.items) ? response.json.items : []) {
+            const id = Number(item?.id)
+            if (statuses.has(id) && typeof item?.status === "string") {
+              statuses.set(id, item.status)
+              listed.add(id)
+            }
+          }
+        }
+        for (const id of ids) {
+          if (listed.has(id)) continue
+          const response = await retryRequest("GET", `/api/admin/moderation/media/${id}`)
+          if (response.status === 404) continue
+          if (response.status !== 200) throw fail(`Reading media ${id}`, response)
+          const status = response.json?.item?.status
+          statuses.set(id, typeof status === "string" ? status : null)
+        }
+        return { ok: true, statuses }
+      } catch (err) {
+        return { ok: false, message: err instanceof Error ? err.message : String(err) }
+      }
+    },
+
+    async findByContent() {
+      // The API has no lookup by content, and rows this sink uploads carry no
+      // hash (finalize has no field for it). Only the manifest knows them.
+      return null
+    },
+
+    async setStatus(id, status) {
+      await login()
+      // The admin moderation endpoints, so this is the same audited transition
+      // as pressing Hide or Approve in the admin UI.
+      const action = status === MEDIA_STATUS.HIDDEN ? "hide" : "approve"
+      const response = await retryRequest("POST", `/api/admin/moderation/media/${id}/${action}`, {
+        json: {},
+      })
+      if (response.status === 200) return { ok: true }
+      const message = response.json?.error ?? `answered ${response.status}`
+      return { ok: false, message: `${action} media ${id}: ${message}` }
     },
 
     async applyOrder(orderedIds, section = MEDIA_SECTION.OFFICIAL) {

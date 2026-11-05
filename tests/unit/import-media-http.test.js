@@ -448,3 +448,82 @@ describe("sink-http applyOrder", () => {
     assert.equal(seen.length, 0)
   })
 })
+
+describe("sink-http statuses, setStatus and discard", () => {
+  it("reads statuses from the curated listings, then asks one by one for the rest", async () => {
+    reset([
+      { status: 200, json: { success: true }, setCookie: LOGIN_COOKIES },
+      {
+        status: 200,
+        json: {
+          items: [
+            { id: 1, status: "approved" },
+            { id: 9, status: "hidden" },
+          ],
+        },
+      },
+      { status: 200, json: { items: [] } },
+      { status: 200, json: { item: { id: 2, status: "hidden" } } },
+      { status: 404, json: { error: "Post not found" } },
+    ])
+    const result = await sink().statuses([1, 2, 3])
+    assert.ok(result.ok)
+    assert.deepEqual(
+      [...result.statuses],
+      [
+        [1, "approved"],
+        [2, "hidden"],
+        [3, null],
+      ],
+    )
+    assert.deepEqual(
+      seen.slice(1).map((r) => r.url),
+      [
+        "/api/admin/media/curated?section=official",
+        "/api/admin/media/curated?section=honeymoon",
+        "/api/admin/moderation/media/2",
+        "/api/admin/moderation/media/3",
+      ],
+    )
+  })
+
+  it("says it couldn't read statuses rather than guessing", async () => {
+    reset([
+      { status: 200, json: { success: true }, setCookie: LOGIN_COOKIES },
+      { status: 403, json: { error: "Forbidden" } },
+    ])
+    const result = await sink().statuses([1])
+    assert.equal(result.ok, false)
+  })
+
+  it("hides and approves through the admin moderation endpoints", async () => {
+    reset([
+      { status: 200, json: { success: true }, setCookie: LOGIN_COOKIES },
+      { status: 200, json: { success: true } },
+      { status: 409, json: { error: "Cannot approve this item" } },
+    ])
+    const s = sink()
+    assert.deepEqual(await s.setStatus(4, "hidden"), { ok: true })
+    const refused = await s.setStatus(5, "approved")
+    assert.equal(refused.ok, false)
+    assert.ok(refused.message?.includes("Cannot approve this item"))
+    assert.deepEqual(
+      seen.slice(1).map((r) => [r.method, r.url, r.headers["x-csrf-token"]]),
+      [
+        ["POST", "/api/admin/moderation/media/4/hide", "csrf-1"],
+        ["POST", "/api/admin/moderation/media/5/approve", "csrf-1"],
+      ],
+    )
+  })
+
+  it("can't search by content, and says so with null", async () => {
+    assert.equal(await sink().findByContent(["a".repeat(64)]), null)
+  })
+
+  it("throws when a delete fails, so nobody is told a public row was removed", async () => {
+    reset([{ status: 409, json: { error: "nope" } }])
+    await assert.rejects(() => sink().discard(12), /Deleting media 12/)
+    reset([{ status: 404, json: { error: "Media not found" } }])
+    await sink().discard(12)
+  })
+})
