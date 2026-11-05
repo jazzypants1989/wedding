@@ -376,17 +376,22 @@ function createSeeder() {
       return ids
     },
 
-    /** @param {number} count @param {readonly string[]} [names] */
-    accounts(count, names = CAST) {
+    /** Account i signs in with invitation `households[i]` when there is one,
+     *  except every fourth, who signed up without an invitation. With no
+     *  households, everyone did (the open-sign-up shape).
+     *  @param {number} count @param {readonly string[]} [names]
+     *  @param {readonly number[]} [households] */
+    accounts(count, names = CAST, households = []) {
       const ids = []
       for (let i = 0; i < count; i++) {
         const base = names[i % names.length]
         const name = i < names.length ? base : `${base} ${Math.floor(i / names.length) + 1}`
         const trusted = i % 3 === 0 ? 0 : 1
+        const household = i < households.length && i % 4 !== 3 ? households[i] : null
         ids.push(
           Number(
             insertAccount.run(
-              null,
+              household,
               name,
               normalizeName(name),
               cycle(["Friend of the bride", "Cousin of the groom", "College roommate"], i),
@@ -616,8 +621,11 @@ function createSeeder() {
 
 /** @param {Seeder} seed */
 function typicalBase(seed) {
-  seed.guests(36)
-  const accounts = seed.accounts(12)
+  const guests = seed.guests(36)
+  // Most sign in with their invitation's code; a few signed up without one.
+  const accounts = seed.accounts(12, CAST, guests)
+  // A second person from the first household, so a row can carry two.
+  seed.accounts(1, ["Daniel Méndez"], guests)
   const media = seed.gallery(120, 36, accounts)
   const notes = seed.notes(40, accounts)
   seed.engagement(24, 90, accounts, media, notes)
@@ -795,8 +803,12 @@ function seedLongText(seed) {
     const text = "We laughed until it hurt and danced until the band gave up. ".repeat(40)
     return text.slice(0, length)
   }
-  seed.guests(10, names.map((name) => `${name} & Family`))
-  const accounts = seed.accounts(5, names.map((name) => name.slice(0, LIMITS.ACCOUNT_NAME_MAX_LENGTH)))
+  const guests = seed.guests(10, names.map((name) => `${name} & Family`))
+  const accounts = seed.accounts(
+    5,
+    names.map((name) => name.slice(0, LIMITS.ACCOUNT_NAME_MAX_LENGTH)),
+    guests,
+  )
   /** @type {PreviewMedia[]} */
   const media = []
   for (let i = 0; i < 12; i++) {
@@ -830,8 +842,8 @@ function seedLongText(seed) {
 
 /** @param {Seeder} seed */
 function seedBacklog(seed) {
-  seed.guests(12)
-  const accounts = seed.accounts(10)
+  const guests = seed.guests(12)
+  const accounts = seed.accounts(10, CAST, guests)
   const media = seed.gallery(12, 6, accounts)
   const notes = seed.notes(6, accounts)
 
@@ -967,8 +979,8 @@ function seedState(state, publicUrl) {
   } else if (state === "typical") {
     typicalBase(seed)
   } else if (state === "lots") {
-    seed.guests(180)
-    const accounts = seed.accounts(140)
+    const guests = seed.guests(180)
+    const accounts = seed.accounts(140, CAST, guests)
     const media = seed.gallery(1400, 600, accounts)
     const notes = seed.notes(400, accounts)
     seed.engagement(300, 1500, accounts, media, notes)
