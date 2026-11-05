@@ -164,7 +164,10 @@
 
   /* Layout */
   --mobile-header-height: 56px;
-  --z-parallax-sparkles: 40;
+  /* Negative: the sparkles are background, not an overlay. Below every page's
+     content, and below decor that sits at -1 (the guestbook's flower sprays and
+     light pool), but above the body's background, which paints on the canvas. */
+  --z-parallax-sparkles: -2;
   --z-mermaid-shimmer: 40;
   --z-effect-layer: 50;
   --z-disco-ball: 55;

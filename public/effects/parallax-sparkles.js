@@ -70,17 +70,14 @@ export function createParallaxSparkles(config) {
     const colors = getColors()
     const builtLayers = []
 
-    const baseZ =
-      parseInt(
-        getComputedStyle(document.documentElement).getPropertyValue(
-          "--z-parallax-sparkles",
-        ),
-      ) || 40
     for (let i = 0; i < count; i++) {
       const depth = (i + 1) / count
       const layer = document.createElement("div")
       layer.className = "parallax-sparkle-layer"
-      layer.style.zIndex = String(baseZ + i)
+      // Nearer layers over farther ones. The container is the stacking context, so
+      // this orders the layers among themselves; where the sparkles sit on the page
+      // is the container's --z-parallax-sparkles (effects.css).
+      layer.style.zIndex = String(i)
 
       // `density` counts sparkles across 1.4 screens, so on-screen density is /1.4.
       const sparklesPerLayer = Math.round((sparkleCount * (0.6 + depth * 0.4)) / 1.4)

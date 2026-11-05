@@ -463,6 +463,15 @@
 
 /* ============ Parallax Sparkles ============ */
 
+/* Behind the page rather than over it: a negative z-index in the root stacking
+   context paints before in-flow content, so text, cards and buttons all cover the
+   sparkles and they show only in open space. Needs the page background on <body>
+   (it propagates to the canvas); a background on <html> as well would hide them.
+   The thank-you card's .effect-layer--behind, later in this file, still wins there. */
+.parallax-sparkle-container {
+  z-index: var(--z-parallax-sparkles);
+}
+
 .parallax-sparkle-layer {
   position: absolute;
   inset: 0;
@@ -476,15 +485,18 @@
   animation: parallax-sparkle-pulse 3s ease-in-out infinite;
 }
 
+/* This animation owns each sparkle's opacity, so the per-sparkle opacity the JS
+   sets never shows; how bright they get is decided here. Peaks below full so a
+   background twinkle doesn't pull the eye from the page. */
 @keyframes parallax-sparkle-pulse {
   0%,
   100% {
-    opacity: 0.3;
+    opacity: 0.25;
     transform: scale(0.8);
   }
   50% {
-    opacity: 1;
-    transform: scale(1.3);
+    opacity: 0.75;
+    transform: scale(1.2);
   }
 }
 
