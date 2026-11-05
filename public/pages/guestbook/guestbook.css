@@ -10,6 +10,14 @@
   overflow-x: clip;
 }
 
+/* .gb-page is <body>, and a body's overflow moves to the viewport unless <html>
+   sets its own. Without this the clip above never applies: the meadow's light is
+   centred at 100vw, and 100vw counts the scrollbar, so half a scrollbar of it
+   would stick out past the right edge and scroll the page sideways. */
+html {
+  overflow-x: clip;
+}
+
 /* Pressed-flower sprays in the lower corners of a wide screen: fixed, still,
    behind everything, and only where the margin is wide enough that they
    never sit under the notes. */
