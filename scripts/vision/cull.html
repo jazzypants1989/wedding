@@ -32,8 +32,13 @@
          selection file they choose to load.
       2. ONE GROUP AT A TIME. The stage holds one burst, plus lazy thumbnails, and
          the grid is windowed. The DOM does not grow with the size of the library.
-      3. DECISIONS ARE KEYED BY CONTENT. localStorage holds sha256 to decision, so
-         re-running the scorer over a larger directory keeps every judgement made.
+      3. DECISIONS ARE KEYED BY CONTENT, AND ONLY BY CONTENT. localStorage holds one
+         log for every directory, sha256 to the latest decision and when it was made.
+         Re-scoring a larger directory, a parent directory or another mount keeps
+         every judgement. Two open tabs merge item by item, the newer decision
+         winning, so a stale tab can never write an older state over a newer one.
+         The first version's per-directory stores are read in on load and left
+         where they are.
     -->
     <style>
       :root {
@@ -667,7 +672,9 @@
         const items = DATA.items
         const groups = DATA.groups
         const people = DATA.people
-        const STORE_KEY = "cull:v1:" + DATA.rootId
+        const STORE_KEY = L.CULL_STORE_KEY
+        const CURSOR_KEY = L.CULL_CURSOR_KEY
+        const LEGACY_PREFIX = L.CULL_LEGACY_PREFIX
         const CELL = 168
         const CELL_H = 126
         const CELL_GAP = 8
@@ -694,6 +701,9 @@
         // --- State ---------------------------------------------------------------
 
         const state = {
+          /** sha256 → { d, at }. The truth, and what is saved and merged. */
+          log: {},
+          /** sha256 → "keep" | "hide". Derived from `log`; what everything else reads. */
           decisions: {},
           group: 0,
           frame: 0,
@@ -708,24 +718,165 @@
           undo: [],
         }
 
+        // --- Saving, merging, and the first version's stores ------------------------
+
+        /** False until the first render. Until then, messages queue for one start-up note. */
+        let started = false
+        const startupNotes = []
+        function notify(text, warning) {
+          if (started) flash(text, warning, warning)
+          else startupNotes.push({ text, warning })
+        }
+
+        /**
+         * Stamps only ever increase in this tab, and are always later than anything it
+         * has seen from another. So a decision made here now beats every decision this
+         * tab knows of, which is what pressing a key means.
+         */
+        let clock = 0
+        function stamp() {
+          clock = Math.max(Date.now(), clock + 1)
+          return clock
+        }
+
+        function setLog(log) {
+          state.log = log
+          state.decisions = L.decisionsFromLog(log)
+          for (const sha in log) if (log[sha].at > clock) clock = log[sha].at
+        }
+
+        /** `to` null is a stamped return to undecided, so it too merges as the newer. */
+        function setDecision(sha, to) {
+          state.log[sha] = { d: to, at: stamp() }
+          if (to === null) delete state.decisions[sha]
+          else state.decisions[sha] = to
+        }
+
+        /**
+         * Takes in what another tab saved, keeping whichever is newer per item. An undo
+         * entry for an item that just changed elsewhere is dropped: undoing it here would
+         * write this tab's older idea over the newer decision.
+         */
+        function adopt(incoming) {
+          const merged = L.mergeDecisionLogs(state.log, incoming)
+          if (merged.changed.length === 0) return 0
+          setLog(merged.log)
+          const changed = new Set(merged.changed)
+          state.undo = state.undo
+            .map((entry) => ({
+              ...entry,
+              changes: entry.changes.filter((c) => !changed.has(c.sha)),
+            }))
+            .filter((entry) => entry.changes.length > 0)
+          return merged.changed.length
+        }
+
+        /**
+         * The stored log, or null if storage cannot be reached. Text that does not parse
+         * is copied aside under another key before anything is written over it.
+         */
+        let setAside = null
+        function readStored() {
+          const raw = localStorage.getItem(STORE_KEY)
+          const parsed = L.parseDecisionLog(raw)
+          if (parsed.valid) return parsed.value
+          if (setAside === raw) return {}
+          setAside = raw
+          const aside = STORE_KEY + ":unreadable:" + Date.now()
+          localStorage.setItem(aside, raw)
+          notify(
+            "Saved decisions could not be read. The text was kept under " +
+              aside +
+              " in this browser's storage. Load your selection.json if you have one.",
+            true,
+          )
+          return {}
+        }
+
+        function conflictNote(count) {
+          return (
+            count +
+            " item(s) had been decided both ways by the previous version of this page (in " +
+            "another folder, or another tab). Each is hidden now: check them before you export."
+          )
+        }
+
+        function legacyStores() {
+          const stores = []
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i)
+            if (!key || !key.startsWith(LEGACY_PREFIX)) continue
+            const decisions = L.parseLegacyDecisions(localStorage.getItem(key) || "")
+            if (decisions) stores.push(decisions)
+          }
+          return stores
+        }
+
+        function readCursor() {
+          for (const key of [CURSOR_KEY, LEGACY_PREFIX + DATA.rootId]) {
+            try {
+              const saved = JSON.parse(localStorage.getItem(key) || "null")
+              if (saved && typeof saved.cursor === "string") return saved
+            } catch {
+              // A place to stand is a convenience. Without one, the first group.
+            }
+          }
+          return null
+        }
+
         function load() {
-          let raw = null
           try {
-            raw = localStorage.getItem(STORE_KEY)
+            const brought = L.importLegacyDecisions(readStored(), legacyStores())
+            setLog(brought.log)
+            if (brought.imported > 0) {
+              notify(
+                "Brought " +
+                  brought.imported +
+                  " decision(s) over from the previous version of this page.",
+                false,
+              )
+              save()
+            }
+            if (brought.conflicts > 0) notify(conflictNote(brought.conflicts), true)
+            const saved = readCursor()
+            if (saved) {
+              const index = groups.findIndex((g) => items[g.items[0]].sha === saved.cursor)
+              if (index !== -1) {
+                state.group = index
+                if (Number.isInteger(saved.frame)) state.frame = saved.frame
+              }
+            }
           } catch {
             markSave(false)
+            notify(
+              "This browser's storage cannot be read, so nothing will be saved. Export often.",
+              true,
+            )
+            return
           }
-          if (!raw) return
-          try {
-            const saved = JSON.parse(raw)
-            if (saved && typeof saved.decisions === "object") state.decisions = saved.decisions
-            if (typeof saved.cursor === "string") {
-              const index = groups.findIndex((g) => items[g.items[0]].sha === saved.cursor)
-              if (index !== -1) state.group = index
-            }
-            if (Number.isInteger(saved.frame)) state.frame = saved.frame
-          } catch {
-            flash("Saved progress could not be read, so this session starts empty.", true)
+
+          // Decisions are found by content, whatever the directory. Say what was found,
+          // so that "nothing restored" is something the owner reads, never a silent zero.
+          const held = Object.keys(state.decisions).length
+          let here = 0
+          for (const item of items) if (state.decisions[item.sha] !== undefined) here++
+          $("saved").textContent = here + " restored"
+          if (held > 0 && here === 0) {
+            notify(
+              "This browser holds " +
+                held +
+                " saved decision(s), but none is for anything in this directory. They are " +
+                "kept, untouched. If you expected some here, load your selection.json " +
+                "(e, then Load).",
+              true,
+            )
+          } else if (held === 0) {
+            notify(
+              "No saved decisions in this browser. They are saved per browser, and some " +
+                "browsers keep one store per page location: if you decided elsewhere, load " +
+                "your selection.json (e, then Load).",
+              false,
+            )
           }
         }
 
@@ -734,15 +885,12 @@
           clearTimeout(saveTimer)
           saveTimer = 0
           try {
+            // Read, merge, write: never write this tab's copy over a newer one.
+            if (adopt(readStored()) > 0 && started) render()
+            localStorage.setItem(STORE_KEY, L.serializeDecisionLog(state.log))
             const group = groups[state.group]
-            localStorage.setItem(
-              STORE_KEY,
-              JSON.stringify({
-                decisions: state.decisions,
-                cursor: group ? items[group.items[0]].sha : null,
-                frame: state.frame,
-              }),
-            )
+            const cursor = group ? items[group.items[0]].sha : null
+            localStorage.setItem(CURSOR_KEY, JSON.stringify({ cursor, frame: state.frame }))
             markSave(true)
           } catch {
             markSave(false)
@@ -760,6 +908,47 @@
         addEventListener("pagehide", save)
         document.addEventListener("visibilitychange", () => {
           if (document.visibilityState === "hidden") save()
+        })
+
+        // Another tab saved. Fires only in the other tabs, never in the one that wrote.
+        addEventListener("storage", (event) => {
+          if (!started) return
+          if (event.key === null) {
+            // Storage was cleared elsewhere. This tab still holds every decision.
+            scheduleSave()
+            return
+          }
+          let arrived = 0
+          let from = "another tab"
+          if (event.key === STORE_KEY && event.newValue !== null) {
+            const parsed = L.parseDecisionLog(event.newValue)
+            if (!parsed.valid) return
+            arrived = adopt(parsed.value)
+            // Whatever this tab knows that the writer did not is written back, so the
+            // store converges instead of waiting for this tab to be hidden.
+            if (L.mergeDecisionLogs(parsed.value, state.log).changed.length > 0) scheduleSave()
+          } else if (event.key.startsWith(LEGACY_PREFIX) && event.newValue !== null) {
+            // A tab still running the previous version. Its decisions carry no time, so
+            // they only fill in what this one has not decided.
+            const decisions = L.parseLegacyDecisions(event.newValue)
+            if (!decisions) return
+            const brought = L.importLegacyDecisions(state.log, [decisions])
+            if (brought.imported > 0) {
+              setLog(brought.log)
+              scheduleSave()
+            }
+            arrived = brought.imported
+            from = "a tab running the previous version of this page (reload it)"
+            if (brought.conflicts > 0) {
+              render()
+              flash(conflictNote(brought.conflicts), true, true)
+              return
+            }
+          }
+          if (arrived > 0) {
+            render()
+            flash(arrived + " decision(s) arrived from " + from + ".")
+          }
         })
 
         // --- Reading the decisions -----------------------------------------------
@@ -795,8 +984,7 @@
           for (const change of changes) {
             const previous = state.decisions[change.sha]
             undo.push({ sha: change.sha, to: previous === undefined ? null : previous })
-            if (change.to === null) delete state.decisions[change.sha]
-            else state.decisions[change.sha] = change.to
+            setDecision(change.sha, change.to)
           }
           // With where the owner was standing: accepting moves on, and undoing it has
           // to bring them back to the group they are now reconsidering.
@@ -813,6 +1001,8 @@
             )
             if (warnings.length > 0) flash(describeWarnings(warnings, verb), true, true)
             else clearWarningToast()
+          } else {
+            clearWarningToast()
           }
         }
 
@@ -836,10 +1026,7 @@
             flash("Nothing to undo.")
             return
           }
-          for (const change of last.changes) {
-            if (change.to === null) delete state.decisions[change.sha]
-            else state.decisions[change.sha] = change.to
-          }
+          for (const change of last.changes) setDecision(change.sha, change.to)
           if (state.view === "stage") {
             state.group = last.group
             state.frame = last.frame
@@ -2108,12 +2295,17 @@
         renderFolders()
         if (groups.length > 0) enterGroup(0)
         load()
-        setView(groups.length > 0 ? "stage" : "videos")
         if (missing.length > 0) {
-          flash(
+          notify(
             "Vision could not provide: " + missing.join(", ") + ". Suggestions use what remains.",
             true,
           )
+        }
+        setView(groups.length > 0 ? "stage" : "videos")
+        started = true
+        if (startupNotes.length > 0) {
+          const warning = startupNotes.some((note) => note.warning)
+          flash(startupNotes.map((note) => note.text).join(" "), warning, warning)
         }
       })()
     </script>

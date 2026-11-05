@@ -545,6 +545,8 @@ export async function runCullData(args, deps = {}) {
   }
 
   const peopleInput = loadPeopleInput(args)
+  // The page keys decisions by content hash, so this digest no longer decides what a
+  // re-run remembers. It only finds where the first version of the page left off.
   const data = buildPageData({
     files: logic.dedupeByHash(hashed),
     rows: scores.rows,

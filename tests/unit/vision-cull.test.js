@@ -30,7 +30,10 @@ import { computeDatasetId } from "../../scripts/vision/dataset-id.js"
 import { makeJpeg, makeMp4, makePng } from "../media-fixtures.js"
 
 const {
+  CULL_CURSOR_KEY,
   CULL_DEFAULTS,
+  CULL_LEGACY_PREFIX,
+  CULL_STORE_KEY,
   acceptGroup,
   assessPhoto,
   buildGroups,
@@ -39,20 +42,26 @@ const {
   coverageCounts,
   coverageShortfalls,
   coverageWarnings,
+  decisionsFromLog,
   dedupeByHash,
   faceEyesClosed,
   faceIsGood,
   featureDistance,
   groupFolder,
   groupReviewed,
+  importLegacyDecisions,
   isFinallyVisible,
   isSha256Hex,
   isStillPossible,
   liveClipPaths,
+  mergeDecisionLogs,
   parseCaptureTime,
+  parseDecisionLog,
+  parseLegacyDecisions,
   parseSelection,
   pickOnly,
   restoreSelection,
+  serializeDecisionLog,
   suggestPick,
   summarize,
 } = logic
@@ -713,6 +722,137 @@ describe("the selection file", () => {
   })
 })
 
+describe("saved decisions: the log two tabs merge", () => {
+  const x = sha("x")
+  const y = sha("y")
+  const z = sha("z")
+
+  test("the later decision wins, whichever side it is on", () => {
+    const merged = mergeDecisionLogs(
+      { [x]: { d: "keep", at: 10 }, [y]: { d: "hide", at: 30 } },
+      { [x]: { d: "hide", at: 20 }, [y]: { d: "keep", at: 25 }, [z]: { d: "keep", at: 5 } },
+    )
+    assert.deepEqual(merged.log, {
+      [x]: { d: "hide", at: 20 },
+      [y]: { d: "hide", at: 30 },
+      [z]: { d: "keep", at: 5 },
+    })
+    assert.deepEqual(merged.changed.sort(), [x, z].sort())
+  })
+
+  test("a stale copy merged in changes nothing", () => {
+    /** @type {Types.CullDecisionLog} */
+    const fresh = { [x]: { d: "keep", at: 50 } }
+    /** @type {Types.CullDecisionLog} */
+    const stale = { [x]: { d: "hide", at: 40 } }
+    assert.deepEqual(mergeDecisionLogs(fresh, stale), { log: fresh, changed: [] })
+  })
+
+  test("a return to undecided is a decision too, so an older keep cannot revive it", () => {
+    const merged = mergeDecisionLogs({ [x]: { d: null, at: 60 } }, { [x]: { d: "keep", at: 50 } })
+    assert.deepEqual(merged.log[x], { d: null, at: 60 })
+    assert.deepEqual(decisionsFromLog(merged.log), {})
+  })
+
+  test("a tie goes to whichever leaves the item less public", () => {
+    /** @param {Types.CullDecision | null} a @param {Types.CullDecision | null} b */
+    const tie = (a, b) => mergeDecisionLogs({ [x]: { d: a, at: 7 } }, { [x]: { d: b, at: 7 } }).log[x].d
+    assert.equal(tie("keep", "hide"), "hide")
+    assert.equal(tie("hide", "keep"), "hide")
+    assert.equal(tie("keep", null), null)
+    assert.equal(tie(null, "hide"), "hide")
+  })
+
+  test("merging is order-independent, so two tabs converge on one state", () => {
+    /** @type {Types.CullDecisionLog} */
+    const one = { [x]: { d: "keep", at: 3 }, [y]: { d: "hide", at: 9 } }
+    /** @type {Types.CullDecisionLog} */
+    const two = { [x]: { d: "hide", at: 3 }, [y]: { d: null, at: 8 }, [z]: { d: "keep", at: 1 } }
+    assert.deepEqual(mergeDecisionLogs(one, two).log, mergeDecisionLogs(two, one).log)
+  })
+
+  test("the stored form round-trips, and an absent store is empty", () => {
+    /** @type {Types.CullDecisionLog} */
+    const log = { [x]: { d: "keep", at: 1 }, [y]: { d: null, at: 2 }, [z]: { d: "hide", at: 0 } }
+    const parsed = parseDecisionLog(serializeDecisionLog(log))
+    assert.ok(parsed.valid)
+    assert.deepEqual(parsed.value, log)
+    assert.deepEqual(parseDecisionLog(null), { valid: true, value: {} })
+  })
+
+  test("a malformed store is an error, never a partial log", () => {
+    for (const bad of [
+      "{",
+      "null",
+      JSON.stringify({ version: 1, decisions: {} }),
+      JSON.stringify({ version: 2, log: [] }),
+      JSON.stringify({ version: 2, log: { nothex: ["keep", 1] } }),
+      JSON.stringify({ version: 2, log: { [x]: ["maybe", 1] } }),
+      JSON.stringify({ version: 2, log: { [x]: ["keep", -1] } }),
+      JSON.stringify({ version: 2, log: { [x]: ["keep"] } }),
+    ]) {
+      assert.equal(parseDecisionLog(bad).valid, false, bad)
+    }
+  })
+
+  test("the first version's store is read, and anything odd in it left out", () => {
+    const decisions = { [x]: "keep", [y]: "hide", nope: "keep", [z]: 3 }
+    const text = JSON.stringify({ decisions, cursor: x, frame: 2 })
+    assert.deepEqual(parseLegacyDecisions(text), { [x]: "keep", [y]: "hide" })
+    assert.equal(parseLegacyDecisions("not json"), null)
+    assert.equal(parseLegacyDecisions(JSON.stringify({ cursor: x })), null)
+  })
+
+  test("first-version decisions fill gaps, stamped oldest, and never beat a newer one", () => {
+    /** @type {Types.CullDecisionLog} */
+    const log = { [x]: { d: "hide", at: 100 }, [y]: { d: null, at: 100 } }
+    const brought = importLegacyDecisions(log, [{ [x]: "keep", [y]: "keep", [z]: "keep" }])
+    assert.deepEqual(brought.log, {
+      [x]: { d: "hide", at: 100 },
+      [y]: { d: null, at: 100 },
+      [z]: { d: "keep", at: 0 },
+    })
+    assert.equal(brought.imported, 1)
+    assert.equal(brought.conflicts, 0)
+  })
+
+  test("importing the same old store twice brings nothing the second time", () => {
+    const once = importLegacyDecisions({}, [{ [x]: "keep" }])
+    assert.equal(once.imported, 1)
+    assert.equal(importLegacyDecisions(once.log, [{ [x]: "keep" }]).imported, 0)
+  })
+
+  test("two old stores that disagree are a counted conflict, resolved to hidden", () => {
+    const brought = importLegacyDecisions({}, [
+      { [x]: "keep", [y]: "keep" },
+      { [x]: "hide", [y]: "keep" },
+    ])
+    assert.deepEqual(brought.log[x], { d: "hide", at: 0 })
+    assert.deepEqual(brought.log[y], { d: "keep", at: 0 })
+    assert.equal(brought.conflicts, 1)
+    const reversed = importLegacyDecisions({}, [{ [x]: "hide" }, { [x]: "keep" }])
+    assert.equal(reversed.log[x].d, "hide")
+  })
+
+  test("an old store that disagrees with an old decision already brought in is a conflict", () => {
+    // Two tabs of the previous version, saving one after the other as each reloads.
+    const first = importLegacyDecisions({}, [{ [x]: "keep" }])
+    const second = importLegacyDecisions(first.log, [{ [x]: "hide" }])
+    assert.equal(second.conflicts, 1)
+    assert.deepEqual(second.log[x], { d: "hide", at: 0 })
+    // Against a decision made on the new page, an old one is simply older: no conflict.
+    const newer = importLegacyDecisions({ [x]: { d: "keep", at: 5 } }, [{ [x]: "hide" }])
+    assert.equal(newer.conflicts, 0)
+    assert.deepEqual(newer.log[x], { d: "keep", at: 5 })
+  })
+
+  test("the storage keys hold no path: one store serves every directory", () => {
+    assert.equal(CULL_STORE_KEY.includes("/"), false)
+    assert.equal(CULL_CURSOR_KEY.includes("/"), false)
+    assert.ok(CULL_LEGACY_PREFIX.startsWith("cull:v1"))
+  })
+})
+
 describe("faceIsGood", () => {
   const box = { x: 0.2, y: 0.2, w: 0.2, h: 0.2 }
 
@@ -1041,10 +1181,23 @@ describe("cull.html", () => {
     }
   })
 
-  test("leaves the deciding to the shared logic", () => {
-    for (const name of ["buildSelection", "coverageWarnings", "acceptGroup", "restoreSelection"]) {
+  test("leaves the deciding, and the merging, to the shared logic", () => {
+    for (const name of [
+      "buildSelection",
+      "coverageWarnings",
+      "acceptGroup",
+      "restoreSelection",
+      "mergeDecisionLogs",
+      "importLegacyDecisions",
+      "CULL_STORE_KEY",
+    ]) {
       assert.ok(page.includes("L." + name), name)
     }
+  })
+
+  test("hears other tabs, and keys storage by nothing but the shared constants", () => {
+    assert.ok(page.includes('addEventListener("storage"'))
+    assert.ok(!page.includes('"cull:v1:" +'), "no store keyed by the directory's path")
   })
 
   test("never builds markup from data", () => {

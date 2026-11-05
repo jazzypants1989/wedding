@@ -645,6 +645,170 @@ export function summarize(items, decisions) {
   return summary
 }
 
+// --- Saved decisions -----------------------------------------------------------
+
+/** localStorage key for every decision this browser holds, keyed by content hash. */
+export const CULL_STORE_KEY = "cull:v2"
+/** Where the last place the owner stood is kept. Content-keyed too. */
+export const CULL_CURSOR_KEY = "cull:v2:cursor"
+/** The first version's keys: `cull:v1:` plus a digest of the photo directory's path. */
+export const CULL_LEGACY_PREFIX = "cull:v1:"
+
+/**
+ * When two entries for one item were stamped at the same moment, the one that
+ * leaves it less public wins. Ties are rare, and this is the safe way to break one.
+ * @param {Types.CullStampedDecision} entry
+ * @returns {number}
+ */
+function tieRank(entry) {
+  return entry.d === "hide" ? 2 : entry.d === null ? 1 : 0
+}
+
+/**
+ * Two logs merged item by item, the later stamp winning. A `null` decision is a
+ * stamped return to undecided, so an undo in one tab is not reverted by an older
+ * keep in another. `changed` lists the hashes whose entry differs from `base`'s.
+ *
+ * This, and not "whoever saved last", is what makes two open tabs safe: a tab that
+ * has been sitting stale can only add what is newer than what it finds.
+ * @type {Types.mergeDecisionLogs}
+ */
+export function mergeDecisionLogs(base, incoming) {
+  /** @type {Types.CullDecisionLog} */
+  const log = { ...base }
+  /** @type {string[]} */
+  const changed = []
+  for (const sha of Object.keys(incoming)) {
+    const theirs = incoming[sha]
+    const ours = log[sha]
+    const wins =
+      ours === undefined ||
+      theirs.at > ours.at ||
+      (theirs.at === ours.at && tieRank(theirs) > tieRank(ours))
+    if (wins && (ours === undefined || ours.d !== theirs.d || ours.at !== theirs.at)) {
+      log[sha] = theirs
+      changed.push(sha)
+    }
+  }
+  return { log, changed }
+}
+
+/** @type {Types.decisionsFromLog} */
+export function decisionsFromLog(log) {
+  /** @type {Types.CullDecisions} */
+  const decisions = {}
+  for (const sha of Object.keys(log)) {
+    const d = log[sha].d
+    if (d !== null) decisions[sha] = d
+  }
+  return decisions
+}
+
+/**
+ * The stored form: `{ version: 2, log: { sha: [decision or null, stamp] } }`. Tuples
+ * rather than objects, because a library of thousands of photographs is thousands of
+ * entries in a store of a few megabytes.
+ * @type {Types.serializeDecisionLog}
+ */
+export function serializeDecisionLog(log) {
+  /** @type {Record<string, [Types.CullDecision | null, number]>} */
+  const out = {}
+  for (const sha of Object.keys(log).sort()) out[sha] = [log[sha].d, log[sha].at]
+  return JSON.stringify({ version: 2, log: out })
+}
+
+/**
+ * The inverse of `serializeDecisionLog`. An absent store is an empty log. Anything
+ * malformed is an error rather than a partial log, because the page then keeps a copy
+ * of the unreadable text instead of writing over it.
+ * @type {Types.parseDecisionLog}
+ */
+export function parseDecisionLog(text) {
+  if (text === null) return { valid: true, value: {} }
+  /** @type {unknown} */
+  let parsed
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return { valid: false, error: "Not valid JSON." }
+  }
+  if (parsed === null || typeof parsed !== "object") {
+    return { valid: false, error: "Not a decision store." }
+  }
+  const { version, log } = /** @type {{ version?: unknown, log?: unknown }} */ (parsed)
+  if (version !== 2 || log === null || typeof log !== "object" || Array.isArray(log)) {
+    return { valid: false, error: "Not a version 2 decision store." }
+  }
+  /** @type {Types.CullDecisionLog} */
+  const value = {}
+  for (const [sha, entry] of Object.entries(log)) {
+    if (!isSha256Hex(sha) || !Array.isArray(entry) || entry.length !== 2) {
+      return { valid: false, error: "A malformed entry." }
+    }
+    const [d, at] = entry
+    if ((d !== "keep" && d !== "hide" && d !== null) || typeof at !== "number" || !(at >= 0)) {
+      return { valid: false, error: "A malformed entry." }
+    }
+    value[sha] = { d, at }
+  }
+  return { valid: true, value }
+}
+
+/**
+ * The decisions in one first-version store, `{ decisions: { sha: "keep" | "hide" } }`.
+ * Null when the text is not one. Entries that are not a decision on a hash are left
+ * out: that store only ever wrote well-formed ones.
+ * @type {Types.parseLegacyDecisions}
+ */
+export function parseLegacyDecisions(text) {
+  /** @type {unknown} */
+  let parsed
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return null
+  }
+  if (parsed === null || typeof parsed !== "object") return null
+  const { decisions } = /** @type {{ decisions?: unknown }} */ (parsed)
+  if (decisions === null || typeof decisions !== "object" || Array.isArray(decisions)) return null
+  /** @type {Types.CullDecisions} */
+  const out = {}
+  for (const [sha, d] of Object.entries(decisions)) {
+    if (isSha256Hex(sha) && (d === "keep" || d === "hide")) out[sha] = d
+  }
+  return out
+}
+
+/**
+ * First-version decisions brought into a log, never at the expense of a decision
+ * already in it. They are stamped 0, the oldest possible, because they carry no time:
+ * anything decided on the new page is newer, and wins.
+ *
+ * The old stores were one per photo directory path, and each old tab wrote its whole
+ * view into one. A photograph decided both ways, across two stores or against an
+ * old decision already brought in, is a `conflict`: resolved towards hidden like any
+ * other tie, and counted, so the page can say so instead of choosing silently.
+ * @type {Types.importLegacyDecisions}
+ */
+export function importLegacyDecisions(log, stores) {
+  /** @type {Types.CullDecisionLog} */
+  const legacy = {}
+  /** @type {Set<string>} */
+  const conflicts = new Set()
+  for (const store of stores) {
+    for (const sha of Object.keys(store)) {
+      const d = store[sha]
+      const seen = legacy[sha]
+      const earlier = log[sha]
+      if (seen && seen.d !== d) conflicts.add(sha)
+      if (earlier && earlier.at === 0 && earlier.d !== d) conflicts.add(sha)
+      if (!seen || d === "hide") legacy[sha] = { d, at: 0 }
+    }
+  }
+  const merged = mergeDecisionLogs(log, legacy)
+  return { log: merged.log, imported: merged.changed.length, conflicts: conflicts.size }
+}
+
 // --- People ------------------------------------------------------------------
 
 /**

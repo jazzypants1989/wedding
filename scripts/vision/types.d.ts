@@ -2443,6 +2443,15 @@ export interface CullDecidable {
   liveClip?: boolean
 }
 
+/** One decision and when it was made. `d: null` is a stamped return to undecided. */
+export interface CullStampedDecision {
+  d: CullDecision | null
+  /** Epoch ms. 0 for a decision brought over from the first version, which had none. */
+  at: number
+}
+/** sha256 to its latest decision. What localStorage holds, merged across tabs. */
+export type CullDecisionLog = Record<string, CullStampedDecision>
+
 export interface CullChange {
   sha: string
   to: CullDecision
@@ -2551,6 +2560,20 @@ export function restoreSelection(
   selection: CullSelection,
 ): { changes: CullChange[]; unknown: number }
 export function summarize(items: readonly CullDecidable[], decisions: CullDecisions): CullSummary
+export function mergeDecisionLogs(
+  base: CullDecisionLog,
+  incoming: CullDecisionLog,
+): { log: CullDecisionLog; changed: string[] }
+export function decisionsFromLog(log: CullDecisionLog): CullDecisions
+export function serializeDecisionLog(log: CullDecisionLog): string
+export function parseDecisionLog(
+  text: string | null,
+): { valid: true; value: CullDecisionLog } | { valid: false; error: string }
+export function parseLegacyDecisions(text: string): CullDecisions | null
+export function importLegacyDecisions(
+  log: CullDecisionLog,
+  stores: readonly CullDecisions[],
+): { log: CullDecisionLog; imported: number; conflicts: number }
 export function faceIsGood(
   box: { x: number; y: number; w: number; h: number },
   scoredFaces: readonly CullFaceScore[] | null,
@@ -2601,8 +2624,9 @@ export interface CullPageItem extends CullDecidable {
 /** `tmp/cull/cull-page-data.js`, assigned to `window.CULL_DATA`. */
 export interface CullPageData {
   version: 1
-  /** Digest of the photo directory's path. localStorage's key, so decisions survive
-   *  a re-run that adds photographs: they are keyed by content, not by position. */
+  /** Digest of the photo directory's path. Only used to find the first version's
+   *  saved place, which was keyed by it. Decisions are keyed by content hash alone,
+   *  so they survive a re-run from another root or mount. */
   rootId: string
   apis: Record<string, { available: boolean; note?: string }>
   minGood: number
