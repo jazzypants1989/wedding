@@ -38,6 +38,8 @@ import { normalizeName, setAppState } from "../../db/utils.js"
 import { makeMp4 } from "../../tests/media-fixtures.js"
 import { LIMITS } from "../../types.js"
 import { drawPlaceholder } from "./placeholder-proxy.js"
+import { decodePng } from "../vision/png-read.js"
+import { encodePng } from "../vision/png-write.js"
 
 const REPO_ROOT = path.join(import.meta.dirname, "..", "..")
 const STATES_DIR = path.join(REPO_ROOT, "tmp", "states")
@@ -106,6 +108,12 @@ export const PREVIEW_STATES = {
   "long-text": {
     title: "Long text",
     description: "Names, captions and notes at their limits, plus emoji and right-to-left text.",
+  },
+  twins: {
+    title: "Black-and-white twins",
+    description:
+      "Colour drawings with black-and-white copies: some paired, some waiting to be " +
+      "found, a burst of two. The lightbox flip is on.",
   },
 }
 
@@ -293,7 +301,31 @@ function ensurePool() {
  * @property {number} id
  * @property {string} key
  * @property {Types.PreviewOrientation} orientation
+ * @property {number} poolIndex which drawing of that orientation it shows
  */
+
+/**
+ * The black-and-white copy of a pool drawing, made once beside it: the drawing
+ * decoded, each pixel set to its Rec. 709 luma, encoded again. A fictional
+ * stand-in for a photographer's black-and-white export.
+ * @param {string} source a PNG under tmp/states/.pool @returns {string}
+ */
+function grayCopy(source) {
+  const target = source.slice(0, -".png".length) + "-gray.png"
+  if (fs.existsSync(target)) return target
+  const image = decodePng(fs.readFileSync(source))
+  const rgb = Buffer.alloc(image.rgb.length)
+  for (let i = 0; i < rgb.length; i += 3) {
+    const v = Math.round(
+      0.2126 * image.rgb[i] + 0.7152 * image.rgb[i + 1] + 0.0722 * image.rgb[i + 2],
+    )
+    rgb[i] = v
+    rgb[i + 1] = v
+    rgb[i + 2] = v
+  }
+  fs.writeFileSync(target, encodePng({ width: image.width, height: image.height, rgb }))
+  return target
+}
 
 /** The seeding helpers one state's builder works with. */
 function createSeeder() {
@@ -405,16 +437,23 @@ function createSeeder() {
     },
 
     /**
+     * `like` draws the same picture as another row (its orientation and pool
+     * drawing), and `gray` its black-and-white copy: a twin's fixture.
      * @param {{ section?: string, status?: string, kind?: string, caption?: string | null,
-     *   accountId?: number | null, minutesAgo?: number, sortOrder?: number }} [options]
+     *   accountId?: number | null, minutesAgo?: number, sortOrder?: number,
+     *   like?: PreviewMedia, gray?: boolean }} [options]
      * @returns {PreviewMedia}
      */
     media(options = {}) {
       const n = mediaCount++
       const kind = options.kind ?? "image"
-      const orientation = cycle(ORIENTATIONS, n)
+      const orientation = options.like?.orientation ?? cycle(ORIENTATIONS, n)
+      const poolIndex = options.like?.poolIndex ?? n % POOL_SIZE
       const { width, height } = SIZES[orientation]
-      const source = pool[`${orientation}-${n % POOL_SIZE}`]
+      const drawn = pool[`${orientation}-${poolIndex}`]
+      const source = options.gray
+        ? { display: grayCopy(drawn.display), thumb: grayCopy(drawn.thumb) }
+        : drawn
       const key = crypto.createHash("md5").update(`preview-${n}`).digest("hex")
       const dir = itemDir(key)
       fs.mkdirSync(dir, { recursive: true })
@@ -473,7 +512,30 @@ function createSeeder() {
       const row = /** @type {{ id: number }} */ (
         /** @type {unknown} */ (db.prepare("SELECT id FROM media WHERE file_key = ?").get(key))
       )
-      return { id: row.id, key, orientation }
+      return { id: row.id, key, orientation, poolIndex }
+    },
+
+    /**
+     * A colour photo and its black-and-white copy, the way a photographer
+     * delivers them: same moment, same size, same section. The copy arrives
+     * hidden (a culled import). `paired` links them as the admin would.
+     * @param {{ capturedAt: string, sortOrder: number, paired: boolean, caption?: string | null,
+     *   like?: PreviewMedia }} options
+     * @returns {{ colour: PreviewMedia, copy: PreviewMedia }}
+     */
+    twins({ capturedAt, sortOrder, paired, caption = null, like }) {
+      const colour = this.media({ section: "official", sortOrder, caption, like })
+      const copy = this.media({
+        section: "official",
+        status: "hidden",
+        sortOrder: sortOrder + 1000,
+        like: colour,
+        gray: true,
+      })
+      const stamp = db.prepare("UPDATE media SET captured_at = ? WHERE id IN (?, ?)")
+      stamp.run(capturedAt, colour.id, copy.id)
+      if (paired) db.prepare("UPDATE media SET twin_of = ? WHERE id = ?").run(colour.id, copy.id)
+      return { colour, copy }
     },
 
     /**
@@ -630,6 +692,44 @@ function typicalBase(seed) {
   const notes = seed.notes(40, accounts)
   seed.engagement(24, 90, accounts, media, notes)
   return { accounts, media, notes }
+}
+
+/**
+ * Black-and-white twins: a small gallery where three photos are already paired
+ * with their copies, two more pairs wait for "Find black-and-white twins", and a
+ * burst second holds two colour frames and one copy (only one of them is its
+ * twin). The lightbox flip is turned on, as the couple would from Site content.
+ * @param {Seeder} seed
+ */
+function seedTwins(seed) {
+  const guests = seed.guests(12)
+  const accounts = seed.accounts(6, CAST, guests)
+  const media = seed.gallery(9, 6, accounts)
+  const notes = seed.notes(6, accounts)
+  const paired = [
+    seed.twins({
+      capturedAt: "2026-04-26 16:12:40",
+      sortOrder: 0,
+      paired: true,
+      caption: "First look, in colour and black and white",
+    }),
+    seed.twins({ capturedAt: "2026-04-26 16:45:03", sortOrder: 1, paired: true }),
+    seed.twins({ capturedAt: "2026-04-26 17:20:11", sortOrder: 2, paired: true }),
+  ]
+  seed.twins({ capturedAt: "2026-04-26 18:02:55", sortOrder: 20, paired: false })
+  seed.twins({ capturedAt: "2026-04-26 18:30:21", sortOrder: 21, paired: false })
+  // The burst: a second colour frame of the same second, a different drawing.
+  const burst = seed.twins({ capturedAt: "2026-04-26 19:05:00", sortOrder: 22, paired: false })
+  const other = seed.media({
+    section: "official",
+    sortOrder: 23,
+    like: { ...burst.colour, poolIndex: (burst.colour.poolIndex + 1) % POOL_SIZE },
+  })
+  seed.db
+    .prepare("UPDATE media SET captured_at = ? WHERE id = ?")
+    .run("2026-04-26 19:05:00", other.id)
+  seed.engagement(8, 30, accounts, [...paired.map((p) => p.colour), ...media], notes)
+  setAppState("site_content", JSON.stringify({ gallery: { showBlackAndWhite: true } }))
 }
 
 /** @param {Seeder} seed @param {boolean} everyoneNamed */
@@ -1041,6 +1141,8 @@ function seedState(state, publicUrl) {
     seedCulled(seed)
   } else if (state === "long-text") {
     seedLongText(seed)
+  } else if (state === "twins") {
+    seedTwins(seed)
   } else {
     throw new Error(`Unknown state: ${state}`)
   }
