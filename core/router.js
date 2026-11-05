@@ -35,6 +35,7 @@ import * as moderation from "../api/admin/moderation.js"
 import * as adminGuestbook from "../api/admin/guestbook.js"
 import * as adminAccounts from "../api/admin/accounts.js"
 import * as adminMedia from "../api/admin/media.js"
+import * as adminMediaTwins from "../api/admin/media-twins.js"
 import * as adminFaces from "../api/admin/faces.js"
 import * as adminPeople from "../api/admin/people.js"
 import * as siteContent from "../api/admin/site-content.js"
@@ -322,6 +323,10 @@ route("DELETE", "/api/admin/accounts/:id", adminAccounts.remove, { admin: true }
 route("GET", "/api/admin/media/guest-loved", adminMedia.guestLoved, { admin: true })
 route("GET", "/api/admin/media/curated", adminMedia.curated, { admin: true })
 route("GET", "/api/admin/media/capacity", adminMedia.capacity, { admin: true })
+route("POST", "/api/admin/media/twins/scan", adminMediaTwins.scan, { admin: true })
+route("GET", "/api/admin/media/:id/twin-options", adminMediaTwins.options, { admin: true })
+route("POST", "/api/admin/media/:id/twin", adminMediaTwins.pair, { admin: true })
+route("DELETE", "/api/admin/media/:id/twin", adminMediaTwins.unpair, { admin: true })
 route("POST", "/api/admin/media/reorder", adminMedia.reorder, { admin: true })
 // Gallery → Sort: show or keep hidden (or undo) a moment's photos in one go.
 route("POST", "/api/admin/media/decide", adminMedia.decide, { admin: true })

@@ -32,6 +32,7 @@ import {
   listGuestMediaByReactions,
 } from "../../db/media.js"
 import { countCardsReferencingFileKey } from "../../db/thank-you-cards.js"
+import { releaseTwinsOfRemoved } from "../../db/media-twins.js"
 
 /** Default + hard cap for the "Most loved" curation page (A3). */
 const LOVED_DEFAULT_LIMIT = 60
@@ -69,8 +70,9 @@ export async function curated(req, res) {
   }
   // Plus what Gallery → Sort reads: the capture time it groups moments by and
   // whether the photo has been decided there. Neither is in a public response.
+  // Each row also carries its black-and-white twin, if paired: the admin always sees it.
   const items = getCuratedMediaForAdmin(section).map((row) => ({
-    ...toListItem(row),
+    ...toListItem(row, true),
     captured_at: row.captured_at,
     decided_at: row.decided_at,
   }))
@@ -326,6 +328,9 @@ export async function remove(req, res, { params, session }) {
   // daily sweep purges quarantine after MEDIA_QUARANTINE_TTL_DAYS).
   quarantineItemDir(row.file_key)
   softDeleteMedia(idResult.value)
+  // Its black-and-white copy, if paired, becomes its own photo again — hidden,
+  // so it waits in Gallery → Hidden instead of going public on its own.
+  releaseTwinsOfRemoved(idResult.value)
 
   log({
     action: AUDIT_ACTIONS.MEDIA_DELETE,

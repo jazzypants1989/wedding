@@ -411,6 +411,63 @@ export function mediaDeleteHandler(
   routeInfo: AuthenticatedRouteInfo,
 ): Promise<void>
 
+/** @file media-twins.js (admin) — black-and-white twins */
+
+/** One photo a twin scan or the by-hand picker offers. */
+export interface TwinCandidate {
+  id: number
+  file_key: string
+  section: import("../../types.js").MediaSection
+  status: import("../../types.js").MediaStatus
+  caption: string | null
+  width: number | null
+  height: number | null
+  needs_display: boolean
+  captured_at: string | null
+}
+
+/** Photos sharing a capture second, dimensions and section: maybe a pair. */
+export interface TwinCandidateGroup {
+  section: import("../../types.js").MediaSection
+  capturedAt: string
+  width: number
+  height: number
+  members: TwinCandidate[]
+}
+
+/** POST /api/admin/media/twins/scan — back-fill capture times from originals
+ *  that carry EXIF, then return { groups, backfilled, withoutCaptureTime,
+ *  truncated }. Proposes nothing itself: the browser measures the thumbnails. */
+export function mediaTwinScanHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** GET /api/admin/media/:id/twin-options — same-section photos a person might
+ *  pair with this one by hand, likeliest first. */
+export function mediaTwinOptionsHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** POST /api/admin/media/:id/twin — { twinId }: make twinId the black-and-white
+ *  copy of :id (the colour photo). 409 when either side no longer qualifies or
+ *  the copy is on a thank-you card. */
+export function mediaTwinPairHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
+/** DELETE /api/admin/media/:id/twin — unpair; the copy keeps its own status. */
+export function mediaTwinUnpairHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
 /**
  * Input for creating a petition.
  * @example
