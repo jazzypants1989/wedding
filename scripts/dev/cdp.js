@@ -91,7 +91,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
  * @param {string} profile
  * @returns {Promise<ChildProcess>}
  */
-async function startChrome(candidates, profile) {
+export async function startChrome(candidates, profile) {
   for (const binary of candidates) {
     const child = spawn(
       binary,
@@ -118,7 +118,7 @@ async function startChrome(candidates, profile) {
  * @param {string} profile
  * @returns {Promise<number>}
  */
-async function readDebugPort(profile) {
+export async function readDebugPort(profile) {
   const file = path.join(profile, "DevToolsActivePort")
   for (let attempt = 0; attempt < STARTUP_ATTEMPTS; attempt++) {
     if (fs.existsSync(file)) {
@@ -138,7 +138,7 @@ async function readDebugPort(profile) {
  *   close: () => void,
  * }>}
  */
-async function connect(debugUrl) {
+export async function connect(debugUrl) {
   const ws = new WebSocket(debugUrl)
   await new Promise((resolve, reject) => {
     ws.onopen = resolve
