@@ -1108,6 +1108,12 @@ export interface UpdateGuestInput {
   status?: GuestStatus
 }
 
+export const DB_SNAPSHOT: {
+  readonly INTERVAL_MS: number
+  readonly INITIAL_DELAY_MS: number
+  readonly KEEP: number
+}
+
 export const SERVER: {
   readonly projectRoot: string
   readonly port: string | number

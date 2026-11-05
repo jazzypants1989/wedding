@@ -3,6 +3,7 @@
 
 import "./core/env.js"
 import http from "node:http"
+import path from "node:path"
 import { sendJson } from "./core/http.js"
 import { init, close } from "./db/connection.js"
 import { cleanExpiredSessions } from "./db/sessions.js"
@@ -17,7 +18,8 @@ import { initSetup, isSetupComplete } from "./core/setup.js"
 import { serveMedia } from "./core/media-serve.js"
 import { ensureUploadDirs } from "./core/media-storage.js"
 import { runMediaMaintenance } from "./core/media-sweep.js"
-import { SERVER } from "./types.js"
+import { startSnapshotSchedule } from "./db/snapshot.js"
+import { SERVER, DB_SNAPSHOT, MEDIA_STORAGE } from "./types.js"
 
 export const server = http.createServer(async (req, res) => {
   if (shuttingDown) {
@@ -121,6 +123,18 @@ setInterval(
   },
   60 * 60 * 1000,
 ).unref()
+
+// Hourly consistent database snapshot beside the database, so the nightly
+// file-level volume backup always holds a clean copy. Off under NODE_ENV=test
+// unless DB_SNAPSHOT_ENABLED=true; failures log one line and never stop the server.
+startSnapshotSchedule({
+  dbPath: process.env.DATABASE_PATH || path.join(SERVER.projectRoot, "data", "wedding.db"),
+  keep: DB_SNAPSHOT.KEEP,
+  intervalMs: DB_SNAPSHOT.INTERVAL_MS,
+  initialDelayMs: DB_SNAPSHOT.INITIAL_DELAY_MS,
+  minFreeBytes: MEDIA_STORAGE.MIN_FREE_BYTES,
+  enabled: process.env.NODE_ENV !== "test" || process.env.DB_SNAPSHOT_ENABLED === "true",
+})
 
 // A 100MB video on a slow uplink takes minutes to receive, and Node has no
 // per-route requestTimeout override. Raising the global limit is safe ONLY

@@ -263,6 +263,14 @@ export const MEDIA_STORAGE = Object.freeze({
     envBytes("MEDIA_QUARANTINE_TTL_DAYS", 7) * 24 * 60 * 60 * 1000,
 })
 
+// Hourly WAL-safe database snapshot (db/snapshot.js), written beside the database
+// so the nightly file-level volume backup always contains a clean copy.
+export const DB_SNAPSHOT = Object.freeze({
+  INTERVAL_MS: 60 * 60 * 1000,
+  INITIAL_DELAY_MS: 5 * 60 * 1000, // first one a few minutes after boot
+  KEEP: 24, // a day of hourly snapshots
+})
+
 // Responsive width ladder for content-section images (e.g. dress-code figures).
 // Long-edge caps; scoped to section='content' so the thousands of guest gallery
 // uploads keep the lean display+thumb pair and don't pay the ladder's storage.

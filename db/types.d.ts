@@ -1809,3 +1809,45 @@ export function recentBatches(limit: number): FaceBatchSummary[]
  *  since folded into another still applies to the live one) and filtered of
  *  revoked batches, for the same reasons replay is. */
 export function negativesForFace(faceId: number): number[]
+
+/** @file snapshot.js - Consistent database snapshots */
+
+export interface SnapshotOptions {
+  /** Skip (not fail) when free space beside the database, less the database size, is below this. */
+  minFreeBytes?: number
+  /** Clock override for the filename stamp (tests). */
+  now?: Date
+}
+
+export interface SnapshotResult {
+  /** Absolute path of the new snapshot; null when skipped. */
+  created: string | null
+  /** File names removed by pruning. */
+  pruned: string[]
+  /** Why nothing was written, when skipped. */
+  skipped?: string
+}
+
+/**
+ * Write `<base>.<YYYYMMDD-HHMMSS>.backup` beside the database via VACUUM INTO (temp name,
+ * then rename) and prune to the newest `keep`. Throws a clear Error on failure.
+ */
+export function snapshotDatabase(
+  dbPath: string,
+  keep: number,
+  options?: SnapshotOptions,
+): SnapshotResult
+
+export interface SnapshotScheduleOptions {
+  dbPath: string
+  keep: number
+  intervalMs: number
+  initialDelayMs: number
+  minFreeBytes: number
+  enabled: boolean
+  log?: Pick<Console, "log" | "warn" | "error">
+}
+
+/** Run snapshots after an initial delay, then on an interval, never overlapping and never
+ *  throwing. Returns a stop function, or null when disabled. Timers are unref'd. */
+export function startSnapshotSchedule(options: SnapshotScheduleOptions): (() => void) | null

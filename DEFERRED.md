@@ -25,8 +25,15 @@ Serving 100MB uploads through Traefik needs proxy-side settings the repo can't s
 
 ### Off-host backups + retention 🟡
 
-`scripts/backup-db.js` writes a WAL-consistent `VACUUM INTO` snapshot, pruned to the last 5 —
-but all inside the `wedding-data` volume. That is point-in-time recovery, **not disaster
+The server now writes a WAL-consistent `VACUUM INTO` snapshot (`db/snapshot.js`) beside the
+database a few minutes after boot and then hourly, keeping the newest 24
+(`DB_SNAPSHOT` in `types.js`; skipped when free space is under `MEDIA_MIN_FREE_BYTES`; off in
+`NODE_ENV=test` unless `DB_SNAPSHOT_ENABLED=true`). `scripts/backup-db.js` is the manual
+trigger (same format, keeps 5). Snapshots are `wedding.db.<YYYYMMDD-HHMMSS>.backup`, written
+via a `.tmp` name and renamed, so the nightly file-level volume tar always contains a clean
+copy at most an hour old, with no change to the external job. Costs up to 24 extra copies of
+the database in the volume. Pre-deploy snapshots elsewhere are never pruned. All of it is
+still inside the `wedding-data` volume. That is point-in-time recovery, **not disaster
 recovery**: lose the volume and every copy is gone. Still needed:
 - **DB off the VPS:** copy the newest snapshot off-box (scp / object storage) on a deploy hook or
   a separate cron.
@@ -40,9 +47,8 @@ recovery**: lose the volume and every copy is gone. Still needed:
 
 *Update (homelab):* a nightly restic job in the homelab repo now archives the whole
 `wedding_wedding-data` volume to two off-host targets, with restore drills
-(`docs/state/backups.md` there). What's still open here: a file-level copy can catch the
-SQLite WAL mid-write, so point that job at the newest `VACUUM INTO` snapshot (or run
-`backup-db.js` just before it) rather than trusting the live `wedding.db` file.
+(`docs/state/backups.md` there). That tar still copies the live `wedding.db` too, which can be torn; the
+hourly `*.backup` snapshot beside it is the file to restore from.
 
 (`scripts/export-archive.js` is the separate *whole-archive* export for eventual site sunset, not
 the incremental nightly backup.)
