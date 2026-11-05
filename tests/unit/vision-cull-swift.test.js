@@ -121,6 +121,17 @@ describe("cull-scores-macos, end to end", { skip: reason ?? false }, () => {
     assert.equal(fs.existsSync(elsewhere), false)
   })
 
+  test("a tmp directory inside a repository, but not its top-level tmp/, is refused", () => {
+    // public/tmp/cull passed the old "a component named tmp" rule, inside the web root.
+    const repo = path.join(scratch, "a-repo")
+    fs.mkdirSync(path.join(repo, ".git"), { recursive: true })
+    const served = path.join(repo, "public", "tmp", "cull")
+    const run = spawnSync(scorer, [photos, "--out", served], { encoding: "utf8" })
+    assert.equal(run.status, 2)
+    assert.ok(run.stderr.includes("top-level tmp/"), run.stderr)
+    assert.equal(fs.existsSync(path.join(repo, "public")), false)
+  })
+
   test("scores an image: aesthetics, a feature print, a capture time, thumb and preview", () => {
     const row = /** @type {Types.CullScoreRow} */ (byRel.get("ceremony/a1.jpg"))
     assert.equal(row.kind, "image")

@@ -16,7 +16,8 @@
  *  the photograph.
  *
  *  The photograph rules apply unchanged (CLAUDE.md): the directory is an argument,
- *  nothing searches, and every output is under a `tmp` directory. The labels and
+ *  nothing searches, and every output is scratch: under the repository's own tmp/,
+ *  or a tmp directory outside every repository (scratch-dir.js). The labels and
  *  identities files are read only from explicit arguments. Names reach the page's
  *  data file and nowhere else, and this script never prints one.
  *
@@ -38,6 +39,7 @@ import { NOT_A_FACE, normaliseIdentityNames } from "./convert-labels-to-face-wor
 import * as logic from "./cull-logic.js"
 import { computeDatasetId } from "./dataset-id.js"
 import { readJsonl } from "./ingest-faces.js"
+import { scratchDirRefusal } from "./scratch-dir.js"
 
 const D = logic.CULL_DEFAULTS
 
@@ -47,7 +49,9 @@ Usage: node scripts/vision/cull-data.js <photo-dir> [options]
   Build the culling page under --out from the scores cull-scores-macos wrote
   there. A photograph with no scores is still listed. Then open cull.html.
 
-  --out DIR              Output directory, under a tmp directory (default tmp/cull).
+  --out DIR              Output directory (default tmp/cull). Inside a repository, it
+                         must be under that repository's top-level tmp/; outside
+                         one, under a directory named tmp.
 
   People, all optional. Without them the page works and shows no people panel.
   --labels FILE          A labels.json. Enables the person-coverage warning.
@@ -155,13 +159,8 @@ export function parseCullArgs(argv) {
   }
 
   const outDir = path.resolve(values.out ?? "tmp/cull")
-  if (!outDir.split(path.sep).includes("tmp")) {
-    return {
-      valid: false,
-      error:
-        "--out must be under a tmp directory: everything derived from a photograph is scratch.",
-    }
-  }
+  const refusal = scratchDirRefusal(outDir)
+  if (refusal !== null) return { valid: false, error: `--out: ${refusal}` }
 
   if (values.identities !== undefined && values.labels === undefined) {
     return {
@@ -498,6 +497,9 @@ export async function runCullData(args, deps = {}) {
   if (!fs.existsSync(args.dir) || !fs.statSync(args.dir).isDirectory()) {
     throw new Error(`Not a directory: ${args.dir}`)
   }
+  // Checked again here, where the writing happens, and not only where argv is parsed.
+  const refusal = scratchDirRefusal(args.outDir)
+  if (refusal !== null) throw new Error(refusal)
   fs.mkdirSync(args.outDir, { recursive: true })
   const root = fs.realpathSync(args.dir)
 

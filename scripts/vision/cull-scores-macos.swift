@@ -12,7 +12,8 @@
 //
 // The photograph rules apply (CLAUDE.md, "Photographs Are Input To Code"):
 //   - The directory is always an argument. Nothing searches for images.
-//   - Output is scratch, and it is refused anywhere but under a `tmp` directory.
+//   - Output is scratch. Inside a repository it must be under that repository's
+//     top-level tmp/ (so never public/tmp); outside one, under a `tmp` directory.
 //   - Thumbnails and previews are re-encoded from pixels, so they carry no EXIF
 //     and no GPS. They are still photographs of people: delete them when done.
 //   - Progress on stderr is counts only. A filename can carry a guest's name.
@@ -53,11 +54,68 @@ func fail(_ message: String) -> Never {
   exit(2)
 }
 
+// --- Where output may go. The same rule as scripts/vision/scratch-dir.js. ---------
+
+/// The path with every symlink in its existing part resolved, and the part that does
+/// not exist yet appended unchanged.
+func resolveExisting(_ path: String) -> String {
+  var missing: [String] = []
+  var at = path
+  while true {
+    if let resolved = realpath(at, nil) {
+      var base = String(cString: resolved)
+      free(resolved)
+      for name in missing.reversed() { base = base == "/" ? "/" + name : base + "/" + name }
+      return base
+    }
+    let parent = (at as NSString).deletingLastPathComponent
+    if parent == at || parent.isEmpty { return path }
+    missing.append((at as NSString).lastPathComponent)
+    at = parent
+  }
+}
+
+/// The nearest directory at or above `path` holding a `.git`, or nil. One stat per
+/// ancestor; nothing is listed.
+func enclosingRepository(_ path: String) -> String? {
+  var at = path
+  while true {
+    if at != "/" && FileManager.default.fileExists(atPath: at + "/.git") { return at }
+    let parent = (at as NSString).deletingLastPathComponent
+    if parent == at || parent.isEmpty { return nil }
+    at = parent
+  }
+}
+
+func isWithin(_ child: String, _ parent: String) -> Bool {
+  return child == parent || child.hasPrefix(parent + "/")
+}
+
+/// Why `path` may not hold output, or nil. Inside a repository, only under its own
+/// top-level tmp/: a directory named tmp elsewhere in one (public/tmp, say) may be
+/// served or committed. Outside every repository, under a directory named tmp.
+func scratchRefusal(_ path: String) -> String? {
+  let real = resolveExisting(path)
+  var inRepository = false
+  for candidate in [path, real] {
+    guard let repository = enclosingRepository(candidate) else { continue }
+    inRepository = true
+    if !isWithin(candidate, repository + "/tmp") {
+      return "\(path) is inside the repository at \(repository) but not under its top-level "
+        + "tmp/. Everything derived from a photograph is scratch."
+    }
+  }
+  if inRepository { return nil }
+  if [path, real].contains(where: { $0.split(separator: "/").contains("tmp") }) { return nil }
+  return "\(path) is not under a tmp directory. Everything derived from a photograph is scratch."
+}
+
 let usage = """
   usage: cull-scores-macos <photo-dir> [options]
          cull-scores-macos --probe
 
-    --out DIR          Output directory, must be under a tmp directory (default tmp/cull)
+    --out DIR          Output directory (default tmp/cull): a repository's top-level tmp/,
+                       or a tmp directory outside every repository
     --jobs N           Photographs processed at once (default 3)
     --vision-px N      Longest edge handed to Vision (default 3200, never upscales)
     --preview-px N     Longest edge of previews (default 1600; 0 for none)
@@ -669,8 +727,8 @@ guard let resolvedRoot = realpath(givenDir, nil) else { fail("Could not resolve 
 let root = String(cString: resolvedRoot)
 free(resolvedRoot)
 let outUrl = URL(fileURLWithPath: options.out).standardizedFileURL
-if !outUrl.pathComponents.contains("tmp") {
-  fail("--out must be under a tmp directory: everything derived from a photograph is scratch.")
+if let refusal = scratchRefusal(outUrl.path) {
+  fail("--out: \(refusal)")
 }
 let out = outUrl.path
 let scoresFile = out + "/scores.jsonl"

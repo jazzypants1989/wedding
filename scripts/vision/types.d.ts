@@ -2629,6 +2629,14 @@ export interface CullDataResult {
   target: string
 }
 
+// --- scratch-dir.js ---
+
+export function isWithin(child: string, parent: string): boolean
+export function resolveExisting(target: string): string
+export function enclosingRepository(target: string): string | null
+export function scratchDirRefusal(dir: string, repoRoot?: string): string | null
+export function backupDestinationRefusal(dir: string, repoRoot?: string): string | null
+
 export function parseCullArgs(
   argv: readonly string[],
 ): { valid: true; value: CullDataArgs } | { valid: false; error: string }
