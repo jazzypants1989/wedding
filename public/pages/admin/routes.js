@@ -170,6 +170,15 @@ export const ROUTES = [
     dialog: "gallery-upload-modal",
     parent: "gallery/honeymoon",
   },
+  // Sort (gallery-sort.js): a section's hidden photos a moment at a time, each
+  // shown or kept hidden. Its own panel; ?again=1 goes back through the kept-hidden.
+  { path: "gallery/sort", tab: "gallery-sort", nav: "gallery", title: "Sort hidden photos" },
+  {
+    path: "gallery/honeymoon/sort",
+    tab: "gallery-sort",
+    nav: "gallery",
+    title: "Sort hidden honeymoon photos",
+  },
   // The old single Thank-yous section; its links (bookmarks, emails) land on Cards.
   {
     path: "thank-yous",

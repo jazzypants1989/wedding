@@ -1,0 +1,378 @@
+/* Gallery → Sort (gallery-sort.js): a section's hidden photos, a moment at a
+   time, each shown or kept hidden. Loaded after admin.css and built on its
+   primitives (.single, .seg, .btn, .actionbar, .done-state, progress.bar);
+   every rule is scoped under #tab-gallery-sort.
+
+   Touch: every control is at least 44px tall, and nothing needs a hover. The
+   key hints (<kbd>) are hidden on a coarse pointer by admin.css. Colours are
+   the --ws-* tokens only, so light and dark both work. */
+
+/* The head is kept short: on a laptop the photo and its buttons have to fit
+   above the bar without scrolling. */
+/* A photo scrolled into view stops clear of the sticky bar. */
+#sort-root {
+  scroll-padding-block: 16px 96px;
+}
+
+#tab-gallery-sort .sort-head {
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+#tab-gallery-sort .sort-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+#tab-gallery-sort .sort-title h1 {
+  margin: 0;
+}
+
+#tab-gallery-sort .sort-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  min-height: 32px;
+  color: var(--ws-accent);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+#tab-gallery-sort .sort-back .icon {
+  width: 18px;
+  height: 18px;
+}
+
+#tab-gallery-sort .sort-progress {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 18px;
+}
+
+#tab-gallery-sort .sort-progress .bar {
+  flex: 0 1 260px;
+}
+
+#tab-gallery-sort .sort-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 18px;
+  margin: 0;
+  color: var(--ws-muted);
+  font-size: 0.9rem;
+}
+
+#tab-gallery-sort .sort-counts strong {
+  color: var(--ws-ink);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------- a moment */
+
+#tab-gallery-sort .sort-moment {
+  display: grid;
+  gap: 10px;
+  padding-bottom: 18px;
+}
+
+#tab-gallery-sort .sort-moment h2 {
+  margin: 0;
+}
+
+#tab-gallery-sort .sort-moment h2:focus {
+  outline: none;
+}
+
+#tab-gallery-sort .sort-hint {
+  margin: 0;
+}
+
+#tab-gallery-sort .sort-hint .kbd-hint {
+  margin-left: 12px;
+}
+
+/* A moment's photos side by side, in as many rows as the count and the width
+   need (--cols, --rows); every row of frames shares the height the screen
+   leaves, so a whole moment is in view at once wherever that is possible. */
+#tab-gallery-sort .sort-photos {
+  --cols: 1;
+  --rows: 1;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+}
+
+#tab-gallery-sort .sort-photos[data-count="2"] {
+  --cols: 2;
+}
+
+#tab-gallery-sort .sort-photos[data-count="3"] {
+  --cols: 3;
+}
+
+#tab-gallery-sort .sort-photos[data-count="4"] {
+  --cols: 2;
+  --rows: 2;
+}
+
+#tab-gallery-sort .sort-photos:is([data-count="5"], [data-count="6"]) {
+  --cols: 3;
+  --rows: 2;
+}
+
+#tab-gallery-sort .sort-photos:is([data-count="7"], [data-count="8"]) {
+  --cols: 3;
+  --rows: 3;
+}
+
+/* A laptop is wide enough for four across. */
+@media (min-width: 1200px) {
+  #tab-gallery-sort .sort-photos[data-count="4"] {
+    --cols: 4;
+    --rows: 1;
+  }
+
+  #tab-gallery-sort .sort-photos:is([data-count="7"], [data-count="8"]) {
+    --cols: 4;
+    --rows: 2;
+  }
+}
+
+/* One photo: as large as the screen allows, centred. */
+#tab-gallery-sort .sort-photos[data-count="1"] {
+  max-width: 920px;
+  width: 100%;
+  margin-inline: auto;
+}
+
+#tab-gallery-sort .sort-photo {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  padding: 8px;
+  border: 1px solid var(--ws-line);
+  border-radius: 12px;
+  background: var(--ws-panel);
+}
+
+/* The photo the keys act on (only marked when there is a choice of photos). */
+#tab-gallery-sort .sort-photo.is-focused {
+  border-color: var(--ws-accent);
+  box-shadow: 0 0 0 3px var(--ws-accent-soft);
+}
+
+#tab-gallery-sort .sort-photo.is-shown {
+  border-color: var(--ws-ok);
+}
+
+#tab-gallery-sort .sort-frame {
+  position: relative;
+  display: grid;
+  place-items: center;
+  /* What the head, the moment's title and the bar leave, shared between the
+     rows, less each row's buttons. */
+  height: clamp(150px, calc((100dvh - 400px) / var(--rows) - 72px), 480px);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--ws-hover);
+}
+
+#tab-gallery-sort .sort-photos[data-count="1"] .sort-frame {
+  height: clamp(220px, calc(100dvh - 420px), 760px);
+}
+
+/* The whole photo, never cropped: you are judging it. */
+#tab-gallery-sort .sort-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+#tab-gallery-sort .sort-frame.is-missing .sort-art {
+  visibility: hidden;
+}
+
+/* Decided and kept hidden, or on the site already and not this session's to
+   decide: it steps back, so what still needs a look stands out. */
+#tab-gallery-sort .sort-photo.is-kept-hidden:not(.is-waiting) .sort-art,
+#tab-gallery-sort .sort-photo.is-context .sort-art {
+  opacity: 0.55;
+}
+
+#tab-gallery-sort .sort-stand-in {
+  color: var(--ws-muted);
+  font-size: 0.85rem;
+  padding: 12px;
+  text-align: center;
+}
+
+#tab-gallery-sort .sort-num {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  min-width: 26px;
+  height: 26px;
+  padding-inline: 6px;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  background: rgb(0 0 0 / 0.6);
+  color: #fff;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+#tab-gallery-sort .sort-status {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--ws-panel);
+  color: var(--ws-ink);
+  font-size: 0.78rem;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
+}
+
+#tab-gallery-sort .is-shown .sort-status {
+  background: var(--color-status-responded-bg);
+  color: var(--ws-ok);
+}
+
+/* --------------------------------------------------------- the two choices */
+
+#tab-gallery-sort .sort-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+#tab-gallery-sort .sort-actions .btn {
+  min-height: 44px;
+  min-width: 0;
+  padding-inline: 10px;
+}
+
+#tab-gallery-sort .sort-actions .btn .icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* Still to decide: Show is the one that changes the site, so it leads. */
+#tab-gallery-sort .is-waiting .sort-show {
+  background: var(--ws-primary);
+  border-color: var(--ws-primary);
+  color: var(--ws-primary-ink);
+}
+
+#tab-gallery-sort .is-waiting .sort-show:hover {
+  background: color-mix(in srgb, var(--ws-primary) 90%, black);
+}
+
+/* Decided: the choice made is the pressed one. */
+#tab-gallery-sort .sort-show[aria-pressed="true"] {
+  background: var(--color-status-responded-bg);
+  border-color: var(--ws-ok);
+  color: var(--ws-ok);
+}
+
+#tab-gallery-sort .sort-hide[aria-pressed="true"] {
+  background: var(--ws-sel);
+  border-color: var(--ws-accent);
+  color: var(--ws-ink);
+}
+
+/* ---------------------------------------------------------------- the bar */
+
+#tab-gallery-sort .sort-bar {
+  align-items: center;
+}
+
+#tab-gallery-sort .sort-bar .btn {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+#tab-gallery-sort .sort-bar-nav {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+#tab-gallery-sort .done-state h2 {
+  margin: 0;
+}
+
+#tab-gallery-sort .done-state .btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+#tab-gallery-sort .sort-loading {
+  padding: 24px 0;
+}
+
+/* ------------------------------------------------------------------ sizes */
+
+/* Phones: one photo across, and the bar's buttons share its width. */
+@media (max-width: 700px) {
+  #tab-gallery-sort .sort-photos[data-count] {
+    --cols: 1;
+  }
+
+  /* Room left by the top bar, the head, the bar and the phone's own nav. */
+  #tab-gallery-sort .sort-frame,
+  #tab-gallery-sort .sort-photos[data-count="1"] .sort-frame {
+    height: clamp(170px, calc(100dvh - 550px), 420px);
+  }
+
+  #tab-gallery-sort .sort-bar {
+    gap: 6px;
+  }
+
+  #tab-gallery-sort .sort-bar .btn-lg {
+    flex: 1 1 auto;
+    padding-inline: 10px;
+  }
+
+  #tab-gallery-sort .sort-bar-nav {
+    margin-left: 0;
+    gap: 6px;
+  }
+
+  #tab-gallery-sort .sort-bar-nav .btn-lg {
+    flex: none;
+  }
+
+  #tab-gallery-sort .sort-rest .sort-long {
+    display: none;
+  }
+}
+
+@media (min-width: 701px) {
+  #tab-gallery-sort .sort-rest .sort-short {
+    display: none;
+  }
+}
+
+@media (pointer: coarse) {
+  #tab-gallery-sort .sort-back,
+  #tab-gallery-sort .seg a {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+}

@@ -14,6 +14,7 @@ import { initManualSms } from "./manual-sms.js"
 import { initModeration, loadModeration, loadModerationCount } from "./moderation.js"
 import { loadHome, refreshHomeBadges } from "./inbox.js"
 import { initGalleryAdmin, loadGalleryAdmin } from "./gallery-admin.js"
+import { initGallerySort } from "./gallery-sort.js"
 import { initFaceAssignment, loadFaceAssignment } from "./face-assignment.js"
 import { initThankYous, loadThankYous, loadThankYouCount } from "./thank-you.js"
 import {
@@ -136,6 +137,7 @@ function init() {
   initManualSms()
   initModeration()
   initGalleryAdmin()
+  initGallerySort()
   initFaceAssignment()
   initThankYous()
   initSiteContent()

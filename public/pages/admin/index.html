@@ -21,6 +21,7 @@
   <link rel="stylesheet" href="/pages/admin/admin-thanks.css">
   <link rel="stylesheet" href="/pages/admin/admin-faces.css">
   <link rel="stylesheet" href="/pages/admin/admin-panels.css">
+  <link rel="stylesheet" href="/pages/admin/admin-sort.css">
   <script src="/components/theme-init.js"></script>
 </head>
 
@@ -206,11 +207,15 @@
             <p class="muted" id="gallery-lede"></p>
             <a class="btn btn-sm" id="gallery-add-btn" href="/admin/gallery/upload">+ Add official photos</a>
           </header>
-          <div class="seg" id="gallery-showing" role="group" aria-label="Which photos to show" hidden>
-            <button type="button" id="gallery-showing-site" aria-pressed="true">On the site <span
-                class="seg-n" id="gallery-showing-site-n"></span></button>
-            <button type="button" id="gallery-showing-hidden" aria-pressed="false">Hidden <span
-                class="seg-n" id="gallery-showing-hidden-n"></span></button>
+          <div class="gallery-bar">
+            <div class="seg" id="gallery-showing" role="group" aria-label="Which photos to show" hidden>
+              <button type="button" id="gallery-showing-site" aria-pressed="true">On the site <span
+                  class="seg-n" id="gallery-showing-site-n"></span></button>
+              <button type="button" id="gallery-showing-hidden" aria-pressed="false">Hidden <span
+                  class="seg-n" id="gallery-showing-hidden-n"></span></button>
+            </div>
+            <a class="btn btn-sm" id="gallery-sort-btn" href="/admin/gallery/sort" hidden>Sort hidden
+              photos</a>
           </div>
           <p class="muted" id="gallery-showing-note" hidden>
             Kept, and off the site. Unhide one and it goes back to its place in the order.
@@ -219,6 +224,14 @@
           <ul id="curated-grid" class="photo-grid"></ul>
           <ul id="loved-grid" class="photo-grid" hidden></ul>
         </div>
+      </div>
+
+      <!-- GALLERY → SORT (gallery-sort.js): a section's hidden photos a moment at
+           a time, each shown or kept hidden. Everything inside #sort-root is drawn
+           by JS on every arrival; the live region stays put so it can speak. -->
+      <div id="tab-gallery-sort" class="tab-content panel-fill" role="region" aria-label="Sort hidden photos" hidden>
+        <div id="sort-root" class="single single-wide"></div>
+        <p class="sr-only" id="sort-live" aria-live="polite"></p>
       </div>
 
       <!-- NAME FACES (face-assignment.js): the Workspace walk — a stepper

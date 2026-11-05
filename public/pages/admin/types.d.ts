@@ -144,14 +144,14 @@ export interface AdminState {
   currentPetitions: Petition[]
   currentBlocklist: BlocklistEntry[]
   currentModeration: ModerationItem[]
-  currentCurated: MediaListItem[]
+  currentCurated: CuratedAdminItem[]
   currentGifts: GiftWithGuest[]
   currentCards: ThankYouCardListRow[]
   onAuthRequired: () => void
   getGuestById: (id: number) => Guest | null
   getBlockedEntryById: (id: number) => BlocklistEntry | null
   getPetitionById: (id: number) => Petition | null
-  getCuratedById: (id: number) => MediaListItem | null
+  getCuratedById: (id: number) => CuratedAdminItem | null
   getGiftById: (id: number) => GiftWithGuest | null
   getCardById: (id: number) => ThankYouCardListRow | null
 }
@@ -425,7 +425,13 @@ export function momentLabel(count: number, spanMs: number | null): string
  *  photos it changed were before. */
 export interface SortUndoEntry {
   moment: number
-  before: Array<{ id: number; status: "approved" | "hidden"; decided_at: string | null }>
+  /** `waiting`: it was still waiting for a decision this session. */
+  before: Array<{
+    id: number
+    status: "approved" | "hidden"
+    decided_at: string | null
+    waiting: boolean
+  }>
 }
 
 /** Register the Sort panel with the router. */

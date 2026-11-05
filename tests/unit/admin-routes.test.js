@@ -64,6 +64,11 @@ test("the longest whole-segment match wins; deeper paths keep their section", ()
   assert.strictEqual(routeFor("/admin/gallery/honeymoon/upload")?.dialog, "gallery-upload-modal")
   assert.strictEqual(routeFor("/admin/thank-yous/replies/")?.nav, "replies")
   assert.strictEqual(routeFor("/admin/faces/ask/f2003")?.tab, "faces")
+  // Sort is its own panel under Gallery, for each curated section.
+  assert.strictEqual(routeFor("/admin/gallery/sort")?.tab, "gallery-sort")
+  assert.strictEqual(routeFor("/admin/gallery/sort?again=1")?.tab, "gallery-sort")
+  assert.strictEqual(routeFor("/admin/gallery/honeymoon/sort")?.tab, "gallery-sort")
+  assert.strictEqual(routeFor("/admin/gallery/honeymoon/sort")?.nav, "gallery")
   // Whole segments only: "review-x" is not "review".
   assert.strictEqual(routeFor("/admin/review-x"), null)
   assert.strictEqual(routeFor("/admin/nope"), null)
@@ -166,6 +171,13 @@ test("breadcrumbs: group › section › page, the section linking to its root",
   const review = matchRoute("/admin/review")
   assert.ok(review)
   assert.deepStrictEqual(crumbsFor(review), [{ label: "Memories" }, { label: "Review posts" }])
+  const sort = matchRoute("/admin/gallery/sort")
+  assert.ok(sort)
+  assert.deepStrictEqual(crumbsFor(sort), [
+    { label: "Memories" },
+    { label: "Gallery", href: "/admin/gallery" },
+    { label: "Sort hidden photos" },
+  ])
   const blocked = matchRoute("/admin/requests/blocked")
   assert.ok(blocked)
   assert.deepStrictEqual(crumbsFor(blocked), [
