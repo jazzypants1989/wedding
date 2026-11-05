@@ -22,6 +22,7 @@ import {
   getSectionItems,
   hasMore,
   loadMore,
+  settled,
   ensureItemLoaded,
   removeItem,
 } from "./grid.js"
@@ -32,6 +33,7 @@ import {
   closeLightbox,
 } from "./lightbox.js"
 import { initUpload } from "./upload.js"
+import { reachableSections } from "./paging.js"
 
 /** Whether the lightbox's current open state came from a pushed history entry. */
 let lightboxPushed = false
@@ -59,11 +61,15 @@ function viewQuery(v) {
 // ---- "all"-aware lightbox source ----
 // The lightbox treats its key as opaque; these wrappers make "all" mean
 // official, honeymoon, then guest as one list, so arrows/slideshow flow across.
+// The list only reaches a section once every section before it is loaded to
+// the end (paging.js reachableSections) — the same rule that decides which
+// grids "all" shows — so stepping past the last loaded official photo fetches
+// the next official page instead of jumping into the guest wall.
 
 /** @param {Types.GalleryView} v @returns {Types.MediaListItem[]} */
 function viewItems(v) {
   if (v !== "all") return getSectionItems(v)
-  return ALL_ORDER.flatMap((section) => getSectionItems(section))
+  return reachableSections(ALL_ORDER, hasMore).flatMap((section) => getSectionItems(section))
 }
 
 /** @param {Types.GalleryView} v @returns {boolean} */
@@ -73,16 +79,12 @@ function viewHasMore(v) {
 }
 
 /** @param {Types.GalleryView} v @returns {Promise<number>} */
-async function viewLoadMore(v) {
+function viewLoadMore(v) {
   if (v !== "all") return loadMore(v)
-  // The curated sections are single full pages; once they're exhausted the
-  // guest keyset feed is the only thing left to extend.
-  for (const section of ALL_ORDER) {
-    if (section === "guest" || !hasMore(section)) continue
-    const n = await loadMore(section)
-    if (n > 0) return n
-  }
-  return loadMore("guest")
+  // Extend the first section that isn't loaded to its end. When that page is
+  // its last, the next section joins the list (already holding its first page).
+  const reached = reachableSections(ALL_ORDER, hasMore)
+  return loadMore(reached[reached.length - 1])
 }
 
 /** @param {Types.GalleryView} v @param {number} id */
@@ -220,26 +222,36 @@ function openFromCell(section, id) {
 
 /**
  * Open a deep-linked item: prefer an already-loaded row, else fetch it (its
- * visibility gate returns 404 for anything the caller may not see).
+ * visibility gate returns 404 for anything the caller may not see). A fetched
+ * row past the loaded pages is placed at the top of its grid; its own page
+ * later skips it as a repeat (grid.js freshItems).
  * @param {number} id
  */
 async function openItemById(id) {
-  for (const sec of ALL_ORDER) {
-    if (getSectionItems(sec).some((i) => i.id === id)) {
-      openLightbox(view === "all" ? "all" : sec, id)
+  // On a cold deep link the first pages are still in flight. Let them land, so
+  // a photo on one opens in its place, and so "all" knows how far it reaches.
+  await Promise.all(ALL_ORDER.map((section) => settled(section)))
+  let item = findLoadedItem(id)
+  if (!item) {
+    try {
+      item = /** @type {Types.MediaListItem} */ (await api(`/api/media/${id}`))
+    } catch {
+      // 404 / not visible — the grid stays, but a shared link deserves a word
+      // (and the dead ?item param shouldn't survive into copied URLs).
+      showToast("That photo isn't available anymore.")
+      stripQueryParam("/gallery", "item")
       return
     }
-  }
-  try {
-    const item = /** @type {Types.MediaListItem} */ (await api(`/api/media/${id}`))
     ensureItemLoaded(item)
-    openLightbox(view === "all" ? "all" : item.section, item.id)
-  } catch {
-    // 404 / not visible — the grid stays, but a shared link deserves a word
-    // (and the dead ?item param shouldn't survive into copied URLs).
-    showToast("That photo isn't available anymore.")
-    stripQueryParam("/gallery", "item")
   }
+  // "All" is one list that hasn't reached a later section until the ones above
+  // it are loaded to the end. A small official set ends on its first page, so a
+  // guest photo opens in "all" as it always did; when official runs longer,
+  // show the photo in its own section rather than load every page above it.
+  if (view === "all" && !viewItems("all").some((i) => i.id === id)) {
+    selectView(item.section, false)
+  }
+  openLightbox(view === "all" ? "all" : item.section, id)
 }
 
 /**

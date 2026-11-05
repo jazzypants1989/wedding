@@ -8,6 +8,7 @@ import "./_media-port.js"
 
 import { describe, it, before, after, beforeEach } from "node:test"
 import assert from "node:assert"
+import crypto from "node:crypto"
 import {
   startServer,
   stopServer,
@@ -481,7 +482,7 @@ describe("gallery list + single-item API", () => {
     assert.ok(item, "official item listed")
     assert.strictEqual(item.author_name, getWeddingFacts().coupleNames)
     assert.strictEqual(item.section, "official")
-    assert.strictEqual(body.nextCursor, null, "official section is a single page")
+    assert.strictEqual(body.nextCursor, null, "one photo fits one page")
   })
 
   it("hiding an approved item pulls it from BOTH the public file server and the id API", async (t) => {
@@ -865,7 +866,7 @@ describe("honeymoon section: a second curated set", () => {
     assert.strictEqual(row.account_id, null)
     assert.strictEqual(row.section, "honeymoon")
 
-    // The public list: one sort_order page (no cursor), the couple as author.
+    // The public list: sort_order order, all on one page, the couple as author.
     const body = await json(await fetch(`${BASE_URL}/api/media?section=honeymoon`))
     assert.deepStrictEqual(
       body.items.map((/** @type {any} */ i) => i.id),
@@ -873,7 +874,7 @@ describe("honeymoon section: a second curated set", () => {
     )
     assert.strictEqual(body.items[0].section, "honeymoon")
     assert.strictEqual(body.items[0].author_name, getWeddingFacts().coupleNames)
-    assert.strictEqual(body.nextCursor, null, "honeymoon is a single page")
+    assert.strictEqual(body.nextCursor, null, "two photos fit one page")
     assert.strictEqual(body.contributors, undefined, "no guest contributors strip")
 
     // Kept out of the other feeds.
@@ -1470,5 +1471,247 @@ describe("finishing an upload hidden: a culled import", () => {
     const after = await read()
     assert.ok(after.storedBytes > before.storedBytes, "a hidden row's bytes count")
     assert.ok(after.remainingBytes < before.remainingBytes || after.limitedBy === "disk")
+  })
+})
+
+describe("curated sections page in the couple's order", () => {
+  /** @typedef {{ section?: string, status?: string, sortOrder: number, deleted?: boolean }} SeedRow */
+
+  /**
+   * Seed curated rows straight into the table: listing reads rows, never bytes.
+   * @param {SeedRow[]} rows
+   * @returns {number[]} the new ids, in the order given
+   */
+  function seed(rows) {
+    const insert = db.prepare(
+      `INSERT INTO media (file_key, kind, section, status, sort_order, width, height, deleted_at)
+       VALUES (?, 'image', ?, ?, ?, 800, 600, ?)`,
+    )
+    /** @type {number[]} */
+    const ids = []
+    db.exec("BEGIN")
+    for (const row of rows) {
+      const result = insert.run(
+        crypto.randomBytes(16).toString("hex"),
+        row.section ?? "official",
+        row.status ?? "approved",
+        row.sortOrder,
+        row.deleted ? new Date().toISOString() : null,
+      )
+      ids.push(Number(result.lastInsertRowid))
+    }
+    db.exec("COMMIT")
+    return ids
+  }
+
+  /** The ids a guest should see, in the order they should see them.
+   * @param {string} section @returns {number[]} */
+  function expectedOrder(section) {
+    return db
+      .prepare(
+        `SELECT id FROM media WHERE section = ? AND status = 'approved' AND deleted_at IS NULL
+         ORDER BY sort_order, id`,
+      )
+      .all(section)
+      .map((row) => Number(/** @type {any} */ (row).id))
+  }
+
+  /**
+   * Follow nextCursor to the end, the way the gallery does.
+   * @param {string} section @param {number | null} limit
+   * @returns {Promise<{ ids: number[], pages: any[] }>}
+   */
+  async function walk(section, limit) {
+    /** @type {any[]} */
+    const pages = []
+    /** @type {string | null} */
+    let cursor = null
+    do {
+      const query = new URLSearchParams({ section })
+      if (limit !== null) query.set("limit", String(limit))
+      if (cursor !== null) query.set("after", cursor)
+      const res = await fetch(`${BASE_URL}/api/media?${query}`)
+      assert.strictEqual(res.status, 200)
+      const page = await json(res)
+      pages.push(page)
+      cursor = page.nextCursor
+      assert.ok(pages.length < 100, "the walk ends")
+    } while (cursor !== null)
+    return { ids: pages.flatMap((page) => page.items.map((/** @type {any} */ i) => i.id)), pages }
+  }
+
+  it("returns every visible row once, in (sort_order, id) order, across pages", async () => {
+    // Ties on sort_order (an import appends several at one value), ids that run
+    // against the order, and every status a guest must never see, interleaved.
+    /** @type {SeedRow[]} */
+    const rows = []
+    for (let i = 0; i < 23; i++) rows.push({ sortOrder: 10 - Math.floor(i / 3) })
+    for (const status of ["hidden", "pending", "rejected", "uploading"]) {
+      rows.push({ status, sortOrder: 4 }, { status, sortOrder: 0 })
+    }
+    rows.push({ sortOrder: 5, deleted: true }, { section: "honeymoon", sortOrder: 5 })
+    seed(rows)
+
+    const expected = expectedOrder("official")
+    assert.strictEqual(expected.length, 23)
+
+    const { ids, pages } = await walk("official", 5)
+    assert.deepStrictEqual(ids, expected, "every row, once, in order")
+    assert.strictEqual(pages.length, 5, "5 + 5 + 5 + 5 + 3")
+    for (const page of pages.slice(0, -1)) {
+      assert.strictEqual(page.items.length, 5)
+      assert.strictEqual(typeof page.nextCursor, "string", "a curated cursor is opaque")
+    }
+    assert.strictEqual(pages[pages.length - 1].nextCursor, null)
+    assert.ok(
+      pages.every((page) => page.items.every((/** @type {any} */ i) => i.status === "approved")),
+      "hidden, pending, rejected and in-flight rows never appear",
+    )
+
+    // A signed-in guest walks the same rows: no one's pending curated row leaks.
+    const { auth } = signIn({ trusted: 1, name: "Walker" })
+    const first = await json(await accountFetch("/api/media?section=official&limit=50", {}, auth))
+    assert.deepStrictEqual(
+      first.items.map((/** @type {any} */ i) => i.id),
+      expected,
+    )
+  })
+
+  it("a section that fills its last page exactly ends there, not on an empty page", async () => {
+    seed(Array.from({ length: 6 }, (_, i) => ({ sortOrder: i })))
+    const { pages } = await walk("official", 3)
+    assert.strictEqual(pages.length, 2)
+    assert.strictEqual(pages[1].items.length, 3)
+    assert.strictEqual(pages[1].nextCursor, null)
+  })
+
+  it("more than 500 official photos: the newest import is no longer cut off", async () => {
+    // The launch bug: one 500-row page and nextCursor null, so whatever an
+    // import appended past row 500 was invisible. Default page size here.
+    seed(Array.from({ length: 620 }, (_, i) => ({ sortOrder: i })))
+    const expected = expectedOrder("official")
+    const { ids, pages } = await walk("official", null)
+    assert.strictEqual(pages[0].items.length, 500, "the page cap is unchanged")
+    assert.strictEqual(ids.length, 620)
+    assert.deepStrictEqual(ids, expected)
+    assert.strictEqual(ids[ids.length - 1], expected[619], "the last photo is reachable")
+  })
+
+  it("honeymoon pages the same way", async () => {
+    seed(Array.from({ length: 7 }, (_, i) => ({ section: "honeymoon", sortOrder: 7 - i })))
+    const { ids } = await walk("honeymoon", 2)
+    assert.deepStrictEqual(ids, expectedOrder("honeymoon"))
+  })
+
+  it("refuses a malformed cursor with a 400, and ignores the other section kind's", async () => {
+    seed(Array.from({ length: 4 }, (_, i) => ({ sortOrder: i })))
+    const bad = [
+      "abc",
+      "12",
+      "1_",
+      "_1",
+      "1_2_3",
+      "1.5_2",
+      "1_2.0",
+      "01_2",
+      "1e3_2",
+      " 1_2",
+      "1_0",
+      "1_-2",
+      "9007199254740993_1",
+    ]
+    for (const cursor of bad) {
+      for (const section of ["official", "honeymoon"]) {
+        const res = await fetch(
+          `${BASE_URL}/api/media?section=${section}&after=${encodeURIComponent(cursor)}`,
+        )
+        assert.strictEqual(res.status, 400, `${section} after=${JSON.stringify(cursor)}`)
+        assert.strictEqual((await json(res)).code, "VALIDATION_ERROR")
+      }
+    }
+
+    // A negative sort_order is a real position, not a malformed one.
+    const negative = await fetch(`${BASE_URL}/api/media?section=official&after=-3_1`)
+    assert.strictEqual(negative.status, 200)
+    assert.strictEqual((await json(negative)).items.length, 4)
+
+    // `before` means nothing to a curated section, `after` nothing to guest.
+    const curated = await json(await fetch(`${BASE_URL}/api/media?section=official&before=2`))
+    assert.strictEqual(curated.items.length, 4)
+    const guest = await fetch(`${BASE_URL}/api/media?section=guest&after=nonsense`)
+    assert.strictEqual(guest.status, 200)
+  })
+
+  it("a cursor still works after its row is deleted: a position, not a reference", async () => {
+    const ids = seed(Array.from({ length: 6 }, (_, i) => ({ sortOrder: i })))
+    const page1 = await json(await fetch(`${BASE_URL}/api/media?section=official&limit=3`))
+    db.prepare("UPDATE media SET deleted_at = ? WHERE id = ?").run(new Date().toISOString(), ids[2])
+    const page2 = await json(
+      await fetch(`${BASE_URL}/api/media?section=official&limit=3&after=${page1.nextCursor}`),
+    )
+    assert.deepStrictEqual(
+      page2.items.map((/** @type {any} */ i) => i.id),
+      ids.slice(3),
+    )
+  })
+
+  it("a reorder between two page loads answers from the new order, without failing", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    // Documented behaviour (public/pages/gallery/grid.js): the cursor is the last
+    // row's (sort_order, id) position, so the next page is whatever follows that
+    // position in the NEW order. A photo moved from page one onto a later page
+    // comes back again — the client drops it by id (paging.js freshItems) — and
+    // a photo moved onto page one is missed until the next visit. Nothing 400s,
+    // and nothing a guest may not see appears.
+    const ids = seed([
+      ...Array.from({ length: 8 }, (_, i) => ({ sortOrder: i })),
+      { status: "hidden", sortOrder: 8 },
+    ])
+    const page1 = await json(await fetch(`${BASE_URL}/api/media?section=official&limit=4`))
+    assert.deepStrictEqual(
+      page1.items.map((/** @type {any} */ i) => i.id),
+      ids.slice(0, 4),
+    )
+
+    const auth = await adminLogin(process.env.TEST_ADMIN_PASSWORD)
+    const reversed = [...ids].reverse()
+    const res = await adminFetch(
+      "/api/admin/media/reorder",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: reversed, section: "official" }),
+      },
+      auth,
+    )
+    assert.strictEqual(res.status, 200)
+
+    const after = await fetch(
+      `${BASE_URL}/api/media?section=official&limit=4&after=${page1.nextCursor}`,
+    )
+    assert.strictEqual(after.status, 200, "a stale cursor is not an error")
+    const page2 = await json(after)
+    const page2Ids = page2.items.map((/** @type {any} */ i) => i.id)
+    // Reversed, sort_order runs ids[8]=0 … ids[0]=8. The stale cursor is
+    // (3, ids[3]), so the page starts at ids[5] (sort_order 3, larger id):
+    // ids[5], ids[4], then ids[3] and ids[2], which page one already showed.
+    // ids[7] and ids[6] now sit before the cursor and are missed this visit.
+    assert.deepStrictEqual(page2Ids, [ids[5], ids[4], ids[3], ids[2]])
+    assert.ok(!page2Ids.includes(ids[8]), "the hidden row stays hidden")
+
+    // What the client keeps: page one, plus page two minus what it already has.
+    const seen = new Set(page1.items.map((/** @type {any} */ i) => i.id))
+    const fresh = page2Ids.filter((/** @type {number} */ id) => !seen.has(id))
+    assert.deepStrictEqual(fresh, [ids[5], ids[4]], "repeats are dropped, so no cell renders twice")
+
+    // And the walk still ends.
+    const page3 = await json(
+      await fetch(`${BASE_URL}/api/media?section=official&limit=4&after=${page2.nextCursor}`),
+    )
+    assert.deepStrictEqual(
+      page3.items.map((/** @type {any} */ i) => i.id),
+      [ids[1], ids[0]],
+    )
+    assert.strictEqual(page3.nextCursor, null)
   })
 })

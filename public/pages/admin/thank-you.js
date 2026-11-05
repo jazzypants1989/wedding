@@ -74,6 +74,7 @@ import {
   themeSeedConfig,
 } from "./thank-you-util.js"
 import { fireConfetti } from "../../components/celebrate.js"
+import { mediaPagePath } from "../gallery/paging.js"
 import { monogramData } from "../../components/monogram.js"
 import { EFFECT_DEFINITIONS } from "../../effects/registry.js"
 import { getDefaultConfig, mergeConfig } from "../../effects/config.js"
@@ -178,6 +179,9 @@ let flow = null
 /** The single-card send dialog. */
 /** @type {Types.ThankYouSendDialogState | null} */
 let sendDialog = null
+
+/** Photos per picker request. The server's curated cap; guest clamps lower. */
+const PICKER_PAGE_LIMIT = 500
 
 /** file_key → media list item, populated by the picker / editor resolution. */
 const mediaCache = /** @type {Map<string, GlobalTypes.MediaListItem>} */ (new Map())
@@ -2043,10 +2047,19 @@ function handlePhotoStripClick(e) {
  *  @param {"official" | "honeymoon" | "guest"} section @param {boolean} [force] */
 async function ensureMediaLoaded(section, force = false) {
   if (loadedSections.has(section) && !force) return
-  const data = /** @type {GlobalTypes.MediaListResponse} */ (
-    await api(`/api/media?section=${section}&limit=500`)
-  )
-  for (const item of data.items) mediaCache.set(item.file_key, item)
+  // Every page, not the first: a curated section can outgrow one page, and the
+  // server clamps the limit per section (guest pages hold fewer).
+  /** @type {GlobalTypes.MediaListResponse["nextCursor"]} */
+  let cursor = null
+  do {
+    const data = /** @type {GlobalTypes.MediaListResponse} */ (
+      await api(mediaPagePath(section, PICKER_PAGE_LIMIT, cursor))
+    )
+    for (const item of data.items) mediaCache.set(item.file_key, item)
+    // A cursor that fails to advance would loop forever; stop instead.
+    if (data.nextCursor !== null && data.nextCursor === cursor) break
+    cursor = data.nextCursor
+  } while (cursor !== null)
   loadedSections.add(section)
 }
 

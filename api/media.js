@@ -6,6 +6,7 @@
 /** @import * as Types from './types.js' */
 /** @import * as CoreTypes from '../core/types.js' */
 /** @import * as GlobalTypes from '../types.js' */
+/** @import * as DbTypes from '../db/types.js' */
 
 import fs from "node:fs"
 import crypto from "node:crypto"
@@ -225,7 +226,9 @@ function finalizeByteViolation(principal) {
 // ---- Gallery read endpoints (public) ------------------------------------
 
 const GUEST_PAGE_MAX = 100
-/** A curated section (official, honeymoon) is served whole, in one page. */
+/** The most one curated page (official, honeymoon) may hold. Curated sections
+ *  page too — `after` walks (sort_order, id) — so this is a page cap, not a
+ *  section cap. The gallery asks for less; the admin picker asks for this. */
 const CURATED_PAGE_MAX = 500
 
 /**
@@ -237,6 +240,46 @@ function parseCursor(value) {
   if (!value) return null
   const n = parseInt(value, 10)
   return Number.isNaN(n) || n < 1 ? null : n
+}
+
+/** Separates the two halves of a curated cursor. Not "-" (sort_order may be
+ *  negative) and not "." (the cursor would read as a decimal). */
+const CURATED_CURSOR_SEP = "_"
+
+/**
+ * The opaque `after` cursor for a curated page: the last row's (sort_order, id)
+ * position. Clients echo it back; they never parse it.
+ * @param {{ sort_order: number, id: number }} row @returns {string}
+ */
+function curatedCursor(row) {
+  return `${row.sort_order}${CURATED_CURSOR_SEP}${row.id}`
+}
+
+/**
+ * Parse a curated `after` cursor. Absent → null (first page). Unlike the guest
+ * cursor, a malformed one is an error rather than a silent first page: a client
+ * that has already rendered page one would otherwise append it again.
+ * @param {string | null} value @returns {DbTypes.CuratedFeedPosition | null}
+ */
+function parseCuratedCursor(value) {
+  if (value === null || value === "") return null
+  const parts = value.split(CURATED_CURSOR_SEP)
+  if (parts.length !== 2) throw new ValidationError("Invalid cursor")
+  const sortOrder = parseCanonicalInt(parts[0])
+  const id = parseCanonicalInt(parts[1])
+  if (sortOrder === null || id === null || id < 1) {
+    throw new ValidationError("Invalid cursor")
+  }
+  return { sortOrder, id }
+}
+
+/**
+ * A safe integer written exactly as String() would write it ("7", "-3"), so
+ * "07", "1e3", " 7" and "7.0" are all refused. @param {string} text @returns {number | null}
+ */
+function parseCanonicalInt(text) {
+  const n = Number(text)
+  return Number.isSafeInteger(n) && String(n) === text ? n : null
 }
 
 /**
@@ -303,22 +346,31 @@ export async function list(req, res) {
   const section = isCuratedMediaSection(sectionParam) ? sectionParam : MEDIA_SECTION.GUEST
   const isCurated = section !== MEDIA_SECTION.GUEST
 
-  // A curated section is a single sort_order page (no cursor); guest is a keyset feed.
+  // Both kinds of section are keyset feeds, each on its own cursor: guest pages
+  // newest-first with `before` (an id), a curated section pages in the couple's
+  // order with `after` (an opaque (sort_order, id) position). Each ignores the
+  // other's parameter.
   const before = isCurated ? null : parseCursor(urlObj.searchParams.get("before"))
+  const after = isCurated ? parseCuratedCursor(urlObj.searchParams.get("after")) : null
   const limit = clampLimit(
     urlObj.searchParams.get("limit"),
     isCurated ? CURATED_PAGE_MAX : GUEST_PAGE_MAX,
   )
 
-  const rows = getMediaFeed({ callerId, section, before, limit })
+  // Read one row past the page: it says whether there IS a next page, so
+  // nextCursor is null exactly at the end — never a cursor to an empty page.
+  // The gallery relies on that: "all" shows the guest wall only once official
+  // reports its end.
+  const fetched = getMediaFeed({ callerId, section, before, after, limit: limit + 1 })
+  const rows = fetched.length > limit ? fetched.slice(0, limit) : fetched
   const items = rows.map(toListItem)
   // Attach reaction summaries + comment counts (Phase 5). Guarded internally
   // against an empty page (sql.list throws on []).
   enrichSocial(items, TARGET_TYPE.MEDIA, callerId)
-  // A full page means there may be more → last id is the next cursor. A curated
-  // section never paginates, so it always reports nextCursor null.
-  const nextCursor =
-    !isCurated && rows.length === limit ? rows[rows.length - 1].id : null
+  // There is more → the last row's position is the next cursor.
+  const last = fetched.length > limit ? rows[rows.length - 1] : undefined
+  /** @type {number | string | null} */
+  const nextCursor = !last ? null : isCurated ? curatedCursor(last) : last.id
 
   // Contributors strip data ("Shared by …") rides on the FIRST guest page only —
   // it's a section-wide aggregate, so recomputing it on every keyset page would

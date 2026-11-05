@@ -3,6 +3,13 @@
  *  hide/show without re-rendering; the default "all" view stacks them, official
  *  first. Honeymoon stays out of sight — its grid and its tab — until it holds
  *  a photo, so an empty section changes nothing on the page.
+ *
+ *  Every section pages (paging.js), curated ones included. In "all" a grid only
+ *  shows once every grid above it is loaded to the end, so what is on screen is
+ *  exactly the list the lightbox walks. A reorder by the couple between two page
+ *  loads is tolerated, not hidden: the cursor is a position, so the next page
+ *  starts after where the last one ended in the NEW order — a photo moved later
+ *  is dropped as a repeat, and one moved earlier waits for the next visit.
  *  See docs/post-wedding/04-gallery.md §4. */
 /** @import * as Types from "./types.js" */
 
@@ -14,13 +21,15 @@ import {
   getErrorMessage,
   setLoadMoreState,
 } from "../utils.js"
+import { mediaPagePath, freshItems, reachableSections } from "./paging.js"
 import { upgradeTimes } from "../../components/relative-time.js"
 import { renderMonogram } from "../../components/monogram.js"
 
 const BATCH_SIZE = 100
 const GUEST_LIMIT = 100
-/** A curated section (official, honeymoon) loads whole, in one page. */
-const CURATED_LIMIT = 500
+/** A curated page (official, honeymoon): the server allows more, but a phone's
+ *  first paint shouldn't carry the whole section. Matches a render batch. */
+const CURATED_LIMIT = 100
 /** Every grid, in page order. @type {readonly Types.MediaSection[]} */
 const SECTIONS = ["official", "honeymoon", "guest"]
 const MAX_AUTO_BATCHES = 20
@@ -48,17 +57,38 @@ const sections = /** @type {any} */ ({})
 /** @type {Types.GalleryView} */
 let active = "all"
 
-/** Whether a section's grid is on screen under the current view.
+/** A page load in flight, per section, so a second caller (the lightbox running
+ *  off the loaded end while the scroll observer is already fetching) waits for
+ *  it instead of getting nothing back. @type {Map<Types.MediaSection, Promise<number>>} */
+const inflight = new Map()
+
+/** Whether a section's grid belongs to the current view.
  *  @param {Types.MediaSection} section @returns {boolean} */
 function inView(section) {
   return active === "all" || active === section
 }
 
-/** The section the shared load-more button acts on: guest is the only keyset
- *  feed (a curated section loads whole in one page), so it owns the button
- *  everywhere except a curated section's own view. @returns {Types.MediaSection} */
+/** The sections the "all" view's single list has reached (paging.js).
+ *  @returns {Types.MediaSection[]} */
+function reachedInAll() {
+  return reachableSections(SECTIONS, hasMore)
+}
+
+/** Whether a section's grid belongs on screen: in its view, and — under "all" —
+ *  not still waiting on a grid above it.
+ *  @param {Types.MediaSection} section @returns {boolean} */
+function onScreen(section) {
+  if (!inView(section)) return false
+  return active !== "all" || reachedInAll().includes(section)
+}
+
+/** The section the shared load-more button acts on: a section's own view owns
+ *  it; under "all" it is the first section not yet loaded to the end (guest,
+ *  once everything above it is). @returns {Types.MediaSection} */
 function buttonSection() {
-  return active === "official" || active === "honeymoon" ? active : "guest"
+  if (active !== "all") return active
+  const reached = reachedInAll()
+  return reached[reached.length - 1]
 }
 
 /** @type {IntersectionObserver} */
@@ -103,7 +133,7 @@ export function initGrid(cb) {
           /** @type {HTMLElement} */ (record.target).dataset.section
         )
         const s = sections[section]
-        if (inView(section) && s.autoFetches < MAX_AUTO_BATCHES) {
+        if (onScreen(section) && s.autoFetches < MAX_AUTO_BATCHES) {
           void loadMore(section).then((n) => {
             if (n > 0) s.autoFetches += 1
           })
@@ -175,25 +205,35 @@ function renderContributors(data) {
     <span class="gallery-contrib-chips" aria-hidden="true">${chips}${more}</span>
     <span class="gallery-contrib-text">${photoLabel} shared by ${guestLabel}</span>`
   hasContributors = true
-  el.hidden = !inView("guest")
+  el.hidden = !onScreen("guest")
 }
 
 /** @type {Types.showSection} */
 export function showSection(view) {
   active = view
-  sections.official.container.hidden = !inView("official")
-  sections.guest.container.hidden = !inView("guest")
-  updateHoneymoon()
-  // The contributors strip belongs to the guest grid only.
-  getElement("gallery-contributors").hidden = !(inView("guest") && hasContributors)
   for (const section of SECTIONS) {
-    // Honeymoon loads whatever the view: whether its tab shows depends on it.
+    // Every section in the view fetches its first page now, even one that "all"
+    // keeps out of sight for the moment (the guest count and contributors strip
+    // come from it). Honeymoon loads whatever the view: whether its tab shows
+    // depends on it.
     if (!inView(section) && section !== "honeymoon") continue
     const s = sections[section]
     if (s.items.length === 0 && !s.reachedEnd && !s.loading) {
       void loadMore(section)
     }
   }
+  updateVisibility()
+}
+
+/** Show exactly the grids that belong on screen (see onScreen), plus the guest
+ *  grid's contributors strip and the load-more button. Re-run after every page:
+ *  a section loading to its end brings the next one into "all". */
+function updateVisibility() {
+  sections.official.container.hidden = !onScreen("official")
+  sections.guest.container.hidden = !onScreen("guest")
+  updateHoneymoon()
+  // The contributors strip belongs to the guest grid only.
+  getElement("gallery-contributors").hidden = !(onScreen("guest") && hasContributors)
   updateLoadMore()
 }
 
@@ -207,28 +247,43 @@ function updateHoneymoon() {
   const s = sections.honeymoon
   const own = active === "honeymoon"
   const hasItems = s.items.length > 0
-  s.container.hidden = !(own || (inView("honeymoon") && hasItems))
+  s.container.hidden = !(own || (onScreen("honeymoon") && hasItems))
   getElement("tab-honeymoon").hidden = !(own || hasItems)
 }
 
 /** @type {Types.loadMore} */
-export async function loadMore(section) {
+export function loadMore(section) {
+  // Join a load already in flight. The joiner gets 0 so that only the caller
+  // that started it counts the page (autoFetches).
+  const pending = inflight.get(section)
+  if (pending) return pending.then(() => 0)
+  if (sections[section].reachedEnd) return Promise.resolve(0)
+  const load = fetchPage(section).finally(() => inflight.delete(section))
+  inflight.set(section, load)
+  return load
+}
+
+/** @type {Types.settled} */
+export async function settled(section) {
+  await inflight.get(section)
+}
+
+/** Fetch and render a section's next page; resolves to the number of new cells.
+ *  @param {Types.MediaSection} section @returns {Promise<number>} */
+async function fetchPage(section) {
   const s = sections[section]
-  if (s.loading || s.reachedEnd) return 0
   s.loading = true
   hideError()
   // First paint for this section → show shimmer skeleton until data resolves.
   const firstPaint = s.items.length === 0
   if (firstPaint) showSkeleton(s)
   try {
-    const isCurated = section !== "guest"
-    const limit = isCurated ? CURATED_LIMIT : GUEST_LIMIT
-    const beforeParam =
-      !isCurated && s.nextCursor !== null ? `&before=${s.nextCursor}` : ""
+    const limit = section === "guest" ? GUEST_LIMIT : CURATED_LIMIT
     const data = /** @type {Types.GalleryListResponse} */ (
-      await api(`/api/media?section=${section}&limit=${limit}${beforeParam}`)
+      await api(mediaPagePath(section, limit, s.nextCursor))
     )
-    appendItems(s, data.items)
+    const added = freshItems(s.items, data.items)
+    appendItems(s, added)
     // The contributors aggregate rides on the first guest page only.
     if (section === "guest" && data.contributors) {
       renderContributors(data.contributors)
@@ -236,10 +291,9 @@ export async function loadMore(section) {
     s.nextCursor = data.nextCursor
     if (data.nextCursor === null) s.reachedEnd = true
     if (s.reachedEnd && s.items.length === 0) showEmpty(s)
-    if (section === "honeymoon") updateHoneymoon()
     updateCount(section)
-    updateLoadMore()
-    return data.items.length
+    updateVisibility()
+    return added.length
   } catch (err) {
     showError(getErrorMessage(err))
     setLoadMoreState(getButtonElement("gallery-loadmore"), "retry")

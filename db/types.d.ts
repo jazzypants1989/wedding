@@ -566,16 +566,31 @@ export interface MediaFeedOptions {
   section: MediaSection
   /** Keyset cursor (guest section only): rows with id < before. Null = first page. */
   before?: number | null
+  /** Keyset cursor (curated sections only): rows strictly after this
+   *  (sort_order, id) position. Null = first page. */
+  after?: CuratedFeedPosition | null
   limit: number
+}
+
+/** A position in a curated section's (sort_order, id) order. It is the values,
+ *  not a row reference, so it stays meaningful after that row is deleted or moved. */
+export interface CuratedFeedPosition {
+  sortOrder: number
+  id: number
+}
+
+/** A feed row plus its sort_order, which a curated page's cursor is built from. */
+export interface MediaFeedPageRow extends MediaFeedRow {
+  sort_order: number
 }
 
 /**
  * The public gallery feed for one section. Guest: approved + the caller's own
- * pending, newest-first (id DESC), keyset-paginated. Curated (official,
- * honeymoon): sort_order, id, single page. LEFT JOIN accounts, so author_name
- * is null for admin (curated) uploads.
+ * pending, newest-first (id DESC), keyset-paginated on id. Curated (official,
+ * honeymoon): (sort_order, id) ascending, keyset-paginated on that pair. LEFT
+ * JOIN accounts, so author_name is null for admin (curated) uploads.
  */
-export function getMediaFeed(options: MediaFeedOptions): MediaFeedRow[]
+export function getMediaFeed(options: MediaFeedOptions): MediaFeedPageRow[]
 
 /** One "Most loved" guest media row: enough to render a curation card plus its
  *  total reaction count (A3). */

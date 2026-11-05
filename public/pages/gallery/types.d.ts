@@ -11,10 +11,14 @@ export type { MediaListItem, MediaSection, MediaContributors }
 /** What the switcher shows: one section, or both stacked ("all", the default). */
 export type GalleryView = MediaSection | "all"
 
+/** An opaque page cursor: an id for guest, a position string for a curated
+ *  section. Only ever echoed back to the server. */
+export type MediaCursor = number | string
+
 /** GET /api/media response. `contributors` rides on the first guest page. */
 export interface GalleryListResponse {
   items: MediaListItem[]
-  nextCursor: number | null
+  nextCursor: MediaCursor | null
   contributors?: MediaContributors
 }
 
@@ -22,7 +26,7 @@ export interface GalleryListResponse {
 export interface GridSectionState {
   section: MediaSection
   items: MediaListItem[]
-  nextCursor: number | null
+  nextCursor: MediaCursor | null
   reachedEnd: boolean
   loading: boolean
   autoFetches: number
@@ -45,12 +49,32 @@ export interface LightboxSource {
   onDelete: (view: GalleryView, id: number) => void
 }
 
+/** The GET /api/media path for one page of a section: the cursor goes out as
+ *  `before=` for guest and `after=` for a curated section. Null = first page. */
+export function mediaPagePath(
+  section: MediaSection,
+  limit: number,
+  cursor: MediaCursor | null,
+): string
+
+/** The items of `page` not already in `loaded` (by id), in page order. */
+export function freshItems<T extends { id: number }>(loaded: readonly T[], page: readonly T[]): T[]
+
+/** The prefix of `order` the "all" view's single list covers: every section up
+ *  to and including the first one that still has pages to load. */
+export function reachableSections(
+  order: readonly MediaSection[],
+  hasMore: (section: MediaSection) => boolean,
+): MediaSection[]
+
 export function initGrid(callbacks: GridCallbacks): void
 export function showSection(view: GalleryView): void
 export function prependItem(item: MediaListItem): void
 export function getSectionItems(section: MediaSection): MediaListItem[]
 export function hasMore(section: MediaSection): boolean
 export function loadMore(section: MediaSection): Promise<number>
+/** Resolves once the section's page load in flight (if any) has finished. */
+export function settled(section: MediaSection): Promise<void>
 export function ensureItemLoaded(item: MediaListItem): void
 export function getSectionCount(section: MediaSection): number
 export function removeItem(section: MediaSection, id: number): void

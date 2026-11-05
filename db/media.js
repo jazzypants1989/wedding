@@ -39,7 +39,7 @@ export function getMediaByFileKey(fileKey) {
 }
 
 /** @type {Types.getMediaFeed} */
-export function getMediaFeed({ callerId = null, section, before = null, limit }) {
+export function getMediaFeed({ callerId = null, section, before = null, after = null, limit }) {
   // Mirrors getGuestbookFeed, with two differences: the accounts join is a
   // LEFT JOIN (admin/official uploads have account_id NULL, so author_name comes
   // back null and the API coalesces it), and ordering/keyset differ per section.
@@ -52,26 +52,33 @@ export function getMediaFeed({ callerId = null, section, before = null, limit })
   const isOwn =
     callerId !== null ? sql`(m.account_id = ${callerId})` : sql`0`
 
-  // Guest is a newest-first keyset feed; a curated section (official,
-  // honeymoon) is a single sort_order page (no cursor — it stays small), so the
-  // `before` filter applies to guest only.
+  // Guest is a newest-first keyset feed on id; a curated section (official,
+  // honeymoon) is a keyset feed on (sort_order, id) ascending — the order the
+  // couple arranged, ties broken by id so the order is total. Each cursor
+  // applies to its own kind of section only. The curated row-value comparison
+  // walks idx_media_official_order (section, sort_order, id), honeymoon included.
   const isCurated = isCuratedMediaSection(section)
-  const beforeFilter =
-    !isCurated && before !== null ? sql`AND m.id < ${before}` : sql.empty
+  const cursorFilter = isCurated
+    ? after !== null
+      ? sql`AND (m.sort_order, m.id) > (${after.sortOrder}, ${after.id})`
+      : sql.empty
+    : before !== null
+      ? sql`AND m.id < ${before}`
+      : sql.empty
   const ordering = isCurated
     ? sql`m.sort_order, m.id`
     : sql`m.id DESC`
 
   return sql`SELECT m.id, m.file_key, m.account_id, m.kind, m.section, m.status,
       m.caption, m.width, m.height, m.duration_seconds, m.needs_display,
-      m.created_at, a.name AS author_name, ${isOwn} AS is_own
+      m.created_at, m.sort_order, a.name AS author_name, ${isOwn} AS is_own
     FROM media m
     LEFT JOIN accounts a ON a.id = m.account_id
     WHERE m.deleted_at IS NULL
       AND (m.account_id IS NULL OR a.deleted_at IS NULL)
       AND m.section = ${section}
       AND (m.status = 'approved' ${ownPending})
-      ${beforeFilter}
+      ${cursorFilter}
     ORDER BY ${ordering}
     LIMIT ${limit}`.all()
 }

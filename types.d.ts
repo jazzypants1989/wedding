@@ -519,10 +519,12 @@ export interface MediaContributors {
 }
 
 /** Public GET /api/media response: a page of items + keyset cursor. The
- *  `contributors` aggregate rides along on the first guest page only. */
+ *  `contributors` aggregate rides along on the first guest page only.
+ *  `nextCursor` is opaque: a guest page's goes back as `before=`, a curated
+ *  page's (official, honeymoon) as `after=`. Null means there are no more. */
 export interface MediaListResponse {
   items: MediaListItem[]
-  nextCursor: number | null
+  nextCursor: number | string | null
   contributors?: MediaContributors
 }
 
