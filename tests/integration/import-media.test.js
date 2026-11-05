@@ -383,6 +383,103 @@ describe("import-media — local sink", () => {
     assert.strictEqual(Object.keys(entries).length, 2)
   })
 
+  /** A run whose stdout and stderr are kept. @param {ReturnType<typeof argsFor>} args */
+  async function runCaptured(args) {
+    const stdout = captured()
+    const stderr = captured()
+    try {
+      const report = await runImport(args, { ...depsFor({ sink: makeSink }), stdout, stderr })
+      return { report, out: stdout.text(), err: stderr.text() }
+    } finally {
+      await sink?.close()
+    }
+  }
+
+  /** Status of each of a run's rows in the local database, by file name. */
+  function statusesByName(/** @type {Map<number, string>} */ nameById) {
+    return Object.fromEntries(
+      localRows()
+        .filter((row) => nameById.has(row.id))
+        .map((row) => [nameById.get(row.id), row.status]),
+    )
+  }
+
+  it("a flipped selection is refused by name, then --apply-selection makes the rows match", async () => {
+    const dir = scratch("local-flipped")
+    const kept = photo(1300, 700)
+    const cut = photo(1400, 700)
+    write(dir, "kept.jpg", kept)
+    write(dir, "cut.jpg", cut)
+
+    const first = await run(argsFor(dir, { selectionPath: selectionFile(dir, [sha256(kept)]) }))
+    assert.strictEqual(first.exitCode, 0, JSON.stringify(first.failed))
+    const nameById = new Map(first.imported.map((i) => [i.id, i.file]))
+    const keptId = first.imported.find((i) => i.file === "kept.jpg")?.id
+
+    const flipped = await runCaptured(argsFor(dir, { selectionPath: selectionFile(dir, [sha256(cut)]) }))
+    assert.strictEqual(flipped.report.exitCode, 2)
+    assert.ok(flipped.out.includes(`✗ kept.jpg  media ${keptId}  approved; the selection leaves it out`), flipped.out)
+    assert.ok(flipped.err.includes("--apply-selection"), flipped.err)
+    assert.deepStrictEqual(
+      statusesByName(nameById),
+      { "kept.jpg": "approved", "cut.jpg": "hidden" },
+      "nothing changed without the flag",
+    )
+
+    const applied = await run(
+      argsFor(dir, { selectionPath: selectionFile(dir, [sha256(cut)]), applySelection: true }),
+    )
+    assert.strictEqual(applied.exitCode, 0)
+    assert.deepStrictEqual(statusesByName(nameById), { "kept.jpg": "hidden", "cut.jpg": "approved" })
+  })
+
+  it("a lost manifest can't let an unselected run publish a reject that is already hidden", async () => {
+    const dir = scratch("local-lost-manifest")
+    write(dir, "reject.jpg", photo(1500, 700))
+    const args = argsFor(dir, { selectionPath: selectionFile(dir, []) })
+    const first = await run(args)
+    assert.strictEqual(first.imported[0].status, "hidden")
+
+    fs.rmSync(args.manifestPath)
+    const before = localRows().length
+    const plain = await runCaptured(argsFor(dir))
+    assert.strictEqual(plain.report.exitCode, 2)
+    assert.ok(plain.err.includes(`reject.jpg  hidden as media ${first.imported[0].id}`), plain.err)
+    assert.ok(plain.err.includes("--no-selection"), plain.err)
+    assert.strictEqual(localRows().length, before, "no second, public copy")
+  })
+
+  it("a different manifest still finds the earlier public row by content, and hides it", async () => {
+    const dir = scratch("local-other-manifest")
+    const reject = photo(1600, 700)
+    write(dir, "reject.jpg", reject)
+    const first = await run(argsFor(dir))
+    const publicId = first.imported[0].id
+    assert.strictEqual(first.imported[0].status, "approved")
+
+    const elsewhere = path.join(dir, "elsewhere", "manifest.json")
+    const listed = await runCaptured(
+      argsFor(dir, { manifestPath: elsewhere, selectionPath: selectionFile(dir, []) }),
+    )
+    assert.strictEqual(listed.report.exitCode, 2)
+    assert.ok(
+      listed.out.includes(
+        `✗ reject.jpg  media ${publicId}  (not in this manifest; found by content)  approved`,
+      ),
+      listed.out,
+    )
+
+    const applied = await run(
+      argsFor(dir, { manifestPath: elsewhere, selectionPath: selectionFile(dir, []), applySelection: true }),
+    )
+    assert.strictEqual(applied.exitCode, 0)
+    assert.strictEqual(localRows().find((r) => r.id === publicId)?.status, "hidden")
+    // The new copy is hidden too, and the record now tracks both.
+    assert.strictEqual(applied.imported[0].status, "hidden")
+    const entry = loadManifest(elsewhere).origins["local:" + dir][sha256(reject)]
+    assert.deepStrictEqual(entry.earlier?.map((row) => [row.id, row.status]), [[publicId, "hidden"]])
+  })
+
   it("creates nothing on a dry run", async () => {
     const dir = scratch("local-dry")
     write(dir, "one.jpg", photo())
@@ -427,7 +524,9 @@ describe("import-media — local sink", () => {
 
   it("--dry-run --selection reports, and creates nothing", async () => {
     const dir = scratch("local-selection-dry")
-    write(dir, "one.jpg", photo())
+    // Content no other test imports: photo()'s default is already public in this
+    // database, and a selection leaving out a public copy is (rightly) refused.
+    write(dir, "one.jpg", photo(2000, 700))
     const stdout = captured()
     const before = localRows().length
     const report = await runImport(argsFor(dir, { dryRun: true, selectionPath: selectionFile(dir, []) }), {
@@ -633,6 +732,100 @@ describe("import-media — http sink", { skip: !hasAdmin && "TEST_ADMIN_PASSWORD
     }
     assert.deepStrictEqual(after.feeds.guest.contributors, before.feeds.guest.contributors)
     assert.deepStrictEqual(after.counts, before.counts)
+  })
+
+  /** A run whose stdout and stderr are kept. @param {ReturnType<typeof argsFor>} args */
+  async function runCaptured(args) {
+    const stdout = captured()
+    const stderr = captured()
+    /** @type {{ current: ImportTypes.ImportSink | null }} */
+    const held = { current: null }
+    try {
+      const report = await runImport(args, {
+        ...depsFor({
+          sink: () => {
+            held.current = createHttpSink({ url: BASE_URL, stderr: quiet() })
+            return held.current
+          },
+        }),
+        stdout,
+        stderr,
+      })
+      return { report, out: stdout.text(), err: stderr.text() }
+    } finally {
+      await held.current?.close()
+    }
+  }
+
+  /** The server's status for each of a run's rows, by file name. */
+  function serverStatuses(/** @type {Map<number, string>} */ nameById) {
+    return Object.fromEntries(
+      serverRows()
+        .filter((row) => nameById.has(row.id))
+        .map((row) => [nameById.get(row.id), row.status]),
+    )
+  }
+
+  it("a flipped selection over the API is refused, then --apply-selection fixes it", async () => {
+    const dir = scratch("http-flipped")
+    const kept = photo(1700, 700)
+    const cut = photo(1800, 700)
+    write(dir, "kept.jpg", kept)
+    write(dir, "cut.jpg", cut)
+
+    const first = await run(argsFor(dir, { url: BASE_URL, selectionPath: selectionFile(dir, [sha256(kept)]) }))
+    assert.strictEqual(first.exitCode, 0, JSON.stringify(first.failed))
+    const nameById = new Map(first.imported.map((i) => [i.id, i.file]))
+    const keptId = first.imported.find((i) => i.file === "kept.jpg")?.id
+
+    // Without --selection at all: refused before a password is even asked.
+    const unselected = await runCaptured(argsFor(dir, { url: BASE_URL }))
+    assert.strictEqual(unselected.report.exitCode, 2)
+    assert.ok(unselected.err.includes("an earlier run to this destination used --selection="))
+
+    const flipped = await runCaptured(
+      argsFor(dir, { url: BASE_URL, selectionPath: selectionFile(dir, [sha256(cut)]) }),
+    )
+    assert.strictEqual(flipped.report.exitCode, 2)
+    assert.ok(flipped.out.includes(`✗ kept.jpg  media ${keptId}  approved; the selection leaves it out`), flipped.out)
+    assert.ok(flipped.err.includes(`--url=${BASE_URL}`), flipped.err)
+    assert.ok(flipped.err.includes("--apply-selection"), flipped.err)
+    assert.deepStrictEqual(serverStatuses(nameById), { "kept.jpg": "approved", "cut.jpg": "hidden" })
+
+    const applied = await run(
+      argsFor(dir, {
+        url: BASE_URL,
+        selectionPath: selectionFile(dir, [sha256(cut)]),
+        applySelection: true,
+      }),
+    )
+    assert.strictEqual(applied.exitCode, 0)
+    assert.deepStrictEqual(serverStatuses(nameById), { "kept.jpg": "hidden", "cut.jpg": "approved" })
+    const feed = /** @type {any} */ (await (await fetch(`${BASE_URL}/api/media?section=official`)).json())
+    const publicIds = feed.items.map((/** @type {any} */ item) => item.id)
+    assert.ok(!publicIds.includes(keptId), "the new reject is off the public feed")
+  })
+
+  it("reads the server's current status, so a reject approved in the admin since is caught", async () => {
+    const dir = scratch("http-approved-since")
+    write(dir, "reject.jpg", photo(1900, 700))
+    const selectionPath = selectionFile(dir, [])
+    const first = await run(argsFor(dir, { url: BASE_URL, section: "guest", selectionPath }))
+    const id = first.imported[0].id
+    assert.strictEqual(first.imported[0].status, "hidden")
+
+    // Someone approves it on the server. The manifest still says hidden.
+    serverDb.prepare("UPDATE media SET status = 'approved' WHERE id = ?").run(id)
+
+    const again = await runCaptured(argsFor(dir, { url: BASE_URL, section: "guest", selectionPath }))
+    assert.strictEqual(again.report.exitCode, 2)
+    assert.ok(again.out.includes(`✗ reject.jpg  media ${id}  approved; the selection leaves it out`), again.out)
+
+    const applied = await run(
+      argsFor(dir, { url: BASE_URL, section: "guest", selectionPath, applySelection: true }),
+    )
+    assert.strictEqual(applied.exitCode, 0)
+    assert.strictEqual(serverRows().find((r) => r.id === id)?.status, "hidden")
   })
 
   it("a second import into a section holding hidden rows still orders itself", async () => {

@@ -724,6 +724,10 @@ export interface ImportArgs {
   reportPath: string | null
   /** --selection: files not listed there finish hidden. Null: all finish visible. */
   selectionPath: string | null
+  /** --apply-selection: also hide/approve already-imported rows to match it. */
+  applySelection: boolean
+  /** --no-selection: import everything visible despite an earlier selection run. */
+  noSelection: boolean
   force: boolean
   skipReorder: boolean
   stripOriginal: boolean
@@ -851,8 +855,65 @@ export function formatSelectionReport(
   plan: { items: PlannedItem[]; skipped: SkippedItem[] },
 ): string[]
 
-/** Compare the bytes a run plans to send with what the destination has left. */
-export function assessCapacity(plannedBytes: number, capacity: SinkCapacity): CapacityAssessment
+/** What a plan will store: originals (which count toward MEDIA_MAX_TOTAL_BYTES)
+ *  and derived variants (which only take disk). */
+export interface PlannedBytes {
+  originals: number
+  variants: number
+  /** How many originals are estimates (HEIC stored as JPEG). */
+  estimatedOriginals: number
+}
+
+/** Sum estimateStoredBytes over a plan. */
+export function planStoredBytes(items: PlannedItem[], args: ImportArgs): PlannedBytes
+
+/**
+ * Compare what a run plans to store with what the destination has left:
+ * originals against the cap on stored originals, originals plus variants against
+ * the disk headroom.
+ */
+export function assessCapacity(planned: PlannedBytes, capacity: SinkCapacity): CapacityAssessment
+
+/** A row whose status the selection disagrees with. */
+export interface SelectionDisagreement {
+  name: string
+  id: number
+  /** Its current status; null when it couldn't be read. */
+  status: string | null
+  /** True when found by content hash on the destination, not in this manifest. */
+  unrecorded: boolean
+}
+
+/** Rows already on the destination, compared with a selection. */
+export interface SelectionCheck {
+  /** Not in the selection but public, or of unknown status. */
+  toHide: SelectionDisagreement[]
+  /** In the selection but hidden (or pending). */
+  toShow: SelectionDisagreement[]
+  /** Rows compared, gone and rejected ones excluded. */
+  checked: number
+}
+
+/** A row on the destination, with whatever status is known for it. */
+export interface CheckableRow {
+  sha256: string
+  name: string
+  id: number
+  status: string | null
+  unrecorded: boolean
+}
+
+/** Compare rows with a selection. Pure: a gone or rejected row is left alone. */
+export function compareWithSelection(rows: CheckableRow[], selection: Set<string>): SelectionCheck
+
+/** The command that re-runs this import with --apply-selection, shell-quoted. */
+export function applySelectionCommand(args: ImportArgs): string
 
 /** Do the import. Never throws for a per-file problem; the report says what happened. */
 export function runImport(args: ImportArgs, deps?: ImportDeps): Promise<ImportReport>
+
+// --- Environment (scripts/lib/load-env.js) ---
+
+/** Load a .env file without overriding anything already set. False if absent
+ *  or unreadable (unreadable also prints one line to stderr). */
+export function loadDotEnv(envPath: string): boolean

@@ -133,6 +133,13 @@ taken, in order (repeat them for deploy #2):
       ```
       then the same command without `--dry-run`. Add `--recursive` if the directory nests.
       Use the same directory that `tmp/session4` was detected from.
+      If the owner culled with `scripts/vision/cull.html`, add `--selection=<their file>`:
+      files it leaves out finish hidden. After one selection run, every later run to the
+      site needs `--selection` again (or an explicit `--no-selection`), or it is refused.
+      A run whose already-imported rows disagree with the selection lists them by name
+      and id, exits non-zero, and prints the `--apply-selection` command that fixes them.
+      The dry run's storage check includes an estimate for display/thumb variants, and for
+      `--heic-original=jpeg` it estimates the larger JPEG.
    2. Copy `tmp/session4/{photos,faces}.jsonl` and that manifest to a scratch directory on
       vps3 that is visible inside the container, then run:
       ```

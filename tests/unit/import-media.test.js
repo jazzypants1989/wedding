@@ -14,14 +14,22 @@ import path from "node:path"
 import { after, before, describe, it } from "node:test"
 
 import {
+  applySelectionCommand,
   assessCapacity,
   buildPlan,
+  compareWithSelection,
   formatPlanReport,
   parseArgs,
   runImport,
   scanDirectory,
 } from "../../scripts/import-media.js"
 import { loadManifest, saveManifest } from "../../scripts/lib/import-manifest.js"
+import { loadDotEnv } from "../../scripts/lib/load-env.js"
+import {
+  TRANSCODE_BYTES_PER_PIXEL,
+  VARIANT_BYTES_PER_PIXEL,
+  estimateStoredBytes,
+} from "../../scripts/lib/media-variants.js"
 import { MediaImportError } from "../../scripts/lib/media-errors.js"
 import { makeExifTiff, makeJpegWithMetadata, makeMov, makeMp4 } from "../media-fixtures.js"
 
@@ -1143,28 +1151,589 @@ describe("--selection", () => {
     assert.deepEqual(report.unattempted, ["b.jpg"])
   })
 
-  it("warns, with counts only, about what a selection can't reach", async () => {
-    const dir = scratch("sel-warnings")
-    const first = makeJpegWithMetadata({ width: 300, height: 200 })
-    write(dir, "first.jpg", first)
-    const manifestPath = path.join(dir, "manifest.json")
-    await runImport(
-      { ...args([dir]), manifestPath, concurrency: 1 },
-      selectionDeps({ createSink: () => stubSink() }),
-    )
+  it("says what happened when the published row couldn't be taken back", async () => {
+    const dir = scratch("sel-not-honoured-stuck")
+    write(dir, "a.jpg", makeJpegWithMetadata({ width: 100, height: 100 }))
+    const removed = stubSink({
+      /** @param {number} id */
+      async finalize(id) {
+        return { id, status: "approved" }
+      },
+    })
+    const ok = await runImport(selectionArgs(dir, []), selectionDeps({ createSink: () => removed }))
+    assert.ok(ok.failed[0].message.includes("It was deleted again."), ok.failed[0].message)
+    assert.ok(!ok.failed[0].message.includes("may still be public"))
 
-    write(dir, "second.jpg", makeJpegWithMetadata({ width: 200, height: 300 }))
+    const stuckDir = scratch("sel-not-honoured-stuck-2")
+    write(stuckDir, "a.jpg", makeJpegWithMetadata({ width: 100, height: 100 }))
+    const stuck = stubSink({
+      /** @param {number} id */
+      async finalize(id) {
+        return { id, status: "approved" }
+      },
+      async discard() {
+        throw new Error("DELETE answered 500")
+      },
+    })
+    const report = await runImport(selectionArgs(stuckDir, []), selectionDeps({ createSink: () => stuck }))
+    assert.equal(report.exitCode, 2)
+    const message = report.failed[0].message
+    assert.ok(!message.includes("deleted again"), message)
+    assert.ok(!message.includes("has been removed"), message)
+    assert.ok(message.includes("Deleting it failed (DELETE answered 500)"), message)
+    assert.ok(message.includes(`media ${stuck.calls.created[0]}`), message)
+    assert.ok(message.includes("may still be public"), message)
+  })
+
+  it("still says when selected hashes match nothing here", async () => {
+    const dir = scratch("sel-unmatched")
+    write(dir, "first.jpg", makeJpegWithMetadata({ width: 300, height: 200 }))
     const stranger = sha(Buffer.from("a photo that isn't in this directory"))
     const stdout = sink1()
     const report = await runImport(
-      selectionArgs(dir, [stranger], { manifestPath }),
+      selectionArgs(dir, [stranger]),
       selectionDeps({ stdout, createSink: () => stubSink() }),
     )
     const printed = stdout.lines.join("")
     assert.ok(printed.includes("0 file(s) finish visible, 1 finish hidden"))
     assert.ok(printed.includes("1 selected hash(es) match no file here"))
-    assert.ok(printed.includes("1 already-imported file(s) aren't in the selection"))
     assert.equal(report.imported[0].status, "hidden")
+  })
+})
+
+// --- What a selection guarantees on later runs ----------------------------------
+
+describe("a selection, on later runs", () => {
+  /** @param {Buffer} bytes */
+  const sha = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex")
+
+  const A = makeJpegWithMetadata({ width: 1000, height: 700 })
+  const B = makeJpegWithMetadata({ width: 1100, height: 700 })
+
+  /** A.jpg and B.jpg, plus a selection file that can be rewritten per run. */
+  function photos(/** @type {string} */ name) {
+    const dir = scratch(name)
+    write(dir, "A.jpg", A)
+    write(dir, "B.jpg", B)
+    return dir
+  }
+
+  /** @param {string} dir @param {string[] | null} visible @param {object} [overrides] */
+  function runArgsFor(dir, visible, overrides = {}) {
+    /** @type {string | null} */
+    let selectionPath = null
+    if (visible) {
+      selectionPath = path.join(dir, "selection.json")
+      fs.writeFileSync(selectionPath, JSON.stringify({ version: 1, visible }))
+    }
+    return {
+      ...args([dir]),
+      manifestPath: path.join(dir, "manifest.json"),
+      concurrency: 1,
+      selectionPath,
+      ...overrides,
+    }
+  }
+
+  /** One run against a destination; returns the report, both streams and the sink. */
+  async function run(
+    /** @type {ReturnType<typeof runArgsFor>} */ cliArgs,
+    /** @type {ReturnType<typeof destination>} */ dest,
+    /** @type {object} */ overrides = {},
+  ) {
+    const stdout = sink1()
+    const stderr = sink1()
+    const sink = stubSink(overrides, dest)
+    let sinkMade = false
+    const report = await runImport(cliArgs, {
+      probeBackends: async () => FAKE_BACKENDS,
+      buildMediaVariants: stubBuilder(),
+      stdout,
+      stderr,
+      createSink: () => {
+        sinkMade = true
+        return sink
+      },
+    })
+    return {
+      report,
+      sink,
+      sinkMade,
+      out: stdout.lines.join(""),
+      err: stderr.lines.join(""),
+    }
+  }
+
+  it("parses --apply-selection and --no-selection, and refuses them in the wrong company", () => {
+    assert.equal(args(["/p", "--selection=/s.json", "--apply-selection"]).applySelection, true)
+    assert.equal(args(["/p", "--no-selection"]).noSelection, true)
+    assert.equal(args(["/p"]).applySelection, false)
+    assert.equal(args(["/p"]).noSelection, false)
+    const lonely = parseArgs(["/p", "--apply-selection"])
+    assert.equal(lonely.valid, false)
+    assert.ok(!lonely.valid && lonely.error.includes("--selection"))
+    assert.equal(parseArgs(["/p", "--selection=/s.json", "--no-selection"]).valid, false)
+  })
+
+  it("refuses a resume without --selection, before any sink exists", async () => {
+    const dir = photos("later-resume-refused")
+    const dest = destination()
+    const first = await run(runArgsFor(dir, [sha(A)]), dest)
+    assert.equal(first.report.exitCode, 0)
+
+    // A new photo arrives; the owner re-runs from shell history without the flag.
+    write(dir, "C.jpg", makeJpegWithMetadata({ width: 1200, height: 700 }))
+    const second = await run(runArgsFor(dir, null), dest)
+    assert.equal(second.report.exitCode, 2)
+    assert.equal(second.sinkMade, false, "nothing was uploaded, nothing was even asked")
+    assert.ok(second.err.includes("an earlier run to this destination used --selection="), second.err)
+    assert.ok(second.err.includes(path.join(dir, "selection.json")), second.err)
+    assert.ok(second.err.includes("--no-selection"), second.err)
+    assert.equal(dest.rows.get(101), "hidden", "the reject is still hidden")
+  })
+
+  it("refuses the same way with --force, which would otherwise publish every reject again", async () => {
+    const dir = photos("later-force-refused")
+    const dest = destination()
+    await run(runArgsFor(dir, [sha(A)]), dest)
+    const forced = await run(runArgsFor(dir, null, { force: true }), dest)
+    assert.equal(forced.report.exitCode, 2)
+    assert.equal(forced.sinkMade, false)
+  })
+
+  it("--no-selection is the override, and says what it means", async () => {
+    const dir = photos("later-no-selection")
+    const dest = destination()
+    await run(runArgsFor(dir, [sha(A)]), dest)
+    write(dir, "C.jpg", makeJpegWithMetadata({ width: 1200, height: 700 }))
+
+    const opted = await run(runArgsFor(dir, null, { noSelection: true }), dest)
+    assert.equal(opted.report.exitCode, 0)
+    assert.deepEqual(
+      opted.report.imported.map((row) => [row.file, row.status]),
+      [["C.jpg", "approved"]],
+    )
+    assert.ok(opted.out.includes("--no-selection: every file this run uploads finishes visible"))
+    assert.ok(opted.out.includes("Rows already imported keep their status."))
+    assert.equal(dest.rows.get(101), "hidden", "existing rows are untouched")
+    assert.deepEqual(opted.sink.calls.setStatus, [])
+  })
+
+  it("an ordinary resume with the same selection is quiet", async () => {
+    const dir = photos("later-ordinary")
+    const dest = destination()
+    await run(runArgsFor(dir, [sha(A)]), dest)
+    write(dir, "C.jpg", makeJpegWithMetadata({ width: 1200, height: 700 }))
+
+    const again = await run(runArgsFor(dir, [sha(A)]), dest)
+    assert.equal(again.report.exitCode, 0)
+    assert.deepEqual(
+      again.report.imported.map((row) => [row.file, row.status]),
+      [["C.jpg", "hidden"]],
+    )
+    assert.ok(again.out.includes("✓ The 2 row(s) already imported match the selection."), again.out)
+    assert.ok(!again.out.includes("not what the selection says"), again.out)
+    assert.ok(!again.out.includes("aren't in the selection"), again.out)
+    assert.equal(again.err.includes("✗"), false, again.err)
+    assert.deepEqual(again.sink.calls.setStatus, [])
+  })
+
+  it("a flipped selection names each row, refuses, and --apply-selection makes them match", async () => {
+    const dir = photos("later-flipped")
+    const dest = destination()
+    const first = await run(runArgsFor(dir, [sha(A)]), dest)
+    assert.deepEqual(
+      first.report.imported.map((row) => [row.file, row.id, row.status]),
+      [
+        ["A.jpg", 100, "approved"],
+        ["B.jpg", 101, "hidden"],
+      ],
+    )
+
+    // The couple changed their minds: B in, A out.
+    const flipped = await run(runArgsFor(dir, [sha(B)]), dest)
+    assert.equal(flipped.report.exitCode, 2)
+    assert.ok(flipped.out.includes("✗ A.jpg  media 100  approved; the selection leaves it out"), flipped.out)
+    assert.ok(flipped.out.includes("! B.jpg  media 101  hidden; the selection lists it"), flipped.out)
+    assert.ok(flipped.err.includes("1 row(s) the selection leaves out are public"), flipped.err)
+    assert.ok(
+      flipped.err.includes(
+        `npm run import:media -- ${dir} --selection=${path.join(dir, "selection.json")} ` +
+          `--manifest=${path.join(dir, "manifest.json")} --apply-selection`,
+      ),
+      flipped.err,
+    )
+    assert.deepEqual(flipped.sink.calls.setStatus, [], "nothing changed without the flag")
+    assert.equal(dest.rows.get(100), "approved")
+
+    // A dry run says the same, and also fails.
+    const dry = await run(runArgsFor(dir, [sha(B)], { dryRun: true }), dest)
+    assert.equal(dry.report.exitCode, 2)
+    assert.ok(dry.err.includes("--apply-selection"))
+
+    const applied = await run(runArgsFor(dir, [sha(B)], { applySelection: true }), dest)
+    assert.equal(applied.report.exitCode, 0, applied.err)
+    assert.deepEqual(applied.sink.calls.setStatus, [
+      [100, "hidden"],
+      [101, "approved"],
+    ])
+    assert.ok(applied.out.includes("Hid 1 row(s) and showed 1 to match the selection."), applied.out)
+    assert.equal(dest.rows.get(100), "hidden")
+    assert.equal(dest.rows.get(101), "approved")
+    const recorded = loadManifest(path.join(dir, "manifest.json")).origins["local:" + dir]
+    assert.deepEqual(
+      Object.values(recorded).map((entry) => [entry.name, entry.status]).sort(),
+      [
+        ["A.jpg", "hidden"],
+        ["B.jpg", "approved"],
+      ],
+    )
+
+    // And afterwards, the same selection is an ordinary, quiet resume.
+    const after = await run(runArgsFor(dir, [sha(B)]), dest)
+    assert.equal(after.report.exitCode, 0)
+    assert.ok(after.out.includes("✓ The 2 row(s) already imported match the selection."))
+  })
+
+  it("reads the destination's status, not the manifest's: a reject published since is caught", async () => {
+    const dir = photos("later-published-since")
+    const dest = destination()
+    await run(runArgsFor(dir, [sha(A)]), dest)
+    // Someone approved the reject in the admin since. The manifest still says hidden.
+    dest.rows.set(101, "approved")
+
+    const again = await run(runArgsFor(dir, [sha(A)]), dest)
+    assert.equal(again.report.exitCode, 2)
+    assert.ok(again.out.includes("✗ B.jpg  media 101  approved; the selection leaves it out"), again.out)
+    assert.deepEqual(again.sink.calls.looked, [[100, 101]])
+  })
+
+  it("dry run with --apply-selection says what it would do, and changes nothing", async () => {
+    const dir = photos("later-apply-dry")
+    const dest = destination()
+    await run(runArgsFor(dir, [sha(A)]), dest)
+    const dry = await run(runArgsFor(dir, [sha(B)], { dryRun: true, applySelection: true }), dest)
+    assert.equal(dry.report.exitCode, 0)
+    assert.ok(dry.out.includes("--apply-selection would hide 1 and show 1 row(s)."), dry.out)
+    assert.deepEqual(dry.sink.calls.setStatus, [])
+    assert.equal(dest.rows.get(100), "approved")
+  })
+
+  it("stops before uploading when a row can't be hidden", async () => {
+    const dir = photos("later-apply-fails")
+    const dest = destination()
+    await run(runArgsFor(dir, [sha(A)]), dest)
+    write(dir, "C.jpg", makeJpegWithMetadata({ width: 1200, height: 700 }))
+    const failing = await run(runArgsFor(dir, [sha(B)], { applySelection: true }), dest, {
+      async setStatus() {
+        return { ok: false, message: "answered 409" }
+      },
+    })
+    assert.equal(failing.report.exitCode, 2)
+    assert.deepEqual(failing.sink.calls.created, [], "no upload after a failed hide")
+    assert.ok(failing.err.includes("Couldn't hide A.jpg  media 100: answered 409"), failing.err)
+    assert.ok(failing.err.includes("may still be public"), failing.err)
+  })
+
+  it("--force with a rejected file hides the earlier public copy and keeps tracking it", async () => {
+    const dir = photos("later-force-reject")
+    const dest = destination()
+    await run(runArgsFor(dir, [sha(A), sha(B)]), dest)
+    assert.equal(dest.rows.get(100), "approved")
+
+    // A is now a reject, and the owner re-imports everything with --force.
+    const refused = await run(runArgsFor(dir, [sha(B)], { force: true }), dest)
+    assert.equal(refused.report.exitCode, 2)
+    assert.deepEqual(refused.sink.calls.created, [], "no second copy while the first is public")
+    assert.ok(refused.out.includes("✗ A.jpg  media 100  approved"), refused.out)
+    assert.ok(refused.err.includes("--force"), "the fix command keeps the owner's --force")
+
+    const forced = await run(runArgsFor(dir, [sha(B)], { force: true, applySelection: true }), dest)
+    assert.equal(forced.report.exitCode, 0, forced.err)
+    assert.equal(dest.rows.get(100), "hidden", "the earlier public copy is down")
+    const newA = forced.report.imported.find((row) => row.file === "A.jpg")
+    assert.equal(newA?.status, "hidden")
+    const entry = loadManifest(path.join(dir, "manifest.json")).origins["local:" + dir][sha(A)]
+    assert.equal(entry.id, newA?.id)
+    assert.deepEqual(
+      entry.earlier?.map((row) => [row.id, row.status]),
+      [[100, "hidden"]],
+      "the replaced row is still tracked",
+    )
+
+    // Both copies stay within reach of a later selection.
+    const back = await run(runArgsFor(dir, [sha(A), sha(B)]), dest)
+    assert.ok(back.out.includes(`A.jpg  media ${newA?.id}  hidden; the selection lists it`), back.out)
+    assert.ok(back.out.includes("A.jpg  media 100  hidden; the selection lists it"), back.out)
+  })
+
+  describe("a manifest written before statuses were recorded", () => {
+    /** Strip what the old format didn't have. @param {string} manifestPath */
+    function makeOld(manifestPath) {
+      const raw = JSON.parse(fs.readFileSync(manifestPath, "utf8"))
+      delete raw.selections
+      for (const entries of Object.values(raw.origins)) {
+        for (const entry of Object.values(/** @type {Record<string, any>} */ (entries))) {
+          delete entry.status
+        }
+      }
+      fs.writeFileSync(manifestPath, JSON.stringify(raw))
+    }
+
+    it("refuses an unselected run when the destination shows a selection was used", async () => {
+      const dir = photos("old-hidden")
+      const dest = destination()
+      const cliArgs = runArgsFor(dir, [sha(A)])
+      await run(cliArgs, dest)
+      makeOld(cliArgs.manifestPath)
+      write(dir, "C.jpg", makeJpegWithMetadata({ width: 1200, height: 700 }))
+
+      const plain = await run(runArgsFor(dir, null), dest)
+      assert.equal(plain.report.exitCode, 2)
+      assert.ok(plain.err.includes("predates recording selections, and 1 of its rows are hidden"), plain.err)
+      assert.deepEqual(plain.sink.calls.created, [])
+    })
+
+    it("refuses when the destination can't be asked", async () => {
+      const dir = photos("old-unknown")
+      const dest = destination()
+      const cliArgs = runArgsFor(dir, null)
+      await run(cliArgs, dest)
+      makeOld(cliArgs.manifestPath)
+
+      const plain = await run(runArgsFor(dir, null), dest, {
+        async statuses() {
+          return { ok: false, message: "No admin password available." }
+        },
+      })
+      assert.equal(plain.report.exitCode, 2)
+      assert.ok(plain.err.includes("couldn't say whether its 2 row(s) are hidden"), plain.err)
+    })
+
+    it("lets an unselected run through when nothing is hidden, and fills the statuses in", async () => {
+      const dir = photos("old-plain")
+      const dest = destination()
+      const cliArgs = runArgsFor(dir, null)
+      await run(cliArgs, dest)
+      makeOld(cliArgs.manifestPath)
+      write(dir, "C.jpg", makeJpegWithMetadata({ width: 1200, height: 700 }))
+
+      const plain = await run(runArgsFor(dir, null), dest)
+      assert.equal(plain.report.exitCode, 0, plain.err)
+      assert.deepEqual(plain.report.imported.map((row) => row.file), ["C.jpg"])
+      const entries = Object.values(loadManifest(cliArgs.manifestPath).origins["local:" + dir])
+      assert.deepEqual(entries.map((entry) => entry.status), ["approved", "approved", "approved"])
+    })
+
+    it("a selection run says so, and checks the rows against the destination", async () => {
+      const dir = photos("old-selection")
+      const dest = destination()
+      const cliArgs = runArgsFor(dir, null)
+      await run(cliArgs, dest)
+      makeOld(cliArgs.manifestPath)
+
+      const selected = await run(runArgsFor(dir, [sha(A)]), dest)
+      assert.equal(selected.report.exitCode, 2)
+      assert.ok(selected.out.includes("2 recorded row(s) predate the manifest keeping statuses"), selected.out)
+      assert.ok(selected.out.includes("✗ B.jpg  media 101  approved; the selection leaves it out"), selected.out)
+    })
+  })
+
+  it("a guest-section run that hid everything doesn't call it live", async () => {
+    const dir = photos("later-guest-hidden")
+    const { report, out } = await run(runArgsFor(dir, [], { section: "guest" }), destination())
+    assert.equal(report.exitCode, 0)
+    assert.ok(out.includes("Imported 2 of 2 file(s): 0 public, 2 hidden."), out)
+    assert.ok(!out.includes("live in the guest gallery"), out)
+    assert.ok(out.includes("Hidden photos are under Hidden in the admin Review tab"), out)
+  })
+
+  it("the summary always counts public and hidden, selection or not", async () => {
+    const dir = photos("later-summary")
+    const { out } = await run(runArgsFor(dir, null, { section: "guest" }), destination())
+    assert.ok(out.includes("Imported 2 of 2 file(s): 2 public, 0 hidden."), out)
+    assert.ok(out.includes("They are live in the guest gallery at /gallery."), out)
+
+    const mixed = await run(runArgsFor(photos("later-summary-mixed"), [sha(A)], { section: "guest" }), destination())
+    assert.ok(mixed.out.includes("1 public, 1 hidden."), mixed.out)
+    assert.ok(mixed.out.includes("The 1 public one(s) are live in the guest gallery"), mixed.out)
+  })
+
+  it("quotes the fix command for a directory with spaces and quotes in its name", () => {
+    const command = applySelectionCommand({
+      ...args(["/Volumes/Photos/Jo's wedding", "--selection=/tmp/keep it.json"]),
+      manifestPath: "/data/import-manifest.json",
+    })
+    assert.ok(command.includes("-- '/Volumes/Photos/Jo'\\''s wedding'"), command)
+    assert.ok(command.includes("'--selection=/tmp/keep it.json'"), command)
+    assert.ok(command.endsWith("--apply-selection"), command)
+  })
+})
+
+describe("compareWithSelection", () => {
+  const row = (/** @type {object} */ over) => ({
+    sha256: "a",
+    name: "a.jpg",
+    id: 1,
+    status: /** @type {string | null} */ ("approved"),
+    unrecorded: false,
+    ...over,
+  })
+
+  it("leaves rejected and in-flight rows alone, and counts an unknown status as a risk", () => {
+    const check = compareWithSelection(
+      [
+        row({ id: 1, status: "rejected" }),
+        row({ id: 2, status: "uploading" }),
+        row({ id: 3, status: null }),
+        row({ id: 4, status: "hidden" }),
+        row({ id: 4, status: "approved" }),
+      ],
+      new Set(),
+    )
+    assert.deepEqual(check.toHide.map((r) => r.id), [3])
+    assert.equal(check.checked, 2, "a duplicate id is compared once")
+  })
+
+  it("shows a hidden or pending row the selection lists", () => {
+    const check = compareWithSelection(
+      [row({ id: 1, status: "hidden" }), row({ id: 2, status: "pending" }), row({ id: 3 })],
+      new Set(["a"]),
+    )
+    assert.deepEqual(check.toShow.map((r) => r.id), [1, 2])
+    assert.deepEqual(check.toHide, [])
+  })
+})
+
+describe("sizing a plan", () => {
+  /** @param {object} over @returns {any} */
+  const plan = (over) => ({
+    ok: true,
+    sourcePath: "/x",
+    kind: "image",
+    sniffed: "jpeg",
+    originalExt: "jpg",
+    originalBytes: 2_000_000,
+    width: 4000,
+    height: 3000,
+    durationSeconds: null,
+    orientation: 1,
+    hasGps: false,
+    capturedAt: null,
+    mtimeMs: 0,
+    ...over,
+  })
+
+  it("estimates a HEIC stored as JPEG above its source size, and keeps a kept one exact", () => {
+    const heic = plan({ sniffed: "heic", originalExt: "heic" })
+    const kept = estimateStoredBytes(heic, { section: "official", heicOriginal: "keep" })
+    assert.equal(kept.originalBytes, 2_000_000)
+    assert.equal(kept.originalExact, true)
+    const jpeg = estimateStoredBytes(heic, { section: "official", heicOriginal: "jpeg" })
+    assert.equal(jpeg.originalExact, false)
+    assert.equal(jpeg.originalBytes, Math.ceil(4000 * 3000 * TRANSCODE_BYTES_PER_PIXEL))
+    // A JPEG never shrinks it below the HEIC's own size.
+    const tiny = estimateStoredBytes(plan({ sniffed: "heic", width: 10, height: 10 }), {
+      section: "official",
+      heicOriginal: "jpeg",
+    })
+    assert.equal(tiny.originalBytes, 2_000_000)
+  })
+
+  it("counts display and thumb at their target sizes, within the server's caps", () => {
+    const estimate = estimateStoredBytes(plan({}), { section: "official", heicOriginal: "keep" })
+    const display = Math.ceil(2000 * 1500 * VARIANT_BYTES_PER_PIXEL)
+    const thumb = Math.ceil(400 * 300 * VARIANT_BYTES_PER_PIXEL)
+    assert.equal(estimate.variantBytes, display + thumb)
+  })
+
+  it("counts variants against the disk, not the cap on originals", () => {
+    const GB = 1024 * 1024 * 1024
+    const result = assessCapacity(
+      { originals: GB, variants: 3 * GB, estimatedOriginals: 0 },
+      {
+        ok: true,
+        storedBytes: 0,
+        maxTotalBytes: 45 * GB,
+        freeBytes: 7 * GB,
+        minFreeBytes: 5 * GB,
+        remainingBytes: 2 * GB,
+        limitedBy: "disk",
+      },
+    )
+    assert.equal(result.level, "over")
+    const text = result.lines.join("\n")
+    assert.ok(text.includes("✓ Storage: 1.00 GB of originals planned"), text)
+    assert.ok(text.includes("✗ Disk: about 4.00 GB with variants"), text)
+    assert.ok(text.includes("MEDIA_MIN_FREE_BYTES"), text)
+  })
+
+  it("a --dry-run with --heic-original=jpeg plans the size it will store, and says it's an estimate", async () => {
+    const dir = scratch("size-heic")
+    write(dir, "IMG_0001.HEIC", Buffer.from("stand-in bytes; the plan below is stated"))
+    const stdout = sink1()
+    const MB = 1024 * 1024
+    const report = await runImport(
+      {
+        ...args([dir, "--heic-original=jpeg"]),
+        manifestPath: path.join(dir, "manifest.json"),
+        dryRun: true,
+      },
+      {
+        probeBackends: async () => FAKE_BACKENDS,
+        buildMediaVariants: stubBuilder(),
+        /** @param {string} sourcePath */
+        planMediaFile: async (sourcePath) =>
+          plan({ sourcePath, sniffed: "heic", originalExt: "heic", originalBytes: 2 * MB }),
+        stdout,
+        stderr: sink1(),
+        createSink: () =>
+          stubSink({
+            // Room for the HEIC as it is on disk, not for the JPEG it becomes.
+            async capacity() {
+              return {
+                ok: true,
+                storedBytes: 0,
+                maxTotalBytes: 5 * MB,
+                freeBytes: null,
+                minFreeBytes: 0,
+                remainingBytes: 5 * MB,
+                limitedBy: "cap",
+              }
+            },
+          }),
+      },
+    )
+    const printed = stdout.lines.join("")
+    assert.equal(report.exitCode, 2, printed)
+    assert.ok(printed.includes("about 9.2 MB of originals"), printed)
+    assert.ok(printed.includes("1 HEIC original(s) will be stored as JPEG, estimated at 0.8 bytes per pixel"), printed)
+    assert.ok(printed.includes("display/thumb/poster variants, estimated at 0.35 bytes per pixel"), printed)
+    assert.ok(printed.includes("✗ Storage: about 9.2 MB of originals planned"), printed)
+  })
+})
+
+describe("loading .env", () => {
+  it("fills in what's unset, never overrides the shell, and shrugs at a missing file", () => {
+    const dir = scratch("dotenv")
+    const file = path.join(dir, ".env")
+    fs.writeFileSync(file, "IMPORT_TEST_FROM_FILE=file\nIMPORT_TEST_ALREADY_SET=file\n")
+    process.env.IMPORT_TEST_ALREADY_SET = "shell"
+    try {
+      assert.equal(loadDotEnv(file), true)
+      assert.equal(process.env.IMPORT_TEST_FROM_FILE, "file")
+      assert.equal(process.env.IMPORT_TEST_ALREADY_SET, "shell")
+      assert.equal(loadDotEnv(path.join(dir, "absent.env")), false)
+    } finally {
+      delete process.env.IMPORT_TEST_FROM_FILE
+      delete process.env.IMPORT_TEST_ALREADY_SET
+    }
+  })
+
+  it("is the CLI's first import, ahead of anything that reads MEDIA_* at load", () => {
+    const source = fs.readFileSync(path.join(import.meta.dirname, "..", "..", "scripts", "import-media.js"), "utf8")
+    const firstImport = source.slice(source.indexOf("\nimport "))
+    assert.ok(firstImport.startsWith('\nimport "./lib/load-env.js"'), firstImport.slice(0, 80))
   })
 })
 
@@ -1184,15 +1753,18 @@ describe("the storage check", () => {
     ...overrides,
   })
 
+  /** @param {number} originals @param {number} [variants] */
+  const planned = (originals, variants = 0) => ({ originals, variants, estimatedOriginals: 0 })
+
   describe("assessCapacity", () => {
     it("passes a plan with room to spare", () => {
-      const result = assessCapacity(GB, capacity())
+      const result = assessCapacity(planned(GB), capacity())
       assert.equal(result.level, "ok")
       assert.ok(result.lines[0].includes("5.00 GB remaining"))
     })
 
     it("refuses a plan that doesn't fit, and says hiding saves no room", () => {
-      const result = assessCapacity(6 * GB, capacity())
+      const result = assessCapacity(planned(6 * GB), capacity())
       assert.equal(result.level, "over")
       const text = result.lines.join(" ")
       assert.ok(text.includes("MEDIA_MAX_TOTAL_BYTES"))
@@ -1201,16 +1773,16 @@ describe("the storage check", () => {
     })
 
     it("names the disk when the disk is the closer wall", () => {
-      const result = assessCapacity(6 * GB, capacity({ limitedBy: "disk" }))
+      const result = assessCapacity(planned(6 * GB), capacity({ limitedBy: "disk" }))
       assert.ok(result.lines.join(" ").includes("MEDIA_MIN_FREE_BYTES"))
     })
 
     it("flags a plan that only just fits", () => {
-      assert.equal(assessCapacity(4.8 * GB, capacity()).level, "tight")
+      assert.equal(assessCapacity(planned(4.8 * GB), capacity()).level, "tight")
     })
 
     it("reports a check it couldn't do, rather than passing it", () => {
-      const result = assessCapacity(GB, { ok: false, reason: "unavailable", message: "No password." })
+      const result = assessCapacity(planned(GB), { ok: false, reason: "unavailable", message: "No password." })
       assert.equal(result.level, "unknown")
       assert.ok(result.lines[0].includes("No password."))
     })
