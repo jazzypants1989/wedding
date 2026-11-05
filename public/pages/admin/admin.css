@@ -69,11 +69,10 @@
   --ws-ok: var(--color-success);
   --ws-danger: var(--color-danger);
   --ws-danger-ink: light-dark(#fff, #1a1222);
-  /* The primary button wears the brand coral, never the accent: in light mode
-     the accent is a deep terracotta that reads as the danger red, so Approve
-     looked like the destructive choice. Dark ink, because white on coral is
-     under 4.5:1. */
-  --ws-primary: var(--ws-brand);
+  /* The primary button is orchid, chosen by the owner from candidates: anything
+     on the red/coral side read as the destructive choice next to Reject. Dark
+     ink, because white on a light pink is under 4.5:1. */
+  --ws-primary: light-dark(#d9a0dd, #e2b6e6);
   --ws-primary-ink: light-dark(#2b2126, #1a1222);
   --side-w: 236px;
   --list-w: 360px;
