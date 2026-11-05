@@ -22,6 +22,7 @@
   <link rel="stylesheet" href="/pages/admin/admin-faces.css">
   <link rel="stylesheet" href="/pages/admin/admin-panels.css">
   <link rel="stylesheet" href="/pages/admin/admin-sort.css">
+  <link rel="stylesheet" href="/pages/admin/admin-twins.css">
   <script src="/components/theme-init.js"></script>
 </head>
 
@@ -206,6 +207,8 @@
             </nav>
             <p class="muted" id="gallery-lede"></p>
             <a class="btn btn-sm" id="gallery-add-btn" href="/admin/gallery/upload">+ Add official photos</a>
+            <button type="button" class="btn btn-sm btn-ghost" id="gallery-twins-btn">Find black-and-white
+              twins</button>
           </header>
           <div class="gallery-bar">
             <div class="seg" id="gallery-showing" role="group" aria-label="Which photos to show" hidden>
@@ -398,6 +401,16 @@
                 <label class="checkbox-label">
                   <input type="checkbox" id="sc-guestbook-favorites">
                   <span>Show pinned notes as Favorites at the top of the guestbook and first in the printable guestbook</span>
+                </label>
+              </div>
+            </fieldset>
+
+            <fieldset class="form-section" id="sc-sec-gallery">
+              <legend>Gallery</legend>
+              <div class="form-group">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="sc-gallery-bw">
+                  <span>Let guests flip a photo to its black-and-white copy. Only photos paired with one in Gallery get the button; everyone sees colour first</span>
                 </label>
               </div>
             </fieldset>
@@ -1015,6 +1028,38 @@
     <footer class="dlg-actions">
       <button type="button" class="btn" data-close-modal>Done</button>
     </footer>
+  </dialog>
+
+  <!-- Black-and-white twins (gallery-twins.js): proposals from the scan, and
+       the by-hand picker. Plain dialogs, not routes: both are one-shot. -->
+  <dialog id="gallery-twins-modal" class="route-dialog twin-dialog" aria-labelledby="gallery-twins-title">
+    <header class="dlg-head">
+      <h2 id="gallery-twins-title">Black-and-white twins</h2>
+      <button type="button" class="dlg-x" data-close-modal aria-label="Close">&times;</button>
+    </header>
+    <div id="gallery-twins-body"></div>
+    <footer class="dlg-actions">
+      <button type="button" class="btn" data-close-modal>Done</button>
+      <button type="button" class="btn btn-primary" id="gallery-twins-pair-all" hidden>Pair all</button>
+    </footer>
+  </dialog>
+
+  <dialog id="gallery-twin-pick-modal" class="route-dialog twin-dialog" aria-labelledby="gallery-twin-pick-title">
+    <header class="dlg-head">
+      <h2 id="gallery-twin-pick-title">Pair with a black-and-white copy</h2>
+      <button type="button" class="dlg-x" data-close-modal aria-label="Close">&times;</button>
+    </header>
+    <p class="muted">Pick the other photo of the pair. The colour one stays in the gallery; the
+      black-and-white copy rides along with it.</p>
+    <ul id="gallery-twin-pick-list" class="twin-options"></ul>
+    <div id="gallery-twin-pick-confirm" class="twin-pick-confirm" hidden>
+      <span id="gallery-twin-pick-pair" class="twin-pair"></span>
+      <p id="gallery-twin-pick-error" class="status-note is-error" role="alert" hidden></p>
+      <div class="dlg-actions">
+        <button type="button" class="btn btn-ghost" id="gallery-twin-pick-swap">Swap</button>
+        <button type="button" class="btn btn-primary" id="gallery-twin-pick-save">Pair them</button>
+      </div>
+    </div>
   </dialog>
 
   <dialog id="gallery-remove-modal" class="confirm" aria-labelledby="gallery-remove-title">

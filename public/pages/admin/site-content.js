@@ -520,6 +520,7 @@ function populate(c) {
   setVal("sc-memories-title", c.memories.title)
   setTa("sc-memories-body", c.memories.body)
   getInputElement("sc-guestbook-favorites").checked = c.guestbook.showFavorites
+  getInputElement("sc-gallery-bw").checked = c.gallery.showBlackAndWhite
   setVal("sc-footer-event-heading", c.footer.eventHeading)
   setVal("sc-footer-github", c.footer.githubUrl || "")
   setVal("sc-copy-pre-heading", c.copy.pre.welcomeHeading)
@@ -611,6 +612,9 @@ function collectForm() {
     },
     guestbook: {
       showFavorites: getInputElement("sc-guestbook-favorites").checked,
+    },
+    gallery: {
+      showBlackAndWhite: getInputElement("sc-gallery-bw").checked,
     },
     footer: {
       githubUrl: val("sc-footer-github") || null,

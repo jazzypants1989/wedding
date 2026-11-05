@@ -15,6 +15,8 @@ import { initModeration, loadModeration, loadModerationCount } from "./moderatio
 import { loadHome, refreshHomeBadges } from "./inbox.js"
 import { initGalleryAdmin, loadGalleryAdmin } from "./gallery-admin.js"
 import { initGallerySort } from "./gallery-sort.js"
+import { initGalleryTwins } from "./gallery-twins.js"
+import { state } from "./state.js"
 import { initFaceAssignment, loadFaceAssignment } from "./face-assignment.js"
 import { initThankYous, loadThankYous, loadThankYouCount } from "./thank-you.js"
 import {
@@ -138,6 +140,10 @@ function init() {
   initModeration()
   initGalleryAdmin()
   initGallerySort()
+  initGalleryTwins({
+    reload: () => void loadGalleryAdmin(),
+    getItem: (id) => state.getCuratedById(id),
+  })
   initFaceAssignment()
   initThankYous()
   initSiteContent()

@@ -437,6 +437,84 @@ export interface SortUndoEntry {
 /** Register the Sort panel with the router. */
 export function initGallerySort(): void
 
+/** @file twin-detect.js - black-and-white twin detection over thumbnail pixels */
+
+/** One thumbnail, measured: mean colourfulness (0-255) and a brightness map. */
+export interface Tone {
+  chroma: number
+  luma: number[]
+}
+export type ToneKind = "gray" | "colour" | "unsure"
+/** A colour photo and the black-and-white copy proposed for it. */
+export interface TwinProposal {
+  primaryId: number
+  twinId: number
+  /** Brightness-map correlation, -1..1. */
+  score: number
+}
+/** Measure RGBA bytes (a TONE_GRID-square drawing). Null for no pixels. */
+export function measureTone(rgba: ArrayLike<number>): Tone | null
+export function toneKind(tone: Tone): ToneKind
+/** Pearson correlation of two brightness maps; 0 when either is flat. */
+export function lumaCorrelation(a: number[], b: number[]): number
+/** Within each group, pair every black-and-white photo with the colour photo
+ *  whose brightness map matches it best, each photo used once. */
+export function proposeTwins(
+  groups: ReadonlyArray<{ members: ReadonlyArray<{ id: number }> }>,
+  tones: Map<number, Tone | null>,
+): TwinProposal[]
+/** Which of two photos a by-hand pair should make the colour one: the chosen
+ *  one, unless it is plainly black-and-white and the other plainly colour. */
+export function pairDirection(
+  chosen: { id: number; tone: Tone | null },
+  other: { id: number; tone: Tone | null },
+): { primaryId: number; twinId: number }
+
+/** @file gallery-twins.js - pairing black-and-white twins in the admin Gallery */
+
+/** One photo the twin scan or the by-hand picker offers. */
+export interface TwinCandidate {
+  id: number
+  file_key: string
+  section: import("../../../types.js").MediaSection
+  status: import("../../../types.js").MediaStatus
+  caption: string | null
+  width: number | null
+  height: number | null
+  needs_display: boolean
+  captured_at: string | null
+}
+/** Response of POST /api/admin/media/twins/scan. */
+export interface TwinScanResponse {
+  groups: Array<{
+    section: import("../../../types.js").MediaSection
+    capturedAt: string
+    width: number
+    height: number
+    members: TwinCandidate[]
+  }>
+  backfilled: number
+  withoutCaptureTime: number
+  truncated: boolean
+}
+/** Response of GET /api/admin/media/:id/twin-options. */
+export interface TwinOptionsResponse {
+  items: TwinCandidate[]
+}
+/** Response of DELETE /api/admin/media/:id/twin. */
+export interface TwinUnpairResponse {
+  success: true
+  twin: { id: number; status: import("../../../types.js").MediaStatus }
+}
+/** The pairing line on a curated tile: the paired copy with Unpair, or the
+ *  "B&W copy…" button. Empty for a video. */
+export function twinControlMarkup(item: MediaListItem): string
+/** Wire the find-twins dialog, the by-hand picker and the tile buttons. */
+export function initGalleryTwins(options: {
+  reload: () => void
+  getItem: (id: number) => MediaListItem | null
+}): void
+
 /** @file blocklist.js - Requests › Blocked (drawn inside the Requests split view) */
 
 export interface BlocklistResponse {

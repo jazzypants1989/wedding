@@ -1,0 +1,160 @@
+/* Black-and-white twins (gallery-twins.js): the pairing line on a curated tile,
+   the find-twins proposals and the by-hand picker. Its own file so the Gallery
+   panel's stylesheet stays the grid's. */
+
+#tab-gallery .twin-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+#tab-gallery .twin-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--ws-muted);
+  margin-right: auto;
+}
+
+.twin-chip-art {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--ws-hover);
+  border: 1px solid var(--ws-line);
+}
+
+.twin-chip-missing {
+  display: inline-block;
+}
+
+/* Header: the find button sits under "+ Add …", quieter. */
+#gallery-twins-btn {
+  justify-self: start;
+}
+
+dialog.twin-dialog {
+  width: min(760px, calc(100vw - 24px));
+}
+
+.twin-proposals {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.twin-proposal {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 10px;
+  border: 1px solid var(--ws-line);
+  border-radius: 12px;
+  background: var(--ws-panel);
+}
+
+.twin-proposal .twin-pair {
+  grid-row: span 2;
+}
+
+.twin-proposal.is-done {
+  opacity: 0.6;
+}
+
+.twin-pair {
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+}
+
+.twin-pair-art {
+  margin: 0;
+  display: grid;
+  gap: 4px;
+  width: min(160px, 38vw);
+}
+
+.twin-pair-art img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 8px;
+  background: var(--ws-hover);
+}
+
+.twin-pair-art figcaption {
+  font-size: 0.78rem;
+  color: var(--ws-muted);
+}
+
+.twin-options {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+  max-height: 46vh;
+  overflow: auto;
+}
+
+.twin-option {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  background: var(--ws-hover);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.twin-option img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+
+.twin-option[aria-pressed="true"] {
+  border-color: var(--ws-accent);
+  box-shadow: 0 0 0 3px var(--ws-accent-soft);
+}
+
+.twin-option:focus-visible {
+  outline: 2px solid var(--ws-accent);
+  outline-offset: 2px;
+}
+
+.twin-option-tag {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 0.6);
+  color: #fff;
+  font-size: 0.7rem;
+}
+
+.twin-pick-confirm {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ws-line);
+}
+
+.twin-pick-confirm[hidden],
+#gallery-twins-pair-all[hidden] {
+  display: none;
+}
+
+#gallery-twins-body > .small {
+  margin-top: 10px;
+}

@@ -47,6 +47,7 @@ import {
 } from "./curated-order.js"
 import { icon } from "./icons.js"
 import { sortProgress } from "./sort-moments.js"
+import { twinControlMarkup } from "./gallery-twins.js"
 
 /** Display names for the curated sections. */
 const SECTION_LABEL = /** @type {const} */ ({ official: "Official", honeymoon: "Honeymoon" })
@@ -347,6 +348,7 @@ function itemMarkup(item, index) {
         <button type="button" class="btn btn-sm btn-ghost" data-action="hide"
           title="Take it off the site, and keep it">Hide</button>
       </span>
+      ${twinControlMarkup(item)}
     </div>
   </li>`
 }
@@ -378,6 +380,7 @@ function hiddenItemMarkup(item) {
           title="Move to the end of ${SECTION_LABEL[otherSection(section)]}, still hidden"
           >Move to ${SECTION_LABEL[otherSection(section)]}</button>
       </span>
+      ${twinControlMarkup(item)}
     </div>
   </li>`
 }
