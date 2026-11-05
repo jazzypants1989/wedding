@@ -237,8 +237,13 @@ export function serveMedia(req, res) {
     row.section === MEDIA_SECTION.HONEYMOON ||
     row.section === MEDIA_SECTION.CONTENT
   ) {
-    // Curated/site-content variants are stable for the life of the file_key.
-    headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    // The file behind a file_key never changes, but its visibility does: the couple
+    // hide curated photos, and a hidden one must disappear for prior viewers within
+    // ~10 minutes. So no `immutable`; after max-age the browser (or a shared cache)
+    // revalidates with the ETag, and that request passes the visibility gate above
+    // before the 304 is considered, so a hidden photo answers 404. (Static images
+    // under public/images are served by core/static.js, not here.)
+    headers["Cache-Control"] = "public, max-age=600"
   } else {
     // A hidden guest photo must actually disappear for prior viewers within ~a day.
     headers["Cache-Control"] = "public, max-age=86400"

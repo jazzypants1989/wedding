@@ -381,9 +381,29 @@ describe("admin media upload (requires TEST_ADMIN_PASSWORD)", () => {
     assert.strictEqual(row.account_id, null)
     assert.strictEqual(row.section, "official")
 
-    // Official-section variants are immutable-cached.
+    // Official-section variants are cached for 10 minutes, then revalidated.
     const get = await fetch(`${BASE_URL}/media/${data.fileKey}/display`)
-    assert.strictEqual(get.headers.get("cache-control"), "public, max-age=31536000, immutable")
+    assert.strictEqual(get.headers.get("cache-control"), "public, max-age=600")
+    const etag = get.headers.get("etag")
+    assert.ok(etag)
+
+    // Revalidation while approved is a 304; once hidden, the same conditional gets 404.
+    const headers = { "If-None-Match": etag }
+    assert.strictEqual(
+      (await fetch(`${BASE_URL}/media/${data.fileKey}/display`, { headers })).status,
+      304,
+    )
+    const hide = await adminFetch(
+      `/api/admin/moderation/media/${data.id}/hide`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" },
+      admin,
+    )
+    assert.strictEqual(hide.status, 200)
+    assert.strictEqual(
+      (await fetch(`${BASE_URL}/media/${data.fileKey}/display`, { headers })).status,
+      404,
+      "a hidden curated photo's revalidation is 404, not 304",
+    )
   })
 })
 
@@ -663,7 +683,7 @@ describe("content section: dress-code images (requires TEST_ADMIN_PASSWORD)", ()
     return { cookieHeader: a.cookieHeader, csrfToken: a.csrfToken }
   }
 
-  it("admin content upload finalizes approved as section=content, account_id NULL, immutable-cached ladder", async (t) => {
+  it("admin content upload finalizes approved as section=content, account_id NULL, 10-minute-cached ladder", async (t) => {
     if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
     const adminAuth = await adminAuthFor()
     const { id, fileKey, finalizeRes } = await uploadContentImage(adminAuth)
@@ -675,13 +695,13 @@ describe("content section: dress-code images (requires TEST_ADMIN_PASSWORD)", ()
     assert.strictEqual(row.account_id, null)
     assert.strictEqual(row.section, "content")
 
-    // Each ladder variant is publicly servable by file_key with the immutable cache.
+    // Each ladder variant is publicly servable by file_key with the 10-minute cache.
     for (const v of ["w400", "w800", "w1600"]) {
       const get = await fetch(`${BASE_URL}/media/${fileKey}/${v}`)
       assert.strictEqual(get.status, 200, `${v} servable`)
       assert.strictEqual(
         get.headers.get("cache-control"),
-        "public, max-age=31536000, immutable",
+        "public, max-age=600",
       )
     }
   })
@@ -881,10 +901,10 @@ describe("honeymoon section: a second curated set", () => {
     assert.ok(!(await feedIds("official")).includes(one.id))
     assert.ok(!(await feedIds("guest")).includes(one.id))
 
-    // Deep link + curated (immutable) caching, like official.
+    // Deep link + curated (10-minute) caching, like official.
     assert.strictEqual((await fetch(`${BASE_URL}/api/media/${one.id}`)).status, 200)
     const get = await fetch(`${BASE_URL}/media/${one.fileKey}/display`)
-    assert.strictEqual(get.headers.get("cache-control"), "public, max-age=31536000, immutable")
+    assert.strictEqual(get.headers.get("cache-control"), "public, max-age=600")
   })
 
   it("guests react to and comment on a honeymoon photo exactly as on official", async (t) => {
@@ -1339,7 +1359,7 @@ describe("finishing an upload hidden: a culled import", () => {
     assert.strictEqual(unhide.status, 200)
     const open = await fetch(`${BASE_URL}/media/${item.fileKey}/thumb`)
     assert.strictEqual(open.status, 200)
-    assert.strictEqual(open.headers.get("cache-control"), "public, max-age=31536000, immutable")
+    assert.strictEqual(open.headers.get("cache-control"), "public, max-age=600")
     await open.arrayBuffer()
   })
 
