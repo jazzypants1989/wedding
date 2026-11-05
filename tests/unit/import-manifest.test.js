@@ -13,7 +13,11 @@ import {
   manifestCount,
   manifestGet,
   manifestHas,
+  manifestMarkSelection,
   manifestRecord,
+  manifestRows,
+  manifestSelection,
+  manifestSetStatus,
   normalizeOrigin,
   saveManifest,
 } from "../../scripts/lib/import-manifest.js"
@@ -131,6 +135,79 @@ describe("record and lookup", () => {
     manifestRecord(manifest, "http://x", "h", entry({ id: 2 }))
     assert.equal(manifestCount(manifest, "http://x"), 1)
     assert.equal(manifestGet(manifest, "http://x", "h")?.id, 2)
+  })
+})
+
+describe("what a selection depends on", () => {
+  it("keeps a row --force replaced, so a later selection still reaches it", () => {
+    const manifest = loadManifest(manifestPath("earlier.json"))
+    manifestRecord(manifest, "http://x", "h", entry({ id: 1, status: "approved" }))
+    manifestRecord(manifest, "http://x", "h", entry({ id: 2, status: "hidden" }))
+    manifestRecord(manifest, "http://x", "h", entry({ id: 3, status: "hidden" }))
+    assert.deepEqual(
+      manifestRows(manifest, "http://x").map((row) => [row.id, row.status, row.current]),
+      [
+        [3, "hidden", true],
+        [2, "hidden", false],
+        [1, "approved", false],
+      ],
+    )
+    // Re-recording the same row doesn't make it its own earlier copy.
+    manifestRecord(manifest, "http://x", "h", entry({ id: 3, status: "hidden" }))
+    assert.equal(manifestRows(manifest, "http://x").length, 3)
+  })
+
+  it("updates a status wherever the row is recorded", () => {
+    const manifest = loadManifest(manifestPath("status.json"))
+    manifestRecord(manifest, "http://x", "h", entry({ id: 1, status: "approved" }))
+    manifestRecord(manifest, "http://x", "h", entry({ id: 2, status: "hidden" }))
+    assert.equal(manifestSetStatus(manifest, "http://x", 1, "hidden"), true)
+    assert.equal(manifestSetStatus(manifest, "http://x", 99, "hidden"), false)
+    assert.deepEqual(
+      manifestRows(manifest, "http://x").map((row) => row.status),
+      ["hidden", "hidden"],
+    )
+  })
+
+  it("records a selection run per origin, and round-trips it", () => {
+    const file = manifestPath("marked.json")
+    const manifest = loadManifest(file)
+    assert.equal(manifestSelection(manifest, "http://x"), null)
+    manifestMarkSelection(manifest, "http://x", {
+      path: "/cull/keep.json",
+      at: "2026-11-05T00:00:00.000Z",
+    })
+    saveManifest(file, manifest)
+    const reloaded = loadManifest(file)
+    assert.deepEqual(manifestSelection(reloaded, "http://x"), {
+      path: "/cull/keep.json",
+      at: "2026-11-05T00:00:00.000Z",
+    })
+    assert.equal(manifestSelection(reloaded, "http://y"), null)
+    assert.equal(manifestSelection(reloaded, "toString"), null)
+  })
+
+  it("loads a manifest from before statuses were kept, with them unknown", () => {
+    const file = manifestPath("old-format.json")
+    fs.writeFileSync(file, JSON.stringify({ version: 1, origins: { "http://x": { h: entry() } } }))
+    const manifest = loadManifest(file)
+    assert.equal(manifestHas(manifest, "http://x", "h"), true)
+    assert.deepEqual(
+      manifestRows(manifest, "http://x").map((row) => [row.id, row.status]),
+      [[512, null]],
+    )
+    assert.equal(manifestSelection(manifest, "http://x"), null)
+  })
+
+  it("drops a malformed selections record instead of the whole manifest", () => {
+    const file = manifestPath("bad-selections.json")
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ version: 1, origins: { "http://x": { h: entry() } }, selections: "nope" }),
+    )
+    const manifest = loadManifest(file)
+    assert.equal(manifestHas(manifest, "http://x", "h"), true)
+    assert.equal(manifestSelection(manifest, "http://x"), null)
   })
 })
 

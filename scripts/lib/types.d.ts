@@ -529,12 +529,52 @@ export interface ManifestEntry {
   bytes: number
   /** ISO timestamp of the import. */
   at: string
+  /** The row's status when last seen: at finalize, or as read back from the
+   *  destination by a later run. Absent in a manifest written before statuses
+   *  were recorded — that run asks the destination instead. */
+  status?: string
+  /** Other rows holding the same content: an earlier import --force replaced in
+   *  this entry, or a row found by content hash. Kept so a selection still
+   *  reaches them. */
+  earlier?: ManifestEarlierRow[]
+}
+
+/** A row the manifest still tracks after a newer import of the same content. */
+export interface ManifestEarlierRow {
+  id: number
+  section: string
+  status?: string
+  at: string
+}
+
+/** The record that a --selection run imported into an origin. */
+export interface ManifestSelectionMark {
+  /** The selection file that run used, as given. Shown in the refusal. */
+  path: string
+  /** ISO timestamp of the latest selection run. */
+  at: string
 }
 
 /** origin → sha256 → entry. Content-keyed, so renames do not re-import. */
 export interface ImportManifest {
   version: number
   origins: Record<string, Record<string, ManifestEntry>>
+  /** origin → the selection run that imported into it. Once present, a run to
+   *  that origin needs --selection or an explicit --no-selection. */
+  selections?: Record<string, ManifestSelectionMark>
+}
+
+/** One recorded row, flattened for comparing against a selection. */
+export interface RecordedRow {
+  sha256: string
+  /** The file's name at import time. */
+  name: string
+  id: number
+  section: string
+  /** Last recorded status; null when the manifest predates recording it. */
+  status: string | null
+  /** False for a row kept in `earlier`, i.e. a previous copy. */
+  current: boolean
 }
 
 /**
@@ -558,7 +598,10 @@ export function manifestGet(
   sha256: string,
 ): ManifestEntry | null
 
-/** Record an import. Mutates and returns the manifest. */
+/**
+ * Record an import. Mutates and returns the manifest. A different row already
+ * recorded for this content moves into `earlier` rather than being forgotten.
+ */
 export function manifestRecord(
   manifest: ImportManifest,
   origin: string,
@@ -568,6 +611,30 @@ export function manifestRecord(
 
 /** How many files this origin has recorded. */
 export function manifestCount(manifest: ImportManifest, origin: string): number
+
+/** Every row recorded for an origin, earlier copies included. */
+export function manifestRows(manifest: ImportManifest, origin: string): RecordedRow[]
+
+/** Update a recorded row's status wherever it appears. Returns whether it did. */
+export function manifestSetStatus(
+  manifest: ImportManifest,
+  origin: string,
+  id: number,
+  status: string,
+): boolean
+
+/** The selection run recorded for an origin, or null. */
+export function manifestSelection(
+  manifest: ImportManifest,
+  origin: string,
+): ManifestSelectionMark | null
+
+/** Record that a selection run imported into an origin. Mutates and returns it. */
+export function manifestMarkSelection(
+  manifest: ImportManifest,
+  origin: string,
+  mark: ManifestSelectionMark,
+): ImportManifest
 
 /** Write atomically (tmp + rename), creating the parent directory. */
 export function saveManifest(manifestPath: string, manifest: ImportManifest): void
