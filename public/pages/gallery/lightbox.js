@@ -52,6 +52,12 @@ let slideshowTimer = null
 /** @type {any} */
 let wakeLock = null
 
+/** Showing photos' black-and-white copies. Only a photo with a twin offers the
+ *  flip (the feed names a twin only when the couple turned it on). The choice
+ *  holds while the guest moves through the lightbox, so a run of photos can be
+ *  browsed in black and white; a reload starts in colour again. */
+let blackAndWhite = false
+
 /** Pinch-zoom state for the current image (reset on every render/navigate). */
 let zScale = 1
 let zTx = 0
@@ -105,6 +111,11 @@ export function initLightbox(src) {
     void navigate(1)
   })
   getElement("lightbox-play").addEventListener("click", () => toggleSlideshow())
+  getElement("lightbox-tone").addEventListener("click", () => {
+    blackAndWhite = !blackAndWhite
+    applyTone()
+    announcePolite(blackAndWhite ? "Showing black and white" : "Showing colour")
+  })
   const copyBtn = getElement("lightbox-copy")
   // On phones (the dominant post-wedding device) prefer the native share sheet
   // so a guest can fire a photo straight into a group chat; copy-link is the
@@ -262,22 +273,10 @@ function render() {
     const alt = item.caption || `Photo by ${item.author_name}`
     const animClass = slideshowAnim ? " slideshow-anim" : ""
     stage.innerHTML = html`
-      <img class="lightbox-media${animClass}" src="/media/${item.file_key}/display" alt="${alt}">`
-    // Cold-open a large photo shows an empty black stage until the display image
-    // arrives (neighbor preload only helps subsequent nav). Seed the stage with
-    // the already-tiny thumb (blurred) + a spinner until the full image loads.
-    const img = stage.querySelector(".lightbox-media")
-    if (img instanceof HTMLImageElement && !img.complete) {
-      stage.style.backgroundImage = `url(/media/${item.file_key}/thumb)`
-      stage.classList.add("is-loading")
-      const done = () => {
-        stage.classList.remove("is-loading")
-        stage.style.backgroundImage = ""
-      }
-      img.addEventListener("load", done, { once: true })
-      img.addEventListener("error", done, { once: true })
-    }
+      <img class="lightbox-media${animClass}" src="/media/${shownKey(item)}/display" alt="${alt}">`
+    seedWhileLoading(stage, shownKey(item))
   }
+  renderToneButton(item)
 
   // `items.length` is only the loaded page(s), not the section's true total.
   // Rather than silently understate it (and grow as you page), append "+" while
@@ -325,6 +324,65 @@ function render() {
 }
 
 /**
+ * The file this item shows: its black-and-white twin while that is chosen and
+ * it has one it can show, otherwise the photo itself.
+ * @param {Types.MediaListItem} item @returns {string}
+ */
+function shownKey(item) {
+  return blackAndWhite && item.twin && !item.twin.needs_display
+    ? item.twin.file_key
+    : item.file_key
+}
+
+/**
+ * Cold-open a large photo shows an empty black stage until the display image
+ * arrives (neighbor preload only helps subsequent nav). Seed the stage with the
+ * already-tiny thumb (blurred) + a spinner until the full image loads.
+ * @param {HTMLElement} stage @param {string} fileKey
+ */
+function seedWhileLoading(stage, fileKey) {
+  const img = stage.querySelector(".lightbox-media")
+  if (!(img instanceof HTMLImageElement) || img.complete) return
+  stage.style.backgroundImage = `url(/media/${fileKey}/thumb)`
+  stage.classList.add("is-loading")
+  const done = () => {
+    stage.classList.remove("is-loading")
+    stage.style.backgroundImage = ""
+  }
+  img.addEventListener("load", done, { once: true })
+  img.addEventListener("error", done, { once: true })
+}
+
+/** The colour ⇄ black-and-white button: only on a photo that has a twin.
+ *  @param {Types.MediaListItem} item */
+function renderToneButton(item) {
+  const btn = getElement("lightbox-tone")
+  const offered = item.kind === "image" && !item.needs_display && !!item.twin &&
+    !item.twin.needs_display
+  btn.hidden = !offered
+  btn.setAttribute("aria-pressed", offered && blackAndWhite ? "true" : "false")
+}
+
+/**
+ * Flip the open photo between colour and black and white in place. Only the
+ * image changes: re-rendering would rebuild the comment panel and lose a draft.
+ */
+function applyTone() {
+  const item = source.getItems(section)[index]
+  if (!item) return
+  renderToneButton(item)
+  const stage = getElement("lightbox-stage")
+  const img = stage.querySelector(".lightbox-media")
+  if (!(img instanceof HTMLImageElement)) return
+  const key = shownKey(item)
+  const src = `/media/${key}/display`
+  if (img.getAttribute("src") === src) return
+  img.setAttribute("src", src)
+  seedWhileLoading(stage, key)
+  preloadNeighbors()
+}
+
+/**
  * Delete the current item (the signed-in uploader's own photo). Confirms, calls
  * DELETE /api/media/:id, drops it from the grid via source.onDelete, then either
  * closes (section now empty) or advances to the neighbour that slid into place.
@@ -364,7 +422,7 @@ function preloadNeighbors() {
   for (const n of [index - 1, index + 1]) {
     const item = items[n]
     if (item && item.kind === "image" && !item.needs_display) {
-      new Image().src = `/media/${item.file_key}/display`
+      new Image().src = `/media/${shownKey(item)}/display`
     }
   }
 }

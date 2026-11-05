@@ -670,6 +670,49 @@
   color: var(--color-text-muted, inherit);
 }
 
+/* ============ Colour ⇄ black and white (a photo with a twin) ============ */
+/* A pill with a half-filled circle: hollow-ish in colour, filled light while the
+   black-and-white copy is showing. aria-pressed carries the state. */
+.lightbox-tone {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 3px 11px 3px 8px;
+  border: 1px solid rgba(240, 234, 240, 0.55);
+  border-radius: 999px;
+  background: rgba(11, 8, 16, 0.35);
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.lightbox-tone[hidden] {
+  display: none;
+}
+
+.lightbox-tone-glyph {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  background: linear-gradient(90deg, currentColor 50%, transparent 50%);
+}
+
+.lightbox-tone[aria-pressed="true"] {
+  background: #f0eaf0;
+  border-color: #f0eaf0;
+  color: #0b0810;
+}
+
+.lightbox-tone:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
 /* ============ Slideshow ("Memories" ambient mode) ============ */
 .lightbox-play {
   appearance: none;
