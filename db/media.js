@@ -19,6 +19,15 @@ const BYTES_COLUMN = {
   w1600: "w1600_bytes",
 }
 
+// A photo's live black-and-white twin, joined onto the row being listed. The
+// partial unique index idx_media_twin_of allows one live twin per primary, so the
+// join never multiplies a row. Rejected twins (files in quarantine) and in-flight
+// uploads are not offered. Callers decide who may see the twin (api/media.js).
+const TWIN_JOIN = sql`LEFT JOIN media t ON t.twin_of = m.id AND t.deleted_at IS NULL
+      AND t.status IN ('pending', 'approved', 'hidden')`
+const TWIN_COLUMNS = sql`t.id AS twin_id, t.file_key AS twin_file_key,
+      t.needs_display AS twin_needs_display`
+
 /** @type {Types.createMediaRow} */
 export function createMediaRow({ fileKey, accountId, kind, section, originalBytes }) {
   const result = sql`INSERT INTO media (file_key, account_id, kind, section, status, original_bytes)
@@ -71,10 +80,12 @@ export function getMediaFeed({ callerId = null, section, before = null, after = 
 
   return sql`SELECT m.id, m.file_key, m.account_id, m.kind, m.section, m.status,
       m.caption, m.width, m.height, m.duration_seconds, m.needs_display,
-      m.created_at, m.sort_order, a.name AS author_name, ${isOwn} AS is_own
+      m.created_at, m.sort_order, a.name AS author_name, ${isOwn} AS is_own, ${TWIN_COLUMNS}
     FROM media m
     LEFT JOIN accounts a ON a.id = m.account_id
+    ${TWIN_JOIN}
     WHERE m.deleted_at IS NULL
+      AND m.twin_of IS NULL
       AND (m.account_id IS NULL OR a.deleted_at IS NULL)
       AND m.section = ${section}
       AND (m.status = 'approved' ${ownPending})
@@ -103,6 +114,7 @@ export function listGuestMediaByReactions(limit) {
       GROUP BY target_id
     ) r ON r.target_id = m.id
     WHERE m.deleted_at IS NULL
+      AND m.twin_of IS NULL
       AND (m.account_id IS NULL OR a.deleted_at IS NULL)
       AND m.section = 'guest'
       AND m.status = 'approved'
@@ -119,14 +131,18 @@ export function getMediaFeedRowById(id, callerId = null) {
   // NULL) remain visible; the caller gates on status. Also excludes the 'content'
   // section so admin site-content images (dress-code figures) are never publicly
   // deep-linked, nor targetable by comments/reactions (this same query backs
-  // db/targets.js's visibility gate).
+  // db/targets.js's visibility gate). A black-and-white twin is not an item of its
+  // own either: undefined here is what keeps it from being deep-linked, commented
+  // on or reacted to. Those belong to its primary.
   const isOwn = callerId !== null ? sql`(m.account_id = ${callerId})` : sql`0`
   return sql`SELECT m.id, m.file_key, m.account_id, m.kind, m.section, m.status,
       m.caption, m.width, m.height, m.duration_seconds, m.needs_display,
-      m.created_at, a.name AS author_name, ${isOwn} AS is_own
+      m.created_at, a.name AS author_name, ${isOwn} AS is_own, ${TWIN_COLUMNS}
     FROM media m
     LEFT JOIN accounts a ON a.id = m.account_id
+    ${TWIN_JOIN}
     WHERE m.id = ${id} AND m.deleted_at IS NULL
+      AND m.twin_of IS NULL
       AND (m.account_id IS NULL OR a.deleted_at IS NULL)
       AND m.section != ${MEDIA_SECTION.CONTENT}`.get()
 }
@@ -171,9 +187,12 @@ export function setMediaStatus(id, fromStatuses, toStatus) {
 
 /** @type {Types.getCuratedMediaIds} */
 export function getCuratedMediaIds(section) {
+  // A black-and-white twin has no place in the order: it is shown, if at all, as
+  // its primary. Left out here and in getCuratedMediaForAdmin alike, so the set
+  // reorder demands is the set the admin grid shows.
   /** @type {{ id: number }[]} */
   const rows = sql`SELECT id FROM media
-    WHERE section = ${section} AND deleted_at IS NULL
+    WHERE section = ${section} AND deleted_at IS NULL AND twin_of IS NULL
     ORDER BY sort_order, id`.all()
   return rows.map((r) => r.id)
 }
@@ -183,12 +202,15 @@ export function getCuratedMediaForAdmin(section) {
   // The row set getCuratedMediaIds names, as whole rows: every status (hidden,
   // rejected, even in-flight 'uploading'), no author gate, no page cap. That is
   // what makes it a set reorder will accept, which the public feed is not.
+  // A twin rides on its primary's row (twin_*), never as a row of its own.
   return sql`SELECT m.id, m.file_key, m.account_id, m.kind, m.section, m.status,
       m.caption, m.width, m.height, m.duration_seconds, m.needs_display,
-      m.created_at, m.captured_at, m.decided_at, a.name AS author_name, 0 AS is_own
+      m.created_at, m.captured_at, m.decided_at, a.name AS author_name, 0 AS is_own,
+      ${TWIN_COLUMNS}
     FROM media m
     LEFT JOIN accounts a ON a.id = m.account_id
-    WHERE m.section = ${section} AND m.deleted_at IS NULL
+    ${TWIN_JOIN}
+    WHERE m.section = ${section} AND m.deleted_at IS NULL AND m.twin_of IS NULL
     ORDER BY m.sort_order, m.id`.all()
 }
 
@@ -234,14 +256,16 @@ export function moveCuratedMedia(id, toSection) {
   // appended at the end of that section's order — the same insertion promote
   // uses. Reactions and comments key on media.id, so they travel with it. A
   // guest or content item is never moved here (promote is the guest → official
-  // path), and a move into the section it is already in changes nothing.
+  // path), and a move into the section it is already in changes nothing. A
+  // black-and-white twin goes with its primary, so the pair stays in one section.
   const result = sql`UPDATE media
     SET section = ${toSection},
         sort_order = (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM media
                       WHERE section = ${toSection} AND deleted_at IS NULL)
-    WHERE id = ${id} AND deleted_at IS NULL
+    WHERE id = ${id} AND deleted_at IS NULL AND twin_of IS NULL
       AND section IN (${MEDIA_SECTION.OFFICIAL}, ${MEDIA_SECTION.HONEYMOON})
       AND section != ${toSection}`.run()
+  if (result.changes > 0) moveTwinWithPrimary(id)
   return result.changes > 0
 }
 
@@ -255,8 +279,19 @@ export function promoteMediaToOfficial(id) {
         sort_order = (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM media
                       WHERE section = 'official' AND deleted_at IS NULL)
     WHERE id = ${id} AND section = 'guest' AND deleted_at IS NULL
-      AND status = 'approved'`.run()
+      AND status = 'approved' AND twin_of IS NULL`.run()
+  if (result.changes > 0) moveTwinWithPrimary(id)
   return result.changes > 0
+}
+
+/**
+ * Put a primary's twin (live or not) in the primary's section, so unpairing
+ * later hands back a photo where its colour copy now lives.
+ * @param {number} primaryId
+ */
+function moveTwinWithPrimary(primaryId) {
+  sql`UPDATE media SET section = (SELECT section FROM media WHERE id = ${primaryId})
+    WHERE twin_of = ${primaryId}`.run()
 }
 
 /** @type {Types.updateMediaCaption} */
@@ -305,7 +340,7 @@ export function countPendingMedia() {
   /** @type {import('./types.js').CountResult | undefined} */
   const result = sql`SELECT COUNT(*) AS count FROM media m
     LEFT JOIN accounts a ON a.id = m.account_id
-    WHERE m.status = 'pending' AND m.deleted_at IS NULL
+    WHERE m.status = 'pending' AND m.deleted_at IS NULL AND m.twin_of IS NULL
       AND (m.account_id IS NULL OR a.deleted_at IS NULL)`.get()
   return result ? result.count : 0
 }
@@ -325,7 +360,7 @@ export function getGuestContributors(limit = 24) {
     FROM media m
     JOIN accounts a ON a.id = m.account_id
     WHERE m.section = 'guest' AND m.status = 'approved'
-      AND m.deleted_at IS NULL AND a.deleted_at IS NULL
+      AND m.deleted_at IS NULL AND a.deleted_at IS NULL AND m.twin_of IS NULL
     GROUP BY a.id
     ORDER BY n DESC, a.name ASC`.all()
   let photos = 0
@@ -345,7 +380,7 @@ export function countApprovedGuestMedia() {
   const result = sql`SELECT COUNT(*) AS count FROM media m
     JOIN accounts a ON a.id = m.account_id
     WHERE m.section = 'guest' AND m.status = 'approved'
-      AND m.deleted_at IS NULL AND a.deleted_at IS NULL`.get()
+      AND m.deleted_at IS NULL AND a.deleted_at IS NULL AND m.twin_of IS NULL`.get()
   return result ? result.count : 0
 }
 

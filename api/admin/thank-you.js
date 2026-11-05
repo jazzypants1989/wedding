@@ -173,7 +173,9 @@ function validateMediaKeys(value) {
       return { valid: false, error: "media_keys must contain non-empty strings" }
     }
     const row = getMediaByFileKey(key)
-    if (!row || row.deleted_at || row.status !== MEDIA_STATUS.APPROVED) {
+    // A black-and-white twin is not a photo of its own (its primary is), so it
+    // is refused like an unknown key rather than confirmed to exist.
+    if (!row || row.deleted_at || row.status !== MEDIA_STATUS.APPROVED || row.twin_of !== null) {
       return { valid: false, error: `Unknown or unapproved media key: ${key}` }
     }
     keys.push(key)

@@ -46,7 +46,7 @@ function isSoftDeleted(/** @type {string} */ fileKey) {
 }
 
 /** @typedef {{ content: { couple: { display: string }, contactEmail: string | null } }} ContentResp */
-/** @typedef {{ coupleDisplay: string, mode: string }} ConfigResp */
+/** @typedef {{ coupleDisplay: string, mode: string, gallery: { showBlackAndWhite: boolean } }} ConfigResp */
 
 /** @param {Response} res @returns {Promise<ContentResp>} */
 async function contentJson(res) {
@@ -250,6 +250,31 @@ describe("admin site-content editor", () => {
     assert.deepStrictEqual(readStoredOverride().guestbook, { showFavorites: true })
     const after = await favoritesConfig()
     assert.deepStrictEqual(after.guestbook, { showFavorites: true })
+  })
+
+  it("the gallery black-and-white flip defaults off, saves, and reaches /api/config", { skip: !hasAdmin }, async () => {
+    const auth = await adminLogin()
+    await adminFetch("/api/admin/site-content", { method: "DELETE" }, auth)
+    assert.deepStrictEqual((await configJson()).gallery, { showBlackAndWhite: false }, "off")
+
+    const body = { ...sampleBody(), gallery: { showBlackAndWhite: true } }
+    const put = await adminFetch(
+      "/api/admin/site-content",
+      { method: "PUT", body: JSON.stringify(body) },
+      auth,
+    )
+    assert.strictEqual(put.status, 200)
+    assert.strictEqual((await siteContentJson(put)).content.gallery.showBlackAndWhite, true)
+    assert.deepStrictEqual(readStoredOverride().gallery, { showBlackAndWhite: true })
+    assert.deepStrictEqual((await configJson()).gallery, { showBlackAndWhite: true })
+
+    const bad = await adminFetch(
+      "/api/admin/site-content",
+      { method: "PUT", body: JSON.stringify({ ...sampleBody(), gallery: { showBlackAndWhite: 1 } }) },
+      auth,
+    )
+    assert.strictEqual(bad.status, 400)
+    await adminFetch("/api/admin/site-content", { method: "DELETE" }, auth)
   })
 
   it("rejects a non-boolean guestbook Favorites toggle", { skip: !hasAdmin }, async () => {

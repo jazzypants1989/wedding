@@ -125,6 +125,10 @@ export const CONTENT = Object.freeze({
   // Off → no Favorites strip atop /guestbook and no Favorites-first section in
   // the memory book. Pinning a note still gilds its flower either way.
   guestbook: { showFavorites: false },
+  // Off → a photo with a black-and-white twin shows in colour only. On → the
+  // gallery lightbox offers a button that flips it to the black-and-white copy
+  // (and only then may a guest fetch the copy's bytes; core/media-serve.js).
+  gallery: { showBlackAndWhite: false },
   // null → fall back to SERVER.contactEmail (env), matching the gallery
   // report-photo address today (public/pages/gallery/lightbox.js).
   contactEmail: null,

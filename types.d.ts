@@ -420,14 +420,18 @@ export interface Media {
    *  durable identifier a batch face-pipeline run reconciles against when it
    *  doesn't yet know a row's media_id. Null until the importer writes it. */
   source_sha256: string | null
-  /** EXIF capture time, when the source image carried one. Null until the
-   *  importer wiring lands (core/image-meta.js already reads it). */
+  /** EXIF capture time ("YYYY-MM-DD HH:MM:SS", or an ISO string from the face
+   *  ingest), when the source image carried one. Written at finalize, by the
+   *  importer, by the face ingest, and back-filled by the twin scan. */
   captured_at: string | null
   /** When someone decided this photo in Gallery → Sort: shown, or kept hidden.
    *  NULL means nobody has looked at it there. Undo sets it back to NULL. Not
    *  reviewed_at, which every moderation transition stamps (the importer's
    *  --apply-selection, the gallery's own Hide), so it can't say "looked at". */
   decided_at: string | null
+  /** Set on a black-and-white twin: the id of the colour photo (its primary) it
+   *  is a copy of. A twin is never its own item; it follows its primary. */
+  twin_of: number | null
   created_at: string
   updated_at: string
   reviewed_at: string | null
@@ -490,6 +494,18 @@ export interface MediaFeedRow {
   author_name: string | null
   is_own: 0 | 1
   created_at: string
+  /** The live black-and-white twin of this row, joined in by the feed queries
+   *  (null when it has none). The API decides whether a caller may see it. */
+  twin_id?: number | null
+  twin_file_key?: string | null
+  twin_needs_display?: 0 | 1 | null
+}
+
+/** A photo's black-and-white twin, as a gallery item carries it. */
+export interface MediaTwin {
+  id: number
+  file_key: string
+  needs_display: boolean
 }
 
 /**
@@ -510,6 +526,9 @@ export interface MediaListItem {
   author_name: string
   is_own: boolean
   created_at: string
+  /** Its black-and-white twin. Public listings carry it only when the lightbox
+   *  setting is on and this item is approved; the admin listing always does. */
+  twin?: MediaTwin | null
   reactions?: ReactionSummary
   comment_count?: number
 }
@@ -1249,6 +1268,11 @@ export interface SiteContent {
      *  memory book with them. Off by default; pinning still gilds a flower. */
     readonly showFavorites: boolean
   }
+  readonly gallery: {
+    /** Offer the colour ⇄ black-and-white flip in the gallery lightbox for a
+     *  photo with a black-and-white twin. Off by default. */
+    readonly showBlackAndWhite: boolean
+  }
   readonly contactEmail: string | null
   readonly nav: {
     readonly pre: readonly SiteContentNavLink[]
@@ -1308,6 +1332,7 @@ export type SiteContentOverride = {
   }>
   memories?: Partial<{ title: string; body: string }>
   guestbook?: Partial<{ showFavorites: boolean }>
+  gallery?: Partial<{ showBlackAndWhite: boolean }>
   contactEmail?: string | null
   nav?: Partial<{
     pre: SiteContentNavLink[]

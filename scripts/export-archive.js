@@ -110,7 +110,7 @@ const media = queryAll(`
   SELECT m.id, m.file_key, m.account_id, a.name AS author_name, m.kind, m.section,
          m.status, m.caption, m.original_ext, m.original_bytes, m.display_bytes,
          m.thumb_bytes, m.poster_bytes, m.width, m.height, m.duration_seconds,
-         m.needs_display, m.sort_order, m.created_at, m.updated_at,
+         m.needs_display, m.sort_order, m.twin_of, m.created_at, m.updated_at,
          m.reviewed_at, m.deleted_at
   FROM media m
   LEFT JOIN accounts a ON a.id = m.account_id
@@ -206,6 +206,8 @@ const REACTIONS_HEADERS = [
 const MEDIA_HEADERS = [
   "id", "file_key", "author_name", "kind", "section", "status", "caption",
   "original_ext", "original_bytes", "width", "height", "duration_seconds",
+  // Set on a black-and-white copy: the id of the colour photo it belongs to.
+  "twin_of",
   "created_at", "reviewed_at", "deleted_at",
 ]
 // `amount` is present only under --include-amounts (see giftAmountSelect above);

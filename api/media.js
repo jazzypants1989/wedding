@@ -63,6 +63,9 @@ import {
   expectedVariants,
 } from "../types.js"
 import { getWeddingFacts } from "../core/wedding-facts.js"
+import { getContent } from "../core/site-content.js"
+import { readCapturedAt, parseCapturedAt } from "../core/capture-time.js"
+import { fillMediaCapturedAt, releaseTwinsOfRemoved } from "../db/media-twins.js"
 import { log, AUDIT_ACTIONS } from "../core/utils.js"
 import { enrichSocial } from "./enrich.js"
 
@@ -299,9 +302,13 @@ function clampLimit(value, max) {
  * shape (booleans; author_name coalesced to the couple's name for official
  * uploads, which have account_id NULL and thus no joined account row).
  * Exported for the admin curated listing, which is the same shape over every status.
- * @param {GlobalTypes.MediaFeedRow} row @returns {GlobalTypes.MediaListItem}
+ *
+ * `revealTwin` says whether this caller may see the row's black-and-white twin.
+ * The admin always may; a guest only through the public rule, revealTwinTo.
+ * @param {GlobalTypes.MediaFeedRow} row @param {boolean} [revealTwin]
+ * @returns {GlobalTypes.MediaListItem}
  */
-export function toListItem(row) {
+export function toListItem(row, revealTwin = false) {
   return {
     id: row.id,
     file_key: row.file_key,
@@ -316,7 +323,22 @@ export function toListItem(row) {
     author_name: row.author_name ?? getWeddingFacts().coupleNames,
     is_own: !!row.is_own,
     created_at: row.created_at,
+    twin:
+      revealTwin && row.twin_id && row.twin_file_key
+        ? { id: row.twin_id, file_key: row.twin_file_key, needs_display: !!row.twin_needs_display }
+        : null,
   }
+}
+
+/**
+ * May a guest see this row's black-and-white twin? Only when the couple turned
+ * the lightbox flip on, and only for an approved photo — the same rule
+ * core/media-serve.js applies to the twin's bytes, so a feed never names a twin
+ * the server would then refuse.
+ * @param {GlobalTypes.MediaFeedRow} row @returns {boolean}
+ */
+function revealTwinTo(row) {
+  return row.status === MEDIA_STATUS.APPROVED && getContent().gallery.showBlackAndWhite
 }
 
 /** Visible to this viewer? Approved is public; a pending item only to its owner. */
@@ -363,7 +385,7 @@ export async function list(req, res) {
   // reports its end.
   const fetched = getMediaFeed({ callerId, section, before, after, limit: limit + 1 })
   const rows = fetched.length > limit ? fetched.slice(0, limit) : fetched
-  const items = rows.map(toListItem)
+  const items = rows.map((row) => toListItem(row, revealTwinTo(row)))
   // Attach reaction summaries + comment counts (Phase 5). Guarded internally
   // against an empty page (sql.list throws on []).
   enrichSocial(items, TARGET_TYPE.MEDIA, callerId)
@@ -397,7 +419,7 @@ export async function getOne(req, res, { params }) {
 
   // Enrich the single item too so the lightbox ?item= deep-link shows reactions
   // + comment count immediately, before the grid backfills behind it.
-  const item = toListItem(row)
+  const item = toListItem(row, revealTwinTo(row))
   enrichSocial([item], TARGET_TYPE.MEDIA, callerId)
   return sendJson(res, 200, item)
 }
@@ -632,6 +654,19 @@ export async function finalize(req, res, { params, principal }) {
 
   if (caption !== null) updateMediaCaption(row.id, caption)
 
+  // The capture time, for matching a black-and-white twin to its colour photo.
+  // The original's own EXIF first: a browser upload keeps it. The bulk importer
+  // strips EXIF from what it sends, so an admin may declare the time it read
+  // before stripping; a malformed one is ignored, never guessed at.
+  if (row.kind === MEDIA_KIND.IMAGE) {
+    const fromFile = row.original_ext
+      ? readCapturedAt(variantDiskPath(row.file_key, "original", row.original_ext), row.original_ext)
+      : null
+    const declared = principal.isAdmin ? parseCapturedAt(body.capturedAt) : null
+    const capturedAt = fromFile ?? declared
+    if (capturedAt !== null) fillMediaCapturedAt(row.id, capturedAt)
+  }
+
   if (row.kind !== MEDIA_KIND.VIDEO) {
     log({
       action: AUDIT_ACTIONS.MEDIA_FINALIZE,
@@ -686,6 +721,8 @@ export async function remove(req, res, { params, principal }) {
   // self-delete, plus the file removal.
   fs.rmSync(itemDir(row.file_key), { recursive: true, force: true })
   softDeleteMedia(row.id)
+  // A black-and-white copy of this photo becomes its own photo again, hidden.
+  releaseTwinsOfRemoved(row.id)
 
   log({
     action: AUDIT_ACTIONS.MEDIA_DELETE,

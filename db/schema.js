@@ -2213,4 +2213,82 @@ export function runMigrations(db) {
     }
     record.run("add_media_decided_at")
   }
+
+  // Black-and-white twins: a photographer's second, black-and-white copy of a
+  // colour photo is ONE photo, not two. `media.twin_of` names the colour row
+  // (the primary) the copy belongs to. NULL — every row before this — means
+  // "its own photo". A twin is never its own item anywhere public: feeds,
+  // counts, comment/reaction targets and card pickers all skip it, and its bytes
+  // follow its primary's visibility (core/media-serve.js).
+  //
+  // A nullable column, not a rebuild: media_faces cascades from media, and a
+  // rebuild of a live media table is the TRAPS.md hazard. ADD COLUMN may carry a
+  // REFERENCES clause because its default is NULL. ON DELETE SET NULL only
+  // matters for the one hard delete there is (an abandoned 'uploading' row,
+  // which can never be a primary); the soft-delete path releases twins itself.
+  //
+  // The triggers keep the shape one level deep and image-only: a twin's primary
+  // must be a live, unpaired image; a row with a twin can't itself become one;
+  // and the partial unique index allows one live twin per primary. Created in
+  // the same transaction as the column, so they never exist without it (TRAPS.md:
+  // SQLite compiles trigger bodies lazily). Explicitly transactional, because
+  // migrations are not.
+  if (!applied.get("add_media_twins")) {
+    let committed = false
+    try {
+      db.exec("BEGIN")
+      const haveMediaCols = new Set(
+        /** @type {Array<{ name: string }>} */ (
+          db.prepare("PRAGMA table_info(media)").all()
+        ).map((c) => c.name),
+      )
+      if (!haveMediaCols.has("twin_of")) {
+        db.exec(`ALTER TABLE media ADD COLUMN twin_of INTEGER REFERENCES media(id) ON DELETE SET NULL`)
+      }
+      db.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_media_twin_of
+          ON media(twin_of) WHERE twin_of IS NOT NULL AND deleted_at IS NULL;
+
+        DROP TRIGGER IF EXISTS check_media_twin_insert;
+        DROP TRIGGER IF EXISTS check_media_twin_update;
+
+        CREATE TRIGGER check_media_twin_insert
+        BEFORE INSERT ON media
+        FOR EACH ROW
+        WHEN NEW.twin_of IS NOT NULL
+        BEGIN
+          SELECT RAISE(ABORT, 'A new media row cannot be a twin');
+        END;
+
+        CREATE TRIGGER check_media_twin_update
+        BEFORE UPDATE OF twin_of ON media
+        FOR EACH ROW
+        WHEN NEW.twin_of IS NOT NULL AND (
+          NEW.twin_of = NEW.id
+          OR NEW.kind != 'image'
+          OR NOT EXISTS (
+            SELECT 1 FROM media p
+            WHERE p.id = NEW.twin_of AND p.kind = 'image'
+              AND p.twin_of IS NULL AND p.deleted_at IS NULL)
+          OR EXISTS (
+            SELECT 1 FROM media c
+            WHERE c.twin_of = NEW.id AND c.deleted_at IS NULL)
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'Invalid twin: both must be images, one level deep');
+        END;
+      `)
+      record.run("add_media_twins")
+      db.exec("COMMIT")
+      committed = true
+    } finally {
+      if (!committed) {
+        try {
+          db.exec("ROLLBACK")
+        } catch {
+          /* already rolled back */
+        }
+      }
+    }
+  }
 }

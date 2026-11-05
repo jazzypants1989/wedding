@@ -364,6 +364,7 @@ export function buildOverride(body) {
   const registry = obj(body.registry, "registry")
   const memories = obj(body.memories, "memories")
   const guestbook = obj(body.guestbook, "guestbook")
+  const gallery = obj(body.gallery, "gallery")
   const nav = obj(body.nav, "nav")
   const footer = obj(body.footer, "footer")
   const copy = obj(body.copy, "copy")
@@ -396,6 +397,9 @@ export function buildOverride(body) {
     },
     guestbook: {
       showFavorites: optBool(guestbook.showFavorites, "Guestbook Favorites toggle"),
+    },
+    gallery: {
+      showBlackAndWhite: optBool(gallery.showBlackAndWhite, "Gallery black-and-white toggle"),
     },
     contactEmail: optEmail(body.contactEmail),
     nav: {

@@ -670,6 +670,14 @@ export function readImageHeader(buf: Buffer): ImageHeader | null
 /** Orientation, GPS presence and capture time. Never throws. */
 export function readExifSummary(buf: Buffer): ExifSummary
 
+// core/capture-time.js
+/** A stored original's EXIF DateTimeOriginal ("YYYY-MM-DD HH:MM:SS"), or null
+ *  for a format without EXIF, no EXIF, or an unreadable file. Never throws. */
+export function readCapturedAt(filePath: string, ext: string | null): string | null
+/** `value` when it is exactly "YYYY-MM-DD HH:MM:SS" (digits, a real year),
+ *  otherwise null. For a capture time an importer declares at finalize. */
+export function parseCapturedAt(value: unknown): string | null
+
 /**
  * Drop EXIF/XMP/IPTC and other metadata, keeping pixel data byte-for-byte and
  * keeping the ICC profile. Returns the input unchanged when there is nothing to

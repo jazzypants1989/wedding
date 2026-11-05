@@ -375,7 +375,7 @@ export function setAsideMedia({ limit, offset }) {
       COUNT(mf.id) AS live_faces
     FROM media m
     JOIN media_faces mf ON mf.media_id = m.id AND mf.deleted_at IS NULL
-    WHERE m.deleted_at IS NULL
+    WHERE m.deleted_at IS NULL AND m.twin_of IS NULL
     GROUP BY m.id
     HAVING SUM(CASE WHEN mf.route_state = 'set_aside' THEN 1 ELSE 0 END) > 0
     ORDER BY m.id
@@ -393,7 +393,7 @@ export function countSetAsideMedia() {
   /** @type {{ total: number } | undefined} */
   const row = sql`SELECT COUNT(DISTINCT mf.media_id) AS total
     FROM media_faces mf
-    JOIN media m ON m.id = mf.media_id AND m.deleted_at IS NULL
+    JOIN media m ON m.id = mf.media_id AND m.deleted_at IS NULL AND m.twin_of IS NULL
     WHERE mf.deleted_at IS NULL AND mf.route_state = 'set_aside'`.get()
   return row?.total ?? 0
 }
@@ -410,10 +410,14 @@ export function countSetAsideMedia() {
  * @type {Types.unidentifiedFacesWithDescriptors}
  */
 export function unidentifiedFacesWithDescriptors() {
+  // A black-and-white twin's faces are its colour primary's faces again, so they
+  // are left out — not a routing call (see above) but a duplicate one: counted
+  // twice, one face would weigh double in its group and be asked about twice.
   return sql`SELECT id, media_id, bbox_x, bbox_y, bbox_w, bbox_h, model_version, descriptor,
       route_state, route_reason
     FROM media_faces
     WHERE deleted_at IS NULL AND face_identity_id IS NULL AND descriptor IS NOT NULL
+      AND media_id NOT IN (SELECT id FROM media WHERE twin_of IS NOT NULL)
     ORDER BY id`.all()
 }
 
@@ -489,12 +493,12 @@ export function facesForPropagation(modelVersion) {
       mf.face_identity_id AS face_identity_id, mf.descriptor AS descriptor,
       m.frame_root_sha256 AS frame_root_sha256
     FROM media_faces mf
-    JOIN media m ON m.id = mf.media_id AND m.deleted_at IS NULL
+    JOIN media m ON m.id = mf.media_id AND m.deleted_at IS NULL AND m.twin_of IS NULL
     WHERE mf.deleted_at IS NULL AND mf.descriptor IS NOT NULL
       AND mf.model_version = ${modelVersion}
       AND m.frame_root_sha256 IN (
         SELECT frame_root_sha256 FROM media
-        WHERE frame_root_sha256 IS NOT NULL AND deleted_at IS NULL
+        WHERE frame_root_sha256 IS NOT NULL AND deleted_at IS NULL AND twin_of IS NULL
         GROUP BY frame_root_sha256 HAVING COUNT(DISTINCT id) > 1
       )
     ORDER BY mf.id`.all()

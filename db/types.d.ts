@@ -723,6 +723,51 @@ export function hardDeleteMedia(id: number): void
 /** Pending media count for the moderation digest/badge. */
 export function countPendingMedia(): number
 
+// db/media-twins.js — black-and-white twins (media.twin_of)
+
+/** The live black-and-white twin of a primary, if it has one. */
+export function getLiveTwinOf(primaryId: number): Media | undefined
+/** Make `twinId` the twin of `primaryId`. False when the twin row no longer
+ *  qualifies (deleted, paired, a primary itself, not an image, not finished). */
+export function pairTwin(primaryId: number, twinId: number): boolean
+/** Release a primary's twin; it keeps its own status. Returns rows changed. */
+export function unpairTwin(primaryId: number): number
+/** Release the twins of a primary being removed; an approved one comes back
+ *  hidden, never public by surprise. Returns rows changed. */
+export function releaseTwinsOfRemoved(primaryId: number): number
+
+export interface MediaCaptureTimeGap {
+  id: number
+  file_key: string
+  original_ext: string | null
+}
+/** Live gallery images with no capture time whose original could carry EXIF. */
+export function mediaMissingCaptureTime(): MediaCaptureTimeGap[]
+/** Set captured_at only where it is still NULL. True if a row changed. */
+export function fillMediaCapturedAt(id: number, capturedAt: string): boolean
+/** Unpaired live gallery images still without a capture time — what the twin
+ *  scan cannot match by metadata. */
+export function countMediaWithoutCaptureTime(): number
+
+/** One photo the twin scan or the manual picker may offer. */
+export interface TwinCandidateRow {
+  id: number
+  file_key: string
+  section: MediaSection
+  status: MediaStatus
+  caption: string | null
+  width: number | null
+  height: number | null
+  needs_display: 0 | 1
+  captured_at: string | null
+}
+/** Unpaired live images sharing (captured_at, width, height, section) with at
+ *  least one other, adjacent by group. Capped at `limit` rows. */
+export function twinCandidateRows(limit: number): TwinCandidateRow[]
+/** Same-section unpaired images a person might pair with `primary` by hand,
+ *  likeliest first. */
+export function twinPickOptions(primary: Media, limit: number): TwinCandidateRow[]
+
 /** Distinct visible guest-upload contributors + totals for the gallery
  *  "Shared by" strip. `names` is capped at `limit` (contribution desc); `guests`
  *  is the true distinct count (may exceed names.length); `photos` is the total. */

@@ -37,7 +37,8 @@ export function liveCommentParentFilter() {
       WHERE ge.id = c.target_id AND ge.status = 'approved' AND ge.deleted_at IS NULL))
     OR (c.target_type = 'media' AND EXISTS (
       SELECT 1 FROM media m
-      WHERE m.id = c.target_id AND m.status = 'approved' AND m.deleted_at IS NULL))
+      WHERE m.id = c.target_id AND m.status = 'approved' AND m.deleted_at IS NULL
+        AND m.twin_of IS NULL))
   )`
 }
 

@@ -377,7 +377,7 @@ export function getGuestStory(guestId) {
       FROM media m
       JOIN accounts a ON a.id = m.account_id
       WHERE a.guest_id = ${guestId} AND a.deleted_at IS NULL
-        AND m.status = 'approved' AND m.deleted_at IS NULL
+        AND m.status = 'approved' AND m.deleted_at IS NULL AND m.twin_of IS NULL
       ORDER BY m.id DESC
       LIMIT 12`.all()
   )

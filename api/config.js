@@ -25,6 +25,9 @@ export function get(req, res) {
     // Whether /guestbook shows the pinned Favorites strip (the feed already
     // honours it server-side; exposed for any page that wants the flag).
     guestbook: { showFavorites: getContent().guestbook.showFavorites },
+    // Whether the gallery lightbox offers the colour ⇄ black-and-white flip. The
+    // feed already carries a twin only when this is on; this is for the button.
+    gallery: { showBlackAndWhite: getContent().gallery.showBlackAndWhite },
     // Public "moments shared" tally for the landing Memories line: approved,
     // visible guest photos + guestbook notes. Two cheap indexed COUNT(*)s; the
     // landing renders their sum, or nothing if the whole config fetch fails.

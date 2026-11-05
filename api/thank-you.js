@@ -50,7 +50,11 @@ function resolveMedia(mediaKeysJson) {
   for (const key of keys) {
     if (typeof key !== "string") continue
     const row = getMediaByFileKey(key)
-    if (!row || row.deleted_at || row.status !== MEDIA_STATUS.APPROVED) continue
+    // A black-and-white twin drops like a hidden photo: pairing refuses a photo a
+    // card uses, so this only guards a card written some other way.
+    if (!row || row.deleted_at || row.status !== MEDIA_STATUS.APPROVED || row.twin_of !== null) {
+      continue
+    }
     items.push({
       file_key: row.file_key,
       kind: row.kind,

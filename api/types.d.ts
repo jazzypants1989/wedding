@@ -22,6 +22,10 @@ export interface PublicConfig {
   guestbook: {
     showFavorites: boolean
   }
+  /** Gallery display options from site content. */
+  gallery: {
+    showBlackAndWhite: boolean
+  }
   /** Public "moments shared" tally (approved guest photos + guestbook notes). */
   counts: {
     photos: number

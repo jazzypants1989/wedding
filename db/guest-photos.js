@@ -32,7 +32,7 @@ export function getMediaFeaturingGuest(guestId) {
       AND live.deleted_at IS NULL AND live.merged_into IS NULL
     JOIN people p ON p.id = live.person_id AND p.deleted_at IS NULL
     WHERE p.guest_id = ${guestId}
-      AND m.status = 'approved' AND m.deleted_at IS NULL
+      AND m.status = 'approved' AND m.deleted_at IS NULL AND m.twin_of IS NULL
       AND m.section IN ('official', 'honeymoon', 'guest')
     GROUP BY m.id
     ORDER BY faces DESC, m.id DESC`.all()

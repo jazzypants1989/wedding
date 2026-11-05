@@ -9,8 +9,9 @@
 
 import fs from "node:fs"
 import { pipeline } from "node:stream"
-import { getMediaByFileKey } from "../db/media.js"
+import { getMediaByFileKey, getMediaById } from "../db/media.js"
 import { getOptionalAccount, getOptionalAdmin } from "./auth.js"
+import { getContent } from "./site-content.js"
 import {
   variantDiskPath,
   resolveVariantFile,
@@ -153,6 +154,29 @@ function isOwnPending(req, row) {
   return account !== null && account.account_id === row.account_id
 }
 
+/**
+ * May a non-admin fetch a black-and-white twin's public variants? Its own status
+ * never decides that; its primary's does. Only when the colour photo is live and
+ * approved, and the couple turned the lightbox flip on — the same rule the feed
+ * uses to name a twin at all (api/media.js revealTwinTo). A twin whose own files
+ * are quarantined (rejected) or unfinished is never offered. No uploader
+ * exception: an own-pending primary shows its owner colour only.
+ * @param {GlobalTypes.Media} row @returns {boolean}
+ */
+function isTwinVisible(row) {
+  if (row.twin_of === null) return false
+  if (
+    row.status !== MEDIA_STATUS.APPROVED &&
+    row.status !== MEDIA_STATUS.HIDDEN &&
+    row.status !== MEDIA_STATUS.PENDING
+  ) {
+    return false
+  }
+  if (!getContent().gallery.showBlackAndWhite) return false
+  const primary = getMediaById(row.twin_of)
+  return !!primary && !primary.deleted_at && primary.status === MEDIA_STATUS.APPROVED
+}
+
 /** @type {Types.serveMedia} */
 export function serveMedia(req, res) {
   if (req.method !== "GET" && req.method !== "HEAD") {
@@ -189,7 +213,10 @@ export function serveMedia(req, res) {
     return
   }
   const isPublicVariant = PUBLIC_VARIANTS.has(variant)
-  const isVisible = row.status === MEDIA_STATUS.APPROVED || isOwnPending(req, row)
+  const isTwin = row.twin_of !== null && row.twin_of !== undefined
+  const isVisible = isTwin
+    ? isTwinVisible(row)
+    : row.status === MEDIA_STATUS.APPROVED || isOwnPending(req, row)
   if (!isAdmin && (!isPublicVariant || !isVisible)) {
     res.writeHead(404).end()
     return
@@ -225,6 +252,11 @@ export function serveMedia(req, res) {
   if (variant === "original") {
     headers["Cache-Control"] = "private, no-store"
     headers["Content-Disposition"] = "attachment"
+  } else if (isTwin) {
+    // A twin's visibility is not its own: it changes when its primary is hidden
+    // AND when the couple turns the lightbox flip off. Neither touches this row,
+    // so nothing may answer for the gate; every view asks again (a 304 is cheap).
+    headers["Cache-Control"] = "private, no-cache"
   } else if (row.status !== MEDIA_STATUS.APPROVED) {
     // Only an admin or the uploader reaches this line for a row that isn't public,
     // and a shared cache must not keep what it was shown: the long-lived public

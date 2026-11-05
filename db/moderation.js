@@ -83,6 +83,10 @@ function typeSelect(type, status, accountId) {
     status === MEDIA_STATUS.HIDDEN
       ? sql`AND m.section NOT IN (${MEDIA_SECTION.OFFICIAL}, ${MEDIA_SECTION.HONEYMOON})`
       : sql.empty
+  // A black-and-white twin is shown, if at all, as its primary, so it is never
+  // waiting in a review list of its own. A lookup by id (status null) still finds
+  // it, so the importer can read its status like any other row's.
+  const twins = status !== null ? sql`AND m.twin_of IS NULL` : sql.empty
   return sql`SELECT 'media' AS content_type, m.id AS id, m.account_id AS account_id,
       a.name AS author_name, a.relation AS relation, a.trusted AS author_trusted, m.status AS status,
       m.created_at AS created_at, NULL AS message,
@@ -92,7 +96,7 @@ function typeSelect(type, status, accountId) {
     FROM media m LEFT JOIN accounts a ON a.id = m.account_id
     WHERE m.deleted_at IS NULL ${statusIs("m.status", status)}
       AND (m.account_id IS NULL OR a.deleted_at IS NULL)
-      AND m.section != ${MEDIA_SECTION.CONTENT} ${culled} ${acct}`
+      AND m.section != ${MEDIA_SECTION.CONTENT} ${culled} ${twins} ${acct}`
 }
 
 /** @type {Types.getModerationQueue} */
