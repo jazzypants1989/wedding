@@ -21,7 +21,12 @@ import os from "node:os"
 import path from "node:path"
 import { after, before, describe, it } from "node:test"
 
-import { recordAssignment } from "../../db/face-assignments.js"
+import {
+  batchRevocationHistory,
+  getBatch,
+  recordAssignment,
+  revokeBatch,
+} from "../../db/face-assignments.js"
 import { createIdentity, descriptorToBlob } from "../../db/media-faces.js"
 import { createPerson } from "../../db/people.js"
 import { sql } from "../../db/sql.js"
@@ -421,6 +426,20 @@ describe("parseFaceWorkArgs", () => {
     if (!noBatch.valid) assert.ok(noBatch.error.includes("--batch"))
   })
 
+  it("parses a reinstate invocation, which needs a batch and defaults its own actor", () => {
+    const ok = parseFaceWorkArgs(["reinstate", "--batch", "face-work-abc", "--dry-run"])
+    assert.equal(ok.valid, true)
+    if (!ok.valid) return
+    assert.equal(ok.value.command, "reinstate")
+    assert.equal(ok.value.batch, "face-work-abc")
+    assert.equal(ok.value.dryRun, true)
+    assert.equal(ok.value.actor, "face-work-reinstate")
+
+    const noBatch = parseFaceWorkArgs(["reinstate"])
+    assert.equal(noBatch.valid, false)
+    if (!noBatch.valid) assert.ok(noBatch.error.includes("reinstate needs --batch"))
+  })
+
   it("defaults revoke's actor to the revoker, not to the importer", () => {
     // `revoked_by` reading "face-work-import" would attribute the undo to
     // whoever did the thing being undone.
@@ -725,19 +744,157 @@ describe("replay safety", () => {
     })
 
     useDatabase(target.db)
-    sql`UPDATE face_assignment_batches SET revoked_at = '2026-08-03 00:00:00', revoked_by = 'someone'
-      WHERE batch_id = ${artifact.batchId}`.run()
+    revokeBatch(artifact.batchId, "someone")
 
     const forced = planFor(target.db, artifact, { force: true })
     assert.equal(forced.alreadyApplied, false)
     assert.equal(forced.refusals.length, 1)
     assert.ok(forced.refusals[0].includes("REVOKED"))
+    // It names the way back that actually exists, not one that does not.
+    assert.ok(forced.refusals[0].includes(`reinstate --batch ${artifact.batchId}`))
     assert.throws(() =>
       applyFaceWorkImport({ db: target.db, plan: forced, actor: "test-import", note: null }),
     )
 
     source.db.close()
     target.db.close()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// revoke -> reinstate: a revoked import has a deliberate way back
+// ---------------------------------------------------------------------------
+
+/**
+ * Run the CLI for real against a database file. The caller closes its own
+ * connection first and reopens after: the point is the operator's path.
+ * @param {string[]} argv
+ */
+function runCli(argv) {
+  return spawnSync(
+    process.execPath,
+    [path.join(REPO_ROOT, "scripts", "vision", "export-face-work.js"), ...argv],
+    { encoding: "utf8" },
+  )
+}
+
+/**
+ * Source exported, target built and imported into, target CLOSED. Returns the
+ * target's path so each step can reopen it.
+ */
+function importedTarget() {
+  const source = buildSource()
+  const { artifact } = exportFrom(source.db)
+  source.db.close()
+
+  const target = buildTarget()
+  const dbPath = path.join(workDir, `db-${dbCounter}.sqlite`)
+  applyFaceWorkImport({
+    db: target.db,
+    plan: planFor(target.db, artifact),
+    actor: "test-import",
+    note: null,
+  })
+  const imported = [...projectedByKey(target.db)]
+  target.db.close()
+  return { artifact, dbPath, imported, faceIds: target.faceIds }
+}
+
+/** @param {string} dbPath */
+function snapshot(dbPath, batchId = "") {
+  const db = openDatabase(dbPath)
+  const state = {
+    projection: [...projectedByKey(db)],
+    events: eventCount(db),
+    batch: { ...getBatch(batchId) },
+    history: batchRevocationHistory(batchId).map((row) => `${row.op}:${row.actor}`),
+  }
+  db.close()
+  return state
+}
+
+describe("reinstate", () => {
+  it("import -> revoke -> reinstate restores the same projection", () => {
+    const { artifact, dbPath, imported } = importedTarget()
+    const batch = artifact.batchId
+
+    const revoked = runCli(["revoke", "--batch", batch, "--database", dbPath])
+    assert.equal(revoked.status, 0, revoked.stderr)
+    assert.ok(revoked.stdout.includes(`reinstate --batch ${batch}`))
+    const afterRevoke = snapshot(dbPath, batch)
+    assert.notDeepEqual(afterRevoke.projection, imported)
+    assert.ok(afterRevoke.batch.revoked_at)
+
+    const reinstated = runCli(["reinstate", "--batch", batch, "--database", dbPath])
+    assert.equal(reinstated.status, 0, reinstated.stderr)
+    const after = snapshot(dbPath, batch)
+    assert.deepEqual(after.projection, imported)
+    assert.equal(after.batch.revoked_at, null)
+    assert.equal(after.batch.revoked_by, null)
+    // Nothing re-appended: the same events simply count again.
+    assert.equal(after.events, afterRevoke.events)
+    // And the ledger says what happened, in order, by whom.
+    assert.deepEqual(after.history, ["revoke:face-work-revoke", "reinstate:face-work-reinstate"])
+  })
+
+  it("keeps a hand correction made after the batch through revoke -> reinstate", () => {
+    const { artifact, dbPath, imported, faceIds } = importedTarget()
+    const batch = artifact.batchId
+
+    // Someone fixes the first face by hand after the import: it is not Ada.
+    const db = openDatabase(dbPath)
+    const cyd = seedPerson(db, "Cyd Fixture")
+    confirm(db, faceIds[0], cyd.identityId)
+    const corrected = [...projectedByKey(db)]
+    db.close()
+    assert.notDeepEqual(corrected, imported)
+
+    assert.equal(runCli(["revoke", "--batch", batch, "--database", dbPath]).status, 0)
+    assert.equal(runCli(["reinstate", "--batch", batch, "--database", dbPath]).status, 0)
+
+    // Exactly the corrected state: Cyd stands on face 0, the batch's Bram is
+    // back on face 1.
+    assert.deepEqual(snapshot(dbPath, batch).projection, corrected)
+  })
+
+  it("refuses to reinstate a batch that is not revoked, and writes nothing", () => {
+    const { artifact, dbPath } = importedTarget()
+    const before = snapshot(dbPath, artifact.batchId)
+
+    const run = runCli(["reinstate", "--batch", artifact.batchId, "--database", dbPath])
+    assert.equal(run.status, 1)
+    assert.ok(run.stderr.includes("is not revoked"), run.stderr)
+    assert.deepEqual(snapshot(dbPath, artifact.batchId), before)
+
+    const missing = runCli(["reinstate", "--batch", "face-work-nope", "--database", dbPath])
+    assert.equal(missing.status, 1)
+    assert.ok(missing.stderr.includes("no such batch"))
+  })
+
+  it("after reinstating, re-importing the same artifact is already satisfied, not refused", () => {
+    const { artifact, dbPath } = importedTarget()
+    assert.equal(runCli(["revoke", "--batch", artifact.batchId, "--database", dbPath]).status, 0)
+    assert.equal(runCli(["reinstate", "--batch", artifact.batchId, "--database", dbPath]).status, 0)
+
+    const db = openDatabase(dbPath)
+    const plan = planFor(db, artifact)
+    assert.deepEqual(plan.refusals, [])
+    assert.equal(plan.alreadyApplied, true)
+    assert.equal(plan.satisfied, 2)
+    assert.deepEqual(plan.actions, [])
+    db.close()
+  })
+
+  it("--dry-run writes nothing", () => {
+    const { artifact, dbPath } = importedTarget()
+    assert.equal(runCli(["revoke", "--batch", artifact.batchId, "--database", dbPath]).status, 0)
+    const before = snapshot(dbPath, artifact.batchId)
+
+    const run = runCli(["reinstate", "--batch", artifact.batchId, "--database", dbPath, "--dry-run"])
+    assert.equal(run.status, 0, run.stderr)
+    assert.ok(run.stdout.includes("dry run"))
+    assert.deepEqual(snapshot(dbPath, artifact.batchId), before)
+    assert.ok(before.batch.revoked_at)
   })
 })
 

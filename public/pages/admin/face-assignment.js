@@ -2051,8 +2051,9 @@ async function applyPropagations() {
 
 /**
  * Undo a pass from History. Asked first, NOT in danger styling: it destroys
- * nothing, but it can't itself be undone (a revocation is permanent; running
- * the pass again reinstates it), and the property most likely to be
+ * nothing, but it can't itself be undone from here (reinstating a batch is the
+ * operator CLI's `export-face-work.js reinstate`; from this page, running the
+ * pass again redoes it), and the property most likely to be
  * misunderstood — later hand corrections survive — is said out loud.
  * @param {string} batchId
  */

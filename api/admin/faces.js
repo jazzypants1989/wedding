@@ -1169,10 +1169,11 @@ export async function batches(req, res) {
  *    and nothing else. The response says `alreadyRevoked` so the UI can tell
  *    the admin what actually happened rather than claim a fresh undo.
  *
- * What it does NOT offer is un-revoking, and that is a schema rule rather than
- * an omission here: `face_assignment_batches_revocation_is_permanent` refuses
- * to clear `revoked_at`, because nothing would re-derive the projections on the
- * way back. Reinstating a pass means running it again.
+ * What it does NOT offer is un-revoking. That exists — db/face-assignments.js
+ * `reinstateBatch`, run by `scripts/vision/export-face-work.js reinstate` — and
+ * it re-projects on the way back and appends to `face_batch_revocations`, so a
+ * revocation is never cleared silently. It is a deliberate operator act, not a
+ * button beside this one.
  * @type {Types.faceRevokeHandler}
  */
 export async function revoke(req, res, { session }) {

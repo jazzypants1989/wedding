@@ -153,11 +153,14 @@ describe("db/schema add_face_ledger_integrity migration", () => {
       for (const trigger of [
         "check_face_assignment_batches_kind_insert",
         "face_assignment_batches_revocation_only",
-        "face_assignment_batches_revocation_is_permanent",
         "media_faces_supersession_releases_ledger_claim",
       ]) {
         assert.ok(hasObject(db, "trigger", trigger), `${trigger} was not created`)
       }
+      // It used to create this one too. `add_face_batch_reinstatement` replaced
+      // it, and running this migration late must not re-arm it over its
+      // replacement.
+      assert.ok(!hasObject(db, "trigger", "face_assignment_batches_revocation_is_permanent"))
     })
 
     it("is idempotent — a second runMigrations pass is a no-op", () => {
@@ -215,6 +218,11 @@ describe("db/schema add_face_ledger_integrity migration", () => {
     })
 
     it("allows the revocation it exists for", () => {
+      // Recorded first: `add_face_batch_reinstatement` (already applied here)
+      // makes the columns follow the batch's revocation history.
+      db.prepare(
+        "INSERT INTO face_batch_revocations (batch_id, op, actor, created_at) VALUES ('b1', 'revoke', 'admin', '2026-01-01')",
+      ).run()
       assert.doesNotThrow(() =>
         db
           .prepare(
@@ -242,29 +250,9 @@ describe("db/schema add_face_ledger_integrity migration", () => {
       )
     })
 
-    it("refuses to un-revoke, or to re-date a revocation", () => {
-      db.prepare(
-        "UPDATE face_assignment_batches SET revoked_at = '2026-01-01', revoked_by = 'admin' WHERE batch_id = 'b1'",
-      ).run()
-
-      for (const statement of [
-        "UPDATE face_assignment_batches SET revoked_at = NULL WHERE batch_id = 'b1'",
-        "UPDATE face_assignment_batches SET revoked_at = '2026-06-06' WHERE batch_id = 'b1'",
-        "UPDATE face_assignment_batches SET revoked_by = 'nobody' WHERE batch_id = 'b1'",
-      ]) {
-        assert.throws(
-          () => db.prepare(statement).run(),
-          messageIncludes("not reversible"),
-          statement,
-        )
-      }
-
-      const row = /** @type {{ revoked_at: string | null, revoked_by: string | null }} */ (
-        db.prepare("SELECT revoked_at, revoked_by FROM face_assignment_batches WHERE batch_id = 'b1'").get()
-      )
-      assert.strictEqual(row.revoked_at, "2026-01-01")
-      assert.strictEqual(row.revoked_by, "admin")
-    })
+    // Un-revoking and re-dating moved to `add_face_batch_reinstatement`, which
+    // replaced the one-way rule with a recorded one — pinned in
+    // face-batch-reinstatement-migration.test.js.
   })
 
   describe("the ledger's claim on a retirement it wrote", () => {

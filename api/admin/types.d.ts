@@ -976,8 +976,9 @@ export function faceBatchesHandler(
  *  The actor is the session's, never the body's. Re-revoking is permitted and
  *  is a bare re-projection: the original `revoked_at`/`revoked_by` stand (a
  *  schema trigger refuses to re-date them) and `alreadyRevoked` says so.
- *  Un-revoking is not offered, and cannot be: nothing would re-derive the
- *  projections on the way back, so reinstating a pass means running it again.
+ *  Un-revoking is not offered here: it is `export-face-work.js reinstate`
+ *  (db/face-assignments.js `reinstateBatch`), which re-projects on the way back
+ *  and records the reinstatement in `face_batch_revocations`.
  *
  *  ⚠ The one write path in this module that opens NO transaction of its own —
  *  `revokeBatch` owns one and neither db/utils.js helper nests. */

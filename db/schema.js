@@ -1772,8 +1772,10 @@ export function runMigrations(db) {
   //    to say which of the two stories was current; and `actor` — the
   //    attribution on the revocable unit, and the more useful one to forge —
   //    was freely rewritable while `face_assignments.actor` beside it was frozen
-  //    by the append-only trigger. So: updates are revocations, revocations are
-  //    one-way, and everything else about a batch is fixed at insert.
+  //    by the append-only trigger. So: updates are revocations, and everything
+  //    else about a batch is fixed at insert. (Revocations were one-way here
+  //    too; `add_face_batch_reinstatement` replaced that with a recorded,
+  //    re-projecting reinstatement.)
   //
   // C. `media_faces.deleted_at` has THREE authors, not the two anybody had
   //    written down: db/face-assignments.js's `not_a_face` projection, the §10
@@ -1837,21 +1839,12 @@ export function runMigrations(db) {
         BEGIN
           SELECT RAISE(ABORT, 'face_assignment_batches: only revoked_at/revoked_by may be updated');
         END;
-
-        -- Revocation is one-way. Un-revoking is not the undo it looks like: the
-        -- projections were re-derived when the batch was revoked, and nothing
-        -- re-derives them on the way back, so the column and the ledger would
-        -- disagree with no record of which is current. Re-instating a batch
-        -- means appending its events again under a new batch_id.
-        CREATE TRIGGER IF NOT EXISTS face_assignment_batches_revocation_is_permanent
-        BEFORE UPDATE ON face_assignment_batches
-        FOR EACH ROW
-        WHEN OLD.revoked_at IS NOT NULL
-          AND (NEW.revoked_at IS NOT OLD.revoked_at OR NEW.revoked_by IS NOT OLD.revoked_by)
-        BEGIN
-          SELECT RAISE(ABORT, 'face_assignment_batches: a revocation is not reversible');
-        END;
       `)
+      // This migration used to create `face_assignment_batches_revocation_is_permanent`
+      // here as well. `add_face_batch_reinstatement` below drops it and replaces
+      // it with a rule that allows a RECORDED reinstatement; creating it here
+      // would only re-arm it on a database where this migration runs late (a
+      // test that pins it, or a lost ledger row), after its replacement exists.
     }
 
     if (tableExists.get("media_faces")) {
@@ -2047,6 +2040,148 @@ export function runMigrations(db) {
         END;
       `)
       record.run("add_honeymoon_section")
+      db.exec("COMMIT")
+      committed = true
+    } finally {
+      if (!committed) {
+        try {
+          db.exec("ROLLBACK")
+        } catch {
+          /* already rolled back */
+        }
+      }
+    }
+  }
+
+  // A revoked batch can be reinstated, and the history says so.
+  //
+  // `add_face_ledger_integrity` made revocation one-way, for a sound reason:
+  // clearing `revoked_at` by hand re-derives no projection, so the column and
+  // the ledger would disagree with nothing to say which was current. It told
+  // the operator to reinstate by "appending its events again under a new
+  // batch_id" — but the face-work import's batch id IS its content digest, so
+  // re-exporting an unchanged source yields the same id, the import refuses a
+  // revoked id, and a revoked naming import could never come back.
+  //
+  // So reinstatement becomes a real operation (db/face-assignments.js
+  // `reinstateBatch`), and the two halves of the old objection are each closed:
+  //
+  //  - **The projections ARE re-derived.** `reinstateBatch` clears the flag and
+  //    re-projects every face the batch touched in one transaction, through the
+  //    same `projectFace` revocation uses — so a later hand correction still
+  //    outranks the batch (replay is newest-id first).
+  //  - **There IS a record of which is current.** `face_batch_revocations` is an
+  //    append-only history of every revoke and reinstate, and the batch's
+  //    `revoked_at`/`revoked_by` become a projection of its LATEST row: a
+  //    trigger refuses any change to those columns that does not match it. A
+  //    revocation can therefore no more be silently cleared than before — it
+  //    can only be cleared by first appending a `reinstate`, with an actor.
+  //
+  // The history alternates (revoke, reinstate, revoke, …) by trigger, which is
+  // also what keeps the old "a revocation is never re-dated" rule: a second
+  // `revoke` row while one stands is refused, so there is nothing for a re-dated
+  // `revoked_at` to agree with.
+  //
+  // UPDATE-blocked, NOT DELETE-blocked, and `ON DELETE CASCADE` from the batch:
+  // the same stance as `face_assignments`. Batches are never deleted by the app,
+  // and a test that resets the batches table should not have to know this one
+  // exists.
+  //
+  // Existing revocations are back-filled as one `revoke` row each, so every
+  // revoked batch has the row its own reinstatement has to follow.
+  //
+  // Explicitly transactional, because migrations are not (TRAPS.md): dropping
+  // the old trigger and failing before the new one exists would leave a
+  // revocation clearable by a bare UPDATE, with no ledger row to retry from.
+  // Guarded on the batches table: a test may pin the ledger's own migration.
+  if (!applied.get("add_face_batch_reinstatement")) {
+    const batchesExist = db
+      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'face_assignment_batches'")
+      .get()
+    let committed = false
+    try {
+      db.exec("BEGIN")
+      if (batchesExist) {
+        db.exec(`
+          DROP TRIGGER IF EXISTS face_assignment_batches_revocation_is_permanent;
+
+          CREATE TABLE IF NOT EXISTS face_batch_revocations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_id TEXT NOT NULL
+              REFERENCES face_assignment_batches(batch_id) ON DELETE CASCADE,
+            op TEXT NOT NULL,                -- revoke | reinstate
+            actor TEXT NOT NULL,
+            -- Written by the caller, never defaulted in practice: a 'revoke'
+            -- row's created_at IS the batch's revoked_at, compared exactly.
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+          );
+
+          CREATE INDEX IF NOT EXISTS idx_face_batch_revocations_batch
+            ON face_batch_revocations(batch_id, id);
+
+          INSERT INTO face_batch_revocations (batch_id, op, actor, created_at)
+          SELECT b.batch_id, 'revoke', COALESCE(b.revoked_by, 'unrecorded'), b.revoked_at
+          FROM face_assignment_batches b
+          WHERE b.revoked_at IS NOT NULL
+            AND NOT EXISTS (SELECT 1 FROM face_batch_revocations r WHERE r.batch_id = b.batch_id)
+          ORDER BY b.rowid;
+
+          CREATE TRIGGER IF NOT EXISTS check_face_batch_revocations_op_insert
+          BEFORE INSERT ON face_batch_revocations
+          FOR EACH ROW
+          WHEN NEW.op NOT IN ('revoke', 'reinstate')
+          BEGIN
+            SELECT RAISE(ABORT, 'Invalid batch revocation op. Must be: revoke or reinstate');
+          END;
+
+          -- Revoke only a live batch; reinstate only a revoked one. "Live" is
+          -- no rows at all, or a latest row that is a reinstate.
+          CREATE TRIGGER IF NOT EXISTS face_batch_revocations_alternate
+          BEFORE INSERT ON face_batch_revocations
+          FOR EACH ROW
+          WHEN NEW.op IN ('revoke', 'reinstate') AND NEW.op IS NOT (
+            CASE (SELECT r.op FROM face_batch_revocations r
+                  WHERE r.batch_id = NEW.batch_id ORDER BY r.id DESC LIMIT 1)
+              WHEN 'revoke' THEN 'reinstate'
+              ELSE 'revoke'
+            END
+          )
+          BEGIN
+            SELECT RAISE(ABORT, 'face_batch_revocations: a batch is revoked only while live and reinstated only while revoked');
+          END;
+
+          CREATE TRIGGER IF NOT EXISTS face_batch_revocations_append_only
+          BEFORE UPDATE ON face_batch_revocations
+          FOR EACH ROW
+          BEGIN
+            SELECT RAISE(ABORT, 'face_batch_revocations is append-only — a reinstatement is a new row, never an edit');
+          END;
+
+          -- The batch columns are a projection of the history's latest row.
+          CREATE TRIGGER IF NOT EXISTS face_assignment_batches_revocation_follows_history
+          BEFORE UPDATE ON face_assignment_batches
+          FOR EACH ROW
+          WHEN (NEW.revoked_at IS NOT OLD.revoked_at OR NEW.revoked_by IS NOT OLD.revoked_by)
+            AND NOT EXISTS (
+              SELECT 1 FROM (
+                SELECT r.op AS op, r.actor AS actor, r.created_at AS created_at
+                FROM face_batch_revocations r
+                WHERE r.batch_id = NEW.batch_id
+                ORDER BY r.id DESC LIMIT 1
+              ) latest
+              WHERE (latest.op = 'revoke'
+                     AND NEW.revoked_at IS latest.created_at
+                     AND NEW.revoked_by IS latest.actor)
+                 OR (latest.op = 'reinstate'
+                     AND NEW.revoked_at IS NULL
+                     AND NEW.revoked_by IS NULL)
+            )
+          BEGIN
+            SELECT RAISE(ABORT, 'face_assignment_batches: revoked_at/revoked_by change only with a matching face_batch_revocations row (revokeBatch / reinstateBatch)');
+          END;
+        `)
+      }
+      record.run("add_face_batch_reinstatement")
       db.exec("COMMIT")
       committed = true
     } finally {

@@ -16,10 +16,10 @@
  *    `face_identity_id`. A trigger was considered and rejected: SQL cannot
  *    express "replay excluding batch X", so the logic would have to exist in
  *    JS anyway, and two implementations of one rule is how they drift.
- * 2. **No function here opens a transaction** (except `revokeBatch`, which is
- *    the one entry point that may own one). db/utils.js's `withTransaction` is
- *    a bare BEGIN IMMEDIATE with no savepoints — it does not nest — and every
- *    admin write path is already inside one.
+ * 2. **No function here opens a transaction** (except `revokeBatch` and
+ *    `reinstateBatch`, the two entry points that may own one). db/utils.js's
+ *    `withTransaction` is a bare BEGIN IMMEDIATE with no savepoints — it does
+ *    not nest — and every admin write path is already inside one.
  * 3. **Ordering is by `id`, never by `created_at`.** The timestamp has
  *    one-second resolution and a batch writes many events inside it, so
  *    "latest wins" by time would be a coin toss.
@@ -211,6 +211,20 @@ export function projectFace(faceId, opts = {}) {
   return verdict
 }
 
+/** Re-project every face a batch touched. Returns how many. No transaction of
+ *  its own — both callers below hold one.
+ *  @param {string} batchId
+ *  @returns {number} */
+function reprojectBatch(batchId) {
+  /** @type {Array<{ face_id: number }>} */
+  const faces = sql`SELECT DISTINCT face_id FROM face_assignments
+    WHERE batch_id = ${batchId}
+    ORDER BY face_id`.all()
+
+  for (const face of faces) projectFace(face.face_id)
+  return faces.length
+}
+
 /** @type {Types.revokeBatch} */
 export function revokeBatch(batchId, actor) {
   const batch = getBatch(batchId)
@@ -238,20 +252,57 @@ export function revokeBatch(batchId, actor) {
   return withBoundTransaction(() => {
     // Already-revoked batches keep their original revoked_at/revoked_by — a
     // second revocation is a no-op re-projection, not a re-dating of the first.
-    if (batch.revoked_at === null) {
+    // Re-read inside the transaction: the history row below must alternate.
+    const current = getBatch(batchId)
+    if (current && current.revoked_at === null) {
+      // History first, then the flag that projects it. schema.js's
+      // `face_assignment_batches_revocation_follows_history` refuses the UPDATE
+      // unless it matches this row exactly — same timestamp, same actor.
+      const at = now()
+      sql`INSERT INTO face_batch_revocations (batch_id, op, actor, created_at)
+        VALUES (${batchId}, 'revoke', ${actor}, ${at})`.run()
       sql`UPDATE face_assignment_batches
-        SET revoked_at = ${now()}, revoked_by = ${actor}
+        SET revoked_at = ${at}, revoked_by = ${actor}
         WHERE batch_id = ${batchId} AND revoked_at IS NULL`.run()
     }
 
-    /** @type {Array<{ face_id: number }>} */
-    const faces = sql`SELECT DISTINCT face_id FROM face_assignments
-      WHERE batch_id = ${batchId}
-      ORDER BY face_id`.all()
-
-    for (const face of faces) projectFace(face.face_id)
-    return faces.length
+    return reprojectBatch(batchId)
   })
+}
+
+/** @type {Types.reinstateBatch} */
+export function reinstateBatch(batchId, actor) {
+  if (!getBatch(batchId)) {
+    throw new Error(`reinstateBatch: no such batch "${batchId}"`)
+  }
+
+  // `revokeBatch` in reverse, under the same transaction rules (see there).
+  // Nothing about the events changes: they never left the ledger, they stopped
+  // counting, and now they count again. Replay is newest-id first, so a face
+  // corrected by hand after the batch — before or after the revocation — keeps
+  // that correction, exactly as revocation promised.
+  return withBoundTransaction(() => {
+    const current = getBatch(batchId)
+    if (!current || current.revoked_at === null) {
+      // Refused rather than a no-op, unlike a second revocation: "reinstate"
+      // on a live batch means the caller's picture of this batch is wrong, and
+      // the history must not record a reinstatement of something never revoked.
+      throw new Error(`reinstateBatch: batch "${batchId}" is not revoked`)
+    }
+
+    sql`INSERT INTO face_batch_revocations (batch_id, op, actor, created_at)
+      VALUES (${batchId}, 'reinstate', ${actor}, ${now()})`.run()
+    sql`UPDATE face_assignment_batches
+      SET revoked_at = NULL, revoked_by = NULL
+      WHERE batch_id = ${batchId} AND revoked_at IS NOT NULL`.run()
+
+    return reprojectBatch(batchId)
+  })
+}
+
+/** @type {Types.batchRevocationHistory} */
+export function batchRevocationHistory(batchId) {
+  return sql`SELECT * FROM face_batch_revocations WHERE batch_id = ${batchId} ORDER BY id`.all()
 }
 
 /** @type {Types.recentBatches} */

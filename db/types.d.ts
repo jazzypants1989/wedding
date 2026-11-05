@@ -1670,6 +1670,7 @@ import type {
   FaceAssignmentBatch,
   FaceAssignmentBatchKind,
   FaceAssignmentOp,
+  FaceBatchRevocation,
 } from "../types.js"
 
 export interface CreateBatchInput {
@@ -1686,7 +1687,8 @@ export interface CreateBatchInput {
  *  `check_face_assignment_batches_kind_insert` (schema.js
  *  `add_face_ledger_integrity`), so an unrecognised one throws rather than
  *  becoming a revocable unit nobody can explain. Everything except
- *  `revoked_at`/`revoked_by` is frozen from here on. */
+ *  `revoked_at`/`revoked_by` is frozen from here on, and those two move only
+ *  with the batch's revocation history (`revokeBatch` / `reinstateBatch`). */
 export function createBatch(input: CreateBatchInput): FaceAssignmentBatch
 
 export function getBatch(batchId: string): FaceAssignmentBatch | undefined
@@ -1772,8 +1774,23 @@ export function projectFace(faceId: number, opts?: ReplayOptions): FaceReplayRes
  *  so a later manual correction on the same face simply outranks the revoked
  *  bulk one and SURVIVES the revocation. Throws if the batch does not exist.
  *  Re-revoking an already-revoked batch re-projects without overwriting who
- *  revoked it and when. */
+ *  revoked it and when, and appends no history. A fresh revocation appends a
+ *  `revoke` row to `face_batch_revocations` in the same transaction. */
 export function revokeBatch(batchId: string, actor: string): number
+
+/** `revokeBatch` in reverse: append a `reinstate` row, clear the flag, and
+ *  re-project every face the batch touched, in one transaction. Returns how
+ *  many faces were re-projected.
+ *
+ *  A face corrected by hand after the batch keeps that correction — replay is
+ *  newest-id first, and the batch's events are older. Throws if the batch does
+ *  not exist or is not revoked: reinstating a live batch is refused, never a
+ *  no-op, so the history only ever records a reinstatement of a revocation. */
+export function reinstateBatch(batchId: string, actor: string): number
+
+/** A batch's revoke/reinstate history, oldest first. Empty for a batch that
+ *  was never revoked. */
+export function batchRevocationHistory(batchId: string): FaceBatchRevocation[]
 
 /** One row of `recentBatches` — a batch plus how much of the ledger hangs off
  *  it. Nothing here describes a photograph or a person: an id, a kind, an
@@ -1786,8 +1803,9 @@ export interface FaceBatchSummary {
   actor: string
   note: string | null
   created_at: string
-  /** Null while the batch still counts. Set once, permanently — schema.js's
-   *  `face_assignment_batches_revocation_is_permanent` refuses to clear it. */
+  /** Null while the batch still counts. Never re-dated while it stands, and
+   *  cleared only by a recorded reinstatement — schema.js's
+   *  `face_assignment_batches_revocation_follows_history`. */
   revoked_at: string | null
   revoked_by: string | null
   /** Events still on the batch. Zero is legitimate: `face_assignments.face_id`

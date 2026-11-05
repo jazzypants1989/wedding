@@ -929,6 +929,10 @@ export type FaceAssignmentBatchKind =
  * legitimate update, and it is a FLAG rather than a compensating event
  * precisely so it stays reversible and so a later manual correction outranks
  * the bulk pass it corrected instead of disappearing with it.
+ *
+ * `revoked_at`/`revoked_by` are a projection of the batch's latest
+ * `FaceBatchRevocation` (schema.js `add_face_batch_reinstatement`): set by a
+ * `revoke` row, cleared by a `reinstate` row, and refused by trigger otherwise.
  */
 export interface FaceAssignmentBatch {
   batch_id: string
@@ -939,6 +943,21 @@ export interface FaceAssignmentBatch {
   created_at: string
   revoked_at: string | null
   revoked_by: string | null
+}
+
+export type FaceBatchRevocationOp = "revoke" | "reinstate"
+
+/**
+ * One row of a batch's append-only revocation history (schema.js
+ * `add_face_batch_reinstatement`). Rows alternate, revoke first, by trigger;
+ * a `revoke` row's `created_at` is exactly the batch's `revoked_at`.
+ */
+export interface FaceBatchRevocation {
+  id: number
+  batch_id: string
+  op: FaceBatchRevocationOp
+  actor: string
+  created_at: string
 }
 
 /**

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /** @file CLI: carry face-tagging work from the machine that did the naming to
- *  the machine that serves the site (plan §13). Four subcommands behind one
- *  entry point — `export`, `import`, `preflight`, `revoke`.
+ *  the machine that serves the site (plan §13). Five subcommands behind one
+ *  entry point — `export`, `import`, `preflight`, `revoke`, `reinstate`.
  *
  *  ⚠ **OPERATIONAL ORDER: deploy the schema change BEFORE moving any data.**
  *  `add_vision_provenance` runs wherever the new code first starts. Pushing a
@@ -109,7 +109,20 @@
  *  A batch that was imported and then REVOKED is refused outright with no
  *  override. Revocation is a decision someone took; re-running the same file
  *  would silently undo it, and there is no flag whose name would make that
- *  obvious enough.
+ *  obvious enough. The way back is its own command, `reinstate --batch ID`:
+ *  it clears the revocation through `db/face-assignments.js`'s
+ *  `reinstateBatch`, which appends a `reinstate` row to the batch's history
+ *  (`face_batch_revocations`) and re-projects every face the batch touched —
+ *  so a face corrected by hand after the batch keeps that correction, exactly
+ *  as revoking promised. After it, the same artifact imports as "already
+ *  satisfied", or appends whatever it could not place before.
+ *
+ *  There is deliberately NO "export it afresh" route. The batch id is the
+ *  content digest, so a fresh export of an unchanged source is the SAME batch
+ *  and is refused again; salting the id to dodge that would break the two
+ *  properties above (an unchanged re-export is a no-op, a partial import is
+ *  finished into one revocable batch). Reinstating is the honest version: one
+ *  batch, its whole history on record.
  *
  *  ## Where an export may be written
  *
@@ -159,7 +172,8 @@
  *  never calls `revokeBatch` from inside that transaction.
  *
  *  Undoing an import is the `revoke` subcommand, which opens the same database
- *  and calls `revokeBatch` with no transaction of its own around it. That is
+ *  and calls `revokeBatch` with no transaction of its own around it (and
+ *  `reinstate` does the same with `reinstateBatch`). That is
  *  only possible because `revokeBatch` now opens its transaction through the
  *  BOUND executor (`db/utils.js`'s `withBoundTransaction`) rather than through
  *  `db/connection.js`'s singleton — this file never calls `init()`, so the old
@@ -181,9 +195,11 @@ import path from "node:path"
 import { DatabaseSync } from "node:sqlite"
 
 import {
+  batchRevocationHistory,
   createBatch,
   getBatch,
   recordAssignment,
+  reinstateBatch,
   resolveIdentity,
   revokeBatch,
 } from "../../db/face-assignments.js"
@@ -218,8 +234,16 @@ Commands:
                               re-project every face it touched. Nothing is
                               deleted — the events stay in the ledger and stop
                               counting — and a face somebody corrected by hand
-                              AFTER the batch keeps that correction. One-way:
-                              reinstating a batch means importing it again.
+                              AFTER the batch keeps that correction. Not
+                              one-way: see reinstate. Re-importing the same
+                              artifact is refused while the batch is revoked.
+  reinstate --batch ID       Undo a revocation: record the reinstatement,
+                              clear the flag and re-project every face the
+                              batch touched, so its events count again. A face
+                              corrected by hand after the batch still keeps
+                              that correction. Refused if the batch is not
+                              revoked. The batch's revoke/reinstate history is
+                              kept, append-only, and printed by both commands.
 
 Common options:
 
@@ -284,12 +308,15 @@ preflight options:
                               --artifact PATH and take it from there.
   --artifact PATH            Read the expected engine digest from an artifact.
 
-revoke options:
+revoke / reinstate options:
 
-  --batch ID                 The batch to revoke. Required. Printed by import,
-                              and listed in the admin Faces tab.
-  --actor NAME               Recorded as face_assignment_batches.revoked_by.
-                              Same character rules as --actor above.
+  --batch ID                 The batch to revoke or reinstate. Required.
+                              Printed by import, and listed in the admin Faces tab.
+  --actor NAME               Recorded in the batch's revoke/reinstate history
+                              (and as face_assignment_batches.revoked_by on a
+                              revoke). Same character rules as --actor above.
+                              Default: face-work-revoke / face-work-reinstate.
+  --dry-run                  Show the batch and its history; write nothing.
 `
 
 /** The artifact's format tag and version. Both are checked on import. */
@@ -313,6 +340,10 @@ export const IMPORT_ACTOR = "face-work-import"
  *  to whoever did the thing being undone. Neither names a person: both say
  *  which tool ran, which is all an unattended CLI honestly knows. */
 export const REVOKE_ACTOR = "face-work-revoke"
+
+/** Default actor for the `reinstate` subcommand, for the same reason: the
+ *  history should say which tool undid the revocation, not who revoked it. */
+export const REINSTATE_ACTOR = "face-work-reinstate"
 
 /** How many hex characters of the payload digest name the batch. 128 bits. */
 const BATCH_ID_CHARS = 32
@@ -1408,9 +1439,12 @@ export function planFaceWorkImport({ db, artifact, ingestId, facesFrom, matchOve
       existingBatchEvents: countBatchEvents(batchId),
       refusals: [
         `batch ${batchId} was imported and then REVOKED on this machine. Re-importing the ` +
-          `same artifact would silently undo that decision. There is deliberately no flag ` +
-          `for this — if the revocation was wrong, un-revoke it; if the work is wanted ` +
-          `again, export it afresh so it arrives as its own batch.`,
+          `same artifact would silently undo that decision, so there is deliberately no ` +
+          `import flag for it. If the work is wanted again, reinstate the batch on purpose: ` +
+          `node scripts/vision/export-face-work.js reinstate --batch ${batchId} — it is ` +
+          `recorded in the batch's history, and hand corrections made since still win. ` +
+          `(Exporting afresh does not help: an unchanged source has the same digest, so ` +
+          `the same batch id.)`,
       ],
       advisories: [],
       actions: [],
@@ -2146,7 +2180,7 @@ export function parseFaceWorkArgs(argv) {
     dryRun: false,
   }
   let help = false
-  // Whether `--actor` was GIVEN, not what it holds: `revoke` wants a different
+  // Whether `--actor` was GIVEN, not what it holds: `revoke`/`reinstate` want a different
   // default from `import`, and comparing against IMPORT_ACTOR would silently
   // rewrite an operator who typed that value out in full.
   let actorGiven = false
@@ -2230,7 +2264,8 @@ export function parseFaceWorkArgs(argv) {
     command !== "export" &&
     command !== "import" &&
     command !== "preflight" &&
-    command !== "revoke"
+    command !== "revoke" &&
+    command !== "reinstate"
   ) {
     return {
       valid: false,
@@ -2242,8 +2277,8 @@ export function parseFaceWorkArgs(argv) {
   }
   args.command = command
 
-  // The two commands that MOVE an artifact. `preflight` checks the machine and
-  // `revoke` names a batch already in the database; neither has a file to read.
+  // The two commands that MOVE an artifact. `preflight` checks the machine, and
+  // `revoke`/`reinstate` name a batch already in the database; none has a file.
   if (command === "export" || command === "import") {
     const artifact = positionals[1] ?? args.artifact
     if (!artifact) {
@@ -2252,11 +2287,14 @@ export function parseFaceWorkArgs(argv) {
     args.artifact = artifact
   }
 
-  if (command === "revoke") {
+  if (command === "revoke" || command === "reinstate") {
     if (!args.batch) {
-      return { valid: false, error: `revoke needs --batch ID (import prints it).\n\n${USAGE}` }
+      return {
+        valid: false,
+        error: `${command} needs --batch ID (import prints it).\n\n${USAGE}`,
+      }
     }
-    if (!actorGiven) args.actor = REVOKE_ACTOR
+    if (!actorGiven) args.actor = command === "revoke" ? REVOKE_ACTOR : REINSTATE_ACTOR
   }
 
   if (command === "import") {
@@ -2464,6 +2502,34 @@ async function runPreflight(args) {
 }
 
 /**
+ * What `revoke` and `reinstate` both print before acting: the batch, its size,
+ * and its revoke/reinstate history. Returns the batch, or undefined (having
+ * said so) when there is none.
+ * @param {string} batchId
+ * @returns {import('../../types.js').FaceAssignmentBatch | undefined}
+ */
+function describeBatch(batchId) {
+  const batch = getBatch(batchId)
+  if (!batch) {
+    console.error(`no such batch: ${batchId}`)
+    return undefined
+  }
+
+  /** @type {{ events: number, faces: number } | undefined} */
+  const counts = sql`SELECT COUNT(*) AS events, COUNT(DISTINCT face_id) AS faces
+    FROM face_assignments WHERE batch_id = ${batchId}`.get()
+  const events = counts ? counts.events : 0
+  const faces = counts ? counts.faces : 0
+
+  console.log(`batch ${batchId}: kind ${batch.kind}, actor ${batch.actor}, created ${batch.created_at}`)
+  console.log(`${events} event(s) across ${faces} face(s)`)
+  for (const row of batchRevocationHistory(batchId)) {
+    console.log(`  ${row.op.padEnd(9)} ${row.created_at} by ${row.actor}`)
+  }
+  return batch
+}
+
+/**
  * `revoke` — the undo the import prints, run for real.
  *
  * Deliberately thin: it opens the database, checks the batch exists, and calls
@@ -2476,28 +2542,16 @@ async function runPreflight(args) {
  * the events stay in the ledger and stop counting, a face corrected by hand
  * after the batch keeps that correction, and re-revoking is a bare
  * re-projection that leaves the original `revoked_at`/`revoked_by` standing.
+ * It is undone by `reinstate`.
  * @param {Types.FaceWorkArgs} args
  * @returns {Promise<number>}
  */
 async function runRevoke(args) {
   const batchId = /** @type {string} */ (args.batch)
-  const dbPath = resolveDbPath(args.database)
-  const db = openDatabase(dbPath)
+  const db = openDatabase(resolveDbPath(args.database))
   try {
-    const batch = getBatch(batchId)
-    if (!batch) {
-      console.error(`no such batch: ${batchId}`)
-      return 1
-    }
-
-    /** @type {{ events: number, faces: number } | undefined} */
-    const counts = sql`SELECT COUNT(*) AS events, COUNT(DISTINCT face_id) AS faces
-      FROM face_assignments WHERE batch_id = ${batchId}`.get()
-    const events = counts ? counts.events : 0
-    const faces = counts ? counts.faces : 0
-
-    console.log(`batch ${batchId}: kind ${batch.kind}, actor ${batch.actor}, created ${batch.created_at}`)
-    console.log(`${events} event(s) across ${faces} face(s)`)
+    const batch = describeBatch(batchId)
+    if (!batch) return 1
     if (batch.revoked_at !== null) {
       console.log(`already revoked at ${batch.revoked_at} by ${batch.revoked_by}`)
     }
@@ -2511,6 +2565,54 @@ async function runRevoke(args) {
     console.log(
       `\nrevoked: ${reprojected} face(s) re-projected. Events are still on record and stop ` +
         `counting; any face corrected by hand after this batch keeps that correction.`,
+    )
+    const databaseFlag = args.database ? ` --database ${args.database}` : ""
+    console.log(
+      `reinstate with: node scripts/vision/export-face-work.js reinstate ` +
+        `--batch ${batchId}${databaseFlag}`,
+    )
+    return 0
+  } finally {
+    db.close()
+  }
+}
+
+/**
+ * `reinstate` — the way back from `revoke`, and the only one.
+ *
+ * The import refuses a revoked batch id so that re-running a file can never
+ * SILENTLY undo a revocation; this is the deliberate, named, recorded way to
+ * undo one. `reinstateBatch` appends a `reinstate` row to the batch's history,
+ * clears the flag and re-projects every face the batch touched, all in its own
+ * transaction (so, as with `revoke`, none is opened here). Replay is newest-id
+ * first, so a face corrected by hand after the batch keeps that correction.
+ *
+ * Refuses a batch that is not revoked — with or without `--dry-run`, so a dry
+ * run says truthfully whether the real one would go through.
+ * @param {Types.FaceWorkArgs} args
+ * @returns {Promise<number>}
+ */
+async function runReinstate(args) {
+  const batchId = /** @type {string} */ (args.batch)
+  const db = openDatabase(resolveDbPath(args.database))
+  try {
+    const batch = describeBatch(batchId)
+    if (!batch) return 1
+    if (batch.revoked_at === null) {
+      console.error(`\nrefused: batch ${batchId} is not revoked — there is nothing to reinstate.`)
+      return 1
+    }
+    console.log(`revoked at ${batch.revoked_at} by ${batch.revoked_by}`)
+
+    if (args.dryRun) {
+      console.log("\ndry run — nothing written.")
+      return 0
+    }
+
+    const reprojected = reinstateBatch(batchId, args.actor)
+    console.log(
+      `\nreinstated: ${reprojected} face(s) re-projected. The batch's events count again; any ` +
+        `face corrected by hand after this batch keeps that correction.`,
     )
     return 0
   } finally {
@@ -2536,6 +2638,10 @@ async function main() {
   }
   if (args.command === "revoke") {
     process.exitCode = await runRevoke(args)
+    return
+  }
+  if (args.command === "reinstate") {
+    process.exitCode = await runReinstate(args)
     return
   }
   process.exitCode = await runPreflight(args)

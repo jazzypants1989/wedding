@@ -25,6 +25,8 @@ import {
   replayFace,
   projectFace,
   revokeBatch,
+  reinstateBatch,
+  batchRevocationHistory,
   recentBatches,
   negativesForFace,
 } from "../../../db/face-assignments.js"
@@ -707,7 +709,7 @@ describe("db/face-assignments + db/vision-ingests", () => {
           getDb()
             .prepare("UPDATE face_assignment_batches SET revoked_at = NULL WHERE batch_id = 'b1'")
             .run(),
-        messageIncludes("not reversible"),
+        messageIncludes("matching face_batch_revocations row"),
       )
       assert.ok(getBatch("b1")?.revoked_at)
     })
@@ -754,6 +756,120 @@ describe("db/face-assignments + db/vision-ingests", () => {
       // with it.
       assert.strictEqual(faceState(corrected).face_identity_id, right)
       assert.strictEqual(faceState(untouched).face_identity_id, null)
+    })
+
+    it("records the revocation in the batch's history, once", () => {
+      createBatch({ batchId: "b1", kind: "propagate", actor: "a" })
+      revokeBatch("b1", "admin2")
+      revokeBatch("b1", "admin3") // a bare re-projection, not a second revocation
+
+      const history = batchRevocationHistory("b1")
+      assert.deepStrictEqual(
+        history.map((row) => [row.op, row.actor]),
+        [["revoke", "admin2"]],
+      )
+      assert.strictEqual(history[0].created_at, getBatch("b1")?.revoked_at)
+    })
+  })
+
+  describe("reinstateBatch", () => {
+    it("clears the flag and re-projects, so the batch's events count again", () => {
+      const faces = [makeFace(), makeFace()]
+      const identity = makeIdentity()
+      createBatch({ batchId: "b1", kind: "propagate", actor: "a" })
+      for (const face of faces) {
+        recordAssignment({ faceId: face, op: "assign", identityId: identity, actor: "a", batchId: "b1" })
+      }
+      revokeBatch("b1", "admin2")
+      for (const face of faces) assert.strictEqual(faceState(face).face_identity_id, null)
+
+      assert.strictEqual(reinstateBatch("b1", "admin3"), 2)
+
+      assert.strictEqual(getBatch("b1")?.revoked_at, null)
+      assert.strictEqual(getBatch("b1")?.revoked_by, null)
+      for (const face of faces) assert.strictEqual(faceState(face).face_identity_id, identity)
+    })
+
+    it("keeps a hand correction made after the batch, whether before or after the revocation", () => {
+      const fixedFirst = makeFace()
+      const fixedLater = makeFace()
+      const untouched = makeFace()
+      const wrong = makeIdentity()
+      const right = makeIdentity()
+      createBatch({ batchId: "auto", kind: "propagate", actor: "pipeline" })
+      for (const face of [fixedFirst, fixedLater, untouched]) {
+        recordAssignment({ faceId: face, op: "assign", identityId: wrong, actor: "pipeline", batchId: "auto" })
+      }
+
+      recordAssignment({ faceId: fixedFirst, op: "assign", identityId: right, actor: "admin1" })
+      revokeBatch("auto", "admin1")
+      recordAssignment({ faceId: fixedLater, op: "clear", actor: "admin1" })
+      reinstateBatch("auto", "admin1")
+
+      assert.strictEqual(faceState(fixedFirst).face_identity_id, right)
+      assert.strictEqual(faceState(fixedLater).face_identity_id, null)
+      assert.strictEqual(faceState(untouched).face_identity_id, wrong)
+    })
+
+    it("re-retires a not_a_face verdict the revocation had revived", () => {
+      const face = makeFace()
+      createBatch({ batchId: "b1", kind: "propagate", actor: "a" })
+      recordAssignment({ faceId: face, op: "not_a_face", actor: "a", batchId: "b1" })
+      revokeBatch("b1", "admin2")
+      assert.strictEqual(faceState(face).deleted_at, null)
+
+      reinstateBatch("b1", "admin2")
+      assert.ok(faceState(face).deleted_at)
+    })
+
+    it("refuses a batch that is not revoked, and one that does not exist", () => {
+      createBatch({ batchId: "b1", kind: "propagate", actor: "a" })
+      assert.throws(() => reinstateBatch("b1", "admin2"), messageIncludes("is not revoked"))
+      assert.throws(() => reinstateBatch("nope", "admin2"), messageIncludes("no such batch"))
+      assert.deepStrictEqual(batchRevocationHistory("b1"), [])
+    })
+
+    it("keeps the whole history, and a later revocation is dated afresh", () => {
+      createBatch({ batchId: "b1", kind: "propagate", actor: "a" })
+      revokeBatch("b1", "admin2")
+      reinstateBatch("b1", "admin3")
+      revokeBatch("b1", "admin4")
+
+      const history = batchRevocationHistory("b1")
+      assert.deepStrictEqual(
+        history.map((row) => [row.op, row.actor]),
+        [
+          ["revoke", "admin2"],
+          ["reinstate", "admin3"],
+          ["revoke", "admin4"],
+        ],
+      )
+      assert.strictEqual(getBatch("b1")?.revoked_by, "admin4")
+      assert.strictEqual(getBatch("b1")?.revoked_at, history[2].created_at)
+    })
+
+    it("refuses a history row out of turn, and any edit to one", () => {
+      createBatch({ batchId: "b1", kind: "propagate", actor: "a" })
+      revokeBatch("b1", "admin2")
+
+      // A history row that does not alternate is refused outright.
+      assert.throws(
+        () =>
+          getDb()
+            .prepare(
+              "INSERT INTO face_batch_revocations (batch_id, op, actor, created_at) VALUES ('b1', 'revoke', 'x', 'now')",
+            )
+            .run(),
+        messageIncludes("revoked only while live"),
+      )
+      assert.throws(
+        () =>
+          getDb()
+            .prepare("UPDATE face_batch_revocations SET actor = 'someone-else' WHERE batch_id = 'b1'")
+            .run(),
+        messageIncludes("append-only"),
+      )
+      assert.strictEqual(batchRevocationHistory("b1")[0].actor, "admin2")
     })
   })
 
