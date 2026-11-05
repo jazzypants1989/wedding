@@ -414,6 +414,27 @@ export function buildMediaVariants(
 /** Short random token for scratch filenames. */
 export function randomWorkName(): string
 
+/** What one planned file will put on disk, before anything is generated. */
+export interface StoredBytesEstimate {
+  /** The original as it will be stored: the source size, or an estimate when
+   *  --heic-original=jpeg re-encodes it. */
+  originalBytes: number
+  /** False when originalBytes is an estimate rather than a known size. */
+  originalExact: boolean
+  /** Every derived variant (display/thumb, poster, or the w* ladder), estimated. */
+  variantBytes: number
+}
+
+/**
+ * Estimate a planned file's stored bytes without encoding anything. Variants are
+ * sized at VARIANT_BYTES_PER_PIXEL over their target dimensions, capped at the
+ * server's per-variant limits; a HEIC stored as JPEG at TRANSCODE_BYTES_PER_PIXEL.
+ */
+export function estimateStoredBytes(
+  plan: MediaPlanOk,
+  options: { section: MediaSection; heicOriginal: "keep" | "jpeg" },
+): StoredBytesEstimate
+
 // --- Import sinks (scripts/lib/sink-local.js, sink-http.js) ---
 
 /** Read-only capacity check, run once before any file is touched. */

@@ -308,6 +308,52 @@ export function variantNamesFor(kind, section) {
 }
 
 /**
+ * Planning estimates, used only to size a run before anything is encoded. Rules
+ * of thumb for lossy JPEG/WebP at the qualities above, chosen to err large; they
+ * describe the encoder, not any particular set of photographs. The CLI prints
+ * them alongside the numbers they produce.
+ */
+export const VARIANT_BYTES_PER_PIXEL = 0.35
+/** A full-size JPEG at quality 0.92, which is what --heic-original=jpeg stores. */
+export const TRANSCODE_BYTES_PER_PIXEL = 0.8
+
+/** Pixels in a box of `width`×`height` scaled to fit `maxEdge`, never upscaled. */
+/** @param {number} width @param {number} height @param {number} maxEdge */
+function fittedPixels(width, height, maxEdge) {
+  const scale = Math.min(1, maxEdge / Math.max(width, height, 1))
+  return Math.round(width * scale) * Math.round(height * scale)
+}
+
+/** @type {Types.estimateStoredBytes} */
+export function estimateStoredBytes(plan, options) {
+  let variantBytes = 0
+  for (const name of variantNamesFor(plan.kind, options.section)) {
+    const spec = VARIANT_SPECS[name]
+    const pixels = fittedPixels(plan.width, plan.height, spec.maxEdge)
+    variantBytes += Math.min(spec.capBytes, Math.ceil(pixels * VARIANT_BYTES_PER_PIXEL))
+  }
+
+  const transcoded =
+    plan.kind === MEDIA_KIND.IMAGE && plan.sniffed === "heic" && options.heicOriginal === "jpeg"
+  if (transcoded) {
+    // Unknowable until encoded. Never below the HEIC itself: a JPEG of the same
+    // picture is larger, which is the whole reason this needs estimating.
+    const estimate = Math.ceil(plan.width * plan.height * TRANSCODE_BYTES_PER_PIXEL)
+    return {
+      originalBytes: Math.min(
+        MEDIA_LIMITS.IMAGE_ORIGINAL_MAX,
+        Math.max(plan.originalBytes, estimate),
+      ),
+      originalExact: false,
+      variantBytes,
+    }
+  }
+  // Kept as-is, or stripped losslessly, which only ever removes bytes: the
+  // source size is exact or a slight overcount.
+  return { originalBytes: plan.originalBytes, originalExact: true, variantBytes }
+}
+
+/**
  * Human-readable byte count. No regex; matches the style used in the CLI.
  * @param {number} bytes @returns {string}
  */
