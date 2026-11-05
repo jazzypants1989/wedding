@@ -429,6 +429,12 @@ function stepCount(key) {
   return leftoversLeft().length
 }
 
+/** Has any face been imported at all? Until one has, no step can be done:
+ *  there's nothing to do yet, which is different from having done it. */
+function hasFaces() {
+  return !!overview && overview.counts.faces > 0
+}
+
 function firstUnfinished() {
   const step = STEPS.find((s) => stepCount(s[0]) > 0)
   return step ? step[2] : "/admin/faces/leftovers"
@@ -697,6 +703,14 @@ function facesHead(on) {
   const steps = STEPS.map((s, i) => {
     const n = stepCount(s[0])
     const here = on === s[0]
+    if (!hasFaces()) {
+      return html`<li>
+        <a href="${s[2]}" aria-current="${here ? "step" : "false"}">
+          <span class="flow-n" aria-hidden="true">${i + 1}</span>
+          <span class="flow-label">${s[1]}</span>
+        </a>
+      </li>`
+    }
     return html`<li>
       <a href="${s[2]}" class="${n === 0 ? "is-done" : ""}"
         aria-current="${here ? "step" : "false"}">
@@ -1701,8 +1715,11 @@ function historyView() {
 function emptyIngest() {
   return html`<div class="single">
     <div class="done-state">
-      <h2>No faces yet</h2>
-      <p class="muted">Run the face pipeline over a folder of photos from the command line:</p>
+      <h2>No faces have been imported yet</h2>
+      <p class="muted">
+        They come from the command line, for photos already in the gallery: run the face pipeline
+        over the photo folder, then load its results with:
+      </p>
       <pre class="faces-cli-hint">node scripts/vision/ingest-faces.js &lt;run-dir&gt;</pre>
     </div>
   </div>`
@@ -2869,7 +2886,9 @@ async function mount(params, query, ctx) {
   if (currentPlace()?.path !== ctx.path) return
 
   // Redirects are replaces, so they never leave a dead entry (IA §4).
-  if (view === "root") {
+  // With no faces at all there is no step to send anyone to: the section's own
+  // page says so, rather than a step that looks finished.
+  if (view === "root" && hasFaces()) {
     void navigate(firstUnfinished(), { replace: true })
     return
   }
