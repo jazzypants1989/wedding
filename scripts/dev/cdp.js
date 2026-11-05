@@ -30,6 +30,7 @@ const USAGE = `Usage: node scripts/dev/cdp.js <url> <width>x<height> [options]
   --errors            Report console errors and uncaught exceptions; exit 1 if any.
   --print-media       Emulate print media.
   --reduced-motion    Emulate prefers-reduced-motion.
+  --touch             Emulate a touch screen: (pointer: coarse) matches.
   --profile=DIR       Keep and reuse this profile. Default: fresh, then deleted.
   --chrome=PATH       The Chrome binary. Default: $CHROME, then the usual names.`
 
@@ -57,6 +58,7 @@ export function parseCdpArgs(argv) {
     errors: false,
     printMedia: false,
     reducedMotion: false,
+    touch: false,
     profile: null,
     chrome: null,
   }
@@ -64,6 +66,7 @@ export function parseCdpArgs(argv) {
     if (arg === "--errors") args.errors = true
     else if (arg === "--print-media") args.printMedia = true
     else if (arg === "--reduced-motion") args.reducedMotion = true
+    else if (arg === "--touch") args.touch = true
     else if (arg.startsWith("--shot=")) args.shot = arg.slice(7)
     else if (arg.startsWith("--eval=")) args.evals.push(arg.slice(7))
     else if (arg.startsWith("--wait=")) args.waitMs = Number(arg.slice(7))
@@ -210,6 +213,9 @@ async function run(args) {
       deviceScaleFactor: 1,
       mobile: args.width < 768,
     })
+    if (args.touch) {
+      await page.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 })
+    }
     if (args.printMedia || args.reducedMotion) {
       await page.send("Emulation.setEmulatedMedia", {
         media: args.printMedia ? "print" : "",

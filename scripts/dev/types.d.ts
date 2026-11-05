@@ -112,6 +112,8 @@ export interface CdpArgs {
   errors: boolean
   printMedia: boolean
   reducedMotion: boolean
+  /** Emulate a touch screen, so (pointer: coarse) matches. */
+  touch: boolean
   /** A profile to keep between runs. Null means a fresh one, deleted afterward. */
   profile: string | null
   chrome: string | null

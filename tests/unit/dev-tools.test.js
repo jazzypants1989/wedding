@@ -236,6 +236,8 @@ describe("argument parsing", () => {
     assert.equal(args.profile, null)
     assert.deepEqual(args.evals, ["a.js", "b.js"])
     assert.equal(args.width, 1280)
+    assert.equal(args.touch, false)
+    assert.equal(parseCdpArgs(["http://x", "390x844", "--touch"]).touch, true)
   })
 
   it("rejects a bad cdp size or flag", () => {
