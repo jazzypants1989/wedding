@@ -25,12 +25,18 @@ export function createSession() {
   const timestamp = now()
   const expires_at = new Date(Date.now() + SESSION.DURATION_MS).toISOString()
 
-  sql`INSERT INTO sessions (token, csrf_token, expires_at, csrf_rotated_at)
-    VALUES (${tokenHash}, ${csrf_token}, ${expires_at}, ${timestamp})`.run()
+  // last_activity_at is set here in ISO form: the column default is CURRENT_TIMESTAMP
+  // ('YYYY-MM-DD HH:MM:SS'), and cleanExpiredSessions compares it as a string with an
+  // ISO cutoff, where a space sorts before 'T' and an unused session looked idle.
+  sql`INSERT INTO sessions (token, csrf_token, expires_at, csrf_rotated_at, last_activity_at)
+    VALUES (${tokenHash}, ${csrf_token}, ${expires_at}, ${timestamp}, ${timestamp})`.run()
 
-  // Keep only the newest MAX_CONCURRENT; the oldest login is the one signed out.
+  // Keep the MAX_CONCURRENT most recently active; the longest-idle login is the one
+  // signed out, so a script's logins can't evict the session someone is using. Ties
+  // (same-millisecond logins) fall to rowid, newest kept.
   sql`DELETE FROM sessions WHERE rowid NOT IN
-    (SELECT rowid FROM sessions ORDER BY rowid DESC LIMIT ${SESSION.MAX_CONCURRENT})`.run()
+    (SELECT rowid FROM sessions ORDER BY last_activity_at DESC, rowid DESC
+     LIMIT ${SESSION.MAX_CONCURRENT})`.run()
 
   return { token, csrf_token, expires_at } // Return plaintext to client
 }

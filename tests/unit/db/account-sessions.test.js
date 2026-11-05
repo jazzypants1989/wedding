@@ -270,6 +270,16 @@ describe("db/account-sessions", () => {
   })
 
   describe("cleanExpiredAccountSessions", () => {
+    it("stores last_activity_at in ISO form so a new session compares like the cutoff", () => {
+      const { token } = createAccountSession(makeAccount())
+      const row = /** @type {{ last_activity_at: string }} */ (
+        getDb()
+          .prepare("SELECT last_activity_at FROM account_sessions WHERE token = ?")
+          .get(hashToken(token))
+      )
+      assert.ok(row.last_activity_at.includes("T"))
+    })
+
     it("deletes absolutely-expired and idle-expired sessions, keeps fresh ones", () => {
       const accountId = makeAccount()
       const fresh = createAccountSession(accountId)

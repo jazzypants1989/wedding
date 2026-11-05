@@ -15,8 +15,11 @@ export function createAccountSession(accountId) {
   const timestamp = now()
   const expires_at = new Date(Date.now() + GUEST_SESSION.DURATION_MS).toISOString()
 
-  sql`INSERT INTO account_sessions (token, account_id, csrf_token, expires_at, csrf_rotated_at)
-    VALUES (${tokenHash}, ${accountId}, ${csrf_token}, ${expires_at}, ${timestamp})`.run()
+  // last_activity_at in ISO form, not the CURRENT_TIMESTAMP default: the cleanup
+  // compares it as a string with an ISO cutoff, and ' ' sorts before 'T'.
+  sql`INSERT INTO account_sessions
+    (token, account_id, csrf_token, expires_at, csrf_rotated_at, last_activity_at)
+    VALUES (${tokenHash}, ${accountId}, ${csrf_token}, ${expires_at}, ${timestamp}, ${timestamp})`.run()
 
   // Unlike the single-admin sessions table, guests keep N concurrent sessions
   // (multiple devices); cap per account, trimming the oldest. The rowid tiebreak

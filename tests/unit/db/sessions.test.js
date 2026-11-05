@@ -97,6 +97,33 @@ describe("db/sessions", () => {
       for (const s of sessions.slice(1)) assert.ok(getSession(s.token))
     })
 
+    it("evicts the longest-idle session, not the oldest login", () => {
+      const sessions = Array.from({ length: SESSION.MAX_CONCURRENT }, () => createSession())
+      // The first login is the one in active use; the rest went quiet an hour ago.
+      const quiet = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+      for (const s of sessions.slice(1)) {
+        getDb()
+          .prepare("UPDATE sessions SET last_activity_at = ? WHERE token = ?")
+          .run(quiet, hashToken(s.token))
+      }
+      updateSessionActivity(sessions[0].token)
+      // Make the second one the idlest of the quiet group.
+      getDb()
+        .prepare("UPDATE sessions SET last_activity_at = ? WHERE token = ?")
+        .run(new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), hashToken(sessions[1].token))
+
+      const sixth = createSession()
+      assert.ok(getSession(sessions[0].token), "the active session keeps working")
+      assert.strictEqual(getSession(sessions[1].token), null, "the longest-idle is evicted")
+      assert.ok(getSession(sixth.token))
+      for (const s of sessions.slice(2)) {
+        assert.ok(
+          getDb().prepare("SELECT 1 FROM sessions WHERE token = ?").get(hashToken(s.token)),
+          "the others stay",
+        )
+      }
+    })
+
     it("prunes expired sessions at login", () => {
       const old = createSession()
       getDb()
@@ -320,6 +347,16 @@ describe("db/sessions", () => {
         undefined,
         "idle-expired session should be cleaned up",
       )
+    })
+
+    it("keeps a freshly created session that has not made a request yet", () => {
+      const result = createSession()
+      cleanExpiredSessions()
+      const row = getDb()
+        .prepare("SELECT last_activity_at FROM sessions WHERE token = ?")
+        .get(hashToken(result.token))
+      assert.ok(row, "an unused new session must survive cleanup")
+      assert.ok(String(row.last_activity_at).includes("T"), "stored in ISO form")
     })
 
     it("keeps valid non-idle sessions", () => {
