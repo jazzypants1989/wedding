@@ -324,6 +324,51 @@
   color: var(--ws-ink);
 }
 
+/* A wide detail pane: the post on the left at a size worth judging, who sent
+   it and the quieter actions in a column beside it, instead of one 640px
+   column with the rest of the pane empty. Narrower panes keep the single
+   column above, in the same order (the post, then the author). */
+#tab-moderation #rv-detail {
+  container-type: inline-size;
+}
+
+@container (min-width: 960px) {
+  #tab-moderation .rv-post {
+    max-width: 1320px;
+  }
+
+  #tab-moderation .rv-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+    gap: 32px;
+    align-items: start;
+  }
+
+  #tab-moderation .rv-body .rv-main > *,
+  #tab-moderation .rv-body .rv-side > * {
+    max-width: none;
+  }
+
+  /* As wide as the column, but never taller than the pane can show whole. */
+  #tab-moderation .rv-body .rv-main > .media-big {
+    width: min(100%, calc((100dvh - 300px) * 4 / 3));
+  }
+
+  #tab-moderation .msg-big {
+    font-size: 1.85rem;
+  }
+
+  /* In the narrow column the name keeps its line; Trust wraps under it. */
+  #tab-moderation .rv-side .author > div {
+    flex: 1 1 200px;
+  }
+
+  #tab-moderation .rv-side {
+    position: sticky;
+    top: 24px;
+  }
+}
+
 /* ------------------------------------------------------------- accounts */
 #tab-moderation .ac-detail .facts dd {
   overflow-wrap: anywhere;

@@ -826,6 +826,11 @@ kbd {
 /* The only scrolling element. A panel whose root is a split view adds
    .panel-fill, and the view stops scrolling so its panes can. */
 #view {
+  /* layout.css caps every <main> at the site's 1200px container and centres
+     it; the admin's view fills its grid cell. Single pages centre themselves
+     (.tab-content.active, .single), and a split view uses the whole width. */
+  max-width: none;
+  margin: 0;
   min-height: 0;
   overflow-y: auto;
   outline: none;
@@ -838,6 +843,8 @@ kbd {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* Its panes scroll, not the view: no empty gutter strip down the right. */
+  scrollbar-gutter: auto;
 }
 
 .tab-content {
@@ -1038,10 +1045,47 @@ tbody tr:hover td {
 
 /* -------------------------------------------------------------- split view */
 .split {
+  /* A dragged width (split-resize.js) wins over the default, but never
+     leaves the detail under 480px. */
+  --list-col: clamp(280px, var(--list-w-user, var(--list-w)), calc(100% - 480px));
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: var(--list-w) minmax(0, 1fr);
+  grid-template-columns: var(--list-col) minmax(0, 1fr);
+  position: relative;
+}
+
+/* The divider, for a split that opts in: an 8px grip just right of the list's
+   border (its left edge is the list's scrollbar), a line while in use. */
+.split-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--list-col) - 1px);
+  width: 8px;
+  z-index: 4;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.split-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  transition: background-color var(--duration-instant);
+}
+
+.split-handle:hover::after,
+.split-handle.is-dragging::after,
+.split-handle:focus-visible::after {
+  background: var(--ws-accent);
+}
+
+.split-handle:focus-visible {
+  outline: none;
 }
 
 .pane {
@@ -1295,6 +1339,14 @@ tbody tr:hover td {
   backdrop-filter: blur(6px);
   border-top: 1px solid var(--ws-line);
   margin-top: auto;
+}
+
+/* Under a .detail (860px, its padding inside), the bar's right-hand actions
+   (Delete) end where the detail's content ends, not at the pane's far edge. */
+@media (min-width: 900px) {
+  .pane-detail > .actionbar {
+    padding-right: max(clamp(16px, 4vw, 48px), calc(100% - 812px));
+  }
 }
 
 .person-head {
@@ -1705,6 +1757,12 @@ dialog.help {
 }
 
 @media (min-width: 1200px) {
+  /* A wide screen gives the list room too, so a name and its first line fit,
+     instead of handing every extra pixel to the detail pane. */
+  :root {
+    --list-w: clamp(360px, 28vw, 480px);
+  }
+
   .sub-only {
     display: none;
   }
@@ -1890,6 +1948,10 @@ dialog.help {
   .split {
     display: block;
     overflow-y: auto;
+  }
+
+  .split-handle {
+    display: none;
   }
 
   .split > .pane {

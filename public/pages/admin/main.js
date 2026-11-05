@@ -25,6 +25,7 @@ import {
 } from "./site-content.js"
 import { initEffectConfig, loadEffectConfig } from "./effect-config.js"
 import { initConfirmDialog } from "./confirm.js"
+import { initSplitResize } from "./split-resize.js"
 import { initThemeToggle } from "../../components/theme-toggle.js"
 import { initRouter, startRouter, renderMore, registerPanel, addGuard } from "./router.js"
 
@@ -140,6 +141,7 @@ function init() {
   initSiteContent()
   initEffectConfig()
   initConfirmDialog()
+  initSplitResize()
   initThemeToggle()
 
   checkSession()

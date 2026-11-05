@@ -937,8 +937,10 @@ function detailMarkup() {
           ${step(prev, "↑", "Previous (k)")} ${step(next, "↓", "Next (j)")}
         </nav>
       </header>
-      ${statusNoteMarkup(item)} ${contentMarkup(item)} ${refsMarkup(item)} ${authorMarkup(item)}
-      ${extrasMarkup(item)}
+      <div class="rv-body">
+        <div class="rv-main">${statusNoteMarkup(item)} ${contentMarkup(item)}</div>
+        <div class="rv-side">${refsMarkup(item)} ${authorMarkup(item)} ${extrasMarkup(item)}</div>
+      </div>
     </article>
     ${actionbarMarkup(item)}`
 }

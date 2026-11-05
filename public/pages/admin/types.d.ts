@@ -2132,3 +2132,9 @@ export function resolveGuestChoice(
   typed: string,
   choices: readonly GuestChoice[],
 ): GuestChoiceResult
+
+/** The list pane's width a drag or an arrow key asks for, kept between 280px
+ *  and 720px and never leaving the detail pane under 480px (split-resize.js). */
+export function clampListWidth(px: number, splitWidth: number): number
+/** Wire every `.split-handle`: drag, ← →, double-click to reset, remembered per split. */
+export function initSplitResize(): void

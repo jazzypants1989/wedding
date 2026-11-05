@@ -61,6 +61,10 @@ Primitives (prototype class names — copy the prototype's markup):
   Also: `.row.is-unread`, `.row-wrap > .tick + .row` (bulk tick), `.rows-heading`,
   `.list-empty`, `.bulkbar`, `.detail-empty`, `.person-head`, `.facts`,
   `.stepper-mini`, `.cta-strip`, `.done-state > .done-icon` (queue empty → next step).
+  A split with an `id` can take a resizable divider: add
+  `<div class="split-handle" role="separator" aria-orientation="vertical" tabindex="0"
+  aria-controls="<list id>" aria-label="List width"></div>` as its last child
+  (split-resize.js: drag, ← →, double-click resets; remembered per split).
 - **Single-column page** `.single(.single-wide) > .single-head`.
 - **Controls** `.seg` (links, `[aria-current="page"]`, `.seg-n` count), `.chips >
   .chip[aria-current="true"]`.
