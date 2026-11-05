@@ -72,17 +72,47 @@ export function showSuccess(message) {
  * The button — or `z` anywhere (router.js) — fires `onUndo` once; the toast
  * stays up for a generous window, since an undo must stay reachable longer
  * than a plain confirmation.
+ *
+ * `offer` puts a suggestion beside Undo ("Trust Rosa"): one button that closes
+ * the toast and runs it. A toast with an offer also gets a ✕, so the
+ * suggestion is as easy to wave away as to take.
  * @param {string} message @param {() => void} onUndo
+ * @param {{ label: string, run: () => void }} [offer]
  */
-export function showUndo(message, onUndo) {
+export function showUndo(message, onUndo, offer) {
   banner.innerHTML = html`<span>${message}</span>
-    <button type="button" class="toast-undo" data-undo-action>Undo <kbd>z</kbd></button>`
+    ${offer
+      ? html`<button type="button" class="toast-undo" data-toast-offer>${offer.label}</button>`
+      : ""}
+    <button type="button" class="toast-undo" data-undo-action>Undo <kbd>z</kbd></button>
+    ${offer
+      ? html`<button type="button" class="toast-x" data-toast-close aria-label="Dismiss">×</button>`
+      : ""}`
   pendingUndo = onUndo
   raiseToast("success", 10000)
   const btn = banner.querySelector("[data-undo-action]")
   if (btn instanceof HTMLButtonElement) {
     btn.addEventListener("click", () => runUndo(), { once: true })
   }
+  const take = banner.querySelector("[data-toast-offer]")
+  if (offer && take instanceof HTMLButtonElement) {
+    take.addEventListener("click", () => {
+      dismissToast()
+      offer.run()
+    }, { once: true })
+  }
+  banner.querySelector("[data-toast-close]")?.addEventListener("click", dismissToast, { once: true })
+}
+
+/** @type {Types.undoShowing} */
+export function undoShowing(onUndo) {
+  return pendingUndo === onUndo && !banner.hidden
+}
+
+function dismissToast() {
+  clearTimeout(dismissTimer)
+  banner.hidden = true
+  pendingUndo = null
 }
 
 /** @type {Types.runUndo} */

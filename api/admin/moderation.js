@@ -258,9 +258,12 @@ export async function counts(req, res) {
  * @param {boolean} releasePending Approve-and-release the author's whole backlog.
  * @param {Map<number, boolean>} [trustCache] Per-batch author-trust cache, so a
  *   bulk approve doesn't re-query the same author's account for every item.
+ * @param {boolean} [autoTrust] false: approve without promoting the author. The
+ *   Review page sends it: there, trust is offered once everything the author
+ *   posted is approved, never applied on the first approval (owner, Nov 2026).
  * @returns {{ row: ModeratableRow, wasHidden: boolean, autoTrusted: boolean, released: number } | null}
  */
-function applyTransition(target, action, id, releasePending, trustCache) {
+function applyTransition(target, action, id, releasePending, trustCache, autoTrust = true) {
   const row = target.getRow(id)
   if (!row) return null
   const wasHidden = row.status === CONTENT_STATUS.HIDDEN
@@ -276,7 +279,7 @@ function applyTransition(target, action, id, releasePending, trustCache) {
     // never on unhide (hidden → approved): unhiding must not silently re-trust
     // an author the admin previously untrusted, and the approve confirm dialog
     // only names the trust effect for pending items (owner decision 2026-07-08).
-    if (!wasHidden) {
+    if (!wasHidden && autoTrust) {
       let trusted = trustCache?.get(accountId)
       if (trusted === undefined) {
         const account = getAccountById(accountId)
@@ -355,11 +358,12 @@ async function moderate(req, res, { params, session }, action) {
   const idResult = validateId(params.id, "entry ID")
   if (!idResult.valid) throw new ValidationError(idResult.error)
 
-  // Optional body: { releasePending } on approve (detail-modal "approve &
-  // release their other pending items"), { reason } on reject (an optional
-  // note recorded in the audit log for an irreversible action). Body is
-  // optional on POST.
+  // Optional body: { releasePending, autoTrust } on approve (detail-modal
+  // "approve & release their other pending items"; autoTrust: false approves
+  // without trusting), { reason } on reject (an optional note recorded in the
+  // audit log for an irreversible action). Body is optional on POST.
   let releasePending = false
+  let autoTrust = true
   /** @type {string | null} */
   let reason = null
   if (action === "approve" || action === "reject") {
@@ -367,13 +371,14 @@ async function moderate(req, res, { params, session }, action) {
       () => /** @type {Record<string, unknown>} */ ({}),
     )
     releasePending = body.releasePending === true
+    autoTrust = body.autoTrust !== false
     if (action === "reject" && typeof body.reason === "string") {
       reason = sanitize(body.reason, 500)
     }
   }
 
   const outcome = withTransaction(() =>
-    applyTransition(target, action, idResult.value, releasePending),
+    applyTransition(target, action, idResult.value, releasePending, undefined, autoTrust),
   )
   if (!outcome) {
     throw new ConflictError(
@@ -510,13 +515,15 @@ export async function bulk(req, res, { session }) {
   // One transaction for the whole batch. A thrown DB error rolls the batch back;
   // items already in a terminal or otherwise invalid state are skipped (their
   // applyTransition returns null) while the rest still commit, so `changed` may
-  // be < items.length. Auto-trust rides along on approve.
+  // be < items.length. Auto-trust rides along on approve unless the body says
+  // { autoTrust: false }.
+  const autoTrust = body.autoTrust !== false
   /** @type {Map<number, boolean>} */
   const trustCache = new Map()
   const results = withTransaction(() =>
     items.map((item) => {
       const target = MODERATABLE[item.type]
-      const outcome = applyTransition(target, action, item.id, false, trustCache)
+      const outcome = applyTransition(target, action, item.id, false, trustCache, autoTrust)
       return { item, outcome }
     }),
   )
@@ -670,13 +677,16 @@ export async function restore(req, res, { session }) {
  * POST /api/admin/accounts/:id/approve-pending — "Approve their N waiting" on
  * the Review author card and in Accounts. Approves exactly the rows the queue
  * shows for this author (same transition as one approve, so auto-trust rides
- * along) and returns them, so the Undo toast can put them back.
+ * along unless the optional body says { autoTrust: false }) and returns them,
+ * so the Undo toast can put them back.
  * @type {Types.ParamsHandler}
  */
 export async function approveWaiting(req, res, { params, session }) {
   const idResult = validateId(params.id, "account ID")
   if (!idResult.valid) throw new ValidationError(idResult.error)
   if (!getAccountById(idResult.value)) throw new NotFoundError("Account")
+  const body = await parseBody(req).catch(() => /** @type {Record<string, unknown>} */ ({}))
+  const autoTrust = body.autoTrust !== false
 
   const rows = getModerationQueue({
     status: CONTENT_STATUS.PENDING,
@@ -689,7 +699,14 @@ export async function approveWaiting(req, res, { params, session }) {
   const results = withTransaction(() =>
     rows.map((row) => {
       const type = /** @type {ModeratableType} */ (row.content_type)
-      const outcome = applyTransition(MODERATABLE[type], "approve", row.id, false, trustCache)
+      const outcome = applyTransition(
+        MODERATABLE[type],
+        "approve",
+        row.id,
+        false,
+        trustCache,
+        autoTrust,
+      )
       return { item: { type, id: row.id }, outcome }
     }),
   )

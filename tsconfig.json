@@ -27,6 +27,7 @@
     "tests/unit/emoji.test.js",
     "tests/unit/guest-match.test.js",
     "tests/unit/split-resize.test.js",
+    "tests/unit/trust-suggest.test.js",
     "tests/unit/gallery-paging.test.js",
     "tests/unit/curated-order.test.js",
     "tests/unit/chip-variant.test.js",

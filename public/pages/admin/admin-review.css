@@ -281,16 +281,18 @@
 
 #tab-moderation .trust-nudge {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 10px 12px;
   padding: 10px 12px;
   border-radius: 10px;
   background: var(--ws-accent-soft);
   font-size: 0.9rem;
 }
 
+/* The sentence takes its own line; Trust and Not now sit under it. */
 #tab-moderation .trust-nudge > span {
-  flex: 1;
+  flex: 1 1 100%;
 }
 
 #tab-moderation .author-more {

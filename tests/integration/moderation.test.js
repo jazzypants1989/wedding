@@ -434,6 +434,53 @@ describe("auto-trust on approval", () => {
     assert.strictEqual((await json(post)).status, "approved")
   })
 
+  it("autoTrust: false approves without trusting (Review offers trust instead)", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const stranger = signIn({ trusted: 0, name: "NotYet" })
+    const one = seedEntry(stranger.accountId)
+    const two = seedEntry(stranger.accountId)
+    const three = seedEntry(stranger.accountId)
+    const four = seedEntry(stranger.accountId)
+    const optOut = { "Content-Type": "application/json" }
+
+    const single = await asAdmin(`/api/admin/moderation/guestbook/${one}/approve`, {
+      method: "POST",
+      headers: optOut,
+      body: JSON.stringify({ autoTrust: false }),
+    })
+    assert.strictEqual(single.status, 200)
+    assert.strictEqual((await json(single)).autoTrusted, false)
+    assert.strictEqual(statusOf("guestbook_entries", one), "approved")
+    assert.strictEqual(isTrusted(stranger.accountId), 0)
+
+    const bulk = await asAdmin("/api/admin/moderation/bulk", {
+      method: "POST",
+      headers: optOut,
+      body: JSON.stringify({
+        action: "approve",
+        items: [{ type: "guestbook", id: two }],
+        autoTrust: false,
+      }),
+    })
+    const bulkBody = await json(bulk)
+    assert.strictEqual(bulkBody.changed, 1)
+    assert.strictEqual(bulkBody.trusted, 0)
+    assert.deepStrictEqual(bulkBody.trustedAccounts, [])
+    assert.strictEqual(isTrusted(stranger.accountId), 0)
+
+    const waiting = await asAdmin(`/api/admin/accounts/${stranger.accountId}/approve-pending`, {
+      method: "POST",
+      headers: optOut,
+      body: JSON.stringify({ autoTrust: false }),
+    })
+    const waitingBody = await json(waiting)
+    assert.strictEqual(waitingBody.changed, 2)
+    assert.deepStrictEqual(waitingBody.trustedAccounts, [])
+    assert.strictEqual(statusOf("guestbook_entries", three), "approved")
+    assert.strictEqual(statusOf("guestbook_entries", four), "approved")
+    assert.strictEqual(isTrusted(stranger.accountId), 0)
+  })
+
   it("reject does not touch trust", async (t) => {
     if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
     const stranger = signIn({ trusted: 0, name: "Rejected" })

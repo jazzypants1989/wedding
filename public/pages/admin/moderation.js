@@ -14,7 +14,16 @@
  *  their posts" (→ /admin/review?author=a5) and delete. No regex (CLAUDE.md). */
 /** @import * as Types from './types.js' */
 
-import { api, openModal, closeModal, showError, showSuccess, showUndo } from "./utils.js"
+import {
+  api,
+  openModal,
+  closeModal,
+  showError,
+  showSuccess,
+  showUndo,
+  undoShowing,
+} from "./utils.js"
+import { shouldSuggestTrust } from "./trust-suggest.js"
 import {
   html,
   formatDate,
@@ -60,8 +69,9 @@ const STATUS_LABEL = /** @type {Record<string, string>} */ ({
 const PAGE = 50
 const PAGE_MAX = 100
 
-/** An untrusted author with this many approved posts gets the trust nudge (§13.7). */
-const NUDGE_AFTER = 3
+/** Authors whose trust offer on the author card was waved away ("Not now"),
+ *  for this visit. The offer itself: shouldSuggestTrust (trust-suggest.js). */
+const nudgeDismissed = /** @type {Set<number>} */ (new Set())
 
 const WIDE = "(min-width: 900px)"
 const isWide = () => window.matchMedia(WIDE).matches
@@ -788,8 +798,8 @@ function authorMarkup(item) {
     trusted ? "Trusted — new posts go live without review" : "First posts are reviewed",
   ].filter((p) => p !== "")
   const waiting = a ? a.counts.pending : 0
-  const nudge = !!a && !trusted && a.counts.approved >= NUDGE_AFTER
-  const total = a ? a.post_count - a.counts.rejected : 0
+  // Offered only once nothing of theirs waits and all of it was approved.
+  const nudge = !!a && shouldSuggestTrust(a) && !nudgeDismissed.has(id)
   const trustBtn = html`<button type="button" class="btn btn-sm ${nudge ? "btn-primary" : ""}"
     data-rv="trust">Trust ${first} <kbd>t</kbd></button>`
   const showWaiting = waiting > 1 || (waiting === 1 && item.status !== "pending")
@@ -807,9 +817,11 @@ function authorMarkup(item) {
     ${trusted || nudge ? "" : trustBtn}
     ${nudge
       ? html`<div class="trust-nudge">
-          <span>${first} has posted ${plural(total, "time", "times")}, and you've approved
-            ${a ? a.counts.approved : 0}. Trust them? Their new posts would skip review.</span>
+          <span>You've approved everything ${first} has posted
+            (${plural(a ? a.counts.approved : 0, "post", "posts")}). Trust them? Their new posts
+            would skip review.</span>
           ${trustBtn}
+          <button type="button" class="btn btn-sm btn-ghost" data-rv="nudge-dismiss">Not now</button>
         </div>`
       : ""}
     <div class="author-more">
@@ -1077,13 +1089,22 @@ async function act(action, item, reason = "") {
         : s === "pending"
   if (!legal || rv.busy) return
   rv.busy = true
+  // Approving never trusts the author here: trust is offered once everything
+  // they posted is approved (offerTrust).
+  const body =
+    action === "approve"
+      ? JSON.stringify({ autoTrust: false })
+      : reason.trim()
+        ? JSON.stringify({ reason: reason.trim() })
+        : undefined
+  const untrusted = untrustedAuthors([item])
   /** @type {Types.ModerationActionResponse} */
   let res
   try {
     res = /** @type {Types.ModerationActionResponse} */ (
       await api(`/api/admin/moderation/${item.content_type}/${item.id}/${action}`, {
         method: "POST",
-        body: reason.trim() ? JSON.stringify({ reason: reason.trim() }) : undefined,
+        body,
       })
     )
   } catch (err) {
@@ -1115,9 +1136,10 @@ async function act(action, item, reason = "") {
   if (refs > 0 && action !== "approve") {
     notes.push(`out of ${plural(refs, "sent card", "sent cards")}`)
   }
-  showUndo(notes.join(" · "), () =>
-    void putBack([{ type: item.content_type, id: item.id, previousStatus: was }], trustedNow),
-  )
+  const message = notes.join(" · ")
+  const undo = () =>
+    void putBack([{ type: item.content_type, id: item.id, previousStatus: was }], trustedNow)
+  showUndo(message, undo)
 
   if (rv.items.includes(item) && item.status !== rv.filter.status) {
     leaveList(new Set([keyOf(item)]))
@@ -1125,6 +1147,47 @@ async function act(action, item, reason = "") {
     renderReview()
     void enrich(item)
   }
+  if (action === "approve") void offerTrust(untrusted, message, undo)
+}
+
+/** The distinct authors among `items` not trusted yet, as far as this page
+ *  knows (the couple's own uploads have no author). @param {Types.ModerationItem[]} items */
+function untrustedAuthors(items) {
+  /** @type {Map<number, string>} */
+  const found = new Map()
+  for (const i of items) {
+    if (i.account_id === null || found.has(i.account_id)) continue
+    const a = accountCache.get(i.account_id)
+    if (a ? a.trusted : i.author_trusted !== false) continue
+    found.set(i.account_id, a?.name ?? authorName(i))
+  }
+  return [...found].map(([id, name]) => ({ id, name }))
+}
+
+/** After an approve: for each author it left with nothing waiting and nothing
+ *  but approved posts, offer to trust them, on the same Undo toast. Never
+ *  before (owner decision): the counts come fresh from the server.
+ *  @param {Array<{ id: number, name: string }>} people @param {string} message
+ *  @param {() => void} undo the toast's own Undo */
+async function offerTrust(people, message, undo) {
+  if (people.length === 0) return
+  const fresh = await Promise.all(people.map((p) => fetchAccount(p.id)))
+  const due = people.filter((_, i) => {
+    const a = fresh[i]
+    return !!a && shouldSuggestTrust(a)
+  })
+  const item = reviewShowing() ? selected() : null
+  if (item && item.account_id !== null && people.some((p) => p.id === item.account_id)) {
+    renderAuthor(item)
+  }
+  // A newer toast, an Undo or the timeout already happened: say nothing.
+  if (due.length === 0 || !undoShowing(undo)) return
+  const one = due.length === 1 ? firstName(due[0].name) : ""
+  const who = one || `${due.length} authors`
+  showUndo(`${message} · everything from ${who} is approved`, undo, {
+    label: one ? `Trust ${one}` : `Trust all ${due.length}`,
+    run: () => void trustAccounts(due),
+  })
 }
 
 /** `t` / the author card's Trust: new posts skip review; what's waiting stays
@@ -1146,6 +1209,34 @@ async function trustAccount(id, name) {
   showUndo(`Trusted ${firstName(name)} · new posts go live without review`, () =>
     void untrustAccount(id, name, true),
   )
+}
+
+/** The toast's "Trust all N": one Undo for all of them.
+ *  @param {Array<{ id: number, name: string }>} people */
+async function trustAccounts(people) {
+  if (people.length === 1) return trustAccount(people[0].id, people[0].name)
+  /** @type {Array<{ id: number, name: string }>} */
+  const done = []
+  for (const p of people) {
+    try {
+      await api(`/api/admin/accounts/${p.id}/trust`, {
+        method: "POST",
+        body: JSON.stringify({ approve_pending: false }),
+      })
+      done.push(p)
+    } catch (err) {
+      showError(getErrorMessage(err))
+      break
+    }
+  }
+  if (done.length === 0) return
+  const ids = done.map((p) => p.id)
+  setTrustedLocally(ids, true)
+  for (const id of ids) forgetAccount(id)
+  rerenderAfterAccount(ids[0])
+  showUndo(`Trusted ${plural(ids.length, "author", "authors")} · new posts go live without review`, () => {
+    for (const p of done) void untrustAccount(p.id, p.name, true)
+  })
 }
 
 /** @param {number} id @param {string} name @param {boolean} [quiet] an Undo */
@@ -1173,7 +1264,10 @@ async function approveWaiting(id, name) {
   let res
   try {
     res = /** @type {Types.ApproveWaitingResponse} */ (
-      await api(`/api/admin/accounts/${id}/approve-pending`, { method: "POST" })
+      await api(`/api/admin/accounts/${id}/approve-pending`, {
+        method: "POST",
+        body: JSON.stringify({ autoTrust: false }),
+      })
     )
   } catch (err) {
     showError(getErrorMessage(err))
@@ -1185,7 +1279,10 @@ async function approveWaiting(id, name) {
   const notes = [`Approved ${plural(res.changed, "post", "posts")} from ${firstName(name)}`]
   if (res.trustedAccounts.length) notes.push(`${firstName(name)} is trusted now`)
   if (res.changed > 0) {
-    showUndo(notes.join(" · "), () => void putBack(res.items, res.trustedAccounts))
+    const message = notes.join(" · ")
+    const undo = () => void putBack(res.items, res.trustedAccounts)
+    showUndo(message, undo)
+    void offerTrust([{ id, name }], message, undo)
   } else {
     showSuccess("Nothing was waiting")
   }
@@ -1231,6 +1328,7 @@ async function bulk(action) {
   const items = tickedItems().filter((i) => legalFrom.includes(i.status))
   if (items.length === 0 || rv.busy) return
   rv.busy = true
+  const untrusted = action === "approve" ? untrustedAuthors(items) : []
   // Hide/reject takes a photo out of any sent card that holds it: say so.
   let inCards = 0
   if (action !== "approve") {
@@ -1259,6 +1357,7 @@ async function bulk(action) {
           body: JSON.stringify({
             action,
             items: chunk.map((i) => ({ type: i.content_type, id: i.id })),
+            autoTrust: false,
           }),
         })
       )
@@ -1283,13 +1382,16 @@ async function bulk(action) {
   const notes = [`${verb} ${plural(changed.length, "post", "posts")}`]
   if (trusted.length) notes.push(`${plural(trusted.length, "new author", "new authors")} trusted`)
   if (inCards) notes.push(`${plural(inCards, "photo", "photos")} came out of sent cards`)
-  showUndo(notes.join(" · "), () => void putBack(changed, trusted))
+  const message = notes.join(" · ")
+  const undo = () => void putBack(changed, trusted)
+  showUndo(message, undo)
   const gone = new Set(
     items.filter((i) => changed.some((c) => c.type === i.content_type && c.id === i.id)).map(keyOf),
   )
   for (const i of items) if (gone.has(keyOf(i))) i.status = STATUS_AFTER[action]
   rv.ticked.clear()
   leaveList(gone)
+  void offerTrust(untrusted, message, undo)
 }
 
 /** "Approve all": the whole backlog, not just what's loaded. It can't be put
@@ -1425,6 +1527,9 @@ function onReviewClick(e) {
   } else if (what === "approve-waiting" && item && item.account_id !== null) {
     const name = accountCache.get(item.account_id)?.name ?? authorName(item)
     void approveWaiting(item.account_id, name)
+  } else if (what === "nudge-dismiss" && item && item.account_id !== null) {
+    nudgeDismissed.add(item.account_id)
+    renderAuthor(item)
   } else if (what === "promote" && item) promote(item)
   else if (what === "reject-reason" && item) rejectWithReason(item)
   else if (what === "approve-all") approveAll()
@@ -1642,8 +1747,8 @@ function accountsHeadMarkup() {
   )
   return html`<h1>Accounts</h1>
     <p class="muted small">
-      Guests who signed in to post. Trusted accounts skip review; approving someone's first
-      post trusts them too.
+      Guests who signed in to post. Trusted accounts skip review. Once you've approved
+      everything someone has posted, Review offers to trust them.
     </p>
     <div class="chips" role="group" aria-label="Trust">${chips}</div>`
 }

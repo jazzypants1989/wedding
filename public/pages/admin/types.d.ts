@@ -799,6 +799,9 @@ export function clearNotification(): void
 /** Run the pending Undo (the toast's button, or `z`). False when there is none. */
 export function runUndo(): boolean
 
+/** Is the Undo toast for `onUndo` still up: not undone, replaced or timed out? */
+export function undoShowing(onUndo: () => void): boolean
+
 /** Render a centered spinner into a tab container while its data loads, so a
  * slow fetch doesn't leave the prior tab's stale rows in place. For a
  * `<tbody>`, pass the table's column count so the row spans full width.
@@ -2138,3 +2141,10 @@ export function resolveGuestChoice(
 export function clampListWidth(px: number, splitWidth: number): number
 /** Wire every `.split-handle`: drag, ← →, double-click to reset, remembered per split. */
 export function initSplitResize(): void
+
+/** Offer to trust this author? Not trusted yet, nothing waiting, and every
+ *  post approved: none hidden or rejected (trust-suggest.js). */
+export function shouldSuggestTrust(account: {
+  trusted: boolean
+  counts: ModerationStatusCounts
+}): boolean
