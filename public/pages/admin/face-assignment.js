@@ -716,7 +716,8 @@ function facesHead(on) {
         aria-current="${here ? "step" : "false"}">
         <span class="flow-n" aria-hidden="true">${n === 0 ? icon("check") : i + 1}</span>
         <span class="flow-label">${s[1]}</span>${n > 0
-          ? html`<span class="count">${n}</span>`
+          ? html`<span class="count" aria-hidden="true">${n}</span
+          ><span class="sr-only">, ${n} to do</span>`
           : html`<span class="sr-only">, done</span>`}
       </a>
     </li>`

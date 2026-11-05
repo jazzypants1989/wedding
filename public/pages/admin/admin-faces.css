@@ -95,6 +95,25 @@
   border-color: var(--ws-accent);
 }
 
+/* The step marker is a circle that says where you are; the count is a small
+   rounded-square tag that says how much is waiting. Different shape, size and
+   fill, so the two numbers never read as the same thing. */
+#tab-faces .flow .count {
+  min-width: 0;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: var(--ws-hover);
+  color: var(--ws-muted);
+  border: 1px solid var(--ws-line);
+  font-size: 0.7rem;
+  font-weight: 400;
+}
+
+#tab-faces .flow [aria-current="step"] .count {
+  color: var(--ws-ink);
+}
+
 #tab-faces .flow .is-done .flow-n {
   background: var(--color-status-responded-bg);
   color: var(--ws-ok);
