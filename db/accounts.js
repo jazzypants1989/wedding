@@ -53,7 +53,9 @@ export function listAccounts({ trusted = null, limit, offset }) {
         WHERE c.account_id = a.id AND c.status = 'pending' AND c.deleted_at IS NULL)
       + (SELECT COUNT(*) FROM media m
         WHERE m.account_id = a.id AND m.status = 'pending' AND m.deleted_at IS NULL)
-      AS pending_count
+      AS pending_count,
+      (SELECT MAX(s.last_activity_at) FROM account_sessions s WHERE s.account_id = a.id)
+      AS last_seen_at
     FROM accounts a
     LEFT JOIN guests g ON g.id = a.guest_id
     WHERE a.deleted_at IS NULL ${trustedFilter}
@@ -64,7 +66,9 @@ export function listAccounts({ trusted = null, limit, offset }) {
 /** @type {Types.getAccountSummary} */
 export function getAccountSummary(id) {
   return sql`SELECT a.id, a.name, a.relation, a.trusted, a.guest_id,
-      a.contact_email, a.created_at, g.name AS guest_name
+      a.contact_email, a.created_at, g.name AS guest_name,
+      (SELECT MAX(s.last_activity_at) FROM account_sessions s WHERE s.account_id = a.id)
+      AS last_seen_at
     FROM accounts a
     LEFT JOIN guests g ON g.id = a.guest_id
     WHERE a.id = ${id} AND a.deleted_at IS NULL`.get()

@@ -676,6 +676,9 @@ export interface AccountSummary {
   post_count: number
   /** Of those, how many wait for review (the Accounts list's second line). */
   pending_count: number
+  /** The newest activity on any of their live sign-ins; null once every
+   *  sign-in has lapsed (60 days idle) or they signed out everywhere. */
+  last_seen_at: string | null
 }
 
 export interface BlocklistEntry {

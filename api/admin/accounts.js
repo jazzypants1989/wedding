@@ -2,7 +2,11 @@
  *  content counts + household source, and the trust / untrust / soft-delete
  *  lifecycle. Trust flips future inserts to auto-approve; `approve_pending`
  *  releases the existing backlog; delete pulls the account's live content
- *  offline and kills its sessions. All routes are {admin:true}. */
+ *  offline and kills its sessions. All routes are {admin:true}.
+ *
+ *  The admin's Guests list is the only listing caller now: it joins these rows
+ *  to the roster by `guest_id` on the client, so a person shows under their
+ *  invitation (or as "signed up without an invitation" when it is null). */
 /** @import * as Types from './types.js' */
 
 import { sendJson, parseBody } from "../../core/http.js"
@@ -62,6 +66,7 @@ export async function list(req, res) {
     post_count: a.post_count,
     pending_count: a.pending_count,
     created_at: a.created_at,
+    last_seen_at: a.last_seen_at,
   }))
   const total = countAccounts({ trusted })
 
@@ -71,7 +76,7 @@ export async function list(req, res) {
 /**
  * GET /api/admin/accounts/:id — one account plus how many of its posts sit in
  * each status (the Review author card's "Approve their 3 waiting" and trust
- * nudge, and the Accounts detail).
+ * nudge, and a guest's page).
  * @type {Types.ParamsHandler}
  */
 export async function detail(req, res, { params }) {
@@ -92,6 +97,7 @@ export async function detail(req, res, { params }) {
       post_count: counts.pending + counts.approved + counts.hidden + counts.rejected,
       pending_count: counts.pending,
       created_at: a.created_at,
+      last_seen_at: a.last_seen_at,
       counts,
     },
   })
