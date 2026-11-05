@@ -185,11 +185,36 @@ export function getCuratedMediaForAdmin(section) {
   // what makes it a set reorder will accept, which the public feed is not.
   return sql`SELECT m.id, m.file_key, m.account_id, m.kind, m.section, m.status,
       m.caption, m.width, m.height, m.duration_seconds, m.needs_display,
-      m.created_at, a.name AS author_name, 0 AS is_own
+      m.created_at, m.captured_at, m.decided_at, a.name AS author_name, 0 AS is_own
     FROM media m
     LEFT JOIN accounts a ON a.id = m.account_id
     WHERE m.section = ${section} AND m.deleted_at IS NULL
     ORDER BY m.sort_order, m.id`.all()
+}
+
+/** @type {Types.setCuratedDecisions} */
+export function setCuratedDecisions(ids, status, decided) {
+  // Gallery → Sort. Caller wraps this in withTransaction and refuses a partial
+  // result. Only a live curated row that is approved, hidden or pending can be
+  // decided: a rejected one's files are in quarantine, an uploading one isn't a
+  // photo yet. sort_order is never touched, so a photo shown here takes its old
+  // place in the order, as the grid's Unhide does. reviewed_at keeps its meaning
+  // (the last status change) and moves only when the status does.
+  const stamp = now()
+  const decidedAt = decided ? stamp : null
+  let changed = 0
+  for (const id of ids) {
+    changed += Number(
+      sql`UPDATE media
+        SET reviewed_at = CASE WHEN status = ${status} THEN reviewed_at ELSE ${stamp} END,
+            status = ${status},
+            decided_at = ${decidedAt}
+        WHERE id = ${id} AND deleted_at IS NULL
+          AND section IN (${MEDIA_SECTION.OFFICIAL}, ${MEDIA_SECTION.HONEYMOON})
+          AND status IN ('approved', 'hidden', 'pending')`.run().changes,
+    )
+  }
+  return { changed, decidedAt }
 }
 
 /** @type {Types.setMediaSortOrders} */

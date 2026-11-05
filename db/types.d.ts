@@ -551,6 +551,7 @@ import type {
   MediaSection,
   MediaStatus,
   MediaFeedRow,
+  CuratedAdminRow,
   CuratedMediaSection,
 } from "../types.js"
 
@@ -675,7 +676,17 @@ export function getCuratedMediaIds(section: CuratedMediaSection): number[]
 
 /** Every non-deleted row of one curated section, any status, in display order:
  *  exactly the set getCuratedMediaIds names. Admin-only; never serve this publicly. */
-export function getCuratedMediaForAdmin(section: CuratedMediaSection): MediaFeedRow[]
+export function getCuratedMediaForAdmin(section: CuratedMediaSection): CuratedAdminRow[]
+
+/** Gallery → Sort: set each live curated row (approved, hidden or pending) to
+ *  `status`, and mark it decided now (`decided`) or not decided at all (an
+ *  undo). sort_order is untouched; reviewed_at moves only with the status.
+ *  Caller wraps in withTransaction and compares `changed` with ids.length. */
+export function setCuratedDecisions(
+  ids: number[],
+  status: "approved" | "hidden",
+  decided: boolean,
+): { changed: number; decidedAt: string | null }
 
 /** Rewrite one curated section's sort_order to the given id order (array index).
  *  Caller wraps in withTransaction; only that section's non-deleted rows are touched. */

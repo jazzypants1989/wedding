@@ -1,7 +1,8 @@
 /** @file Admin curated-gallery management (Phase 6): list a curated section
  *  (official or honeymoon) with its hidden rows, reorder it, move an item between
  *  those two, MOVE an approved guest item into official, edit captions, and
- *  soft-delete any media. Also what still fits, for the bulk importer. Admin
+ *  soft-delete any media, and decide hidden photos in Gallery → Sort (show or
+ *  keep hidden, marking them looked at). Also what still fits, for the bulk importer. Admin
  *  *uploads* are NOT here — they reuse the Phase 3 /api/media/*
  *  withAccountOrAdmin routes via adminFetch (reconciliation 7).
  *  All routes are {admin:true}. */
@@ -9,10 +10,10 @@
 
 import fs from "node:fs"
 import { sendJson, parseBody } from "../../core/http.js"
-import { log, AUDIT_ACTIONS } from "../../core/utils.js"
+import { log, logBatch, AUDIT_ACTIONS } from "../../core/utils.js"
 import { getClientIp } from "../../core/rate-limit.js"
 import { validateId, ValidationError, NotFoundError, ConflictError } from "../../core/validation.js"
-import { LIMITS, MEDIA_SECTION, isCuratedMediaSection } from "../../types.js"
+import { LIMITS, MEDIA_SECTION, MEDIA_STATUS, isCuratedMediaSection } from "../../types.js"
 import { withTransaction } from "../../db/utils.js"
 import { TMP_DIR, computeMediaCapacity, quarantineItemDir } from "../../core/media-storage.js"
 import { getReservedBytes } from "../../core/upload.js"
@@ -22,6 +23,7 @@ import {
   getCuratedMediaForAdmin,
   getCuratedMediaIds,
   setMediaSortOrders,
+  setCuratedDecisions,
   moveCuratedMedia,
   promoteMediaToOfficial,
   updateMediaCaption,
@@ -65,7 +67,65 @@ export async function curated(req, res) {
   if (!isCuratedMediaSection(section)) {
     throw new ValidationError("section must be 'official' or 'honeymoon'")
   }
-  return sendJson(res, 200, { items: getCuratedMediaForAdmin(section).map(toListItem) })
+  // Plus what Gallery → Sort reads: the capture time it groups moments by and
+  // whether the photo has been decided there. Neither is in a public response.
+  const items = getCuratedMediaForAdmin(section).map((row) => ({
+    ...toListItem(row),
+    captured_at: row.captured_at,
+    decided_at: row.decided_at,
+  }))
+  return sendJson(res, 200, { items })
+}
+
+/** The most photos one decision may name: a whole moment, with room to spare. */
+const DECIDE_MAX_IDS = 200
+
+/** @type {Types.mediaDecideHandler} */
+export async function decide(req, res, { session }) {
+  const body = await parseBody(req)
+  const rawIds = body.ids
+  if (!Array.isArray(rawIds) || rawIds.length === 0 || rawIds.length > DECIDE_MAX_IDS) {
+    throw new ValidationError(`ids must be a non-empty array of at most ${DECIDE_MAX_IDS}`)
+  }
+  /** @type {number[]} */
+  const ids = []
+  for (const raw of rawIds) {
+    const n = Number(raw)
+    if (!Number.isInteger(n) || n < 1) throw new ValidationError("ids must be positive integers")
+    if (ids.includes(n)) throw new ValidationError("ids must not repeat")
+    ids.push(n)
+  }
+  const status = body.status
+  if (status !== MEDIA_STATUS.APPROVED && status !== MEDIA_STATUS.HIDDEN) {
+    throw new ValidationError("status must be 'approved' or 'hidden'")
+  }
+  if (typeof body.decided !== "boolean") throw new ValidationError("decided must be true or false")
+  const decided = body.decided
+
+  // All or none: a photo deleted, rejected or moved out of the curated sets since
+  // the page loaded refuses the whole decision, so the page never has to guess
+  // which half went through.
+  const outcome = withTransaction(() => {
+    const result = setCuratedDecisions(ids, status, decided)
+    if (result.changed !== ids.length) {
+      throw new ConflictError("Some of these photos can no longer be changed here — reload")
+    }
+    return result
+  })
+
+  const ip = getClientIp(req)
+  logBatch(
+    ids.map((id) => ({
+      action: AUDIT_ACTIONS.MEDIA_DECIDE,
+      adminId: session?.token,
+      ip,
+      resourceType: "media",
+      resourceId: id,
+      details: { status, decided },
+    })),
+  )
+
+  return sendJson(res, 200, { success: true, ids, status, decided_at: outcome.decidedAt })
 }
 
 /** @type {Types.adminMediaCapacityHandler} */

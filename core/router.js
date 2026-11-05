@@ -323,6 +323,8 @@ route("GET", "/api/admin/media/guest-loved", adminMedia.guestLoved, { admin: tru
 route("GET", "/api/admin/media/curated", adminMedia.curated, { admin: true })
 route("GET", "/api/admin/media/capacity", adminMedia.capacity, { admin: true })
 route("POST", "/api/admin/media/reorder", adminMedia.reorder, { admin: true })
+// Gallery → Sort: show or keep hidden (or undo) a moment's photos in one go.
+route("POST", "/api/admin/media/decide", adminMedia.decide, { admin: true })
 route("POST", "/api/admin/media/:id/promote", adminMedia.promote, { admin: true })
 // Move a curated photo between Official and Honeymoon (appended to the end).
 route("POST", "/api/admin/media/:id/section", adminMedia.moveSection, { admin: true })

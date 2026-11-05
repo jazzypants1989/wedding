@@ -364,6 +364,16 @@ export function mediaReorderHandler(
   routeInfo: AuthenticatedRouteInfo,
 ): Promise<void>
 
+/** POST /api/admin/media/decide — Gallery → Sort. { ids: number[], status:
+ *  "approved" | "hidden", decided: boolean }: every id goes to `status` and is
+ *  marked decided (or, for an undo, not decided), all or none. sort_order is
+ *  never touched. 409 when any id isn't a live curated photo Sort can change. */
+export function mediaDecideHandler(
+  req: IncomingMessage,
+  res: ServerResponse,
+  routeInfo: AuthenticatedRouteInfo,
+): Promise<void>
+
 /** POST /api/admin/media/:id/section — { section: "official" | "honeymoon" }:
  *  MOVE a curated item into the other curated section, appended at the end. */
 export function mediaSectionMoveHandler(

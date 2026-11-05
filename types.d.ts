@@ -423,6 +423,11 @@ export interface Media {
   /** EXIF capture time, when the source image carried one. Null until the
    *  importer wiring lands (core/image-meta.js already reads it). */
   captured_at: string | null
+  /** When someone decided this photo in Gallery → Sort: shown, or kept hidden.
+   *  NULL means nobody has looked at it there. Undo sets it back to NULL. Not
+   *  reviewed_at, which every moderation transition stamps (the importer's
+   *  --apply-selection, the gallery's own Hide), so it can't say "looked at". */
+  decided_at: string | null
   created_at: string
   updated_at: string
   reviewed_at: string | null
@@ -507,6 +512,20 @@ export interface MediaListItem {
   created_at: string
   reactions?: ReactionSummary
   comment_count?: number
+}
+
+/** A curated row as the admin listing reads it: the feed row plus what Sort
+ *  needs, the capture time and whether it has been decided there. */
+export interface CuratedAdminRow extends MediaFeedRow {
+  captured_at: string | null
+  decided_at: string | null
+}
+
+/** One item of GET /api/admin/media/curated. Admin-only: the capture time is
+ *  never in a public response. */
+export interface CuratedAdminItem extends MediaListItem {
+  captured_at: string | null
+  decided_at: string | null
 }
 
 /** Contributors strip for the guest section: distinct visible author names +

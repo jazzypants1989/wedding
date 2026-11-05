@@ -2194,4 +2194,23 @@ export function runMigrations(db) {
       }
     }
   }
+
+  // Gallery → Sort: when someone decided a curated photo there, shown or kept
+  // hidden. NULL is "nobody has looked at it yet", which is what lets the couple
+  // stop on one device and carry on from another. Its own column rather than
+  // reviewed_at, which every moderation transition already stamps — the
+  // importer's --apply-selection and the grid's own Hide among them — so it
+  // can't tell a photo nobody has looked at from one somebody hid. A plain
+  // nullable ADD COLUMN: no rebuild, nothing touches a row.
+  if (!applied.get("add_media_decided_at")) {
+    const haveMediaCols = new Set(
+      /** @type {Array<{ name: string }>} */ (
+        db.prepare("PRAGMA table_info(media)").all()
+      ).map((c) => c.name),
+    )
+    if (!haveMediaCols.has("decided_at")) {
+      db.exec(`ALTER TABLE media ADD COLUMN decided_at TEXT`)
+    }
+    record.run("add_media_decided_at")
+  }
 }
