@@ -1,9 +1,15 @@
 /** @file Gallery (prototypes/admin-workspace views/misc.js, IA §4): Official
  *  and Honeymoon — the two curated sets, each in order, as a photo grid with
- *  arrows and a typed position to reorder (no drag — binding decision),
- *  captions that save on blur, a move between the two sets, Hide and Unhide,
- *  Remove (with the thank-you-card warning) — and Most loved by guests, guest
- *  photos ranked by reactions, each one promotable into Official.
+ *  arrows, a typed position and a drag handle to reorder, captions that save on
+ *  blur, a move between the two sets, Hide and Unhide, Remove (with the
+ *  thank-you-card warning) — and Most loved by guests, guest photos ranked by
+ *  reactions, each one promotable into Official.
+ *
+ *  Drag came late (iss_0018: the owner asked for it on a phone), after the first
+ *  build ruled it out as too risky to do accessibly. It is an extra on top of the
+ *  arrows, not instead of them: the handle is hidden from the keyboard and from
+ *  screen readers, which keep the arrows and the number, and a drop ends in the
+ *  same moveTo an arrow makes.
  *
  *  A section can be mostly hidden: a culled import uploads every photo and hides
  *  the rejects. So the grid shows one side at a time, "On the site" (what guests
@@ -31,7 +37,13 @@ import {
   getErrorMessage,
 } from "../utils.js"
 import { createUploadQueue, sniffKind } from "../../components/media-uploader.js"
-import { applyShownOrder, isCuratedRowOffSite, isCuratedRowOnSite } from "./curated-order.js"
+import {
+  applyShownOrder,
+  curatedDropIndex,
+  isCuratedRowOffSite,
+  isCuratedRowOnSite,
+} from "./curated-order.js"
+import { icon } from "./icons.js"
 
 /** Display names for the curated sections. */
 const SECTION_LABEL = /** @type {const} */ ({ official: "Official", honeymoon: "Honeymoon" })
@@ -141,6 +153,8 @@ function setShowing(next) {
 function renderGrid() {
   const grid = getElement("curated-grid")
   const items = state.currentCurated
+  // Only the site's order can be dragged; the CSS offers a grab cursor there.
+  grid.dataset.showing = showing
   if (showing === "hidden") {
     const page = items.slice(0, hiddenLimit)
     const left = items.length - page.length
@@ -279,6 +293,11 @@ function itemMarkup(item, index) {
   return html`<li class="curated-item" data-id="${item.id}">
     <div class="photo-card">
       ${frameMarkup(item)}
+      ${total > 1
+        ? html`<span class="curated-handle" data-drag aria-hidden="true" title="Drag to reorder"
+            >${icon("grip")}</span
+          >`
+        : ""}
       <span class="photo-line">
         <label class="photo-pos"
           ><span aria-hidden="true">#</span
@@ -448,6 +467,179 @@ async function saveOrder() {
       loadGalleryAdmin()
     }
   }
+}
+
+// ---- drag to reorder ------------------------------------------------------
+//
+// Pointer events, one handler set for mouse, pen and touch. A touch starts only
+// on the handle, which is `touch-action: none`, so the rest of a card still
+// scrolls the page; a mouse can also take the photo itself. The dragged card
+// follows the pointer and the card under it shows which side it will land on;
+// nothing else moves until the drop, which makes the same moveTo the arrows do.
+// The page scrolls while a card is held at its top or bottom edge.
+
+/** Pixels a pointer has to travel before a press on the handle becomes a drag. */
+const DRAG_SLOP = 4
+/** How close to the scroller's top or bottom edge the pointer has to be to scroll it. */
+const DRAG_EDGE = 56
+/** The most it scrolls in one frame, at the very edge. */
+const DRAG_SCROLL_MAX = 14
+
+/** The drag in progress, or null. @type {Types.CuratedDrag | null} */
+let drag = null
+
+/** @param {PointerEvent} e */
+function handleDragStart(e) {
+  if (drag || showing !== "site" || e.button !== 0 || !e.isPrimary) return
+  const target = e.target
+  if (!(target instanceof Element)) return
+  const onHandle = target.closest("[data-drag]") !== null
+  // Only a mouse may lift a card by its photo: a finger there is scrolling.
+  const onPhoto = e.pointerType === "mouse" && target.closest(".photo-frame") !== null
+  if (!onHandle && !onPhoto) return
+  const wrap = target.closest(".curated-item")
+  if (!(wrap instanceof HTMLElement)) return
+  const id = parseInt(wrap.dataset.id || "", 10)
+  if (Number.isNaN(id) || curatedIndex(id) === -1 || state.currentCurated.length < 2) return
+  // No text selection, no native image drag, and no focus change: the field
+  // being typed in is committed by hand instead, before anything moves.
+  e.preventDefault()
+  const active = document.activeElement
+  if (active instanceof HTMLElement && getElement("curated-grid").contains(active)) active.blur()
+  // A typed position committing on that blur re-renders the grid.
+  if (!wrap.isConnected) return
+  // Captured on the card, which stays in the document for the whole drag, so a
+  // mouse released outside the window still ends it.
+  wrap.setPointerCapture(e.pointerId)
+  // The gallery is a .single page: that column scrolls, not #view.
+  const scroller = wrap.closest(".single") ?? getElement("view")
+  if (!(scroller instanceof HTMLElement)) return
+  drag = {
+    id,
+    pointerId: e.pointerId,
+    item: wrap,
+    scroller,
+    startX: e.clientX,
+    startY: e.clientY,
+    x: e.clientX,
+    y: e.clientY,
+    startScroll: scroller.scrollTop,
+    active: false,
+    over: null,
+    after: false,
+    frame: 0,
+  }
+  document.addEventListener("pointermove", handleDragMove)
+  document.addEventListener("pointerup", handleDragEnd)
+  document.addEventListener("pointercancel", handleDragCancel)
+  document.addEventListener("keydown", handleDragKey, true)
+}
+
+/** @param {PointerEvent} e */
+function handleDragMove(e) {
+  if (!drag || e.pointerId !== drag.pointerId) return
+  drag.x = e.clientX
+  drag.y = e.clientY
+  if (!drag.active) {
+    if (Math.hypot(drag.x - drag.startX, drag.y - drag.startY) < DRAG_SLOP) return
+    drag.active = true
+    drag.item.classList.add("is-dragging")
+    getElement("curated-grid").classList.add("is-sorting")
+    drag.frame = requestAnimationFrame(dragTick)
+  }
+  e.preventDefault()
+  placeDrag()
+}
+
+/** Follow the pointer, and find the card it is over and which half. */
+function placeDrag() {
+  if (!drag) return
+  const dy = drag.y - drag.startY + (drag.scroller.scrollTop - drag.startScroll)
+  drag.item.style.transform = `translate(${drag.x - drag.startX}px, ${dy}px)`
+  let over = /** @type {HTMLElement | null} */ (null)
+  for (const el of document.elementsFromPoint(drag.x, drag.y)) {
+    const card = el.closest(".curated-item")
+    if (card instanceof HTMLElement && card !== drag.item) {
+      over = card
+      break
+    }
+  }
+  const after = over ? dropAfter(over, drag.x) : false
+  if (over === drag.over && after === drag.after) return
+  drag.over?.classList.remove("drop-before", "drop-after")
+  drag.over = over
+  drag.after = after
+  over?.classList.add(after ? "drop-after" : "drop-before")
+}
+
+/** Whether a drop at `x` goes after the card: past its middle, in reading order.
+ *  @param {HTMLElement} card @param {number} x @returns {boolean} */
+function dropAfter(card, x) {
+  const r = card.getBoundingClientRect()
+  return x > r.left + r.width / 2
+}
+
+/** One frame of edge scrolling, for as long as the drag lasts. */
+function dragTick() {
+  if (!drag || !drag.active) return
+  const view = drag.scroller
+  const box = view.getBoundingClientRect()
+  const intoTop = box.top + DRAG_EDGE - drag.y
+  const intoBottom = drag.y - (box.bottom - DRAG_EDGE)
+  const step =
+    intoTop > 0
+      ? -Math.ceil((Math.min(intoTop, DRAG_EDGE) / DRAG_EDGE) * DRAG_SCROLL_MAX)
+      : intoBottom > 0
+        ? Math.ceil((Math.min(intoBottom, DRAG_EDGE) / DRAG_EDGE) * DRAG_SCROLL_MAX)
+        : 0
+  if (step !== 0) {
+    const before = view.scrollTop
+    view.scrollTop += step
+    if (view.scrollTop !== before) placeDrag()
+  }
+  drag.frame = requestAnimationFrame(dragTick)
+}
+
+/** @param {PointerEvent} e */
+function handleDragEnd(e) {
+  if (!drag || e.pointerId !== drag.pointerId) return
+  const { id, over, after, active } = drag
+  endDrag()
+  if (!active || !over) return
+  const overId = parseInt(over.dataset.id || "", 10)
+  const from = curatedIndex(id)
+  const to = curatedIndex(overId)
+  if (from === -1 || to === -1) return
+  moveTo(id, curatedDropIndex(from, to, after))
+}
+
+/** @param {PointerEvent} e */
+function handleDragCancel(e) {
+  if (drag && e.pointerId === drag.pointerId) endDrag()
+}
+
+/** Escape puts the card back; no other key reaches the page while a card is up.
+ *  @param {KeyboardEvent} e */
+function handleDragKey(e) {
+  if (!drag || (!drag.active && e.key !== "Escape")) return
+  e.preventDefault()
+  e.stopPropagation()
+  if (e.key === "Escape") endDrag()
+}
+
+/** Put the dragged card back where it was and stop listening. */
+function endDrag() {
+  if (!drag) return
+  cancelAnimationFrame(drag.frame)
+  drag.item.classList.remove("is-dragging")
+  drag.item.style.transform = ""
+  drag.over?.classList.remove("drop-before", "drop-after")
+  getElement("curated-grid").classList.remove("is-sorting")
+  drag = null
+  document.removeEventListener("pointermove", handleDragMove)
+  document.removeEventListener("pointerup", handleDragEnd)
+  document.removeEventListener("pointercancel", handleDragCancel)
+  document.removeEventListener("keydown", handleDragKey, true)
 }
 
 // ---- move between Official and Honeymoon ----------------------------------
@@ -1007,9 +1199,11 @@ function mount(ctx) {
     ? "Guest photos ranked by reactions. Promote the best into Official."
     : view === "honeymoon"
       ? "Your honeymoon photos, in order — guests get a Honeymoon tab once there's one. " +
-        "Use the arrows (or type a number) to reorder; captions save as you go."
+        "Drag a photo by its handle, use the arrows, or type a number to reorder; " +
+        "captions save as you go."
       : "The curated set, in order — what guests see first. " +
-        "Use the arrows (or type a number) to reorder; captions save as you go."
+        "Drag a photo by its handle, use the arrows, or type a number to reorder; " +
+        "captions save as you go."
   const label = section === "honeymoon" ? "honeymoon" : "official"
   const addBtn = getElement("gallery-add-btn")
   addBtn.hidden = loved
@@ -1044,6 +1238,13 @@ export function initGalleryAdmin() {
   grid.addEventListener("click", handleGridClick)
   grid.addEventListener("focusout", handleGridBlur)
   grid.addEventListener("keydown", handleGridKeydown)
+  grid.addEventListener("pointerdown", handleDragStart)
+  // The browser's own image drag would carry the thumb's URL off somewhere.
+  grid.addEventListener("dragstart", (e) => {
+    if (e.target instanceof Element && e.target.closest(".photo-frame, [data-drag]")) {
+      e.preventDefault()
+    }
+  })
   getButtonElement("gallery-remove-btn").addEventListener("click", confirmRemove)
   getButtonElement("gallery-showing-site").addEventListener("click", () => setShowing("site"))
   getButtonElement("gallery-showing-hidden").addEventListener("click", () => setShowing("hidden"))

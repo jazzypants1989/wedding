@@ -27,3 +27,11 @@ export function applyShownOrder(all, shown) {
   let next = 0
   return all.map((row) => (shownIds.has(row.id) ? shown[next++] : row))
 }
+
+/** @type {Types.curatedDropIndex} */
+export function curatedDropIndex(from, over, after) {
+  // The slot is counted in the list as it stands, the dragged photo included.
+  // Taking it out first shifts every later slot back by one.
+  const slot = after ? over + 1 : over
+  return slot > from ? slot - 1 : slot
+}

@@ -1094,6 +1094,32 @@ export interface CuratedMediaResponse {
   items: MediaListItem[]
 }
 
+/** A drag-to-reorder in the curated grid, from the press on a handle to the drop. */
+export interface CuratedDrag {
+  /** The media id of the photo being dragged. */
+  id: number
+  pointerId: number
+  /** Its card, which follows the pointer by a transform. */
+  item: HTMLElement
+  /** Where the press was, in viewport pixels. */
+  startX: number
+  startY: number
+  /** Where the pointer is now. */
+  x: number
+  y: number
+  /** The element the page scrolls in, and its scrollTop at the press: the card's
+   *  offset has to make up for any scrolling since. */
+  scroller: HTMLElement
+  startScroll: number
+  /** False until the pointer has moved far enough to be a drag rather than a press. */
+  active: boolean
+  /** The card it would land beside, and on which side of it. */
+  over: HTMLElement | null
+  after: boolean
+  /** The edge-scroll animation frame. */
+  frame: number
+}
+
 /** Approved: what guests see. */
 export function isCuratedRowOnSite(row: { status: string }): boolean
 
@@ -1103,6 +1129,12 @@ export function isCuratedRowOffSite(row: { status: string }): boolean
 /** The whole section with the grid's order applied: `shown` rows take their new
  *  order inside the slots they already occupy, and every other row stays put. */
 export function applyShownOrder<T extends { id: number }>(all: T[], shown: T[]): T[]
+
+/** Where a photo dragged from index `from` lands when it is dropped on the photo
+ *  at `over`, before it or (`after`) after it: the index to hand to a move, in
+ *  the list as it will be once the photo is taken out. Equal to `from` when the
+ *  drop leaves it where it was. */
+export function curatedDropIndex(from: number, over: number, after: boolean): number
 
 /** Response of GET /api/admin/media/guest-loved. */
 export interface LovedMediaResponse {

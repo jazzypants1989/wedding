@@ -443,6 +443,134 @@
   display: none;
 }
 
+/* Drag to reorder (gallery-admin.js). The handle sits on the photo's corner,
+   the same dark chip as the video badge. It alone is `touch-action: none`, so a
+   finger anywhere else on a card scrolls the page as it always did. */
+#tab-gallery .curated-item .photo-card {
+  position: relative;
+}
+
+#tab-gallery .curated-handle {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 0.55);
+  color: #fff;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+#tab-gallery .curated-handle .icon {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.6;
+}
+
+/* A mouse can lift a card by its photo too. */
+@media (pointer: fine) {
+  #curated-grid:not([data-showing="hidden"]) .photo-frame {
+    cursor: grab;
+  }
+}
+
+#curated-grid.is-sorting,
+#curated-grid.is-sorting * {
+  cursor: grabbing;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* The held card floats over its neighbours; z-index 2 clears their handles. */
+#tab-gallery .curated-item.is-dragging {
+  position: relative;
+  z-index: 2;
+}
+
+#tab-gallery .curated-item.is-dragging .photo-card {
+  box-shadow: 0 12px 28px rgb(0 0 0 / 0.28);
+  opacity: 0.94;
+}
+
+/* Where it lands: a bar in the gap on that side of the card it's over. */
+#tab-gallery .curated-item.drop-before .photo-card {
+  box-shadow: -4px 0 0 var(--ws-accent);
+}
+
+#tab-gallery .curated-item.drop-after .photo-card {
+  box-shadow: 4px 0 0 var(--ws-accent);
+}
+
+/* Every control here reaches 44px on a touch screen or at the admin's phone
+   width. Card buttons and fields grow for real: they sit 4–6px apart, so an
+   invisible extension would overlap a neighbour's. The drag handle can't grow
+   without covering more photo, so it gets the bulk tick's invisible ::before
+   (admin-review.css), out over the card's padding. Desktop with a fine pointer
+   is unchanged. */
+@media (pointer: coarse), (max-width: 899.98px) {
+  #tab-gallery .photo-card .btn-row .btn,
+  #tab-gallery .grid-empty .btn,
+  #tab-gallery .single-head > .btn,
+  #tab-gallery .seg a,
+  #gallery-showing button {
+    min-height: 44px;
+  }
+
+  /* Flex drops the space before a count, so the gap puts it back. */
+  #tab-gallery .seg a,
+  #gallery-showing button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3em;
+  }
+
+  /* A 44px button carries its own breathing room. */
+  #tab-gallery .photo-card .btn-row {
+    margin-top: 0;
+  }
+
+  #tab-gallery .photo-card :is([data-action="up"], [data-action="down"], [data-action="top"]) {
+    min-width: 44px;
+  }
+
+  /* Tapping the "#" focuses the number, so the label is the target. */
+  #tab-gallery .photo-pos {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  #tab-gallery .curated-caption {
+    min-height: 44px;
+  }
+
+  #tab-gallery .curated-handle::before {
+    content: "";
+    position: absolute;
+    inset: -8px;
+  }
+
+  :is(#gallery-upload-modal, #gallery-remove-modal) .btn,
+  #gallery-upload-modal .upload-action {
+    min-height: 44px;
+  }
+
+  #gallery-upload-modal :is(.dlg-x, .upload-action) {
+    min-width: 44px;
+  }
+
+  #gallery-upload-modal .dlg-x {
+    min-height: 44px;
+  }
+}
+
 /* ------------------------------------------------- Site content + Effects */
 
 :is(#tab-site-content, #tab-effects) .single-head p {
@@ -1071,13 +1199,20 @@ dialog .form .status-note {
     display: none;
   }
 
+  /* 160px, not 150: a 44px-tall "Move to Honeymoon" needs a 138px row, and a
+     150px card leaves 132. Two columns still fit across a 360px phone. */
   #tab-gallery .photo-grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
     gap: 10px;
   }
 
   #tab-gallery .photo-card .btn-row .btn {
     padding-inline: 8px;
+  }
+
+  /* So ←, → and Remove share one row on a two-column 390px phone. */
+  #tab-gallery .photo-card .btn-row .photo-remove {
+    padding-inline: 6px;
   }
 
   /* Typing 1 into the position does the same; the row stays one line. */
