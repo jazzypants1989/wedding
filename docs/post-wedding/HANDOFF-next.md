@@ -108,13 +108,9 @@ sleeping machine for more than 30 minutes, five other logins evicting this one (
     red tint. The owner had floated pink or yellow.
   - **Wide screens.** The admin's 1200px cap is gone. Review got a two-column detail and a draggable
     divider. Guests, Requests, Cards and Faces now leave empty space on the right at wide widths.
-- **Processes left running:**
-  - A preview server on :3120/:3129 from an agent. Stop it after confirming its PID belongs to
-    `scripts/dev/preview-states.js`.
-  - The old owner-review server (`node server.js`, started 2026-10-31) is still on :3031. It listens
-    on every interface, not just loopback, and runs October code against fictional data
-    (`tmp/owner-review`). Ask, then stop it.
-  - This session's own preview (:3100) and capture (:4600) servers are stopped.
+- **Processes:** none left running. The leftover preview (:3120/:3129), the October review server
+  (:3031), and this session's preview (:3100) and capture (:4600) servers were all stopped at the
+  end of the 2026-11-05 session.
 - **Agent worktrees** under `.claude/worktrees/agent-*` (plus two older ones holding only Chrome
   profiles). Every commit worth keeping is on `face-tagging`. Ask, then
   `git worktree remove` / delete the branches.
