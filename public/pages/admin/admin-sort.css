@@ -370,13 +370,13 @@
     flex: none;
   }
 
-  #tab-gallery-sort .sort-rest .sort-long {
+  #tab-gallery-sort .sort-batch .sort-long {
     display: none;
   }
 }
 
 @media (min-width: 701px) {
-  #tab-gallery-sort .sort-rest .sort-short {
+  #tab-gallery-sort .sort-batch .sort-short {
     display: none;
   }
 }

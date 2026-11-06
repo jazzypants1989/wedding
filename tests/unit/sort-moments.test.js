@@ -1,7 +1,7 @@
 /** @file Unit test: Gallery → Sort's pure rules (public/pages/admin/sort-moments.js):
- *  capture-time parsing, moments, the session's queue, progress and the next
- *  moment to show. Imports a browser module, so it is excluded from the server
- *  tsconfig. */
+ *  capture-time parsing, moments, the session's queue, progress, the next
+ *  moment to show, and what a whole-moment press decides and Undo puts back.
+ *  Imports a browser module, so it is excluded from the server tsconfig. */
 
 import { describe, it } from "node:test"
 import assert from "node:assert"
@@ -16,6 +16,9 @@ import {
   sortProgress,
   nextOpenMoment,
   momentLabel,
+  openInMoment,
+  sortUndoEntry,
+  undoRequests,
 } from "../../public/pages/admin/sort-moments.js"
 import { parseCapturedAt } from "../../core/capture-time.js"
 import { capturedAtToMs } from "../../scripts/vision/session1.js"
@@ -270,5 +273,61 @@ describe("momentLabel", () => {
     assert.strictEqual(momentLabel(4, 6400), "4 shots in 6 seconds")
     assert.strictEqual(momentLabel(2, 90000), "2 shots in 2 minutes")
     assert.strictEqual(momentLabel(2, null), "2 photos")
+  })
+})
+
+describe("a whole-moment press and its undo", () => {
+  // A moment of five: 1 already on the site (never in the queue), 2 shown
+  // earlier this session, 3 and 4 still waiting, 5 kept hidden earlier.
+  const moment = { ids: [1, 2, 3, 4, 5], spanMs: 4000 }
+  const rows = new Map([
+    [1, row(1, { status: "approved" })],
+    [2, row(2, { status: "approved", decided: "2026-06-21 10:00:00" })],
+    [3, row(3)],
+    [4, row(4, { status: "pending" })],
+    [5, row(5, { decided: "2026-06-21 10:00:05" })],
+  ])
+  const waiting = new Set([3, 4])
+  /** @param {number} id */
+  const isWaiting = (id) => waiting.has(id)
+
+  it("acts on the photos still waiting, and leaves decided ones alone", () => {
+    assert.deepStrictEqual(openInMoment(moment, isWaiting), [3, 4])
+    assert.deepStrictEqual(openInMoment(moment, () => false), [])
+    assert.deepStrictEqual(openInMoment(undefined, isWaiting), [])
+  })
+
+  it("is one undo entry for the whole press", () => {
+    const entry = sortUndoEntry(7, openInMoment(moment, isWaiting), rows, isWaiting)
+    assert.deepStrictEqual(entry, {
+      moment: 7,
+      before: [
+        { id: 3, status: "hidden", decided_at: null, waiting: true },
+        // Pending is off the site, so it goes back as hidden.
+        { id: 4, status: "hidden", decided_at: null, waiting: true },
+      ],
+    })
+  })
+
+  it("is taken back by one request when the photos were alike", () => {
+    const entry = sortUndoEntry(0, [3, 4], rows, isWaiting)
+    assert.deepStrictEqual(undoRequests(entry), [{ ids: [3, 4], status: "hidden", decided: false }])
+  })
+
+  it("puts a mixed batch back exactly as it was", () => {
+    // Look again: a kept-hidden photo is waiting beside an undecided one.
+    const again = new Set([3, 5])
+    const entry = sortUndoEntry(0, [3, 5, 2], rows, (id) => again.has(id))
+    assert.deepStrictEqual(entry.before.map((b) => b.waiting), [true, true, false])
+    assert.deepStrictEqual(undoRequests(entry), [
+      { ids: [3], status: "hidden", decided: false },
+      { ids: [5], status: "hidden", decided: true },
+      { ids: [2], status: "approved", decided: true },
+    ])
+  })
+
+  it("leaves out a photo it has no row for", () => {
+    const entry = sortUndoEntry(0, [3, 99], rows, isWaiting)
+    assert.deepStrictEqual(entry.before.map((b) => b.id), [3])
   })
 })

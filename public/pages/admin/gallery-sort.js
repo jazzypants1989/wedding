@@ -9,8 +9,10 @@
  *
  *  Every decision is saved as it is made (POST /api/admin/media/decide), marking
  *  the photo looked at, so the couple can stop on the iPad and carry on from a
- *  laptop. Undo takes back the last decision, then the one before. Skip leaves a
- *  moment for later: it comes round again at the end.
+ *  laptop. Undo takes back the last decision, then the one before; a press that
+ *  decides several photos at once ("Show the whole moment", "Keep the rest
+ *  hidden") is one decision. Skip leaves a moment for later: it comes round
+ *  again at the end.
  *
  *  One function draws a photo (photoMarkup), so a later badge or filter on a
  *  photo has one place to go. A black-and-white copy is never a photo of its own
@@ -32,6 +34,9 @@ import {
   sortState,
   nextOpenMoment,
   momentLabel,
+  openInMoment,
+  sortUndoEntry,
+  undoRequests,
 } from "./sort-moments.js"
 
 const SECTION_LABEL = /** @type {const} */ ({ official: "Official", honeymoon: "Honeymoon" })
@@ -267,11 +272,13 @@ function doneMarkup() {
   </div>`
 }
 
-/** The bar along the bottom: back, undo, the rest hidden, skip. */
+/** The bar along the bottom: back, undo, the whole moment shown or the rest
+ *  hidden, skip. */
 function barMarkup() {
   const inMoment = moments.length > 0 && current !== -1 && waiting.size > 0
   const moment = inMoment ? moments[current] : null
-  const open = moment ? moment.ids.filter(isWaiting).length : 0
+  const open = openInMoment(moment ?? undefined, isWaiting).length
+  const all = moment !== null && open === moment.ids.length
   const last = undoStack.length > 0
   // Nothing to decide and nothing to take back: no bar at all.
   if (!inMoment && !last) return ""
@@ -280,10 +287,13 @@ function barMarkup() {
         >z</kbd
       ></button>
     ${moment && moment.ids.length > 1 && open > 0
-      ? html`<button type="button" class="btn btn-lg sort-rest" data-sort="rest"
-          ><span class="sort-long"
-            >${open === moment.ids.length ? "Keep all hidden" : "Keep the rest hidden"}</span
-          ><span class="sort-short">${open === moment.ids.length ? "Hide all" : "Hide the rest"}</span
+      ? html`<button type="button" class="btn btn-lg sort-batch sort-all" data-sort="all"
+          ><span class="sort-long">${all ? "Show the whole moment" : "Show the rest"}</span
+          ><span class="sort-short">${all ? "Show all" : "Show the rest"}</span
+          ><kbd>a</kbd></button
+        ><button type="button" class="btn btn-lg sort-batch sort-rest" data-sort="rest"
+          ><span class="sort-long">${all ? "Keep all hidden" : "Keep the rest hidden"}</span
+          ><span class="sort-short">${all ? "Hide all" : "Hide the rest"}</span
           ><kbd>r</kbd></button
         >`
       : ""}
@@ -438,19 +448,8 @@ async function decide(ids, status) {
   const todo = ids.filter((id) => decidable.has(id) && rows.has(id))
   if (busy || todo.length === 0) return
   busy = true
-  /** @type {Types.SortUndoEntry} */
-  const entry = {
-    moment: current,
-    before: todo.map((id) => {
-      const row = /** @type {GlobalTypes.CuratedAdminItem} */ (rows.get(id))
-      return {
-        id,
-        status: row.status === "approved" ? "approved" : "hidden",
-        decided_at: row.decided_at,
-        waiting: waiting.has(id),
-      }
-    }),
-  }
+  // One press is one undo entry and one request, however many photos it decides.
+  const entry = sortUndoEntry(current, todo, rows, isWaiting)
   const saved = await send(todo, status, true)
   busy = false
   if (saved === undefined) {
@@ -469,16 +468,9 @@ async function undo() {
   if (busy || !entry) return
   busy = true
   // Put each photo back exactly as it was: its status, and looked-at or not.
-  /** @type {Map<string, number[]>} */
-  const groups = new Map()
-  for (const b of entry.before) {
-    const key = `${b.status}|${b.decided_at === null ? "open" : "decided"}`
-    groups.set(key, [...(groups.get(key) ?? []), b.id])
-  }
   let ok = true
-  for (const [key, ids] of groups) {
-    const [status, kind] = key.split("|")
-    const saved = await send(ids, status === "approved" ? "approved" : "hidden", kind === "decided")
+  for (const req of undoRequests(entry)) {
+    const saved = await send(req.ids, req.status, req.decided)
     if (saved === undefined) ok = false
   }
   busy = false
@@ -514,8 +506,13 @@ function decideFocused(status) {
 }
 
 function keepRestHidden() {
-  const ids = moments[current]?.ids ?? []
-  void decide(ids.filter(isWaiting), "hidden")
+  void decide(openInMoment(moments[current], isWaiting), "hidden")
+}
+
+/** Show every photo of the moment still waiting; one already decided keeps
+ *  its decision. */
+function showWholeMoment() {
+  void decide(openInMoment(moments[current], isWaiting), "approved")
 }
 
 // ---- events ---------------------------------------------------------------
@@ -534,6 +531,7 @@ function onClick(e) {
   }
   if (action === "undo") return void undo()
   if (action === "rest") return keepRestHidden()
+  if (action === "all") return showWholeMoment()
   if (action === "prev") return goTo(current - 1)
   if (action === "next") return goTo(current + 1)
   const card = btn.closest(".sort-photo")
@@ -578,6 +576,9 @@ function keys(e) {
       return true
     case "r":
       keepRestHidden()
+      return true
+    case "a":
+      showWholeMoment()
       return true
     case "j":
       goTo(current + 1)
@@ -629,6 +630,7 @@ export function initGallerySort() {
       keys: [
         ["s", "Show — put it on the site"],
         ["h", "Keep it hidden"],
+        ["a", "Show the whole moment (what is still undecided)"],
         ["r", "Keep the rest of this moment hidden"],
         ["← →", "Another photo of this moment"],
         ["1 2 3", "Photo 1, 2, 3… of this moment"],

@@ -198,6 +198,48 @@ export function nextOpenMoment(moments, isOpen, from) {
   return -1
 }
 
+/** @type {Types.openInMoment} */
+export function openInMoment(moment, isOpen) {
+  // What "Show the whole moment" and "Keep the rest hidden" act on: the photos
+  // of the moment still waiting. One already decided keeps its decision.
+  return moment ? moment.ids.filter(isOpen) : []
+}
+
+/** @type {Types.sortUndoEntry} */
+export function sortUndoEntry(moment, ids, rows, isOpen) {
+  // One entry for one press, however many photos it decided, so Undo takes
+  // the whole press back in one step.
+  /** @type {Types.SortUndoEntry["before"]} */
+  const before = []
+  for (const id of ids) {
+    const row = rows.get(id)
+    if (!row) continue
+    before.push({
+      id,
+      status: row.status === "approved" ? "approved" : "hidden",
+      decided_at: row.decided_at,
+      waiting: isOpen(id),
+    })
+  }
+  return { moment, before }
+}
+
+/** @type {Types.undoRequests} */
+export function undoRequests(entry) {
+  // Put each photo back exactly as it was, its status and looked-at or not: one
+  // request per combination, so a batch that was all alike is one request.
+  /** @type {Map<string, Types.SortDecideRequest>} */
+  const groups = new Map()
+  for (const b of entry.before) {
+    const decided = b.decided_at !== null
+    const key = `${b.status}|${decided ? "decided" : "open"}`
+    const group = groups.get(key)
+    if (group) group.ids.push(b.id)
+    else groups.set(key, { ids: [b.id], status: b.status, decided })
+  }
+  return [...groups.values()]
+}
+
 /** @type {Types.momentLabel} */
 export function momentLabel(count, spanMs) {
   if (count <= 1) return "1 photo"

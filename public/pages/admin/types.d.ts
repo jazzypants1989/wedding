@@ -419,6 +419,31 @@ export function nextOpenMoment(
 /** "1 photo", "4 shots in 6 seconds". */
 export function momentLabel(count: number, spanMs: number | null): string
 
+/** The ids of a moment `isOpen` accepts, in its order; none for no moment. */
+export function openInMoment(
+  moment: SortMoment | undefined,
+  isOpen: (id: number) => boolean,
+): number[]
+
+/** The undo entry for one press that decides `ids` (rows missing from `rows`
+ *  are left out): how each photo was before it. */
+export function sortUndoEntry(
+  moment: number,
+  ids: number[],
+  rows: ReadonlyMap<number, { status: string; decided_at: string | null }>,
+  isOpen: (id: number) => boolean,
+): SortUndoEntry
+
+/** One POST /api/admin/media/decide body. */
+export interface SortDecideRequest {
+  ids: number[]
+  status: "approved" | "hidden"
+  decided: boolean
+}
+
+/** The decide requests that put an undo entry's photos back as they were. */
+export function undoRequests(entry: SortUndoEntry): SortDecideRequest[]
+
 /** @file gallery-sort.js - Gallery → Sort: decide hidden photos a moment at a time */
 
 /** One decision Undo can take back: the moment it was made in, and how the
