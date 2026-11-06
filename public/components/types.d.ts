@@ -155,11 +155,11 @@ export function initGuestIdentity(containerId?: string): void
 
 /** @file auth-sheet.js - Types for the shared auth sheet */
 
-export interface RegisterResponse {
-  success: boolean
-  account: GuestAccount
-  returning: boolean
-}
+/** POST /api/account/register: signed in, or (an open signup whose email
+ *  already has an account) no session and a sign-in link emailed instead. */
+export type RegisterResponse =
+  | { success: true; account: GuestAccount; returning: boolean; emailed?: undefined }
+  | { success: true; emailed: true; message: string; account?: undefined }
 
 /** Inject the auth-sheet dialog + wire its listeners (idempotent). */
 export function initAuthSheet(): void

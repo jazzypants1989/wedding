@@ -153,7 +153,26 @@ export async function register(req, res) {
     return respondWithSession(res, 201, account, false)
   }
 
-  // Open path: instant untrusted account, no dedupe (nothing to dedupe on).
+  // Open path with an email that already has an account (claimed or open): the
+  // guest has been here before. Creating a second account would orphan their
+  // earlier posts under a stranger, so create nothing and start no session —
+  // email them the same sign-in link recover() sends, and say so.
+  //
+  // This knowingly answers "does this email have an account?", which recover()
+  // is careful never to do. The owners chose that over silent duplicates; the
+  // register rate limiter above bounds how fast anyone can ask.
+  const existing = findAccountByContactEmail(contactEmail)
+  if (existing) {
+    emailRecoveryLink(existing, clientIp, "register")
+    return sendJson(res, 200, {
+      success: true,
+      emailed: true,
+      message: "You've been here before. We've emailed a link to sign you back in.",
+    })
+  }
+
+  // Open path: instant untrusted account. Without an email there is nothing
+  // to dedupe on.
   const account = createAccount({
     guestId: null,
     name: cleanName,
@@ -235,6 +254,34 @@ This link works once and expires in one hour. If you didn't request it, you can 
   return { subject, text, html }
 }
 
+/**
+ * Mint a one-time recovery token for `account` and email it the sign-in link.
+ * The one shared step behind recover() and register()'s "been here before"
+ * path, so the two always send the same link the same way.
+ * @param {import('../types.js').Account} account
+ * @param {string} clientIp
+ * @param {"recover" | "register"} via
+ */
+function emailRecoveryLink(account, clientIp, via) {
+  const token = crypto.randomBytes(32).toString("hex")
+  const expiresAt = new Date(Date.now() + RECOVERY_TOKEN_TTL_MS).toISOString()
+  createRecoveryToken(account.id, hashToken(token), expiresAt)
+
+  const link = `${SERVER.baseUrl}/api/account/recover/${token}`
+  // Fire-and-forget: the response must not block on (or reveal) delivery.
+  sendEmail({ to: account.contact_email ?? "", ...recoveryEmail(link) }).catch(
+    () => {},
+  )
+
+  log({
+    action: AUDIT_ACTIONS.ACCOUNT_RECOVER_REQUEST,
+    ip: clientIp,
+    resourceType: "account",
+    resourceId: account.id,
+    details: { via },
+  })
+}
+
 /** @type {Types.recover} */
 export async function recover(req, res) {
   const clientIp = getClientIp(req)
@@ -248,23 +295,14 @@ export async function recover(req, res) {
   // Always respond 200 with the same copy — never reveal whether the address
   // maps to an account (the rate limiter is the load-bearing anti-enumeration
   // control, mirroring register()). Only mint + email when an account exists.
+  //
+  // register() does reveal it, deliberately: an open signup with an email that
+  // already has an account is told "we've emailed you a link" instead of being
+  // given a duplicate account. That is an owner decision (no silent duplicates
+  // over no oracle), not an oversight; both paths are rate limited, and both
+  // send the identical link through emailRecoveryLink().
   if (account) {
-    const token = crypto.randomBytes(32).toString("hex")
-    const expiresAt = new Date(Date.now() + RECOVERY_TOKEN_TTL_MS).toISOString()
-    createRecoveryToken(account.id, hashToken(token), expiresAt)
-
-    const link = `${SERVER.baseUrl}/api/account/recover/${token}`
-    // Fire-and-forget: the response must not block on (or reveal) delivery.
-    sendEmail({ to: account.contact_email ?? "", ...recoveryEmail(link) }).catch(
-      () => {},
-    )
-
-    log({
-      action: AUDIT_ACTIONS.ACCOUNT_RECOVER_REQUEST,
-      ip: clientIp,
-      resourceType: "account",
-      resourceId: account.id,
-    })
+    emailRecoveryLink(account, clientIp, "recover")
   } else {
     log({
       action: AUDIT_ACTIONS.ACCOUNT_RECOVER_REQUEST,

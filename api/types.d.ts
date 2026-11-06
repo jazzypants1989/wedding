@@ -142,7 +142,9 @@ export interface PublicAccount {
 
 export function publicAccount(account: Account): PublicAccount
 
-/** POST /api/account/register — trusted claim / re-login / untrusted open signup. */
+/** POST /api/account/register — trusted claim / re-login / untrusted open signup.
+ *  An open signup whose email already has an account gets no account and no
+ *  session: 200 { emailed: true, message } and a recovery link by email. */
 export function register(req: IncomingMessage, res: ServerResponse): Promise<void>
 
 /** POST /api/account/logout — clears guest cookies, deletes session; 200 always. */

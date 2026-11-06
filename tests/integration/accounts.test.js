@@ -188,6 +188,123 @@ describe("Account Endpoints", () => {
     })
   })
 
+  describe("POST /api/account/register — open path, email already has an account", () => {
+    function countAccounts() {
+      const row = /** @type {{ c: number }} */ (
+        db.prepare("SELECT COUNT(*) AS c FROM accounts WHERE deleted_at IS NULL").get()
+      )
+      return row.c
+    }
+
+    /** @param {number | bigint} accountId */
+    function countTokens(accountId) {
+      const row = /** @type {{ c: number }} */ (
+        db
+          .prepare("SELECT COUNT(*) AS c FROM account_recovery_tokens WHERE account_id = ?")
+          .get(accountId)
+      )
+      return row.c
+    }
+
+    it("a new email still creates an account, as before", async () => {
+      const res = await accountRegister(
+        { name: "Newcomer", contact: "newcomer@example.com" },
+        { ip: nextIp() },
+      )
+      assert.strictEqual(res.status, 201)
+      assert.strictEqual(/** @type {any} */ (res.data.account).trusted, 0)
+      assert.strictEqual(res.data.emailed, undefined)
+      assert.ok(res.cookieHeader)
+      assert.strictEqual(countAccounts(), 1)
+    })
+
+    it("an existing open account's email → no account, no session, a recovery link", async () => {
+      const first = await accountRegister(
+        { name: "Returning Ravi", contact: "ravi@example.com" },
+        { ip: nextIp() },
+      )
+      assert.strictEqual(first.status, 201)
+      const firstId = /** @type {any} */ (first.data.account).id
+
+      const again = await accountRegister(
+        { name: "Ravi Again", contact: "ravi@example.com" },
+        { ip: nextIp() },
+      )
+      assert.strictEqual(again.status, 200)
+      assert.strictEqual(again.data.success, true)
+      assert.strictEqual(again.data.emailed, true)
+      assert.strictEqual(
+        again.data.message,
+        "You've been here before. We've emailed a link to sign you back in.",
+      )
+      assert.strictEqual(again.data.account, undefined, "no account in the body")
+      assert.strictEqual(again.cookieHeader, null, "no session cookie")
+      assert.strictEqual(countAccounts(), 1, "no second account")
+      assert.strictEqual(countTokens(firstId), 1, "a recovery token for the first account")
+    })
+
+    it("an existing claimed (trusted) account's email matches too", async () => {
+      const guest = createTestGuest(db, { invite_code: "Pq7rSt9v" })
+      const claimed = await accountRegister(
+        { code: guest.invite_code, name: "Claimed Cleo", contact: "cleo@example.com" },
+        { ip: nextIp() },
+      )
+      assert.strictEqual(claimed.status, 201)
+      const claimedId = /** @type {any} */ (claimed.data.account).id
+
+      const open = await accountRegister(
+        { name: "Cleo", contact: "cleo@example.com" },
+        { ip: nextIp() },
+      )
+      assert.strictEqual(open.status, 200)
+      assert.strictEqual(open.data.emailed, true)
+      assert.strictEqual(open.cookieHeader, null)
+      assert.strictEqual(countAccounts(), 1)
+      assert.strictEqual(countTokens(claimedId), 1)
+    })
+
+    it("case and whitespace variants of the email match", async () => {
+      const account = createTestAccount(db, {
+        name: "Mixed Case",
+        contact_email: "mixed.case@example.com",
+      })
+
+      const res = await accountRegister(
+        { name: "Mixed Case", contact: "  Mixed.CASE@Example.com  " },
+        { ip: nextIp() },
+      )
+      assert.strictEqual(res.status, 200)
+      assert.strictEqual(res.data.emailed, true)
+      assert.strictEqual(res.cookieHeader, null)
+      assert.strictEqual(countAccounts(), 1)
+      assert.strictEqual(countTokens(account.id), 1)
+    })
+
+    it("a soft-deleted account's email does not match", async () => {
+      const gone = createTestAccount(db, { name: "Gone", contact_email: "gone@example.com" })
+      db.prepare("UPDATE accounts SET deleted_at = ? WHERE id = ?").run(
+        new Date().toISOString(),
+        gone.id,
+      )
+
+      const res = await accountRegister(
+        { name: "Gone", contact: "gone@example.com" },
+        { ip: nextIp() },
+      )
+      assert.strictEqual(res.status, 201)
+      assert.ok(res.cookieHeader)
+      assert.strictEqual(countTokens(gone.id), 0)
+    })
+
+    it("no email still creates an account, even beside accounts that have one", async () => {
+      createTestAccount(db, { name: "Has Email", contact_email: "has@example.com" })
+      const res = await accountRegister({ name: "Has Email" }, { ip: nextIp() })
+      assert.strictEqual(res.status, 201)
+      assert.ok(res.cookieHeader)
+      assert.strictEqual(countAccounts(), 2)
+    })
+  })
+
   describe("logout & me", () => {
     it("logout deletes the session and clears cookies; me then returns null", async () => {
       const auth = await accountRegister({ name: "Loginout" }, { ip: nextIp() })

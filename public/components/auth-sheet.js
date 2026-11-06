@@ -3,7 +3,9 @@
  * One <dialog id="auth-sheet"> whose markup is injected by initAuthSheet() so
  * pages don't duplicate the form HTML. Two panels: invite-code claim/re-login,
  * and open (untrusted) registration. Both POST /api/account/register. On success
- * the guest session is set and the pending write action replays.
+ * the guest session is set and the pending write action replays. An open signup
+ * whose email already has an account is not signed in: the server emails a
+ * sign-in link instead, and the sheet says so on the recover panel.
  */
 /** @import * as Types from "./types.js" */
 
@@ -17,6 +19,9 @@ let injected = false
 let triggerEl = null
 /** @type {ReturnType<typeof setInterval> | undefined} */
 let countdownTimer
+// Set when register answered "we've emailed you a link": closing the sheet
+// afterwards is the expected next step, not an abandoned sign-in.
+let linkEmailed = false
 
 const SHEET_MARKUP = html`
   <button type="button" class="modal-close flex-center" data-auth-close aria-label="Close">&times;</button>
@@ -150,6 +155,7 @@ function showPanel(which) {
 
 function resetSheet() {
   clearInterval(countdownTimer)
+  linkEmailed = false
   // Prefill the invite code from a prior RSVP visit (rsvp-form.js stashes it) so
   // a household guest lands on the trusted path without re-typing their code.
   let savedCode = ""
@@ -228,6 +234,23 @@ function finishAuth(returning, name) {
 }
 
 /**
+ * The open signup's email already has an account, so the server sent a sign-in
+ * link instead of making a second one. Show that on the recover panel's success
+ * state; the guest is not signed in and nothing replays.
+ * @param {string} message
+ */
+function showLinkEmailed(message) {
+  linkEmailed = true
+  hideAlert(getElement("auth-alert-recover"))
+  const done = getElement("auth-recover-done")
+  done.textContent = message
+  done.hidden = false
+  getElement("auth-recover-form").hidden = true
+  showPanel("recover")
+  getButtonElement("auth-recover-back").focus()
+}
+
+/**
  * @param {{ code?: string, name: string, relation?: string, contact?: string }} body
  * @param {{ submitBtn: HTMLButtonElement, alertEl: HTMLElement, defaultLabel: string, codeInput?: HTMLInputElement, codeErrorEl?: HTMLElement }} ctx
  */
@@ -250,6 +273,15 @@ async function submitRegister(body, ctx) {
       data = /** @type {Record<string, unknown>} */ (await res.json())
     } catch {
       // non-JSON body; fall through to status handling
+    }
+
+    if (res.ok && data.emailed === true) {
+      showLinkEmailed(
+        typeof data.message === "string"
+          ? data.message
+          : "You've been here before. We've emailed a link to sign you back in.",
+      )
+      return
     }
 
     if (res.ok) {
@@ -423,9 +455,9 @@ export function initAuthSheet() {
     getInputElement("auth-recover-email").focus()
   }
   getElement("auth-recover-link").addEventListener("click", toRecoverPanel)
-  // The open (no-code) path silently creates a fresh account on every
-  // registration, orphaning earlier posts — so returning open-path guests get
-  // their own way back into the account they already have.
+  // A returning open-path guest's way back into the account they already have.
+  // (Signing up again with the same email now lands here too, by email link;
+  // without an email the server has nothing to match on.)
   getElement("auth-open-recover-link").addEventListener("click", toRecoverPanel)
   getElement("auth-recover-back").addEventListener("click", () => {
     showPanel("code")
@@ -440,24 +472,50 @@ export function initAuthSheet() {
   // the account and clears the stash before this fires, so a still-null account
   // with a waiting action means the guest closed mid-write. Discard the stashed
   // action (else it would replay on a later, unrelated sign-in) and tell them
-  // their tap didn't go through — otherwise it evaporates silently.
+  // their tap didn't go through — otherwise it evaporates silently. After a
+  // "we've emailed you a link" answer the action is still discarded (the link
+  // opens a fresh page), but the guest already knows what happens next.
   dialog.addEventListener("close", () => {
     clearInterval(countdownTimer)
-    if (!session.account && cancelPendingAction()) {
+    if (!session.account && cancelPendingAction() && !linkEmailed) {
       showToast("You'll need to sign in to do that.")
     }
   })
 
-  // Backdrop click closes (native dialog handles Escape).
-  dialog.addEventListener("click", (e) => {
-    const rect = dialog.getBoundingClientRect()
-    const inside =
-      rect.top <= e.clientY &&
-      e.clientY <= rect.top + rect.height &&
-      rect.left <= e.clientX &&
-      e.clientX <= rect.left + rect.width
-    if (!inside) dialog.close()
+  // Backdrop click closes (native dialog handles Escape). A click counts only
+  // if the press both started and ended on the ::backdrop, which targets the
+  // <dialog> itself, outside its box. Checking the rect alone is not enough: a
+  // panel link swaps panels before its click bubbles here, the dialog has
+  // resized by then, and the link's own coordinates read as "outside". Requiring
+  // the pointerdown too stops a drag that starts inside (selecting text in a
+  // field) from closing the sheet when it is released over the backdrop.
+  let pressedBackdrop = false
+  dialog.addEventListener("pointerdown", (e) => {
+    pressedBackdrop = isBackdropHit(dialog, e)
   })
+  dialog.addEventListener("click", (e) => {
+    const fromBackdrop = pressedBackdrop
+    pressedBackdrop = false
+    if (fromBackdrop && isBackdropHit(dialog, e)) dialog.close()
+  })
+}
+
+/**
+ * True when a pointer event landed on the dialog's ::backdrop: its target is the
+ * <dialog> element itself and its point is outside the dialog's box. A click on
+ * the dialog's own padding also targets the dialog, but falls inside the box.
+ * @param {HTMLDialogElement} dialog
+ * @param {MouseEvent} e
+ */
+function isBackdropHit(dialog, e) {
+  if (e.target !== dialog) return false
+  const rect = dialog.getBoundingClientRect()
+  return (
+    e.clientY < rect.top ||
+    e.clientY > rect.bottom ||
+    e.clientX < rect.left ||
+    e.clientX > rect.right
+  )
 }
 
 /** @type {Types.openAuthRecovery} */
