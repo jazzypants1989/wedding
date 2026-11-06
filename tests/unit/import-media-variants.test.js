@@ -164,11 +164,16 @@ describe("planMediaFile — skip paths", () => {
 })
 
 describe("planMediaFile — reading a source", () => {
+  // A JPEG resolves from its header alone, so planning only needs *a* backend to be
+  // present, never runs it. A stub keeps these tests meaningful on a machine (CI)
+  // with no vips, ImageMagick or sips installed.
+  const stubImage = /** @type {never} */ ({ name: "vips", bin: "vips", versionArgs: [], version: "x", childEnv: {} })
+
   it("reads dimensions, orientation and GPS from a JPEG with no subprocess", async () => {
     const exif = makeExifTiff({ orientation: 6, gps: true, capturedAt: "2026:06:14 15:04:05" })
     const file = write("rotated.jpg", makeJpegWithMetadata({ width: 2400, height: 1600, exif }))
     // Deliberately pass no backend: a JPEG must resolve from its header alone.
-    const plan = await planMediaFile(file, { image: backends.image ?? null, video: null })
+    const plan = await planMediaFile(file, { image: stubImage, video: null })
     assert.equal(plan.ok, true)
     if (!plan.ok) return
     assert.equal(plan.kind, "image")
@@ -184,7 +189,7 @@ describe("planMediaFile — reading a source", () => {
 
   it("leaves dimensions alone for an upright image", async () => {
     const file = write("upright.jpg", makeJpegWithMetadata({ width: 2400, height: 1600 }))
-    const plan = await planMediaFile(file, backends)
+    const plan = await planMediaFile(file, { image: stubImage, video: null })
     assert.equal(plan.ok, true)
     if (!plan.ok) return
     assert.equal(plan.width, 2400)

@@ -11,6 +11,8 @@ import { describe, it } from "node:test"
 import assert from "node:assert"
 import { spawnSync } from "node:child_process"
 import path from "node:path"
+import fs from "node:fs"
+import os from "node:os"
 
 const PROJECT_ROOT = path.resolve(import.meta.dirname, "..", "..", "..")
 
@@ -223,13 +225,24 @@ describe("core/env", () => {
       )
     })
 
-    it("loads .env file successfully from project root", () => {
-      // Run from project root without patching — loadEnvFile should succeed
-      const { output } = runEnvModuleRaw({})
-      assert.ok(
-        !output.includes("Could not load .env"),
-        "should not warn about .env loading when file exists",
-      )
+    it("loads a .env file that exists beside the project root", () => {
+      // The real .env is gitignored, so it exists on a dev machine and not in CI.
+      // Copy env.js into a throwaway project that does have one.
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "env-load-"))
+      try {
+        fs.mkdirSync(path.join(root, "core"))
+        fs.copyFileSync(path.join(PROJECT_ROOT, "core", "env.js"), path.join(root, "core", "env.js"))
+        fs.writeFileSync(path.join(root, ".env"), "ENV_TEST_MARKER=loaded\n")
+        fs.writeFileSync(path.join(root, "package.json"), '{ "type": "module" }\n')
+        const { output, status } = runEnvModuleRaw({}, root)
+        assert.equal(status, 0, output)
+        assert.ok(
+          !output.includes("Could not load .env"),
+          "should not warn about .env loading when file exists",
+        )
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true })
+      }
     })
   })
 })

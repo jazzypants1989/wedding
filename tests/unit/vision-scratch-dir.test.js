@@ -51,7 +51,10 @@ describe("scratch-dir: where derived output may go", () => {
 
   test("outside every repository, a directory named tmp", () => {
     assert.equal(scratchDirRefusal(path.join(scratch, "tmp", "cull"), repo), null)
-    assert.ok(scratchDirRefusal(path.join(scratch, "elsewhere"), repo))
+    // Not under the OS temp directory: on Linux that is /tmp itself, which is
+    // (correctly) allowed. A path that doesn't exist is judged lexically.
+    const nowhere = path.join(path.parse(scratch).root, `cull-test-nowhere-${process.pid}`, "elsewhere")
+    assert.ok(scratchDirRefusal(nowhere, repo))
   })
 
   test("a symlink from tmp/ into public/ is refused like the direct path", () => {
