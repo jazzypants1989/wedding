@@ -17,6 +17,9 @@ import {
   nextOpenMoment,
   momentLabel,
 } from "../../public/pages/admin/sort-moments.js"
+import { parseCapturedAt } from "../../core/capture-time.js"
+import { capturedAtToMs } from "../../scripts/vision/session1.js"
+import { wallClockFromMs } from "../../scripts/vision/ingest-faces.js"
 
 const BASE = Date.UTC(2026, 5, 20, 17, 0, 0)
 
@@ -45,6 +48,23 @@ describe("captureTimeMs", () => {
     assert.strictEqual(captureTimeMs("2026-06-20T17:03:12.000Z"), want)
     assert.strictEqual(captureTimeMs("2026-06-20 17:03:12"), want)
     assert.strictEqual(captureTimeMs("2026:06:20 17:03:12"), want)
+  })
+
+  it("reads an uploaded photo and a face-ingested one in one format, one moment", () => {
+    // An upload or the importer stores the EXIF string as checked here; the face
+    // ingest goes through session1's local-time ms and back. Same form, so the
+    // twin scan's equality and Sort's differences both hold across writers.
+    const uploaded = parseCapturedAt("2026-06-20 17:03:12")
+    const ingested = wallClockFromMs(Number(capturedAtToMs("2026-06-20 17:03:14")))
+    assert.strictEqual(uploaded, "2026-06-20 17:03:12")
+    assert.strictEqual(ingested, "2026-06-20 17:03:14")
+    assert.strictEqual(parseCapturedAt(ingested), ingested)
+    const moments = groupMoments([
+      { id: 1, t: captureTimeMs(uploaded) },
+      { id: 2, t: captureTimeMs(ingested) },
+    ])
+    assert.deepStrictEqual(moments.map((m) => m.ids), [[1, 2]])
+    assert.strictEqual(moments[0].spanMs, 2000)
   })
 
   it("keeps sub-seconds, because a burst is several frames in one second", () => {

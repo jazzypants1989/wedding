@@ -245,6 +245,19 @@
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
 }
 
+/* The photo has a black-and-white copy paired with it, which goes wherever it
+   goes. The copy itself is never in Sort. */
+#tab-gallery-sort .sort-twin {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.6);
+  color: #fff;
+  font-size: 0.78rem;
+}
+
 #tab-gallery-sort .is-shown .sort-status {
   background: var(--color-status-responded-bg);
   color: var(--ws-ok);

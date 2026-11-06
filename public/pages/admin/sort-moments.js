@@ -53,8 +53,9 @@ function isDigits(text) {
 export function captureTimeMs(text) {
   if (typeof text !== "string") return null
   const s = text.trim()
-  // "2026-06-20T17:03:12.345Z" (what the face ingest stores), "2026-06-20 17:03:12"
-  // (image-meta.js) or EXIF's own "2026:06:20 17:03:12".
+  // "2026-06-20 17:03:12" (what every writer stores: core/capture-time.js and the
+  // face ingest), "2026-06-20T17:03:12.345Z" (what a face ingest stored before
+  // it matched them) or EXIF's own "2026:06:20 17:03:12".
   let at = s.indexOf("T")
   if (at === -1) at = s.indexOf(" ")
   if (at === -1) return null

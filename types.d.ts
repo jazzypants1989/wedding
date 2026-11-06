@@ -420,9 +420,10 @@ export interface Media {
    *  durable identifier a batch face-pipeline run reconciles against when it
    *  doesn't yet know a row's media_id. Null until the importer writes it. */
   source_sha256: string | null
-  /** EXIF capture time ("YYYY-MM-DD HH:MM:SS", or an ISO string from the face
-   *  ingest), when the source image carried one. Written at finalize, by the
-   *  importer, by the face ingest, and back-filled by the twin scan. */
+  /** EXIF capture time, "YYYY-MM-DD HH:MM:SS" wall clock with no zone, when the
+   *  source image carried one. Written at finalize, by the importer, by the face
+   *  ingest (scripts/vision/ingest-faces.js wallClockFromMs), and back-filled by
+   *  the twin scan. A row an older face ingest wrote may hold an ISO string. */
   captured_at: string | null
   /** When someone decided this photo in Gallery → Sort: shown, or kept hidden.
    *  NULL means nobody has looked at it there. Undo sets it back to NULL. Not

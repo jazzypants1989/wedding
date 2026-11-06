@@ -1014,7 +1014,8 @@ function stampCaptureTimes(seed, official) {
     if (i % 11 === 10) {
       setTime.run(null, media.id)
     } else {
-      setTime.run(new Date(t).toISOString(), media.id)
+      // The wall-clock form every real writer stores (core/capture-time.js).
+      setTime.run(new Date(t).toISOString().slice(0, 19).replace("T", " "), media.id)
       left--
       if (left > 0) {
         t += 800 + (i % 3) * 700

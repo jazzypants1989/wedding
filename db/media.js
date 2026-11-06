@@ -221,7 +221,9 @@ export function setCuratedDecisions(ids, status, decided) {
   // decided: a rejected one's files are in quarantine, an uploading one isn't a
   // photo yet. sort_order is never touched, so a photo shown here takes its old
   // place in the order, as the grid's Unhide does. reviewed_at keeps its meaning
-  // (the last status change) and moves only when the status does.
+  // (the last status change) and moves only when the status does. A
+  // black-and-white twin is never decided on its own: it follows its primary, so
+  // naming one changes nothing and the caller's all-or-none check refuses it.
   const stamp = now()
   const decidedAt = decided ? stamp : null
   let changed = 0
@@ -231,7 +233,7 @@ export function setCuratedDecisions(ids, status, decided) {
         SET reviewed_at = CASE WHEN status = ${status} THEN reviewed_at ELSE ${stamp} END,
             status = ${status},
             decided_at = ${decidedAt}
-        WHERE id = ${id} AND deleted_at IS NULL
+        WHERE id = ${id} AND deleted_at IS NULL AND twin_of IS NULL
           AND section IN (${MEDIA_SECTION.OFFICIAL}, ${MEDIA_SECTION.HONEYMOON})
           AND status IN ('approved', 'hidden', 'pending')`.run().changes,
     )

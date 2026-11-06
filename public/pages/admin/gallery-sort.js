@@ -13,7 +13,9 @@
  *  moment for later: it comes round again at the end.
  *
  *  One function draws a photo (photoMarkup), so a later badge or filter on a
- *  photo has one place to go.
+ *  photo has one place to go. A black-and-white copy is never a photo of its own
+ *  here (the curated listing leaves copies out); its primary wears a "B&W copy"
+ *  badge instead.
  *
  *  Routes: /admin/gallery/sort · /admin/gallery/honeymoon/sort, each with
  *  ?again=1 to go back through the photos already kept hidden. */
@@ -186,6 +188,10 @@ function photoMarkup(row, at) {
       ${media}
       ${many ? html`<span class="sort-num" aria-hidden="true">${at.index + 1}</span>` : ""}
       ${status ? html`<span class="sort-status">${status}</span>` : ""}
+      ${row.twin
+        ? html`<span class="sort-twin" title="Its black-and-white copy goes wherever it goes"
+            >B&amp;W copy</span>`
+        : ""}
     </div>
     ${canDecide
       ? html`<div class="sort-actions" role="group" aria-label="${label}">

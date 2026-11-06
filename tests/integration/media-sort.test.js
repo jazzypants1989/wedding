@@ -112,6 +112,38 @@ describe("Gallery → Sort: the admin listing", () => {
   })
 })
 
+describe("Gallery → Sort: a black-and-white copy", () => {
+  it("is never a photo of its own: not listed, not decidable; its primary carries it", async (t) => {
+    if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")
+    const auth = await adminAuth()
+    const primary = insertMedia({ status: "hidden", capturedAt: "2026-06-20 17:03:12" })
+    const copy = insertMedia({ status: "hidden", sortOrder: 1, capturedAt: "2026-06-20 17:03:12" })
+    db.prepare("UPDATE media SET twin_of = ? WHERE id = ?").run(primary, copy)
+
+    // Sort's moments, queue and counts, and the gallery's "N to look at", are all
+    // built from this listing: the copy is not in it, and rides on its primary.
+    const res = await adminFetch("/api/admin/media/curated?section=official", {}, auth)
+    assert.strictEqual(res.status, 200)
+    const items = (await json(res)).items
+    assert.deepStrictEqual(items.map((/** @type {any} */ i) => i.id), [primary])
+    assert.strictEqual(items[0].twin?.id, copy)
+
+    // Named on its own, or alongside its primary, the whole decision is refused.
+    for (const ids of [[copy], [primary, copy]]) {
+      const refused = await decide(auth, { ids, status: "approved", decided: true })
+      assert.strictEqual(refused.status, 409, `ids ${ids}`)
+      assert.strictEqual(row(copy).status, "hidden")
+      assert.strictEqual(row(copy).decided_at, null)
+      assert.strictEqual(row(primary).decided_at, null, "rolled back")
+    }
+
+    const ok = await decide(auth, { ids: [primary], status: "approved", decided: true })
+    assert.strictEqual(ok.status, 200)
+    assert.strictEqual(row(primary).status, "approved")
+    assert.strictEqual(row(copy).decided_at, null, "the copy is never decided itself")
+  })
+})
+
 describe("Gallery → Sort: POST /api/admin/media/decide", () => {
   it("shows a hidden photo in its old place in the order, and marks it looked at", async (t) => {
     if (!hasAdmin) return t.skip("no TEST_ADMIN_PASSWORD")

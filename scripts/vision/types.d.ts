@@ -1482,6 +1482,12 @@ export function gradeFace(
 ): FaceRouteVerdict | null
 
 /**
+ * A capture time in the form every `media.captured_at` writer uses: EXIF's wall
+ * clock, "YYYY-MM-DD HH:MM:SS", no zone. The inverse of session1's capturedAtToMs.
+ */
+export function wallClockFromMs(ms: number): string
+
+/**
  * Per-photo frame identity and capture time for the `media` columns. Pure — no
  * DB access — so the union-find resolution is testable against plain records.
  *

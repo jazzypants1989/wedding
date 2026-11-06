@@ -66,6 +66,8 @@ const SITE_LINKS = [
 ]
 const ADMIN_LINKS = [
   ["Admin", "/admin"],
+  ["Gallery admin", "/admin/gallery"],
+  ["Sort", "/admin/gallery/sort"],
   ["Review", "/admin/review"],
   ["Faces", "/admin/faces"],
   ["Gifts", "/admin/thank-yous/gifts"],

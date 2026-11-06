@@ -430,6 +430,26 @@ export function joinPhotosToMedia(photos, mediaBySha) {
 }
 
 /**
+ * A capture time as every other writer of `media.captured_at` stores it: EXIF's
+ * wall clock, "YYYY-MM-DD HH:MM:SS", no zone. Uploads and the importer write
+ * exactly that (core/capture-time.js), the twin scan matches on it by equality,
+ * and Gallery → Sort subtracts two of them. An ISO string here would read the
+ * same moment hours apart from an uploaded one. `ms` came from session1's
+ * capturedAtToMs, which reads the string as local time, so local getters give
+ * the string back.
+ * @type {Types.wallClockFromMs}
+ */
+export function wallClockFromMs(ms) {
+  const d = new Date(ms)
+  /** @param {number} n */
+  const two = (n) => String(n).padStart(2, "0")
+  return (
+    `${String(d.getFullYear()).padStart(4, "0")}-${two(d.getMonth() + 1)}-${two(d.getDate())} ` +
+    `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`
+  )
+}
+
+/**
  * Per-photo frame identity and capture time, as the columns want them. Pure —
  * no DB access — so the union-find resolution is unit-testable against plain
  * records.
@@ -459,7 +479,7 @@ export function frameMetadataForPhotos(photos) {
       // photo it never wrote) falls back to the photo's own hash rather than
       // leaving the column null: its own frame, which is the truthful reading.
       frameRootSha256: shaByPhotoId.get(rootId) ?? photo.sha256,
-      capturedAt: photo.capturedAtMs === null ? null : new Date(photo.capturedAtMs).toISOString(),
+      capturedAt: photo.capturedAtMs === null ? null : wallClockFromMs(photo.capturedAtMs),
     })
   }
   return out

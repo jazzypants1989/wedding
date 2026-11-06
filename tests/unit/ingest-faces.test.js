@@ -28,6 +28,7 @@ import {
   scaleFaceGeometry,
 } from "../../scripts/vision/ingest-faces.js"
 import { blobToDescriptor } from "../../db/media-faces.js"
+import { capturedAtToMs } from "../../scripts/vision/session1.js"
 import { PROFILE, routeCutoffs } from "../../public/vision/route.js"
 
 /** An `assert.throws` matcher built from string methods. The no-regex rule
@@ -334,12 +335,13 @@ describe("frameMetadataForPhotos", () => {
     assert.deepEqual([...roots], ["sha-a"])
   })
 
-  it("converts EXIF capture time to an ISO string, and leaves a photo without one null", () => {
+  it("gives back EXIF's wall-clock capture time, and leaves a photo without one null", () => {
     const meta = frameMetadataForPhotos([
-      photo({ id: 0, sha256: "sha-a", capturedAtMs: 1700000000000 }),
+      photo({ id: 0, sha256: "sha-a", capturedAtMs: capturedAtToMs("2026-06-20 17:03:12") }),
       photo({ id: 1, sha256: "sha-b", capturedAtMs: null }),
     ])
-    assert.equal(meta.get(0)?.capturedAt, new Date(1700000000000).toISOString())
+    // The same string an upload or the importer stores (core/capture-time.js).
+    assert.equal(meta.get(0)?.capturedAt, "2026-06-20 17:03:12")
     assert.equal(meta.get(1)?.capturedAt, null)
   })
 
