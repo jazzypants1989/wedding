@@ -40,6 +40,29 @@ dialog.twin-dialog {
   width: min(760px, calc(100vw - 24px));
 }
 
+/* The intro and "Pair all", above the proposals: a long list never hides it. */
+.twin-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--ws-line);
+}
+
+.twin-bar p {
+  flex: 1 1 260px;
+  margin: 0;
+}
+
+.twin-bar .btn {
+  flex: none;
+}
+
+.twin-bar[hidden] {
+  display: none;
+}
+
 .twin-proposals {
   list-style: none;
   margin: 12px 0 0;

@@ -123,8 +123,8 @@ async function startScan() {
   const run = ++scanRun
   proposals = []
   const body = getElement("gallery-twins-body")
-  const pairAll = getButtonElement("gallery-twins-pair-all")
-  pairAll.hidden = true
+  getElement("gallery-twins-bar").hidden = true
+  getButtonElement("gallery-twins-pair-all").hidden = true
   body.innerHTML = html`<p class="muted" role="status">Looking for photos taken at the same
     moment…</p>`
   openModal(getDialogElement("gallery-twins-modal"), getElement("gallery-twins-btn"))
@@ -157,6 +157,7 @@ async function startScan() {
 /** @param {Types.TwinScanResponse} scan */
 function renderProposals(scan) {
   const body = getElement("gallery-twins-body")
+  const bar = getElement("gallery-twins-bar")
   const pairAll = getButtonElement("gallery-twins-pair-all")
   const sections = new Map(scan.groups.flatMap((g) => g.members.map((m) => [m.id, m.section])))
   const notes = []
@@ -173,17 +174,19 @@ function renderProposals(scan) {
       these, then look again.</p>`)
   }
   if (proposals.length === 0) {
+    bar.hidden = true
     pairAll.hidden = true
     body.innerHTML = html`<p><strong>No black-and-white twins found.</strong></p>
       <p class="muted">A twin is a black-and-white copy with the same capture time and size as
         a colour photo in the same section.</p>${notes}`
     return
   }
+  // The bar with "Pair all" sits above the list, so it is seen before the
+  // hundreds of single "Pair" buttons are.
+  bar.hidden = false
   pairAll.hidden = proposals.length < 2
   pairAll.textContent = `Pair all ${proposals.length}`
-  body.innerHTML = html`<p class="muted">Each colour photo stays what guests see. Its
-      black-and-white copy leaves the gallery and rides along with it.</p>
-    <ul class="twin-proposals">
+  body.innerHTML = html`<ul class="twin-proposals">
       ${proposals.map(
         (p) => html`<li class="twin-proposal" data-primary="${p.primaryId}" data-twin="${p.twinId}">
           <span class="twin-pair">

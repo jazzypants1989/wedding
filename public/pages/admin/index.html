@@ -1037,10 +1037,15 @@
       <h2 id="gallery-twins-title">Black-and-white twins</h2>
       <button type="button" class="dlg-x" data-close-modal aria-label="Close">&times;</button>
     </header>
+    <!-- Above the proposals, not under them: there can be hundreds. -->
+    <div id="gallery-twins-bar" class="twin-bar" hidden>
+      <p class="muted">Each colour photo stays what guests see. Its black-and-white copy leaves the
+        gallery and rides along with it.</p>
+      <button type="button" class="btn btn-primary" id="gallery-twins-pair-all" hidden>Pair all</button>
+    </div>
     <div id="gallery-twins-body"></div>
     <footer class="dlg-actions">
       <button type="button" class="btn" data-close-modal>Done</button>
-      <button type="button" class="btn btn-primary" id="gallery-twins-pair-all" hidden>Pair all</button>
     </footer>
   </dialog>
 
