@@ -14,6 +14,13 @@ Severity tags: 🔴 high · 🟡 medium · 🟢 low.
 > here, in their own words, and the agent has to restate it and get a yes. Without that, the next
 > attempt will make a very similar mistake. Don't start from the earlier fix's reasoning.
 
+### Faces: a little more grouping tuning 🟢
+
+After the production face pass (2026-11-05) the owner accepted faces #2 ("people lumped into one
+group"): a couple of mixed "grab bag" groups remain. Owner: "Pretty good results. It feels like we
+could tune it a little bit more, but this is fine for now." If picked up, re-derive with
+`node scripts/vision/tune.js <run-dir>` (stdout only), and keep every measurement out of the repo.
+
 ### Faces stepper: the numbers are still confusing 🟡
 
 Faces issue iss_0019 ("Unclear numbers", `.claude/issues`): the stepper's current-step circle and
@@ -37,9 +44,9 @@ Same rule as above: get the owner to describe the acceptance view they want befo
 ### Media pipeline go-live checklist 🔴
 
 Serving 100MB uploads through Traefik needs proxy-side settings the repo can't set:
-- **Traefik read timeout:** v3's `transport.respondingTimeouts.readTimeout` defaults to 60s and
-  would kill slow uploads at the proxy. Set it to `0` or `≥10m` on the HTTPS entrypoint.
-  (`server.requestTimeout` is already 600s in `server.js`.)
+- ~~**Traefik read timeout**~~ *Done (homelab `9aa39c35`, 2026-11-01):* `readTimeout: 10m` on
+  the HTTPS entrypoint, matching `server.requestTimeout` (600s). The phone smoke test below is
+  still the real proof.
 - **No buffering middleware** on the media router — it would spool the whole upload to proxy disk.
   Confirm none is attached in `docker-compose.yml` labels; re-check whenever middleware changes.
 - **VPS free disk ≥ 50GB** (≈30GB at full scale). Tune in the VPS `.env`: `MEDIA_MIN_FREE_BYTES`
@@ -70,6 +77,11 @@ recovery**: lose the volume and every copy is gone. Still needed:
 - **Restore drill:** actually restore from a snapshot into a throwaway environment once — an
   untested backup is a hope, not a backup.
 
+*Update, 2026-11-05:* the hourly snapshots are running in production (seen in the volume after
+deploy #3). The restore drill is **blocked, not forgotten**: homelab's `drill` refuses a
+production target, and the only drill host (vps1) became production on 2026-11-05. It can run
+once vps3 is the spare. The owner rated it "not that important" in the meantime.
+
 *Update (homelab):* a nightly restic job in the homelab repo now archives the whole
 `wedding_wedding-data` volume to two off-host targets, with restore drills
 (`docs/state/backups.md` there). That tar still copies the live `wedding.db` too, which can be torn; the
@@ -93,6 +105,11 @@ uploads), and a place errors surface. Cheap insurance for an unattended box duri
 matters most. *(2026-07 UX pass: the moderation digest now retries ~hourly after a failed send
 instead of silently skipping an interval, and the admin dashboard polls badge counts every 3
 minutes — but external uptime/disk alerting is still unaddressed.)*
+
+*Deferred by the owner, 2026-11-05.* When picked up: the homelab repo already has an `alarm`
+command (`cli/commands/alarm.js` there), and `/api/health` reports `uploadsFreeBytes`, so a
+check against that endpoint covers both uptime and disk. Coordinate with whoever is working in
+`../homelab` first.
 
 ### Deploys run from the homelab repo 🟢
 
@@ -207,7 +224,19 @@ together:
 
 ## Configuration & hardening
 
+### Small follow-ups found 2026-11-05 🟢
+
+- **Admin modals close on a drag that ends on the backdrop.** The shared handler in
+  `public/pages/admin/utils.js` checks `e.target === dialog` but not where the press began. The
+  guest sign-in sheet now checks both (`isBackdropHit` in `public/components/auth-sheet.js`).
+- **Black-and-white twins:** reactions or comments left on a copy before it was paired stay on
+  the copy (hidden), not merged into the colour photo; unpairing brings them back. The admin
+  account roster still counts copies.
+
 ### Production `.env` completeness + secret rotation 🟡
+
+*2026-11-05:* `RESEND_API_KEY`, `FROM_EMAIL` and `CONTACT_EMAIL` are now in the sealed secrets
+and live (recovery email verified). Twilio keys are still absent, so SMS stays off.
 
 Run `npm run doctor` for the current drift/gaps.
 - **Fill the production `.env`:** keys `.env.example` documents and the code reads may be missing;
