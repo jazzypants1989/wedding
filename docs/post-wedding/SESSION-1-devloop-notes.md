@@ -240,3 +240,19 @@ Logged as it happened. Fixing devloop itself (`~/repos/make-a`) is out of scope 
 - **D-11 — an orphaned capture session.** A capture from 2026-10-30 was still
   holding :4600 six days later. Stopping it with SIGINT wrote a clean
   `session.ended`.
+- **D-13 — headless Chrome left running for a week (owner, 2026-11-05).** Two
+  headless Chrome processes, with their helpers, had been running for 7 days. Each
+  had a fixed `--remote-debugging-port` (9335, 9347) and a profile at
+  `.claude/worktrees/agent-*/tmp/chrome-profile-<port>`, inside two agent
+  worktrees from an earlier session. They kept recreating those folders after the
+  worktrees were deleted. The owner's experience is that devloop "almost always"
+  leaves Chrome behind. The origin of these two isn't proven:
+  - they weren't started by this repo's `scripts/dev/cdp.js`, which uses
+    `--remote-debugging-port=0` and kills its child on exit;
+  - nothing in this repo names a profile `chrome-profile-<port>`.
+
+  So they came from an agent's ad hoc script or from a devloop tool. Either way,
+  the fix belongs with whatever launches Chrome: kill the child on every exit
+  path (normal, error, SIGINT and SIGTERM, and the parent dying), and have
+  `idle-check` or a session-end hook sweep headless Chromes whose profile is
+  under a worktree or `tmp/`.
